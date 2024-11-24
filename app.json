@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "japa-app",
-    "slug": "japa-app",
+    "name": "japa-mobile",
+    "slug": "japa-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,8 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.someesther.japaapp"
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
@@ -37,20 +36,6 @@
     ],
     "experiments": {
       "typedRoutes": true
-    },
-    "extra": {
-      "router": {
-        "origin": false
-      },
-      "eas": {
-        "projectId": "eeb7f7ad-5e99-4b4f-bca1-25ca8706ecf2"
-      }
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/eeb7f7ad-5e99-4b4f-bca1-25ca8706ecf2"
     }
   }
 }
