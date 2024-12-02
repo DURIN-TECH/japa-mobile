@@ -35,4 +35,13 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# BUCK
+*.keystore
+!debug.keystore
+
+# CocoaPods
+/ios/Pods
+
 app-example
+
+package-lock.json
