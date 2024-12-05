@@ -58,7 +58,7 @@ export default function CountryFlagSelector() {
         <View>
           <View>
             <ThemedText className="ml-5 my-5">Supported Country</ThemedText>
-            <View className="flex-row flex-wrap gap-4">
+            <View className="flex-row flex-wrap gap-4 justify-evenly">
               {filteredCountries.map((country) => (
                 <View key={country.code} className="items-center w-[15%]">
                   <View className="w-10 h-10 rounded-lg overflow-hidden mb-2">
@@ -74,7 +74,7 @@ export default function CountryFlagSelector() {
           </View>
           <View>
             <ThemedText className="ml-5 my-5">Coming Soon</ThemedText>
-            <View className="flex-row flex-wrap gap-4">
+            <View className="flex-row flex-wrap gap-4 justify-evenly">
               {upcomingCountries.map((country) => (
                 <View key={country.code} className="items-center w-[15%]">
                   <View className="w-10 h-10 rounded-lg overflow-hidden mb-2">
