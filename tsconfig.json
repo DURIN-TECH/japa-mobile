@@ -1,7 +1,10 @@
 {
   "extends": "expo/tsconfig.base",
+  "module": "commonjs",
   "compilerOptions": {
+    // Strict Typechencking
     "strict": true,
+
     "paths": {
       "@/*": [
         "./*"
