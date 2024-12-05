@@ -1,4 +1,4 @@
-import CountryFlagSelector from "@/components/CountryFlagSelector";
+import CountryFlagSelector from "@/components/onboard/CountryFlagSelector";
 
 export default function Onboard() {
   return (
