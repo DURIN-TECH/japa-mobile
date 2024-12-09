@@ -31,6 +31,36 @@ const upcomingCountries = [
   { code: 'AR', name: 'Argentina' },
   { code: 'NL', name: 'Netherlands' },
   { code: 'SE', name: 'Sweden' },
+  { code: 'CN', name: 'China' },
+  { code: 'IN', name: 'India' },
+  { code: 'BR', name: 'Brazil' },
+  { code: 'MX', name: 'Mexico' },
+  { code: 'RU', name: 'Russia' },
+  { code: 'ZA', name: 'South Africa' },
+  { code: 'EG', name: 'Egypt' },
+  { code: 'AR', name: 'Argentina' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'CN', name: 'China' },
+  { code: 'IN', name: 'India' },
+  { code: 'BR', name: 'Brazil' },
+  { code: 'MX', name: 'Mexico' },
+  { code: 'RU', name: 'Russia' },
+  { code: 'ZA', name: 'South Africa' },
+  { code: 'EG', name: 'Egypt' },
+  { code: 'AR', name: 'Argentina' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'CN', name: 'China' },
+  { code: 'IN', name: 'India' },
+  { code: 'BR', name: 'Brazil' },
+  { code: 'MX', name: 'Mexico' },
+  { code: 'RU', name: 'Russia' },
+  { code: 'ZA', name: 'South Africa' },
+  { code: 'EG', name: 'Egypt' },
+  { code: 'AR', name: 'Argentina' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'SE', name: 'Sweden' },
 ]
 
 export default function CountryFlagSelector() {
@@ -40,7 +70,7 @@ export default function CountryFlagSelector() {
   );
 
   return (
-    <View>
+    <View className="h-screen">
       <View className="p-4 bg-transparent">
         <View className="relative">
           <TextInput
@@ -57,12 +87,12 @@ export default function CountryFlagSelector() {
       
       <ScrollView contentContainerClassName="p-1">
         <View>
-          <View>
-            <ThemedText className="ml-5 my-5">Supported Country</ThemedText>
+          <ThemedView>
+            <ThemedText className="ml-2 my-5">Supported Country</ThemedText>
             <View className="flex-row flex-wrap gap-4 justify-evenly">
               {filteredCountries.map((country) => (
                 <View key={country.code} className="items-center w-[15%]">
-                    {/* <Link> */}
+                    <Link href={`/${country.name}`.split(' ').join('-').toLowerCase()}>
                       <View className="w-10 h-10 rounded-lg overflow-hidden mb-2">
                         <Image
                           source={{ uri: `https://flagcdn.com/w160/${country.code.toLowerCase()}.png` }}
@@ -70,13 +100,14 @@ export default function CountryFlagSelector() {
                         />
                       </View>
                       <ThemedText className="text-center text-sm">{country.name}</ThemedText>
-                    {/* </Link> */}
+                    </Link>
                   </View>
               ))}
             </View>
-          </View>
-          <View>
-            <ThemedText className="ml-5 my-5">Coming Soon</ThemedText>
+          </ThemedView>
+          
+          <ThemedView>
+            <ThemedText className="ml-2 my-5">Coming Soon</ThemedText>
             <View className="flex-row flex-wrap gap-4 justify-evenly">
               {upcomingCountries.map((country) => (
                 <View key={country.code} className="items-center w-[15%]">
@@ -90,7 +121,7 @@ export default function CountryFlagSelector() {
                 </View>
               ))}
             </View>
-          </View>
+          </ThemedView>
         </View>
       </ScrollView>
     </View>

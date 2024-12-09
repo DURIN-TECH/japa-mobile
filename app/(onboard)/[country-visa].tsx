@@ -4,6 +4,7 @@ import { Search } from "lucide-react-native";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import { ScrollView, View, Image } from "react-native";
+import { Link } from "expo-router";
 
 // Sample visa data
 const visaTypes = [
@@ -33,25 +34,29 @@ export default function VisaTypeSelector() {
         </View>
       </View>
 
-      <ThemedText className="ml-4 mb-4 font-extrabold">Select Visa</ThemedText>
-      
-      <ScrollView contentContainerClassName="p-1">
-        <View>
-          <View className="flex-row flex-wrap gap-4 justify-evenly">
-            {filteredVisas.map((visa) => (
-              <View key={visa.code} className="items-center w-[40%]">
-                <View className="w-40 h-40 rounded-lg overflow-hidden mb-2">
-                  <Image
-                    source={{ uri: `https://flagcdn.com/w160/${visa.code.toLowerCase()}.png` }}
-                    className="w-full h-full"
-                  />
+      <ThemedView>
+        <ThemedText className="ml-4 mb-4 font-extrabold">Select Visa</ThemedText>
+        
+        <ScrollView contentContainerClassName="p-1">
+          <View>
+            <View className="flex-row flex-wrap gap-4 justify-evenly">
+              {filteredVisas.map((visa) => (
+                <View key={visa.code} className="items-center w-[40%]">
+                  <Link href="/progress">
+                    <View className="w-40 h-40 rounded-lg overflow-hidden mb-2">
+                      <Image
+                        source={{ uri: `https://flagcdn.com/w160/${visa.code.toLowerCase()}.png` }}
+                        className="w-full h-full"
+                      />
+                    </View>
+                  </Link>
+                  <ThemedText className="text-center text-sm">{visa.name}</ThemedText>
                 </View>
-                <ThemedText className="text-center text-sm">{visa.name}</ThemedText>
-              </View>
-            ))}
+              ))}
+            </View>
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </ThemedView>
     </View>
   );
 }
