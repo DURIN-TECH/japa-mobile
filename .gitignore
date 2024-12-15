@@ -43,5 +43,3 @@ yarn-error.*
 /ios/Pods
 
 app-example
-
-package-lock.json
