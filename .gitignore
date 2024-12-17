@@ -3,6 +3,18 @@
 # dependencies
 node_modules/
 
+# Android
+# IntelliJ
+android/app/build/
+android/app/.cxx/
+.idea
+.gradle
+local.properties
+*.iml
+
+# iOS
+ios/build
+
 # Expo
 .expo/
 dist/
