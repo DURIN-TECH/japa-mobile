@@ -8,11 +8,19 @@ import 'react-native-reanimated';
 import "../global.css";
 
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { OnboadingProvider } from '@/context/OnboardingContext';
+import useProtectedRoute from '@/hooks/useProtectedRoute';
+import { getOnboardingStatus } from '@/utils/storage.service';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
+export const unstable_settings = {
+  initialRouteName: 'index',
+}
+
 export default function RootLayout() {
+  // useProtectedRoute();
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
@@ -30,11 +38,15 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
+      <OnboadingProvider>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+
+          (!!getOnboardingStatus() && <Stack.Screen name="(onboard)" options={{ headerShown: false }} />)
+          <Stack.Screen name="+not-found" />
+        </Stack>
+        <StatusBar style="auto" />
+      </OnboadingProvider>
     </ThemeProvider>
   );
 }

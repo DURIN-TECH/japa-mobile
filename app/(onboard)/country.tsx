@@ -7,64 +7,23 @@ import { ScrollView, View, Image } from "react-native";
 import { Link } from "expo-router";
 
 // Sample country data
-const supportedCountries = [
-  { code: 'US', name: 'United States' },
-  { code: 'GB', name: 'United Kingdom' },
-  { code: 'FR', name: 'France' },
-  { code: 'DE', name: 'Germany' },
-  { code: 'IT', name: 'Italy' },
-]
-
-const upcomingCountries = [
-  { code: 'ES', name: 'Spain' },
-  { code: 'CA', name: 'Canada' },
-  { code: 'AU', name: 'Australia' },
-  { code: 'JP', name: 'Japan' },
-  { code: 'KR', name: 'South Korea' },
-  { code: 'CN', name: 'China' },
-  { code: 'IN', name: 'India' },
-  { code: 'BR', name: 'Brazil' },
-  { code: 'MX', name: 'Mexico' },
-  { code: 'RU', name: 'Russia' },
-  { code: 'ZA', name: 'South Africa' },
-  { code: 'EG', name: 'Egypt' },
-  { code: 'AR', name: 'Argentina' },
-  { code: 'NL', name: 'Netherlands' },
-  { code: 'SE', name: 'Sweden' },
-  { code: 'CN', name: 'China' },
-  { code: 'IN', name: 'India' },
-  { code: 'BR', name: 'Brazil' },
-  { code: 'MX', name: 'Mexico' },
-  { code: 'RU', name: 'Russia' },
-  { code: 'ZA', name: 'South Africa' },
-  { code: 'EG', name: 'Egypt' },
-  { code: 'AR', name: 'Argentina' },
-  { code: 'NL', name: 'Netherlands' },
-  { code: 'SE', name: 'Sweden' },
-  { code: 'CN', name: 'China' },
-  { code: 'IN', name: 'India' },
-  { code: 'BR', name: 'Brazil' },
-  { code: 'MX', name: 'Mexico' },
-  { code: 'RU', name: 'Russia' },
-  { code: 'ZA', name: 'South Africa' },
-  { code: 'EG', name: 'Egypt' },
-  { code: 'AR', name: 'Argentina' },
-  { code: 'NL', name: 'Netherlands' },
-  { code: 'SE', name: 'Sweden' },
-  { code: 'CN', name: 'China' },
-  { code: 'IN', name: 'India' },
-  { code: 'BR', name: 'Brazil' },
-  { code: 'MX', name: 'Mexico' },
-  { code: 'RU', name: 'Russia' },
-  { code: 'ZA', name: 'South Africa' },
-  { code: 'EG', name: 'Egypt' },
-  { code: 'AR', name: 'Argentina' },
-  { code: 'NL', name: 'Netherlands' },
-  { code: 'SE', name: 'Sweden' },
-]
+import { supportedCountries, upcomingCountries } from "@/constants/data/countries";
+import { useOnboarding } from "@/context/OnboardingContext";
 
 export default function CountryFlagSelector() {
   const [searchTerm, setSearchTerm] = useState("");
+  const { updateOnboardingData } = useOnboarding();
+
+  const selectCountry = (country: string): void => {
+    if (!country) {
+      console.error("No country provided to selectCountry");
+      return;
+    }
+    updateOnboardingData({
+      destinationCountry: country
+    });
+  }
+  
   const filteredCountries = supportedCountries.filter(country =>
     country.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -83,32 +42,35 @@ export default function CountryFlagSelector() {
         </View>
       </View>
 
-      <ThemedText className="ml-4 font-extrabold">Select Your Preferred Country</ThemedText>
+      <ThemedText className="ml-4 my-4 font-extrabold">Select Your Preferred Country</ThemedText>
       
       <ScrollView contentContainerClassName="p-1">
         <View>
           <ThemedView>
-            <ThemedText className="ml-2 my-5">Supported Country</ThemedText>
-            <View className="flex-row flex-wrap gap-4 justify-evenly">
+            <ThemedText className="ml-2">Supported Country</ThemedText>
+            <View className="flex-row flex-wrap gap-4 justify-evenly my-5">
               {filteredCountries.map((country) => (
-                <View key={country.code} className="items-center w-[15%]">
-                    <Link href={`/${country.name}`.split(' ').join('-').toLowerCase()}>
-                      <View className="w-10 h-10 rounded-lg overflow-hidden mb-2">
-                        <Image
-                          source={{ uri: `https://flagcdn.com/w160/${country.code.toLowerCase()}.png` }}
-                          className="w-full h-full"
-                        />
-                      </View>
-                      <ThemedText className="text-center text-sm">{country.name}</ThemedText>
-                    </Link>
-                  </View>
+                <View key={country.code}
+                  className="items-center w-[15%]"
+                  onTouchEnd={() => { console.log(country.name); selectCountry(country.code) }}
+                >
+                  <Link href="/visa">
+                    <View className="w-10 h-10 rounded-lg overflow-hidden mb-2">
+                      <Image
+                        source={{ uri: `https://flagcdn.com/w160/${country.code.toLowerCase()}.png` }}
+                        className="w-full h-full"
+                      />
+                    </View>
+                    <ThemedText className="text-center text-sm">{country.name}</ThemedText>
+                  </Link>
+                </View>
               ))}
             </View>
           </ThemedView>
           
           <ThemedView>
-            <ThemedText className="ml-2 my-5">Coming Soon</ThemedText>
-            <View className="flex-row flex-wrap gap-4 justify-evenly">
+            <ThemedText className="ml-2">Coming Soon</ThemedText>
+            <View className="flex-row flex-wrap gap-4 justify-evenly my-5">
               {upcomingCountries.map((country) => (
                 <View key={country.code} className="items-center w-[15%]">
                   <View className="w-10 h-10 rounded-lg overflow-hidden mb-2">

@@ -7,6 +7,8 @@ import { ThemedView } from '@/components/ThemedView';
 import { ThemedText } from '@/components/ThemedText';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 
+import allQuestions from '@/constants/data/questions';
+
 type Question = {
   id: string;
   title: string;
@@ -17,16 +19,7 @@ type Question = {
 
 export default function QAScreen() {
   const [search, setSearch] = useState('');
-  const [questions] = useState<Question[]>([
-    {
-      id: '1',
-      title: 'What documents are needed for H1B visa?',
-      body: 'I am applying for an H1B visa and need to know...',
-      votes: 5,
-      answers: 2
-    },
-    // Add more sample questions
-  ]);
+  const [questions] = useState<Question[]>(allQuestions);
 
   const filteredQuestions = questions.filter(q => 
     q.title.toLowerCase().includes(search.toLowerCase())
@@ -35,7 +28,7 @@ export default function QAScreen() {
   return (
     <ThemedView style={styles.container}>
       <ThemedView style={styles.searchContainer}>
-        <IconSymbol name="search" size={20} color="#666" />
+        <IconSymbol name="sparkle.magnifyingglass" size={20} color="#666" />
         <TextInput
           style={styles.searchInput}
           placeholder="Search questions..."
@@ -44,7 +37,7 @@ export default function QAScreen() {
         />
       </ThemedView>
 
-      <Link href="/qa/ask" style={styles.askButton}>
+      <Link href="/qa" style={styles.askButton}>
         <ThemedText>Ask a Question</ThemedText>
       </Link>
 

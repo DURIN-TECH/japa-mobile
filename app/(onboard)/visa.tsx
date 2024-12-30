@@ -1,24 +1,38 @@
 import { useState } from "react"
 import { TextInput } from "react-native-gesture-handler";
 import { Search } from "lucide-react-native";
-import { ThemedView } from "@/components/ThemedView";
-import { ThemedText } from "@/components/ThemedText";
 import { ScrollView, View, Image } from "react-native";
 import { Link } from "expo-router";
 
+import { ThemedView } from "@/components/ThemedView";
+import { ThemedText } from "@/components/ThemedText";
+import { useOnboarding } from "@/context/OnboardingContext";
+import { setOnboardingStatus } from "@/utils/storage.service";
 // Sample visa data
-const visaTypes = [
-  { code: 'US', name: 'H-1B Visa' },
-  { code: 'GB', name: 'B-2 Visa' },
-  { code: 'FR', name: 'H-2A Visa' },
-  { code: 'IT', name: 'H-2B Visa' },
-]
+import { visaTypes } from "@/constants/data/visas";
 
 export default function VisaTypeSelector() {
   const [searchTerm, setSearchTerm] = useState("");
   const filteredVisas = visaTypes.filter(visaType =>
     visaType.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const { updateOnboardingData } = useOnboarding();
+
+  const selectVisa = (visa: string): void => {
+    if (!visa) {
+      console.error("No visa provided to selectVisa");
+      return;
+    }
+    updateOnboardingData({
+      destinationVisa: visa
+    });
+    updateOnboardingStatusStorage(new Date(Date.now()));
+  }
+
+  const updateOnboardingStatusStorage = async (timestamp: Date): Promise<void> => {
+    await setOnboardingStatus(JSON.stringify(timestamp));
+  }
 
   return (
     <View>
@@ -41,11 +55,11 @@ export default function VisaTypeSelector() {
           <View>
             <View className="flex-row flex-wrap gap-4 justify-evenly">
               {filteredVisas.map((visa) => (
-                <View key={visa.code} className="items-center w-[40%]">
-                  <Link href="/progress">
+                <View key={visa.code} className="items-center w-[40%]" onTouchEnd={() => selectVisa(visa.code)}>
+                  <Link href="/(tabs)">
                     <View className="w-40 h-40 rounded-lg overflow-hidden mb-2">
                       <Image
-                        source={{ uri: `https://flagcdn.com/w160/${visa.code.toLowerCase()}.png` }}
+                        source={{ uri: `https://flagcdn.com/w160/${visa.img.toLowerCase()}.png` }}
                         className="w-full h-full"
                       />
                     </View>
