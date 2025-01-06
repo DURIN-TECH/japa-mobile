@@ -4,6 +4,7 @@ interface OnboardingContextType {
   onboardingData: {
     firstName: string;
     lastName: string;
+    email: string;
     residentialCountry: string;
     destinationCountry: string;
     destinationVisa: string;
@@ -25,6 +26,7 @@ export function OnboadingProvider({ children }: Readonly<{ children: ReactNode }
   const [onboardingData, setOnboardingData] = useState({
     firstName: '',
     lastName: '',
+    email: '',
     residentialCountry: '',
     destinationCountry: '',
     destinationVisa: '',

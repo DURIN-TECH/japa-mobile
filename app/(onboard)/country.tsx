@@ -52,7 +52,7 @@ export default function CountryFlagSelector() {
               {filteredCountries.map((country) => (
                 <View key={country.code}
                   className="items-center w-[15%]"
-                  onTouchEnd={() => { console.log(country.name); selectCountry(country.code) }}
+                  onTouchEnd={() => selectCountry(country.name)}
                 >
                   <Link href="/visa">
                     <View className="w-10 h-10 rounded-lg overflow-hidden mb-2">
