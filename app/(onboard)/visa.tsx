@@ -1,7 +1,6 @@
 import { useState } from "react"
-import { TextInput } from "react-native-gesture-handler";
 import { Search } from "lucide-react-native";
-import { ScrollView, View, Image } from "react-native";
+import { ScrollView, View, Image, TextInput } from "react-native";
 import { Link } from "expo-router";
 
 import { ThemedView } from "@/components/ThemedView";

@@ -22,7 +22,7 @@ interface OnboardingContextType {
  }
 const OnboardingContext = createContext<OnboardingContextType | undefined>({} as OnboardingContextType);
 
-export function OnboadingProvider({ children }: Readonly<{ children: ReactNode }>) {
+export function OnboardingProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [onboardingData, setOnboardingData] = useState({
     firstName: '',
     lastName: '',

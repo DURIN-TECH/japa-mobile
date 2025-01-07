@@ -8,7 +8,7 @@ import 'react-native-reanimated';
 import "../global.css";
 
 import { useColorScheme } from '@/hooks/useColorScheme';
-import { OnboadingProvider } from '@/context/OnboardingContext';
+import { OnboardingProvider } from '@/context/OnboardingContext';
 import useProtectedRoute from '@/hooks/useProtectedRoute';
 import { getOnboardingStatus } from '@/utils/storage.service';
 
@@ -38,7 +38,7 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <OnboadingProvider>
+      <OnboardingProvider>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 
@@ -46,7 +46,7 @@ export default function RootLayout() {
           <Stack.Screen name="+not-found" />
         </Stack>
         <StatusBar style="auto" />
-      </OnboadingProvider>
+      </OnboardingProvider>
     </ThemeProvider>
   );
 }
