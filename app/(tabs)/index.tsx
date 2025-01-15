@@ -25,12 +25,11 @@ export default function HomeScreen() {
               />
               <View className="absolute left-3 top-1/2 -translate-y-1/2">
                 <Search 
-                  size={20} 
+                  size={20}
                   color="#9CA3AF"
                 />
               </View>
           </View>
-
         </View>
 
         <ScrollView>
@@ -97,6 +96,48 @@ export default function HomeScreen() {
                     <Text className="text-sm font-semibold text-gray-600">4.9 (120 reviews)</Text>
                   </View>
                 </View>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Popular Visas */}
+          <View className="px-4 py-2">
+            <View className="flex-row justify-between mb-3">
+              <Text className="font-bold text-lg text-gray-900">Popular Visas</Text>
+              <TouchableOpacity>
+                <Text className="text-md font-medium text-blue-600">
+                  View All
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerClassName="flex-row overflow-x-auto pb-4 gap-3"
+            >
+              {[
+                { type: "Tourist Visa", duration: "6 months", price: "$160", id: 1 },
+                { type: "Student Visa", duration: "12 months", price: "$350", id: 2 },
+                { type: "Work Visa", duration: "24 months", price: "$460", id: 3 },
+              ].map((visa, index) => (
+                <TouchableOpacity 
+                  key={visa.id} 
+                  className="flex-none w-48 bg-white p-4 rounded-xl border border-gray-200"
+                >
+                  <View className="flex-row items-center">
+                    <View className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center mb-3">
+                      <Calendar size={20} color="#2563eb" />
+                    </View>
+                    <View className="ml-3">
+                      <Text className="font-semibold text-lg mb-1">{visa.type}</Text>
+                      <Text className="text-gray-600 mb-2">{visa.duration}</Text>
+                    </View>
+                  </View>
+                  <View className="flex-row justify-between items-center">
+                    <Text className="font-bold text-blue-600">{visa.price}</Text>
+                    <ArrowRight size={20} color="#2563eb" />
+                  </View>
+                </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
