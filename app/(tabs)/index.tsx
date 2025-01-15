@@ -38,7 +38,7 @@ export default function HomeScreen() {
             <View className="bg-blue-50 p-4 rounded-xl">
               <Text className="font-bold text-blue-900 text-lg">Active Applications</Text>
               <View className="flex-row mt-3 flex justify-between items-center">
-                <View className="flex-row items-center space-x-3">
+                <View className="flex-row items-center space-x-3 gap-3">
                   <View className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-3">
                     <Calendar color="#2563eb" size={24}/>
                   </View>
@@ -68,7 +68,7 @@ export default function HomeScreen() {
           </View>
 
           {/* Featured Agents */}
-          <View className="px-4 pt-4">
+          <View className="px-4 py-4">
             <View className="flex-row justify-between mb-3">
               <Text className="font-bold text-lg text-gray-900">Top Rated Agents</Text>
               <TouchableOpacity>
@@ -80,7 +80,7 @@ export default function HomeScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerClassName="flex-row overflow-x-auto pb-4 gap-3"
+              contentContainerClassName="flex-row overflow-x-auto gap-3"
             >
               {[1, 2, 3].map((agent) => (
                 <View key={agent} className="flex-none w-48 bg-white p-4 rounded-xl border border-gray-200">
