@@ -38,6 +38,7 @@
           "backgroundColor": "#ffffff"
         }
       ],
+      "expo-document-picker",
       "expo-font"
     ],
     "experiments": {
