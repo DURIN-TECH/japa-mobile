@@ -19,7 +19,8 @@ interface OnboardingContextType {
     completedOnboarding: null | boolean;
   };
   updateOnboardingData: (data: any) => void;
- }
+}
+ 
 const OnboardingContext = createContext<OnboardingContextType | undefined>({} as OnboardingContextType);
 
 export function OnboardingProvider({ children }: Readonly<{ children: ReactNode }>) {
