@@ -11,7 +11,7 @@ export default function HomeScreen() {
         <View className="px-4 py-4 bg-white">
           <View className="flex-row justify-between items-center">
             <View>
-              <Text className="text-2xl font-bold text-gray-950">VisaConnect</Text>
+              <Text className="text-2xl font-bold text-gray-950">Japa</Text>
               <Text className="text-md text-gray-500">Welcome back, Alex</Text>
             </View>
             <Bell color="#4b5563" size={24} />
