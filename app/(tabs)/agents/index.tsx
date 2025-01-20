@@ -24,9 +24,6 @@ export default function AgentsScreen() {
             <Search size={20} color="#9CA3AF" />
           </View>
         </View>
-        <Link href="/(tabs)/agents/index" style={styles.link}>
-          Open modal
-        </Link>
       </View>
 
       {/* Filters */}
