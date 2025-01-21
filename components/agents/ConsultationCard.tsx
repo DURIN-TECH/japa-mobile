@@ -24,7 +24,7 @@ export function ConsultationCard({ price, agentId }: ConsultationCardProps) {
       <View className="flex-row items-center justify-between border-t border-gray-100 pt-3">
         <ThemedText className="font-bold text-green-600">${price}</ThemedText>
         <Link 
-          href={`/agents/${agentId}/book-consultation`}
+          href={`/agents/${agentId}/book-consultation?agentId=${agentId}`}
           asChild
         >
           <TouchableOpacity className="bg-blue-600 px-4 py-2 rounded-lg">
