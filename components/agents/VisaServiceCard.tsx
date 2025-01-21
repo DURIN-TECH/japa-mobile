@@ -20,7 +20,7 @@ export function VisaServiceCard({ visaType, agentId }: Readonly<VisaServiceCardP
           </View>
         </View>
         <Link
-          href={`/agents/${agentId}/visa-service/${visaType}`}
+          href={`/agents/${encodeURIComponent(agentId)}/visa-service/${encodeURIComponent(visaType)}`}
           asChild
         >
           <TouchableOpacity>
