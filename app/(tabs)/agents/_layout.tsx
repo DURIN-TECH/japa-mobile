@@ -40,7 +40,8 @@ export default function AgentLayout() {
         options={{
           presentation: 'card',
           headerShown: true,
-          title: 'Visa Service Details'
+          title: 'Visa Service Details',
+          headerBackButtonDisplayMode: 'minimal',
         }}
       />
       <Stack.Screen 
