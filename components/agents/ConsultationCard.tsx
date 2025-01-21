@@ -8,7 +8,7 @@ interface ConsultationCardProps {
   agentId: string;
 }
 
-export function ConsultationCard({ price, agentId }: ConsultationCardProps) {
+export function ConsultationCard({ price, agentId }: Readonly<ConsultationCardProps>) {
   return (
     <View className="bg-white p-4 rounded-xl border border-gray-200">
       <View className="flex-row items-center mb-3">
