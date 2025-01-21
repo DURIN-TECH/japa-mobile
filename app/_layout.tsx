@@ -15,6 +15,29 @@ import { getOnboardingStatus } from '@/utils/storage.service';
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
+declare global {
+  namespace ReactNavigation {
+    interface RootParamList {
+      "/agents/[id]": { id: string };
+      "/agents/[id]/book-consultation": { agentId: string };
+      "/agents/[id]/payment": { 
+        id: string;
+        type: "consultation" | "visa";
+        date: string;
+        time: string;
+      };
+      "/agents/[id]/confirmation": {
+        id: string;
+        type: "consultation" | "visa";
+        date: string;
+        time: string;
+        paymentMethod: string;
+      };
+      "/agents/[id]/visa-service/[type]": { id: string; type: string };
+    }
+  }
+}
+
 export const unstable_settings = {
   initialRouteName: 'index',
 }
@@ -40,10 +63,12 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <OnboardingProvider>
         <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-
+          <Stack.Screen
+            name="(tabs)"
+            options={{ headerShown: false }} />
           (!!getOnboardingStatus() && <Stack.Screen name="(onboard)" options={{ headerShown: false }} />)
-          <Stack.Screen name="+not-found" />
+          <Stack.Screen
+            name="+not-found" />
         </Stack>
         <StatusBar style="auto" />
       </OnboardingProvider>
