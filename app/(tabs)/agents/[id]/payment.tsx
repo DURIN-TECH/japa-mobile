@@ -9,8 +9,8 @@ import { PaymentMethodSelector } from "@/components/payment/PaymentMethodSelecto
 import { format } from "date-fns";
 
 export default function PaymentScreen() {
-  const { agentId, type, date, time } = useLocalSearchParams<{
-    agentId: string;
+  const { id, type, date, time } = useLocalSearchParams<{
+    id: string;
     type: "consultation" | "visa";
     date: string;
     time: string;
@@ -19,7 +19,7 @@ export default function PaymentScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
   
-  const agent = verificationAgents.find(a => a.id === agentId);
+  const agent = verificationAgents.find(a => a.id === id);
   if (!agent) return null;
 
   const amount = type === "consultation" ? agent.consultationFee : agent.price;
@@ -36,7 +36,7 @@ export default function PaymentScreen() {
       router.push({
         pathname: "/agents/[id]/confirmation",
         params: {
-          agentId,
+          id,
           type,
           date,
           time,

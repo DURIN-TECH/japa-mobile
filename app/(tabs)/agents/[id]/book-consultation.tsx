@@ -8,12 +8,11 @@ import { TimeSlotPicker } from "@/components/consultation/TimeSlotPicker";
 import { DatePicker } from "@/components/consultation/DatePicker";
 
 export default function BookConsultation() {
-  const { agentId } = useLocalSearchParams<{ agentId: string }>();
-  console.log(agentId);
+  const { id } = useLocalSearchParams<{ id: string }>();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   
-  const agent = verificationAgents.find(a => a.id === agentId);
+  const agent = verificationAgents.find(a => a.id === id);
   if (!agent) return null;
 
   return (
@@ -80,7 +79,7 @@ export default function BookConsultation() {
             router.replace({
               pathname: "/agents/[id]/payment",
               params: {
-                agentId,
+                id,
                 type: 'consultation',
                 date: selectedDate.toISOString(),
                 time: selectedTime as string,

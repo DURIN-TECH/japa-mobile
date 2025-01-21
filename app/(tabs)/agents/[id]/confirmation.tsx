@@ -7,15 +7,15 @@ import { verificationAgents } from "@/constants/data/agents";
 import { format } from "date-fns";
 
 export default function ConfirmationScreen() {
-  const { agentId, type, date, time, paymentMethod } = useLocalSearchParams<{
-    agentId: string;
+  const { id, type, date, time, paymentMethod } = useLocalSearchParams<{
+    id: string;
     type: "consultation" | "visa";
     date: string;
     time: string;
     paymentMethod: string;
   }>();
 
-  const agent = verificationAgents.find(a => a.id === agentId);
+  const agent = verificationAgents.find(a => a.id === id);
   if (!agent) return null;
 
   const bookingDate = new Date(date);
