@@ -2,6 +2,7 @@ import { Image, TextInput, Touchable, TouchableOpacity, View, Text, ScrollView }
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React from 'react';
 import { Bell, Search, Calendar, Clock, Award, ArrowRight } from 'lucide-react-native';
+import { router } from 'expo-router';
 
 export default function HomeScreen() {
   return (
@@ -55,23 +56,35 @@ export default function HomeScreen() {
           {/* Quick Actions */}
           <View className="px-4 py-2">
             <Text className="font-bold text-lg text-gray-900 mb-3">Quick Actions</Text>
-            <View className="flex-row gap-3 justify-center">
-              <TouchableOpacity className="p-4 bg-white rounded-xl border border-gray-200 flex items-center justify-center w-1/2">
-                <Calendar size={24} color="#2563eb"/>
-                <Text className="text-sm font-medium">Book Consultation</Text>
-              </TouchableOpacity>
-              <TouchableOpacity className="p-4 bg-white rounded-xl border border-gray-200 flex items-center justify-center w-1/2">
-                <Clock size={24} color="#2563eb" />
-                <Text className="text-sm font-medium">Track Application</Text>
-              </TouchableOpacity>
-            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerClassName="flex-row gap-3 overflow-x-auto"
+            >
+              {[
+                { path: "/(tabs)/apply/agents", text: "Consult Agent", icon: "Calendar", size: 24, color: "#2563eb" },
+                { path: "/me/consultations", text: "Consultations", icon: "Clock", size: 24, color: "#2563eb" },
+                {path: "/me/applications", text: "Applications", icon: "Calendar", size: 24, color: "#2563eb"},
+              ].map((actions, index) => (
+                  <TouchableOpacity
+                    key={index}  
+                    className="p-4 bg-white rounded-xl border border-gray-200 flex items-center justify-center w-48"
+                    onPress={() => router.push(actions.path)}
+                  >
+                    <Calendar size={24} color="#2563eb"/>
+                    <Text className="text-sm font-medium">{ actions.text}</Text>
+                  </TouchableOpacity>
+                ))}
+            </ScrollView>
           </View>
 
           {/* Featured Agents */}
           <View className="px-4 py-4">
             <View className="flex-row justify-between mb-3">
               <Text className="font-bold text-lg text-gray-900">Top Rated Agents</Text>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={
+                () => router.push("/apply/agents")
+              }>
                 <Text className="text-md font-medium text-blue-600">
                   View All
                 </Text>
@@ -80,7 +93,7 @@ export default function HomeScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerClassName="flex-row overflow-x-auto gap-3"
+              contentContainerClassName="flex-row gap-3 overflow-x-auto"
             >
               {[1, 2, 3].map((agent) => (
                 <View key={agent} className="flex-none w-48 bg-white p-4 rounded-xl border border-gray-200">
