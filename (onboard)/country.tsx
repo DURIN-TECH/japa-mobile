@@ -1,8 +1,7 @@
 import { useState } from "react"
 import { Search } from "lucide-react-native";
 import { ThemedView } from "@/components/ThemedView";
-import { ThemedText } from "@/components/ThemedText";
-import { ScrollView, View, Image, TextInput } from "react-native";
+import { ScrollView, View, Image, TextInput, Text } from "react-native";
 import { Link } from "expo-router";
 
 // Sample country data
@@ -41,12 +40,12 @@ export default function CountryFlagSelector() {
         </View>
       </View>
 
-      <ThemedText className="ml-4 my-4 font-extrabold">Select Your Preferred Country</ThemedText>
+      <Text className="ml-4 my-4 font-extrabold">Select Your Preferred Country</Text>
       
       <ScrollView contentContainerClassName="p-1">
         <View>
           <ThemedView>
-            <ThemedText className="ml-2">Supported Country</ThemedText>
+            <Text className="ml-2">Supported Country</Text>
             <View className="flex-row flex-wrap gap-4 justify-evenly my-5">
               {filteredCountries.map((country) => (
                 <View key={country.code}
@@ -60,7 +59,7 @@ export default function CountryFlagSelector() {
                         className="w-full h-full"
                       />
                     </View>
-                    <ThemedText className="text-center text-sm">{country.name}</ThemedText>
+                    <Text className="text-center text-sm">{country.name}</Text>
                   </Link>
                 </View>
               ))}
@@ -68,7 +67,7 @@ export default function CountryFlagSelector() {
           </ThemedView>
           
           <ThemedView>
-            <ThemedText className="ml-2">Coming Soon</ThemedText>
+            <Text className="ml-2">Coming Soon</Text>
             <View className="flex-row flex-wrap gap-4 justify-evenly my-5">
               {upcomingCountries.map((country) => (
                 <View key={country.code} className="items-center w-[15%]">
@@ -78,7 +77,7 @@ export default function CountryFlagSelector() {
                       className="w-full h-full"
                     />
                   </View>
-                  <ThemedText className="text-center text-sm">{country.name}</ThemedText>
+                  <Text className="text-center text-sm">{country.name}</Text>
                 </View>
               ))}
             </View>

@@ -1,5 +1,4 @@
-import { View, TouchableOpacity } from "react-native";
-import { ThemedText } from "@/components/ThemedText";
+import { View, TouchableOpacity, Text } from "react-native";
 import { CreditCard, Wallet } from "lucide-react-native";
 
 interface PaymentMethodSelectorProps {
@@ -41,14 +40,14 @@ export function PaymentMethodSelector({ selectedMethod, onSelectMethod }: Readon
               size={24} 
               color={selectedMethod === method.id ? "#2563eb" : "#6b7280"} 
             />
-            <ThemedText 
+            <Text 
               className={`
                 ml-3 font-medium
                 ${selectedMethod === method.id ? 'text-blue-600' : 'text-gray-900'}
               `}
             >
               {method.title}
-            </ThemedText>
+            </Text>
           </TouchableOpacity>
         );
       })}

@@ -1,5 +1,4 @@
-import { View, TouchableOpacity } from "react-native";
-import { ThemedText } from "@/components/ThemedText";
+import { View, TouchableOpacity, Text } from "react-native";
 
 interface TimeSlotPickerProps {
   selectedTime: string | null;
@@ -29,13 +28,13 @@ export function TimeSlotPicker({ selectedTime, onSelectTime, date }: Readonly<Ti
             }
           `}
         >
-          <ThemedText 
+          <Text 
             className={`
               ${time === selectedTime ? 'text-white' : 'text-gray-900'}
             `}
           >
             {time}
-          </ThemedText>
+          </Text>
         </TouchableOpacity>
       ))}
     </View>

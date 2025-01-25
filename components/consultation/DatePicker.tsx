@@ -1,5 +1,4 @@
-import { View, TouchableOpacity, ScrollView } from "react-native";
-import { ThemedText } from "@/components/ThemedText";
+import { View, TouchableOpacity, ScrollView, Text } from "react-native";
 import { format, addDays, isSameDay } from "date-fns";
 
 interface DatePickerProps {
@@ -29,22 +28,22 @@ export function DatePicker({ selectedDate, onSelectDate }: DatePickerProps) {
               }
             `}
           >
-            <ThemedText 
+            <Text 
               className={`
                 text-center font-medium
                 ${isSameDay(date, selectedDate) ? 'text-white' : 'text-gray-900'}
               `}
             >
               {format(date, 'EEE')}
-            </ThemedText>
-            <ThemedText 
+            </Text>
+            <Text 
               className={`
                 text-center text-lg font-bold mt-1
                 ${isSameDay(date, selectedDate) ? 'text-white' : 'text-gray-900'}
               `}
             >
               {format(date, 'd')}
-            </ThemedText>
+            </Text>
           </TouchableOpacity>
         ))}
       </View>

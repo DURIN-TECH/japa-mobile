@@ -1,9 +1,8 @@
 import { Link } from "expo-router";
 import { useState } from "react";
-import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useOnboarding } from "@/context/OnboardingContext";
-import { View } from "react-native";
+import { View, Text } from "react-native";
 
 export default function Onboard() {
   const [user] = useState('User')  
@@ -22,18 +21,18 @@ export default function Onboard() {
   
   return (
     <View className="m-2">
-      <ThemedText className="text-lg font-bold px-3 my-4">Welcome {user}, Let's get you onboarded</ThemedText>
+      <Text className="text-lg font-bold px-3 my-4">Welcome {user}, Let's get you onboarded</Text>
       <ThemedView>
-        <ThemedText className="text-md font-semibold mb-3">Do you have a passport</ThemedText>
+        <Text className="text-md font-semibold mb-3">Do you have a passport</Text>
 
         <ThemedView className="flex-row gap-5">
           <Link href='/country' onPress={() => hasPassport(true)}>
-            <ThemedText>Yes</ThemedText>
+            <Text>Yes</Text>
           </Link>
           
           {/* To passport acquisition page */}
           <Link href='/passport' onPress={() => hasPassport(true)}>
-            <ThemedText>No</ThemedText>
+            <Text>No</Text>
           </Link>
         </ThemedView>        
       </ThemedView>

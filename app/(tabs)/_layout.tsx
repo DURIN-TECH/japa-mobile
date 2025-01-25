@@ -7,6 +7,7 @@ import { IconSymbol } from '@/components/ui/IconSymbol';
 import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { FileStack, House, User2 } from 'lucide-react-native';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -29,21 +30,21 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          tabBarIcon: ({ color }) => <House size={28} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="agents"
+        name="apply"
         options={{
-          title: 'Agents',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.2.fill" color={color} />,
+          title: 'Apply',
+          tabBarIcon: ({ color }) => <FileStack size={28} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="applications"
+        name="me"
         options={{
-          title: 'My Visas',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="doc.fill" color={color} />,
+          title: 'Me',
+          tabBarIcon: ({ color }) => <User2 size={28} color={color} />,
         }}
       />
     </Tabs>
