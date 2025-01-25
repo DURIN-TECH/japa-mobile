@@ -18,22 +18,26 @@ SplashScreen.preventAutoHideAsync();
 declare global {
   namespace ReactNavigation {
     interface RootParamList {
-      "/agents/[id]": { id: string };
-      "/agents/[id]/book-consultation": { agentId: string };
-      "/agents/[id]/payment": { 
+      "/apply/agents/[id]": { id: string };
+      "/apply/agents/[id]/book-consultation": { agentId: string };
+      "/apply/agents/[id]/payment": { 
         id: string;
         type: "consultation" | "visa";
         date: string;
         time: string;
       };
-      "/agents/[id]/confirmation": {
+      "/apply/agents/[id]/confirmation": {
         id: string;
         type: "consultation" | "visa";
         date: string;
         time: string;
         paymentMethod: string;
       };
-      "/agents/[id]/visa-service/[type]": { id: string; type: string };
+      "/apply/agents/[id]/visa-service/[type]": { id: string; type: string };
+      "/applications/[id]": { id: string };
+      "/consultations/[id]": { id: string };
+      "/apply/visa-details/[id]": { id: string };
+      "/apply/self-service/[id]": { id: string };
     }
   }
 }
@@ -60,18 +64,18 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    // <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <OnboardingProvider>
         <Stack>
           <Stack.Screen
             name="(tabs)"
             options={{ headerShown: false }} />
-          (!!getOnboardingStatus() && <Stack.Screen name="(onboard)" options={{ headerShown: false }} />)
+          {/* (!!getOnboardingStatus() && <Stack.Screen name="(onboard)" options={{ headerShown: false }} />) */}
           <Stack.Screen
             name="+not-found" />
         </Stack>
         <StatusBar style="auto" />
       </OnboardingProvider>
-    </ThemeProvider>
+    // </ThemeProvider>
   );
 }
