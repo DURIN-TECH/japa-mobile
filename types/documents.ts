@@ -27,6 +27,7 @@ export interface Document {
 export interface Agent {
   id: string;
   name: string;
+  initials: string;
   rating: number;
   verificationCount: number;
   price: number;
