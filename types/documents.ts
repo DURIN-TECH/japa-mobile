@@ -51,3 +51,16 @@ export interface VerificationRequest {
   totalPrice: number;
   paymentStatus: "pending" | "paid" | "refunded";
 }
+
+export interface ScheduleItem {
+  id: string;
+  title: string;
+  startDate: Date;
+  endDate: Date;
+  completed: boolean;
+  documents: {
+    id: string;
+    name: string;
+    status: "pending" | "uploaded" | "verified" | "rejected";
+  }[];
+}
