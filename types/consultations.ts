@@ -4,8 +4,9 @@ export interface Consultation {
   agentId: string;
   agentName: string;
   status: "upcoming" | "completed" | "cancelled";
-  date: string;
+  date: Date;
   time: string;
   notes?: string;
   summary?: string;
-} 
+  type: string;
+}
