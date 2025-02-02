@@ -7,7 +7,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import { useOnboarding } from "@/context/OnboardingContext";
 // Sample visa data
-import { visaTypes } from "@/constants/data/visas";
+import { visaTypes } from "@/mock_data/visas";
 
 export default function VisaTypeSelector() {
   const [searchTerm, setSearchTerm] = useState("");

@@ -5,7 +5,7 @@ import { ScrollView, View, Image, TextInput, Text } from "react-native";
 import { Link } from "expo-router";
 
 // Sample country data
-import { supportedCountries, upcomingCountries } from "@/constants/data/countries";
+import { supportedCountries, upcomingCountries } from "@/mock_data/countries";
 import { useOnboarding } from "@/context/OnboardingContext";
 
 export default function CountryFlagSelector() {

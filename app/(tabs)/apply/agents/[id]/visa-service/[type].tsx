@@ -1,7 +1,7 @@
 import { useLocalSearchParams, router } from "expo-router";
 import { View, ScrollView, TouchableOpacity, Text } from "react-native";
 import { FileText, Clock, CheckCircle2, ChevronLeft, Award, Users, TrendingUp } from "lucide-react-native";
-import { verificationAgents } from "@/constants/data/agents";
+import { verificationAgents } from "@/mock_data/agents";
 
 interface VisaStatistics {
   successRate: number;

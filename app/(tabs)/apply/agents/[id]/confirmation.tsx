@@ -2,7 +2,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { View, ScrollView, TouchableOpacity, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CheckCircle2, Calendar, Clock, CreditCard } from "lucide-react-native";
-import { verificationAgents } from "@/constants/data/agents";
+import { verificationAgents } from "@/mock_data/agents";
 import { format } from "date-fns";
 
 type ConfirmationParams = {

@@ -2,7 +2,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useState } from "react";
 import { View, ScrollView, TouchableOpacity, Text } from "react-native";
 import { Calendar, Clock, ChevronLeft, Calendar as CalendarIcon } from "lucide-react-native";
-import { verificationAgents } from "@/constants/data/agents";
+import { verificationAgents } from "@/mock_data/agents";
 import { TimeSlotPicker } from "@/components/consultation/TimeSlotPicker";
 import { DatePicker } from "@/components/consultation/DatePicker";
 

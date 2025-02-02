@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Search, Star } from 'lucide-react-native';
 import { Link, router } from 'expo-router';
 import { AgentCard } from '@/components/agents/AgentCard';
-import { verificationAgents } from '@/constants/data/agents';
+import { verificationAgents } from '@/mock_data/agents';
 
 export default function AgentsScreen() {
   return (

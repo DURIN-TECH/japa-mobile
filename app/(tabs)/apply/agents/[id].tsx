@@ -2,7 +2,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import { ScrollView, View, TouchableOpacity, Image, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Star, Clock, Globe, Award, ChevronLeft } from "lucide-react-native";
-import { verificationAgents } from "@/constants/data/agents";
+import { verificationAgents } from "@/mock_data/agents";
 import { VisaServiceCard } from "@/components/agents/VisaServiceCard";
 import { ConsultationCard } from "@/components/agents/ConsultationCard";
 
