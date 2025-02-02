@@ -4,10 +4,10 @@ export interface Application {
   agentId: string;
   agentName: string;
   visaType: string;
-  status: "pending" | "completed" | "issues";
+  status: "pending" | "completed" | "issues" | "rejected";
   progress: number;
-  startDate: string;
-  lastUpdated: string;
+  startDate: Date;
+  lastUpdated: Date;
   currentStep: string;
   nextStep: string | null;
   documents: {
@@ -16,9 +16,9 @@ export interface Application {
     verified: number;
   };
   timeline: {
-    date: string;
+    date: Date;
     title: string;
     description: string;
     status: "completed" | "current" | "upcoming";
   }[];
-} 
+}
