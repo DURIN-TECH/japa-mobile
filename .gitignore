@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# build
+ios/
+
 # Expo
 .expo/
 dist/
@@ -34,5 +37,12 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# BUCK
+*.keystore
+!debug.keystore
+
+# CocoaPods
+/ios/Pods
 
 app-example
