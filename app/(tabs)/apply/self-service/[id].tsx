@@ -37,28 +37,29 @@ export default function SelfServiceScreen() {
   const [selectedDoc, setSelectedDoc] = useState<UploadedDocument | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [schedules, setSchedules] = useState<ScheduleItem[]>(() => 
-    visa?.requirements.map(req => ({
-      id: req.id,
+    (visa?.requirements || []).map((req, index) => ({
+      id: req.id || `req-${index}`,
       title: req.title,
       startDate: new Date(),
       endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
       completed: false,
-      documents: req.documents.map((doc, idx) => ({
-        id: `${req.id}-doc-${idx}`,
+      documents: (req.documents || []).map((doc, idx) => ({
+        id: `${req.id || `req-${index}`}-doc-${idx}`,
         name: doc,
-        status: "pending"
+        status: "pending" as const
       }))
-    })
-    ) || []
+    }))
   );
-  console.log(visa?.requirements);
+  console.log("visa requirements", visa?.requirements, schedules);
 
   if (!visa) return null;
 
   const handleScheduleUpdate = (scheduleId: string, updates: Partial<ScheduleItem>) => {
     console.log({scheduleId, updates});
     setSchedules(prev => prev.map(schedule => 
-      schedule.id === scheduleId ? { ...schedule, ...updates } : schedule
+      schedule.id === scheduleId 
+        ? { ...schedule, ...updates }
+        : schedule
     ));
   };
 
@@ -73,7 +74,7 @@ export default function SelfServiceScreen() {
     ));
   };
 
-  console.log(schedules);
+  console.log({id, schedules});
 
   const handleDocumentUpload = async (requirementId: string) => {
     try {
