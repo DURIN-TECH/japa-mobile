@@ -1,0 +1,70 @@
+name: Production Build
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Install and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "EXPO_TOKEN is not set"
+            exit 1
+          fi
+      
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+          cache: 'npm'
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run TypeScript compiler
+        run: npx tsc
+
+      - name: Build Production
+        run: eas build --profile production --platform all --non-interactive
+
+      - name: Submit to Stores
+        if: success()
+        run: eas submit --platform all
+
+      - name: Create Release
+        if: success()
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body: |
+            Production release from merged PR #${{ github.event.pull_request.number }}
+            ${{ github.event.pull_request.title }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Production Build Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: production-build
+          path: |
+            *.apk
+            *.ipa
