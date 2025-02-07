@@ -2,6 +2,7 @@
   "expo": {
     "name": "japa-mobile",
     "slug": "japa-mobile",
+    "owner": "durin-tech",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./src/assets/images/icon.png",
