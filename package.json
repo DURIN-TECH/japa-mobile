@@ -4,6 +4,18 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "build:dev": "eas build --profile development --platform all",
+    "build:prod": "eas build --profile production --platform all",
+    "build:preview": "eas build --profile preview --platform all",
+    "build:dev:ios": "eas build --profile development --platform ios",
+    "build:prod:ios": "eas build --profile production --platform ios",
+    "build:preview:ios": "eas build --profile preview --platform ios",
+    "build:dev:android": "eas build --profile development --platform android",
+    "build:prod:android": "eas build --profile production --platform android",
+    "build:preview:android": "eas build --profile preview --platform android",
+    "submit:prod": "eas submit --platform all",
+    "submit:prod:ios": "eas submit --platform ios",
+    "submit:prod:android": "eas submit --platform android",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
@@ -11,7 +23,8 @@
     "start:ios": "expo start --ios",
     "start:android": "expo start --android",
     "test": "jest --watchAll",
-    "lint": "eslint . --ignore-pattern .gitignore --fix"
+    "lint": "eslint . --ignore-pattern .gitignore --fix",
+    "prepare": "pre-commit install"
   },
   "jest": {
     "preset": "jest-expo"

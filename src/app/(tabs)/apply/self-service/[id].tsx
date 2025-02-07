@@ -1,18 +1,17 @@
-import { useLocalSearchParams, router } from "expo-router";
-import { ScrollView, View, TouchableOpacity, Text, Image, Alert } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ChevronLeft, Calendar, Upload, CheckCircle2, Clock } from "lucide-react-native";
-import { useVisaTypes } from "@/hooks/useVisaTypes";
-import { useState } from "react";
+import { useLocalSearchParams, router } from 'expo-router';
+import { ScrollView, View, TouchableOpacity, Text, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ChevronLeft, CheckCircle2, Clock } from 'lucide-react-native';
+import { useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
-import { DocumentPreview } from "@/components/DocumentPreview";
-import { validateDocument } from "@/utils/documentValidation";
-import { ScheduleTimeline } from "@/components/ScheduleTimeline";
+import { useVisaTypes } from '@/hooks/useVisaTypes';
+import { DocumentPreview } from '@/components/DocumentPreview';
+import { ScheduleTimeline } from '@/components/ScheduleTimeline';
 
 interface UploadedDocument {
   id: string;
   name: string;
-  status: "uploading" | "uploaded" | "error";
+  status: 'uploading' | 'uploaded' | 'error';
   uri?: string;
 }
 
@@ -25,7 +24,7 @@ interface ScheduleItem {
   documents: {
     id: string;
     name: string;
-    status: "pending" | "uploaded" | "verified" | "rejected";
+    status: 'pending' | 'uploaded' | 'verified' | 'rejected';
   }[];
 }
 
@@ -33,10 +32,12 @@ export default function SelfServiceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getVisaType } = useVisaTypes();
   const visa = getVisaType(id);
-  const [uploadedDocs, setUploadedDocs] = useState<Record<string, UploadedDocument[]>>({});
+  const [uploadedDocs, setUploadedDocs] = useState<
+    Record<string, UploadedDocument[]>
+  >({});
   const [selectedDoc, setSelectedDoc] = useState<UploadedDocument | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
-  const [schedules, setSchedules] = useState<ScheduleItem[]>(() => 
+  const [schedules, setSchedules] = useState<ScheduleItem[]>(() =>
     (visa?.requirements || []).map((req, index) => ({
       id: req.id || `req-${index}`,
       title: req.title,
@@ -46,50 +47,61 @@ export default function SelfServiceScreen() {
       documents: (req.documents || []).map((doc, idx) => ({
         id: `${req.id || `req-${index}`}-doc-${idx}`,
         name: doc,
-        status: "pending" as const
-      }))
-    }))
+        status: 'pending' as const,
+      })),
+    })),
   );
-  console.log("visa requirements", visa?.requirements, schedules);
+  console.log('visa requirements', visa?.requirements, schedules);
 
   if (!visa) return null;
 
-  const handleScheduleUpdate = (scheduleId: string, updates: Partial<ScheduleItem>) => {
-    console.log({scheduleId, updates});
-    setSchedules(prev => prev.map(schedule => 
-      schedule.id === scheduleId 
-        ? { ...schedule, ...updates }
-        : schedule
-    ));
+  const handleScheduleUpdate = (
+    scheduleId: string,
+    updates: Partial<ScheduleItem>,
+  ) => {
+    console.log({ scheduleId, updates });
+    setSchedules((prev) =>
+      prev.map((schedule) =>
+        schedule.id === scheduleId ? { ...schedule, ...updates } : schedule,
+      ),
+    );
   };
 
-  const updateDocumentStatus = (scheduleId: string, documentId: string, status: "pending" | "uploaded" | "verified" | "rejected") => {
-    setSchedules(prev => prev.map(schedule => 
-      schedule.id === scheduleId ? {
-        ...schedule,
-        documents: schedule.documents.map(doc =>
-          doc.id === documentId ? { ...doc, status } : doc
-        )
-      } : schedule
-    ));
+  const updateDocumentStatus = (
+    scheduleId: string,
+    documentId: string,
+    status: 'pending' | 'uploaded' | 'verified' | 'rejected',
+  ) => {
+    setSchedules((prev) =>
+      prev.map((schedule) =>
+        schedule.id === scheduleId
+          ? {
+              ...schedule,
+              documents: schedule.documents.map((doc) =>
+                doc.id === documentId ? { ...doc, status } : doc,
+              ),
+            }
+          : schedule,
+      ),
+    );
   };
 
-  console.log({id, schedules});
+  console.log({ id, schedules });
 
   const handleDocumentUpload = async (requirementId: string) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/pdf", "image/*"],
+        type: ['application/pdf', 'image/*'],
         copyToCacheDirectory: true,
       });
 
       if (!result.canceled) {
         const asset = result.assets[0];
-        
+
         // TODO: Investigate why validation is not working nor triggering alert on failure
         // Validate document
         // const validation = await validateDocument(asset.uri, asset.name);
-        
+
         // if (!validation.isValid) {
         //   Alert.alert("Invalid Document", validation.errors.join("\n"));
         //   return;
@@ -98,33 +110,33 @@ export default function SelfServiceScreen() {
         const newDoc: UploadedDocument = {
           id: Date.now().toString(),
           name: asset.name,
-          status: "uploaded",
-          uri: asset.uri
+          status: 'uploaded',
+          uri: asset.uri,
         };
 
-        setUploadedDocs(prev => ({
+        setUploadedDocs((prev) => ({
           ...prev,
-          [requirementId]: [...(prev[requirementId] || []), newDoc]
+          [requirementId]: [...(prev[requirementId] || []), newDoc],
         }));
 
         // Update document status in schedule
         const docId = `${requirementId}-doc-0`; // Assuming single document for now
-        updateDocumentStatus(requirementId, docId, "uploaded");
+        updateDocumentStatus(requirementId, docId, 'uploaded');
       }
     } catch (error) {
-      console.error("Error uploading document:", error);
-      Alert.alert("Upload Error", "There was an error uploading your document");
+      console.error('Error uploading document:', error);
+      Alert.alert('Upload Error', 'There was an error uploading your document');
     }
   };
 
   const calculateProgress = () => {
     const totalDocs = visa.requirements.reduce(
-      (acc, req) => acc + req.documents.length, 
-      0
+      (acc, req) => acc + req.documents.length,
+      0,
     );
     const uploadedCount = Object.values(uploadedDocs).reduce(
-      (acc, docs) => acc + docs.length, 
-      0
+      (acc, docs) => acc + docs.length,
+      0,
     );
     return Math.round((uploadedCount / totalDocs) * 100);
   };
@@ -133,24 +145,28 @@ export default function SelfServiceScreen() {
     <SafeAreaView>
       <ScrollView className="h-screen bg-gray-50">
         {/* Header */}
-        <View className="px-4 py-4 bg-white">
-          <TouchableOpacity 
+        <View className="bg-white px-4 py-4">
+          <TouchableOpacity
             onPress={() => router.back()}
-            className="flex-row mb-4 items-center"
+            className="mb-4 flex-row items-center"
           >
             <ChevronLeft size={24} color="#000" />
-            <Text className="ml-2 text-lg font-semibold">Self-Service Application</Text>
+            <Text className="ml-2 text-lg font-semibold">
+              Self-Service Application
+            </Text>
           </TouchableOpacity>
 
           {/* Progress Bar */}
           <View className="mt-2">
-            <View className="flex-row justify-between mb-2">
-              <Text className="font-medium text-gray-900">Application Progress</Text>
+            <View className="mb-2 flex-row justify-between">
+              <Text className="font-medium text-gray-900">
+                Application Progress
+              </Text>
               <Text className="text-gray-600">{calculateProgress()}%</Text>
             </View>
-            <View className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <View 
-                className="h-full bg-blue-600 rounded-full"
+            <View className="h-2 overflow-hidden rounded-full bg-gray-100">
+              <View
+                className="h-full rounded-full bg-blue-600"
                 style={{ width: `${calculateProgress()}%` }}
               />
             </View>
@@ -159,7 +175,7 @@ export default function SelfServiceScreen() {
 
         {/* Schedule Timeline */}
         <View className="px-4 py-4">
-          <Text className="font-bold text-lg text-gray-900 mb-3">Schedule</Text>
+          <Text className="mb-3 text-lg font-bold text-gray-900">Schedule</Text>
           <ScheduleTimeline
             schedules={schedules}
             onScheduleUpdate={handleScheduleUpdate}
@@ -169,29 +185,37 @@ export default function SelfServiceScreen() {
         {/* Requirements List */}
         <View className="px-4 py-4">
           {visa.requirements.map((req) => (
-            <View key={req.id} className="bg-white p-4 rounded-xl border border-gray-200 mb-4">
-              <View className="flex-row items-center justify-between mb-3">
-                <Text className="font-semibold text-lg">{req.title}</Text>
+            <View
+              key={req.id}
+              className="mb-4 rounded-xl border border-gray-200 bg-white p-4"
+            >
+              <View className="mb-3 flex-row items-center justify-between">
+                <Text className="text-lg font-semibold">{req.title}</Text>
                 <View className="flex-row items-center">
                   <Clock size={16} color="#6b7280" />
-                  <Text className="ml-2 text-gray-600">{req.estimatedTime}</Text>
+                  <Text className="ml-2 text-gray-600">
+                    {req.estimatedTime}
+                  </Text>
                 </View>
               </View>
-              
-              <Text className="text-gray-600 mb-4">{req.description}</Text>
+
+              <Text className="mb-4 text-gray-600">{req.description}</Text>
 
               {/* Required Documents */}
-              <View className="bg-gray-50 p-3 rounded-lg mb-4">
-                <Text className="font-medium mb-2">Required Documents:</Text>
+              <View className="mb-4 rounded-lg bg-gray-50 p-3">
+                <Text className="mb-2 font-medium">Required Documents:</Text>
                 {req.documents.map((doc, idx) => (
-                  <View key={idx} className="flex-row items-center justify-between py-2">
+                  <View
+                    key={idx}
+                    className="flex-row items-center justify-between py-2"
+                  >
                     <Text className="text-gray-600">• {doc}</Text>
-                    {uploadedDocs[req.id]?.some(d => d.name.includes(doc)) ? (
+                    {uploadedDocs[req.id]?.some((d) => d.name.includes(doc)) ? (
                       <CheckCircle2 size={20} color="#16a34a" />
                     ) : (
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         onPress={() => handleDocumentUpload(req.id)}
-                        className="bg-blue-600 px-3 py-1 rounded-lg"
+                        className="rounded-lg bg-blue-600 px-3 py-1"
                       >
                         <Text className="text-white">Upload</Text>
                       </TouchableOpacity>
@@ -203,11 +227,11 @@ export default function SelfServiceScreen() {
               {/* Uploaded Documents */}
               {uploadedDocs[req.id]?.length > 0 && (
                 <View className="mt-2">
-                  <Text className="font-medium mb-2">Uploaded Documents:</Text>
+                  <Text className="mb-2 font-medium">Uploaded Documents:</Text>
                   {uploadedDocs[req.id].map((doc) => (
-                    <View 
-                      key={doc.id} 
-                      className="flex-row items-center justify-between py-2 border-b border-gray-100"
+                    <View
+                      key={doc.id}
+                      className="flex-row items-center justify-between border-b border-gray-100 py-2"
                     >
                       <Text className="text-gray-600">{doc.name}</Text>
                       <TouchableOpacity
@@ -229,7 +253,7 @@ export default function SelfServiceScreen() {
 
       {selectedDoc && (
         <DocumentPreview
-          uri={selectedDoc.uri || ""}
+          uri={selectedDoc.uri || ''}
           fileName={selectedDoc.name}
           isVisible={previewVisible}
           onClose={() => {
@@ -240,4 +264,4 @@ export default function SelfServiceScreen() {
       )}
     </SafeAreaView>
   );
-} 
+}

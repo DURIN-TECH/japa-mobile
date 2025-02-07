@@ -20,11 +20,11 @@ export function VisaCard({ visa }: { visa: VisaInfo }) {
         <Text className="text-lg font-bold text-gray-800">{visa.country}</Text>
         <Text className="text-sm font-medium text-blue-600">{visa.type}</Text>
       </View>
-      
+
       <Text className="mb-2 text-sm text-gray-600">
         Duration: {visa.duration}
       </Text>
-      
+
       <View className="mb-3">
         <Text className="mb-1 font-medium text-gray-700">Requirements:</Text>
         {visa.requirements.map((req, index) => (

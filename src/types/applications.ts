@@ -4,7 +4,7 @@ export interface Application {
   agentId: string;
   agentName: string;
   visaType: string;
-  status: "pending" | "completed" | "issues" | "rejected";
+  status: 'pending' | 'completed' | 'issues' | 'rejected';
   progress: number;
   startDate: Date;
   lastUpdated: Date;
@@ -19,6 +19,6 @@ export interface Application {
     date: Date;
     title: string;
     description: string;
-    status: "completed" | "current" | "upcoming";
+    status: 'completed' | 'current' | 'upcoming';
   }[];
 }

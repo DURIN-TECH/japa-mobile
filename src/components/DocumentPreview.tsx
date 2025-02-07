@@ -1,8 +1,15 @@
-import { View, Modal, TouchableOpacity, Text, Image, ActivityIndicator } from "react-native";
-import { X } from "lucide-react-native";
-import * as FileSystem from "expo-file-system";
-import { useState, useEffect } from "react";
-import WebView from "react-native-webview";
+import {
+  View,
+  Modal,
+  TouchableOpacity,
+  Text,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
+import { X } from 'lucide-react-native';
+import * as FileSystem from 'expo-file-system';
+import { useState, useEffect } from 'react';
+import WebView from 'react-native-webview';
 
 interface DocumentPreviewProps {
   uri: string;
@@ -11,7 +18,12 @@ interface DocumentPreviewProps {
   fileName: string;
 }
 
-export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentPreviewProps) {
+export function DocumentPreview({
+  uri,
+  isVisible,
+  onClose,
+  fileName,
+}: DocumentPreviewProps) {
   const [loading, setLoading] = useState(true);
   const [fileInfo, setFileInfo] = useState<FileSystem.FileInfo | null>(null);
 
@@ -23,7 +35,7 @@ export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentP
           setFileInfo(info as FileSystem.FileInfo);
         }
       } catch (error) {
-        console.error("Error getting file info:", error);
+        console.error('Error getting file info:', error);
       } finally {
         setLoading(false);
       }
@@ -35,18 +47,22 @@ export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentP
   }, [uri, isVisible]);
 
   const getFileType = () => {
-    return fileName.split(".").pop()?.toLowerCase() || "";
+    return fileName.split('.').pop()?.toLowerCase() || '';
   };
 
   const getFileSizeMB = () => {
-    if (!fileInfo || !("size" in fileInfo)) return 0;
+    if (!fileInfo || !('size' in fileInfo)) return 0;
     return (fileInfo.size / (1024 * 1024)).toFixed(2);
   };
 
   return (
-    <Modal visible={isVisible} animationType="slide" presentationStyle="pageSheet">
+    <Modal
+      visible={isVisible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
       <View className="flex-1 bg-white">
-        <View className="px-4 py-4 border-b border-gray-200 flex-row justify-between items-center">
+        <View className="flex-row items-center justify-between border-b border-gray-200 px-4 py-4">
           <Text className="text-lg font-semibold">{fileName}</Text>
           <TouchableOpacity onPress={onClose}>
             <X size={24} color="#000" />
@@ -54,12 +70,12 @@ export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentP
         </View>
 
         {loading ? (
-          <View className="flex-1 justify-center items-center">
+          <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color="#2563eb" />
           </View>
         ) : (
           <View className="flex-1">
-            {getFileType() === "pdf" ? (
+            {getFileType() === 'pdf' ? (
               <WebView
                 source={{ uri }}
                 className="flex-1"
@@ -67,21 +83,15 @@ export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentP
                 onLoadEnd={() => setLoading(false)}
               />
             ) : (
-              <Image
-                source={{ uri }}
-                className="flex-1"
-                resizeMode="contain"
-              />
+              <Image source={{ uri }} className="flex-1" resizeMode="contain" />
             )}
           </View>
         )}
 
-        <View className="px-4 py-4 border-t border-gray-200">
-          <Text className="text-gray-600">
-            Size: {getFileSizeMB()} MB
-          </Text>
+        <View className="border-t border-gray-200 px-4 py-4">
+          <Text className="text-gray-600">Size: {getFileSizeMB()} MB</Text>
         </View>
       </View>
     </Modal>
   );
-} 
+}

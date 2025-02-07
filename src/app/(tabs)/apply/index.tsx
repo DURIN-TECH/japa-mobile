@@ -1,8 +1,15 @@
-import { ScrollView, View, Text, TextInput, TouchableOpacity, Image } from 'react-native';
+import {
+  ScrollView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Image,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Calendar, ArrowRight } from 'lucide-react-native';
+import { Search, ArrowRight } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { countryCodeMap, getCountryFlag } from "@/utils/countryFlags";
+import { countryCodeMap, getCountryFlag } from '@/utils/countryFlags';
 
 interface Curator {
   id: string;
@@ -22,13 +29,13 @@ interface VisaInfo {
 
 const SAMPLE_VISAS: VisaInfo[] = [
   {
-    id: "h1b",
+    id: 'h1b',
     country: 'United States',
     type: 'H-1B Work Visa',
     duration: '6-8 months',
     price: 460,
     requirements: [
-      'Bachelor\'s degree or higher',
+      "Bachelor's degree or higher",
       'Job offer from US employer',
       'Specialty occupation position',
       'Prevailing wage requirement',
@@ -40,7 +47,7 @@ const SAMPLE_VISAS: VisaInfo[] = [
     ],
   },
   {
-    id: "f1",
+    id: 'f1',
     country: 'United States',
     type: 'F-1 Student Visa',
     duration: '2-3 months',
@@ -63,14 +70,16 @@ export default function Apply() {
     <SafeAreaView>
       <View className="flex h-screen bg-gray-50 pb-44">
         {/* Header Section */}
-        <View className="px-4 py-4 bg-white">
-          <Text className="text-2xl font-bold text-gray-950 mb-2">Available Visas</Text>
-          
+        <View className="bg-white px-4 py-4">
+          <Text className="mb-2 text-2xl font-bold text-gray-950">
+            Available Visas
+          </Text>
+
           {/* Search Bar */}
-          <View className="flex-row justify-center items-center mt-2">
-            <TextInput 
+          <View className="mt-2 flex-row items-center justify-center">
+            <TextInput
               placeholder="Search visa types..."
-              className="w-full pl-10 pr-4 py-2 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full rounded-full border border-gray-200 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
             />
             <View className="absolute left-3 top-1/2 -translate-y-1/2">
               <Search size={20} color="#9CA3AF" />
@@ -81,16 +90,18 @@ export default function Apply() {
         <ScrollView>
           {/* Popular Categories */}
           <View className="px-4 py-4">
-            <Text className="font-bold text-lg text-gray-900 mb-3">Popular Categories</Text>
+            <Text className="mb-3 text-lg font-bold text-gray-900">
+              Popular Categories
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerClassName="flex-row gap-3"
             >
               {['Student', 'Tourist', 'Work', 'Business'].map((category) => (
-                <TouchableOpacity 
+                <TouchableOpacity
                   key={category}
-                  className="px-6 py-3 bg-white rounded-full border border-gray-200"
+                  className="rounded-full border border-gray-200 bg-white px-6 py-3"
                 >
                   <Text className="font-medium text-gray-800">{category}</Text>
                 </TouchableOpacity>
@@ -100,45 +111,59 @@ export default function Apply() {
 
           {/* Available Visas */}
           <View className="px-4 py-2">
-            <View className="flex-row justify-between mb-3">
-              <Text className="font-bold text-lg text-gray-900">Curated Visas</Text>
+            <View className="mb-3 flex-row justify-between">
+              <Text className="text-lg font-bold text-gray-900">
+                Curated Visas
+              </Text>
               <TouchableOpacity>
                 <Text className="text-md font-medium text-blue-600">
                   View All
                 </Text>
               </TouchableOpacity>
             </View>
-            
+
             {SAMPLE_VISAS.map((visa) => (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={visa.id}
-                onPress={() => router.push({
-                  pathname: "/apply/visa-details/[id]",
-                  params: { id: visa.id }
-                })}
-                className="mb-3 p-4 bg-white rounded-xl border border-gray-200"
+                onPress={() =>
+                  router.push({
+                    pathname: '/apply/visa-details/[id]',
+                    params: { id: visa.id },
+                  })
+                }
+                className="mb-3 rounded-xl border border-gray-200 bg-white p-4"
               >
                 {/* Header with Visa Type and Metadata */}
-                <View className="flex-row items-center gap-2 mb-4">
-                  <View className="flex-row items-center flex-1">
+                <View className="mb-4 flex-row items-center gap-2">
+                  <View className="flex-1 flex-row items-center">
                     <Image
-                      source={{ uri: getCountryFlag(countryCodeMap[visa.country]) }}
-                      className="w-6 h-6 rounded-full mr-2"
+                      source={{
+                        uri: getCountryFlag(countryCodeMap[visa.country]),
+                      }}
+                      className="mr-2 h-6 w-6 rounded-full"
                       resizeMode="cover"
                     />
-                    <Text className="text-lg font-bold text-gray-800">{visa.type}</Text>
+                    <Text className="text-lg font-bold text-gray-800">
+                      {visa.type}
+                    </Text>
                   </View>
                   <View className="flex-row items-center gap-2">
-                    <Text className="text-sm text-gray-600">{visa.duration}</Text>
+                    <Text className="text-sm text-gray-600">
+                      {visa.duration}
+                    </Text>
                     <ArrowRight size={20} color="#2563eb" />
                   </View>
                 </View>
 
                 {/* Requirements Section */}
-                <View className="mb-4 bg-gray-50 p-3 rounded-lg">
-                  <Text className="font-medium text-gray-700 mb-2">Requirements</Text>
+                <View className="mb-4 rounded-lg bg-gray-50 p-3">
+                  <Text className="mb-2 font-medium text-gray-700">
+                    Requirements
+                  </Text>
                   {visa.requirements.map((req, idx) => (
-                    <Text key={idx} className="text-sm text-gray-600 mb-1">• {req}</Text>
+                    <Text key={idx} className="mb-1 text-sm text-gray-600">
+                      • {req}
+                    </Text>
                   ))}
                 </View>
 
@@ -149,12 +174,12 @@ export default function Apply() {
                       {visa.curators.map((curator, idx) => (
                         <View
                           key={curator.id}
-                          className="h-8 w-8 rounded-full bg-blue-500 items-center justify-center"
-                          style={{ 
+                          className="h-8 w-8 items-center justify-center rounded-full bg-blue-500"
+                          style={{
                             marginLeft: idx > 0 ? -12 : 0,
                             zIndex: visa.curators.length - idx,
                             borderWidth: 2,
-                            borderColor: 'white'
+                            borderColor: 'white',
                           }}
                         >
                           <Text className="text-xs font-medium text-white">
@@ -163,8 +188,9 @@ export default function Apply() {
                         </View>
                       ))}
                     </View>
-                    <Text className="text-sm text-gray-600 ml-3">
-                      {visa.curators.length} curator{visa.curators.length !== 1 ? 's' : ''}
+                    <Text className="ml-3 text-sm text-gray-600">
+                      {visa.curators.length} curator
+                      {visa.curators.length !== 1 ? 's' : ''}
                     </Text>
                   </View>
                   <Text className="font-bold text-blue-600">${visa.price}</Text>

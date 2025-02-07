@@ -1,3 +1,3 @@
 export default {
-  ONBOARDING_STATUS_KEY: '@jposk'
-}
+  ONBOARDING_STATUS_KEY: '@jposk',
+};

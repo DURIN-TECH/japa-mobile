@@ -1,4 +1,4 @@
-import { View, Image, Text } from 'react-native';
+import { View, Text } from 'react-native';
 import { Star, Clock, CheckCircle2, Globe } from 'lucide-react-native';
 import { Agent } from '@/types/documents';
 
@@ -6,13 +6,12 @@ interface AgentCardProps {
   agent: Agent;
 }
 
-export function AgentCard({ agent }: AgentCardProps) {
+export function AgentCard({ agent }: Readonly<AgentCardProps>) {
   return (
-    <View className="bg-white p-4 rounded-xl border border-gray-200 mb-3">
-
+    <View className="mb-3 rounded-xl border border-gray-200 bg-white p-4">
       {/* Agent Header */}
-      <View className="flex-row items-center mb-3">
-        <View className="w-12 h-12 bg-gray-100 rounded-full items-center justify-center">
+      <View className="mb-3 flex-row items-center">
+        <View className="h-12 w-12 items-center justify-center rounded-full bg-gray-100">
           <Text className="text-lg font-semibold text-gray-600">
             {agent.initials}
           </Text>
@@ -28,40 +27,46 @@ export function AgentCard({ agent }: AgentCardProps) {
         </View>
       </View>
 
-      <Text className="text-gray-600 mb-4">{agent.description}</Text>
+      <Text className="mb-4 text-gray-600">{agent.description}</Text>
 
-      <View className="flex-row flex-wrap gap-2 mb-3">
+      <View className="mb-3 flex-row flex-wrap gap-2">
         {agent.specializations.map((spec) => (
-          <View key={spec} className="bg-blue-50 px-3 py-1 rounded-full">
-            <Text className="text-blue-600 text-sm">{spec}</Text>
+          <View key={spec} className="rounded-full bg-blue-50 px-3 py-1">
+            <Text className="text-sm text-blue-600">{spec}</Text>
           </View>
         ))}
       </View>
-      
+
       {/* Stats */}
-      <View className="flex-row justify-between bg-blue-50 p-3 rounded-lg mb-4">
+      <View className="mb-4 flex-row justify-between rounded-lg bg-blue-50 p-3">
         <View className="items-center">
           <CheckCircle2 size={20} color="#2563eb" />
-          <Text className="text-blue-900 font-bold mt-1">{agent.successRate}%</Text>
-          <Text className="text-blue-900 text-xs">Success Rate</Text>
+          <Text className="mt-1 font-bold text-blue-900">
+            {agent.successRate}%
+          </Text>
+          <Text className="text-xs text-blue-900">Success Rate</Text>
         </View>
         <View className="items-center">
           <Clock size={20} color="#2563eb" />
-          <Text className="text-blue-900 font-bold mt-1">{agent.responseTime}</Text>
-          <Text className="text-blue-900 text-xs">Response Time</Text>
+          <Text className="mt-1 font-bold text-blue-900">
+            {agent.responseTime}
+          </Text>
+          <Text className="text-xs text-blue-900">Response Time</Text>
         </View>
         <View className="items-center">
           <Globe size={20} color="#2563eb" />
-          <Text className="text-blue-900 font-bold mt-1">{agent.languages.length}</Text>
-          <Text className="text-blue-900 text-xs">Languages</Text>
+          <Text className="mt-1 font-bold text-blue-900">
+            {agent.languages.length}
+          </Text>
+          <Text className="text-xs text-blue-900">Languages</Text>
         </View>
       </View>
 
       {/* Price */}
-      <View className="flex-row justify-between items-center">
+      <View className="flex-row items-center justify-between">
         <Text className="text-gray-600">Consultation Fee</Text>
         <Text className="text-xl font-bold text-green-600">${agent.price}</Text>
       </View>
     </View>
   );
-} 
+}

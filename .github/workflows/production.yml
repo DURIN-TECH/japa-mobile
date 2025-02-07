@@ -15,7 +15,7 @@ jobs:
             echo "EXPO_TOKEN is not set"
             exit 1
           fi
-      
+
       - name: Checkout Code
         uses: actions/checkout@v3
 

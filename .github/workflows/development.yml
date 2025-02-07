@@ -53,4 +53,4 @@ jobs:
           name: development-build
           path: |
             *.apk
-            *.ipa 
+            *.ipa

@@ -1,28 +1,28 @@
-import { Stack } from "expo-router";
-import React from "react";
+import { Stack } from 'expo-router';
+import React from 'react';
 
 export default function ApplicationsLayout() {
   return (
     <Stack>
-      <Stack.Screen 
-        name="index" 
-        options={{ 
+      <Stack.Screen
+        name="index"
+        options={{
           headerShown: false,
-          title: "Applications"
-        }} 
+          title: 'Applications',
+        }}
       />
-      <Stack.Screen 
-        name="[id]" 
+      <Stack.Screen
+        name="[id]"
         options={{
           presentation: 'card',
           headerShown: true,
           title: 'Application Details',
           headerShadowVisible: false,
           headerStyle: {
-            backgroundColor: '#f9fafb'
-          }
+            backgroundColor: '#f9fafb',
+          },
         }}
       />
     </Stack>
   );
-} 
+}

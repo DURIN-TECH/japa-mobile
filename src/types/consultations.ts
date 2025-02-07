@@ -3,7 +3,7 @@ export interface Consultation {
   userId: string;
   agentId: string;
   agentName: string;
-  status: "upcoming" | "completed" | "cancelled";
+  status: 'upcoming' | 'completed' | 'cancelled';
   date: Date;
   time: string;
   notes?: string;
