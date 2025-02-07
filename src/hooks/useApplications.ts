@@ -11,8 +11,8 @@ const MOCK_APPLICATIONS: Application[] = [
     visaType: 'H-1B Work Visa',
     status: 'pending',
     progress: 65,
-    startDate: '2024-02-01',
-    lastUpdated: '2024-02-15',
+    startDate: new Date('2024-02-01'),
+    lastUpdated: new Date('2024-02-15'),
     currentStep: 'Document Verification',
     nextStep: 'Embassy Interview',
     documents: {
@@ -22,19 +22,19 @@ const MOCK_APPLICATIONS: Application[] = [
     },
     timeline: [
       {
-        date: '2024-02-01',
+        date: new Date('2024-02-01'),
         title: 'Application Started',
         description: 'Initial consultation completed',
         status: 'completed',
       },
       {
-        date: '2024-02-10',
+        date: new Date('2024-02-10'),
         title: 'Document Collection',
         description: 'Uploading required documents',
         status: 'current',
       },
       {
-        date: '2024-03-01',
+        date: new Date('2024-03-01'),
         title: 'Embassy Interview',
         description: 'Scheduled interview date',
         status: 'upcoming',
@@ -49,8 +49,8 @@ const MOCK_APPLICATIONS: Application[] = [
     visaType: 'F-1 Student Visa',
     status: 'completed',
     progress: 100,
-    startDate: '2024-01-15',
-    lastUpdated: '2024-02-20',
+    startDate: new Date('2024-01-15'),
+    lastUpdated: new Date('2024-02-20'),
     currentStep: 'Visa Approved',
     nextStep: null,
     documents: {
@@ -60,19 +60,19 @@ const MOCK_APPLICATIONS: Application[] = [
     },
     timeline: [
       {
-        date: '2024-01-15',
+        date: new Date('2024-01-15'),
         title: 'Application Started',
         description: 'Initial consultation completed',
         status: 'completed',
       },
       {
-        date: '2024-01-25',
+        date: new Date('2024-01-25'),
         title: 'Documents Verified',
         description: 'All required documents approved',
         status: 'completed',
       },
       {
-        date: '2024-02-20',
+        date: new Date('2024-02-20'),
         title: 'Visa Approved',
         description: 'Student visa successfully issued',
         status: 'completed',

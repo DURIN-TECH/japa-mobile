@@ -8,8 +8,9 @@ const MOCK_CONSULTATIONS: Consultation[] = [
     agentId: 'agent1',
     agentName: 'Sarah Johnson',
     status: 'upcoming',
-    date: '2024-03-15',
+    date: new Date('2024-03-15'),
     time: '10:30',
+    type: 'in-person',
   },
   {
     id: 'cons2',
@@ -17,9 +18,10 @@ const MOCK_CONSULTATIONS: Consultation[] = [
     agentId: 'agent2',
     agentName: 'Michael Chen',
     status: 'completed',
-    date: '2024-02-20',
+    date: new Date('2024-02-20'),
     time: '14:00',
     summary: 'Discussed visa requirements and next steps',
+    type: 'in-person',
   },
 ];
 

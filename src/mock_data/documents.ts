@@ -46,6 +46,7 @@ export const verificationAgents: Agent[] = [
   {
     id: 'agent1',
     name: 'Sarah Johnson',
+    initials: 'SJ',
     rating: 4.8,
     verificationCount: 1234,
     price: 50,
@@ -61,6 +62,7 @@ export const verificationAgents: Agent[] = [
   {
     id: 'agent2',
     name: 'Michael Chen',
+    initials: 'MC',
     rating: 4.9,
     verificationCount: 2156,
     price: 65,

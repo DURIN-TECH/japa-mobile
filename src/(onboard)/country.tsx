@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search } from 'lucide-react-native';
 import { ScrollView, View, Image, TextInput, Text } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, RelativePathString } from 'expo-router';
 import { ThemedView } from '@/components/ThemedView';
 
 // Sample country data
@@ -17,9 +17,11 @@ export default function CountryFlagSelector() {
       console.error('No country provided to selectCountry');
       return;
     }
-    updateOnboardingData({
-      destinationCountry: country,
-    });
+    if (updateOnboardingData) {
+      updateOnboardingData({
+        destinationCountry: country,
+      });
+    }
   };
 
   const filteredCountries = supportedCountries.filter((country) =>
@@ -55,7 +57,15 @@ export default function CountryFlagSelector() {
                   className="w-[15%] items-center"
                   onTouchEnd={() => selectCountry(country.name)}
                 >
-                  <Link href="/visa">
+                  <Link
+                    href={{
+                      pathname: '/(onboard)/visa' as RelativePathString,
+                      params: {
+                        country: country.name,
+                      },
+                    }}
+                    asChild
+                  >
                     <View className="mb-2 h-10 w-10 overflow-hidden rounded-lg">
                       <Image
                         source={{

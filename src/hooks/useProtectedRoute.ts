@@ -1,4 +1,4 @@
-import { useRouter, useSegments } from 'expo-router';
+import { useRouter, useSegments, RelativePathString } from 'expo-router';
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import StorageKeys from '@/constants/Storage';
@@ -25,11 +25,11 @@ export default function useProtectedRoute() {
   }, []);
 
   useEffect(() => {
-    const inOnboarding = segments[0] === '(onboard)';
+    const inOnboarding = segments[0] !== '(tabs)';
 
     if (!isOnboarded && !inOnboarding) {
       // Redirect to onboarding if not completed
-      route.replace('/(onboard)');
+      route.replace('/(onboard)' as RelativePathString);
     } else if (isOnboarded && inOnboarding) {
       // Redirect to tabs if onboarding is completed
       route.replace('/(tabs)');

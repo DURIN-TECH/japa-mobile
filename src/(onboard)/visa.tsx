@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Search } from 'lucide-react-native';
 import { ScrollView, View, Image, TextInput } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, RelativePathString } from 'expo-router';
 
 import { ThemedView } from '@/components/ThemedView';
 import { ThemedText } from '@/components/ThemedText';
@@ -22,9 +22,11 @@ export default function VisaTypeSelector() {
       console.error('No visa provided to selectVisa');
       return;
     }
-    updateOnboardingData({
-      destinationVisa: visa,
-    });
+    if (updateOnboardingData) {
+      updateOnboardingData({
+        destinationVisa: visa,
+      });
+    }
   };
 
   return (
@@ -55,7 +57,15 @@ export default function VisaTypeSelector() {
                   className="w-[40%] items-center"
                   onTouchEnd={() => selectVisa(visa.code)}
                 >
-                  <Link href="/kyc">
+                  <Link
+                    href={{
+                      pathname: '/(onboard)/kyc' as RelativePathString,
+                      params: {
+                        visa: visa.code,
+                      },
+                    }}
+                    asChild
+                  >
                     <View className="mb-2 h-40 w-40 overflow-hidden rounded-lg">
                       <Image
                         source={{

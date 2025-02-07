@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, RelativePathString } from 'expo-router';
 import { useState } from 'react';
 import { View, Text } from 'react-native';
 import { ThemedView } from '@/components/ThemedView';
@@ -13,9 +13,11 @@ export default function Onboard() {
       console.error('No passport status specified');
       return;
     }
-    updateOnboardingData({
-      hasPassport,
-    });
+    if (updateOnboardingData) {
+      updateOnboardingData({
+        hasPassport,
+      });
+    }
     console.log(onboardingData);
   };
 
@@ -30,12 +32,22 @@ export default function Onboard() {
         </Text>
 
         <ThemedView className="flex-row gap-5">
-          <Link href="/country" onPress={() => hasPassport(true)}>
+          <Link
+            href={{
+              pathname: '/(onboard)/country' as RelativePathString,
+            }}
+            onPress={() => hasPassport(true)}
+          >
             <Text>Yes</Text>
           </Link>
 
           {/* To passport acquisition page */}
-          <Link href="/passport" onPress={() => hasPassport(true)}>
+          <Link
+            href={{
+              pathname: '/passport' as RelativePathString,
+            }}
+            onPress={() => hasPassport(true)}
+          >
             <Text>No</Text>
           </Link>
         </ThemedView>
