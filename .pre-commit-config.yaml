@@ -69,16 +69,12 @@ repos:
       - id: markdownlint
         args: ["--fix"]
 
-#   - repo: https://github.com/N-Hoque/mirrors-TypeScript
-#     rev: v5.8.0-dev.20250206
-#     hooks:
-#       - id: tsc
-#         files: ^src/.*\.[jt]sx?$
-#         exclude: ^node_modules/
-#         entry: tsc --noEmit
-#         language: node
-#         types: [file]
-#         additional_dependencies: ["typescript@5.8.0-dev.20250206"]
+  - repo: https://github.com/N-Hoque/mirrors-TypeScript
+    rev: v4.4.4
+    hooks:
+      - id: tsc
+        files: ^src/.*\.[jt]sx?$
+        exclude: ^node_modules/
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.0.0
