@@ -60,3 +60,4 @@
 ### Someday
 
 - [] Fix page content below view at the bottom on scroll
+- [] Add a loading state to the app
