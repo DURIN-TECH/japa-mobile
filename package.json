@@ -24,7 +24,7 @@
     "start:android": "expo start --android",
     "test": "jest --watchAll",
     "lint": "eslint . --ignore-pattern .gitignore --fix",
-    "prepare": "[[ -f .git/hooks/pre-commit ]] && pre-commit install"
+    "prepare": "[[ -f .git/hooks/pre-commit ]] && pre-commit install || true"
   },
   "jest": {
     "preset": "jest-expo"
