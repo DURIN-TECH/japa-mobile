@@ -11,14 +11,18 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.someesther.japamobile"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.durintech.japaplatform"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.someesther.japamobile"
+      "package": "com.durintech.japaplatform"
     },
     "web": {
       "bundler": "metro",

@@ -58,7 +58,6 @@ jobs:
           body: |
             Production release from merged PR #${{ github.event.pull_request.number }}
             ${{ github.event.pull_request.title }}
-          draft: false
           prerelease: false
 
       - name: Upload Production Build Artifacts
