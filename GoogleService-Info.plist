@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>94486176281-2trbksq2jp9bfhv3ktilob1rk990oct6.apps.googleusercontent.com</string>
+	<string>94486176281-auft1cf8illefgj5bf25gf4k5f27g9ui.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.94486176281-2trbksq2jp9bfhv3ktilob1rk990oct6</string>
+	<string>com.googleusercontent.apps.94486176281-auft1cf8illefgj5bf25gf4k5f27g9ui</string>
 	<key>API_KEY</key>
 	<string>AIzaSyBQsf0hhE1MvtDlYObcn4o7EPWM1BNsheY</string>
 	<key>GCM_SENDER_ID</key>
@@ -13,7 +13,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.durintech.japaplatform</string>
+	<string>com.durintech.japamobile</string>
 	<key>PROJECT_ID</key>
 	<string>japa-platform</string>
 	<key>STORAGE_BUCKET</key>
@@ -29,6 +29,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:94486176281:ios:00ed02ae87ef60cddec088</string>
+	<string>1:94486176281:ios:2635c46b790b7cffdec088</string>
 </dict>
 </plist>

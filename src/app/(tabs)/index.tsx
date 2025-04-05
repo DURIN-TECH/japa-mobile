@@ -1,13 +1,6 @@
-import {
-  TextInput,
-  TouchableOpacity,
-  View,
-  Text,
-  ScrollView,
-} from 'react-native';
+import { TouchableOpacity, View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React from 'react';
-import { Bell, Search, Calendar, Award, ArrowRight } from 'lucide-react-native';
+import { Bell, Calendar, Award, ArrowRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 
 export default function HomeScreen() {
@@ -22,17 +15,6 @@ export default function HomeScreen() {
               <Text className="text-md text-gray-500">Welcome back, Alex</Text>
             </View>
             <Bell color="#4b5563" size={24} />
-          </View>
-
-          {/* Search Bar */}
-          <View className="mt-4 flex-row items-center justify-center">
-            <TextInput
-              placeholder="Search countries or visa types..."
-              className="w-full rounded-full border border-gray-200 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
-            />
-            <View className="absolute left-3 top-1/2 -translate-y-1/2">
-              <Search size={20} color="#9CA3AF" />
-            </View>
           </View>
         </View>
 

@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "94486176281",
+    "project_id": "japa-platform",
+    "storage_bucket": "japa-platform.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:94486176281:android:fe2a33989cc83ffadec088",
+        "android_client_info": {
+          "package_name": "com.durintech.japamobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "94486176281-cui3nn7g26c937q3btoqqgt5cdq9lv14.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMXGxbLslL8_R0sL2p4w5UOSwhaNL6Dj4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "94486176281-cui3nn7g26c937q3btoqqgt5cdq9lv14.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "94486176281-2trbksq2jp9bfhv3ktilob1rk990oct6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.durintech.japaplatform"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
