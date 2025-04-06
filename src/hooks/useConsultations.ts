@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Consultation } from '@/types/consultations';
+import { Consultation } from '@/types/consultations.type';
 
 const MOCK_CONSULTATIONS: Consultation[] = [
   {

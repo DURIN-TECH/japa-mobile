@@ -4,7 +4,7 @@ import { useState } from 'react';
 import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { ScheduleItem } from '@/types/documents';
+import { ScheduleItem } from '@/types/documents.type';
 
 interface ScheduleTimelineProps {
   schedules: ScheduleItem[];

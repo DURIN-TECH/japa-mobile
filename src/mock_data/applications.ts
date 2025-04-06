@@ -1,4 +1,4 @@
-import { Application, Consultation } from '@/types';
+import { Application, Consultation } from '@/types/index.type';
 
 export const mockApplications: Partial<Application>[] = [
   {

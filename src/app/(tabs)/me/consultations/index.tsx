@@ -3,7 +3,7 @@ import { Clock, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useConsultations } from '@/hooks/useConsultations';
 import { ConsultationCard } from '@/components/consultations/ConsultationCard';
-import { Consultation } from '@/types/consultations';
+import { Consultation } from '@/types/consultations.type';
 
 export default function ConsultationsScreen() {
   const { consultations } = useConsultations();

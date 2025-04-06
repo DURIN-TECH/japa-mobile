@@ -1,6 +1,6 @@
 import { View, Text } from 'react-native';
 import { Star, Clock, CheckCircle2, Globe } from 'lucide-react-native';
-import { Agent } from '@/types/documents';
+import { Agent } from '@/types/documents.type';
 
 interface AgentCardProps {
   agent: Agent;

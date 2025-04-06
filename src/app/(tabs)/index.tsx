@@ -2,6 +2,7 @@ import { TouchableOpacity, View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bell, Calendar, Award, ArrowRight } from 'lucide-react-native';
 import { router } from 'expo-router';
+import { visas } from '@/mock_data/visas';
 
 export default function HomeScreen() {
   return (
@@ -138,7 +139,7 @@ export default function HomeScreen() {
               <Text className="text-lg font-bold text-gray-900">
                 Popular Visas
               </Text>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/apply')}>
                 <Text className="text-md font-medium text-blue-600">
                   View All
                 </Text>
@@ -149,28 +150,15 @@ export default function HomeScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerClassName="flex-row overflow-x-auto pb-4 gap-3"
             >
-              {[
-                {
-                  type: 'Tourist Visa',
-                  duration: '6 months',
-                  price: '$160',
-                  id: 1,
-                },
-                {
-                  type: 'Student Visa',
-                  duration: '12 months',
-                  price: '$350',
-                  id: 2,
-                },
-                {
-                  type: 'Work Visa',
-                  duration: '24 months',
-                  price: '$460',
-                  id: 3,
-                },
-              ].map((visa) => (
+              {visas.map((visa) => (
                 <TouchableOpacity
                   key={visa.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/apply/visa-details/[id]',
+                      params: { id: visa.id },
+                    })
+                  }
                   className="w-48 flex-none rounded-xl border border-gray-200 bg-white p-4"
                 >
                   <View className="flex-row items-center">
@@ -179,16 +167,16 @@ export default function HomeScreen() {
                     </View>
                     <View className="ml-3">
                       <Text className="mb-1 text-lg font-semibold">
-                        {visa.type}
+                        {visa.name}
                       </Text>
                       <Text className="mb-2 text-gray-600">
-                        {visa.duration}
+                        {visa.processingTime}
                       </Text>
                     </View>
                   </View>
                   <View className="flex-row items-center justify-between">
                     <Text className="font-bold text-blue-600">
-                      {visa.price}
+                      ${visa.price}
                     </Text>
                     <ArrowRight size={20} color="#2563eb" />
                   </View>

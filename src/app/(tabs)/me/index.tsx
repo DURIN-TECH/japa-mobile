@@ -16,8 +16,8 @@ import {
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { mockApplications, mockConsultations } from '@/mock_data/applications';
-import { Application } from '@/types/applications';
-import { Consultation } from '@/types/consultations';
+import { Application } from '@/types/applications.type';
+import { Consultation } from '@/types/consultations.type';
 /**
  * Helper function to get status color
  */

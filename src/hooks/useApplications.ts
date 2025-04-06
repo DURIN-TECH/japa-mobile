@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Application } from '@/types/applications';
+import { Application } from '@/types/applications.type';
 
 // Mock data - replace with actual API calls
 const MOCK_APPLICATIONS: Application[] = [

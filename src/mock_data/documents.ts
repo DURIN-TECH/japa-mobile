@@ -1,4 +1,4 @@
-import { DocumentRequirement, Agent } from '@/types/documents';
+import { DocumentRequirement, Agent } from '@/types/documents.type';
 
 export const requiredDocuments: DocumentRequirement[] = [
   {

@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useVisaTypes } from '@/hooks/useVisaTypes';
 import { getCountryFlag, countryCodeMap } from '@/utils/countryFlags';
-import { VisaType } from '@/types';
+import { VisaType } from '@/types/index.type';
 
 export default function VisaDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

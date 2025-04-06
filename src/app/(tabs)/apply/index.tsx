@@ -10,60 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, ArrowRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { countryCodeMap, getCountryFlag } from '@/utils/countryFlags';
-
-interface Curator {
-  id: string;
-  name: string;
-  initials: string;
-}
-
-interface VisaInfo {
-  id: string;
-  country: string;
-  type: string;
-  duration: string;
-  requirements: string[];
-  curators: Curator[];
-  price: number;
-}
-
-const SAMPLE_VISAS: VisaInfo[] = [
-  {
-    id: 'h1b',
-    country: 'United States',
-    type: 'H-1B Work Visa',
-    duration: '6-8 months',
-    price: 460,
-    requirements: [
-      "Bachelor's degree or higher",
-      'Job offer from US employer',
-      'Specialty occupation position',
-      'Prevailing wage requirement',
-    ],
-    curators: [
-      { id: '1', name: 'Sarah Johnson', initials: 'SJ' },
-      { id: '2', name: 'Michael Chen', initials: 'MC' },
-      { id: '3', name: 'David Kim', initials: 'DK' },
-    ],
-  },
-  {
-    id: 'f1',
-    country: 'United States',
-    type: 'F-1 Student Visa',
-    duration: '2-3 months',
-    price: 350,
-    requirements: [
-      'University acceptance letter',
-      'Financial documents',
-      'SEVIS I-20 form',
-      'English proficiency test',
-    ],
-    curators: [
-      { id: '1', name: 'Sarah Johnson', initials: 'SJ' },
-      { id: '4', name: 'Emily Wang', initials: 'EW' },
-    ],
-  },
-];
+import { visas } from '@/mock_data/visas';
 
 export default function Apply() {
   return (
@@ -79,7 +26,7 @@ export default function Apply() {
           <View className="mt-2 flex-row items-center justify-center">
             <TextInput
               placeholder="Search visa types..."
-              className="w-full rounded-full border border-gray-200 py-2 pl-10 pr-4 focus:border-transparent focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-full border border-gray-200 py-2 pl-10 pr-4"
             />
             <View className="absolute left-3 top-1/2 -translate-y-1/2">
               <Search size={20} color="#9CA3AF" />
@@ -122,7 +69,7 @@ export default function Apply() {
               </TouchableOpacity>
             </View>
 
-            {SAMPLE_VISAS.map((visa) => (
+            {visas.map((visa) => (
               <TouchableOpacity
                 key={visa.id}
                 onPress={() =>
@@ -144,12 +91,12 @@ export default function Apply() {
                       resizeMode="cover"
                     />
                     <Text className="text-lg font-bold text-gray-800">
-                      {visa.type}
+                      {visa.name}
                     </Text>
                   </View>
                   <View className="flex-row items-center gap-2">
                     <Text className="text-sm text-gray-600">
-                      {visa.duration}
+                      {visa.processingTime}
                     </Text>
                     <ArrowRight size={20} color="#2563eb" />
                   </View>
@@ -162,7 +109,7 @@ export default function Apply() {
                   </Text>
                   {visa.requirements.map((req, idx) => (
                     <Text key={idx} className="mb-1 text-sm text-gray-600">
-                      • {req}
+                      • {req.title}
                     </Text>
                   ))}
                 </View>

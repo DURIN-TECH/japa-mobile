@@ -1,4 +1,4 @@
-import { Agent } from '@/types/documents';
+import { Agent } from '@/types/documents.type';
 
 export const verificationAgents: Agent[] = [
   {

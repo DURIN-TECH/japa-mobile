@@ -7,7 +7,7 @@ import {
   LucideIcon,
 } from 'lucide-react-native';
 import { format } from 'date-fns';
-import { Consultation } from '@/types/consultations';
+import { Consultation } from '@/types/consultations.type';
 
 interface ConsultationCardProps {
   consultation: Consultation;

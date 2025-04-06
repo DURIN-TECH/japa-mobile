@@ -9,7 +9,7 @@ import {
 import { router } from 'expo-router';
 import { ApplicationCard } from '@/components/applications/ApplicationCard';
 import { useApplications } from '@/hooks/useApplications';
-import { Application } from '@/types/applications';
+import { Application } from '@/types/applications.type';
 
 export default function ApplicationsScreen() {
   const { applications } = useApplications();

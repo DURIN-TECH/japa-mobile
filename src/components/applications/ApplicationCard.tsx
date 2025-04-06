@@ -7,7 +7,7 @@ import {
   XCircle,
 } from 'lucide-react-native';
 import { format } from 'date-fns';
-import { Application } from '@/types/applications';
+import { Application } from '@/types/applications.type';
 
 interface ApplicationCardProps {
   application: Application;

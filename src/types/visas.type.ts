@@ -13,6 +13,14 @@ export interface VisaType {
   processingTime: string;
   price: number;
   country: string;
+  curators: Curator[];
+  img: string;
+}
+
+export interface Curator {
+  id: string;
+  name: string;
+  initials: string;
 }
 
 export interface VisaApplication {

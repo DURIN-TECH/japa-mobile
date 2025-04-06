@@ -69,7 +69,7 @@
   - [] Hook active applications
   - [x] link quick actions
   - [] link agent card to details
-  - [] link visas view all
+  - [x] link visas view all
   - [] link visa card to details
   - [] link destinations to available visas filtered for that country
   - [] Wire notification icon
@@ -78,15 +78,16 @@
   - [] Fix margin atop footer tab
   - [] Fix safe area view display
 - [] Apply
-  - [] Fix search bar highlighting
+  - [x] Fix search bar highlighting
   - [] Wire search bar
   - [] Wire category filters
   - [] Remove View all
   - [] Fix country flag not displaying
   - [] Enable hovering over curators to show clickable curator details
   - [] Visa details page
-    - [] is abit messy, clean it up with more white space and some colors
-    - [] Fix scrolling
+    - [x] is abit messy, clean it up with more white space and some colors
+    - [x] Fix scrolling
+    - [] Visa details header should be sticky while scrolling
   - [] Self service view should display
     - [] selected visa name
     - [] how long it will take
@@ -97,3 +98,5 @@
     - [] Uploaded documents preview is not displaying pdf
     - [] Fix scrolling
 - [] Me
+  - [] Include aggregation of requests, account balance, etc.
+  -
