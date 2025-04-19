@@ -1,6 +1,13 @@
 %YAML 1.2
 # yaml-language-server: $schema=https://json.schemastore.org/pre-commit-config
 ---
+default_install_hook_types:
+  - pre-commit
+  - prepare-commit-msg
+  - commit-msg
+  - post-commit
+  - pre-push
+
 default_stages: [pre-commit]
 
 fail_fast: true # stop on first failure
@@ -40,7 +47,7 @@ repos:
         types_or: [javascript, jsx, ts, tsx, json]
 
   - repo: https://github.com/pre-commit/mirrors-eslint
-    rev: v9.24.0
+    rev: v9.25.0
     hooks:
       - id: eslint
         files: \.[jt]sx?$
