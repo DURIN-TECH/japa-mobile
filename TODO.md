@@ -100,3 +100,7 @@
 - [] Me
   - [] Include aggregation of requests, account balance, etc.
   -
+
+## Quick actions
+
+- [] Remove outlines to see if look is closer to mobile
