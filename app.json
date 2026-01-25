@@ -15,14 +15,14 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.durintech.japaplatform"
+      "bundleIdentifier": "com.durintech.japamobile"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.durintech.japaplatform",
+      "package": "com.durintech.japamobile",
       "googleServicesFile": "./google-services.json"
     },
     "web": {

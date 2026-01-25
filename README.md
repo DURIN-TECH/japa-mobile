@@ -8,6 +8,81 @@ for both self-service applications and agent-assisted
 applications. The app helps users manage document requirements,
 schedule consultations, and track application progress.
 
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Expo CLI (`npm install -g expo-cli`)
+- iOS Simulator (macOS) or Android Emulator
+- Expo Go app (for physical device testing)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd japa-mobile
+
+# Install dependencies
+npm install
+```
+
+### Running the App
+
+```bash
+# Start the development server
+npm start
+
+# Run on iOS Simulator
+npm run start:ios
+# or
+npx expo start --ios
+
+# Run on Android Emulator
+npm run start:android
+# or
+npx expo start --android
+
+# Run directly on native device (requires prebuild)
+npm run ios
+npm run android
+```
+
+### Build Commands
+
+```bash
+# Development builds
+npm run build:dev           # Both platforms
+npm run build:dev:ios       # iOS only
+npm run build:dev:android   # Android only
+
+# Preview builds (staging)
+npm run build:preview
+npm run build:preview:ios
+npm run build:preview:android
+
+# Production builds
+npm run build:prod
+npm run build:prod:ios
+npm run build:prod:android
+
+# Submit to app stores
+npm run submit:prod
+npm run submit:prod:ios
+npm run submit:prod:android
+```
+
+### Other Commands
+
+```bash
+npm run lint          # Run ESLint with auto-fix
+npm run test          # Run Jest tests
+npm run prebuild      # Clean prebuild for native code
+npm run clean         # Remove all build artifacts and node_modules
+```
+
 ## Core Features
 
 ### 1. Visa Application Flows
