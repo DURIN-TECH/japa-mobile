@@ -5,6 +5,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
 import { ScheduleItem } from '@/types/documents.type';
+import { useTheme, cn } from '@/hooks/useTheme';
 
 interface ScheduleTimelineProps {
   schedules: ScheduleItem[];
@@ -22,6 +23,7 @@ export function ScheduleTimeline({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [activeSchedule, setActiveSchedule] = useState<string | null>(null);
   const [dateType, setDateType] = useState<'start' | 'end'>('start');
+  const { isDark, colors } = useTheme();
 
   const handleDateSelect = (event: DateTimePickerEvent, date?: Date) => {
     setShowDatePicker(false);
@@ -45,24 +47,69 @@ export function ScheduleTimeline({
 
   console.log({ schedules });
 
+  const getDocStatusStyles = (status: string) => {
+    if (isDark) {
+      switch (status) {
+        case 'verified':
+          return { bg: 'bg-green-900/50', text: 'text-green-300' };
+        case 'rejected':
+          return { bg: 'bg-red-900/50', text: 'text-red-300' };
+        case 'uploaded':
+          return { bg: 'bg-blue-900/50', text: 'text-blue-300' };
+        default:
+          return { bg: 'bg-gray-700', text: 'text-gray-300' };
+      }
+    } else {
+      switch (status) {
+        case 'verified':
+          return { bg: 'bg-green-100', text: 'text-green-700' };
+        case 'rejected':
+          return { bg: 'bg-red-100', text: 'text-red-700' };
+        case 'uploaded':
+          return { bg: 'bg-blue-100', text: 'text-blue-700' };
+        default:
+          return { bg: 'bg-gray-100', text: 'text-gray-700' };
+      }
+    }
+  };
+
   return (
-    <View className="rounded-xl border border-gray-200 bg-white">
+    <View
+      className={cn(
+        'rounded-xl border',
+        isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white',
+      )}
+    >
       {schedules.map((schedule, index) => (
         <View
           key={schedule.id}
-          className={`p-4 ${
-            index !== schedules.length - 1 ? 'border-b border-gray-200' : ''
-          }`}
+          className={cn(
+            'p-4',
+            index !== schedules.length - 1 &&
+              (isDark
+                ? 'border-b border-gray-700'
+                : 'border-b border-gray-200'),
+          )}
         >
           {/* Schedule Header */}
           <View className="mb-3 flex-row items-start justify-between">
             <View className="flex-1">
-              <Text className="text-lg font-semibold text-gray-900">
+              <Text
+                className={cn(
+                  'text-lg font-semibold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
                 {schedule.title}
               </Text>
               <View className="mt-2 flex-row items-center">
-                <Calendar size={16} color="#6b7280" />
-                <Text className="ml-2 text-gray-600">
+                <Calendar size={16} color={colors.iconMuted} />
+                <Text
+                  className={cn(
+                    'ml-2',
+                    isDark ? 'text-gray-400' : 'text-gray-600',
+                  )}
+                >
                   {schedule.startDate.toLocaleDateString()} -{' '}
                   {schedule.endDate.toLocaleDateString()}
                 </Text>
@@ -74,53 +121,57 @@ export function ScheduleTimeline({
                   completed: !schedule.completed,
                 })
               }
-              className={`rounded-full p-2 ${
-                schedule.completed ? 'bg-green-100' : 'bg-gray-100'
-              }`}
+              className={cn(
+                'rounded-full p-2',
+                schedule.completed
+                  ? isDark
+                    ? 'bg-green-900/50'
+                    : 'bg-green-100'
+                  : isDark
+                    ? 'bg-gray-700'
+                    : 'bg-gray-100',
+              )}
             >
               <CheckCircle2
                 size={20}
-                color={schedule.completed ? '#16a34a' : '#6b7280'}
+                color={schedule.completed ? '#16a34a' : colors.iconMuted}
               />
             </TouchableOpacity>
           </View>
 
           {/* Document Status - Only show if there are documents */}
           {schedule.documents.length > 0 && (
-            <View className="mb-3 rounded-lg bg-gray-50 p-3">
-              {schedule.documents.map((doc) => (
-                <View
-                  key={doc.id}
-                  className="flex-row items-center justify-between py-2"
-                >
-                  <Text className="text-gray-600">{doc.name}</Text>
+            <View
+              className={cn(
+                'mb-3 rounded-lg p-3',
+                isDark ? 'bg-gray-700' : 'bg-gray-50',
+              )}
+            >
+              {schedule.documents.map((doc) => {
+                const statusStyles = getDocStatusStyles(doc.status);
+                return (
                   <View
-                    className={`rounded-full px-2 py-1 ${
-                      doc.status === 'verified'
-                        ? 'bg-green-100'
-                        : doc.status === 'rejected'
-                          ? 'bg-red-100'
-                          : doc.status === 'uploaded'
-                            ? 'bg-blue-100'
-                            : 'bg-gray-100'
-                    }`}
+                    key={doc.id}
+                    className="flex-row items-center justify-between py-2"
                   >
                     <Text
-                      className={`text-xs font-medium ${
-                        doc.status === 'verified'
-                          ? 'text-green-700'
-                          : doc.status === 'rejected'
-                            ? 'text-red-700'
-                            : doc.status === 'uploaded'
-                              ? 'text-blue-700'
-                              : 'text-gray-700'
-                      }`}
+                      className={isDark ? 'text-gray-400' : 'text-gray-600'}
                     >
-                      {doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}
+                      {doc.name}
                     </Text>
+                    <View
+                      className={cn('rounded-full px-2 py-1', statusStyles.bg)}
+                    >
+                      <Text
+                        className={cn('text-xs font-medium', statusStyles.text)}
+                      >
+                        {doc.status.charAt(0).toUpperCase() +
+                          doc.status.slice(1)}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
 
@@ -132,10 +183,18 @@ export function ScheduleTimeline({
                 setActiveSchedule(schedule.id);
                 setShowDatePicker(true);
               }}
-              className="flex-1 flex-row items-center justify-center rounded-lg bg-blue-50 p-2"
+              className={cn(
+                'flex-1 flex-row items-center justify-center rounded-lg p-2',
+                isDark ? 'bg-blue-900/50' : 'bg-blue-50',
+              )}
             >
-              <Clock size={16} color="#2563eb" />
-              <Text className="ml-2 font-medium text-blue-700">
+              <Clock size={16} color={colors.primary} />
+              <Text
+                className={cn(
+                  'ml-2 font-medium',
+                  isDark ? 'text-blue-300' : 'text-blue-700',
+                )}
+              >
                 Update Start
               </Text>
             </TouchableOpacity>
@@ -145,10 +204,20 @@ export function ScheduleTimeline({
                 setActiveSchedule(schedule.id);
                 setShowDatePicker(true);
               }}
-              className="flex-1 flex-row items-center justify-center rounded-lg bg-blue-50 p-2"
+              className={cn(
+                'flex-1 flex-row items-center justify-center rounded-lg p-2',
+                isDark ? 'bg-blue-900/50' : 'bg-blue-50',
+              )}
             >
-              <Clock size={16} color="#2563eb" />
-              <Text className="ml-2 font-medium text-blue-700">Update End</Text>
+              <Clock size={16} color={colors.primary} />
+              <Text
+                className={cn(
+                  'ml-2 font-medium',
+                  isDark ? 'text-blue-300' : 'text-blue-700',
+                )}
+              >
+                Update End
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

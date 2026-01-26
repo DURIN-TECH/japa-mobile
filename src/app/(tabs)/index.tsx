@@ -1,210 +1,376 @@
-import { TouchableOpacity, View, Text, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, Calendar, Award, ArrowRight } from 'lucide-react-native';
+import { TouchableOpacity, View, Text, ScrollView, Image } from 'react-native';
+import {
+  Bell,
+  Calendar,
+  Star,
+  ArrowRight,
+  Users,
+  FileText,
+  MessageSquare,
+  Globe,
+} from 'lucide-react-native';
 import { router } from 'expo-router';
 import { visas } from '@/mock_data/visas';
+import { verificationAgents } from '@/mock_data/agents';
+import { countryCodeMap, getCountryFlag } from '@/utils/countryFlags';
+import { useTheme, cn } from '@/hooks/useTheme';
+import { Screen, Section, Card, Badge } from '@/components/ui/themed';
+
+const QUICK_ACTIONS = [
+  {
+    path: '/(tabs)/apply/agents',
+    text: 'Find Agent',
+    icon: Users,
+    color: '#3b82f6',
+  },
+  {
+    path: '/me/consultations',
+    text: 'Consultations',
+    icon: MessageSquare,
+    color: '#8b5cf6',
+  },
+  {
+    path: '/me/applications',
+    text: 'Applications',
+    icon: FileText,
+    color: '#10b981',
+  },
+  {
+    path: '/(tabs)/apply',
+    text: 'Browse Visas',
+    icon: Globe,
+    color: '#f59e0b',
+  },
+];
+
+const DESTINATIONS = [
+  { name: 'United States', code: 'US', flag: '🇺🇸' },
+  { name: 'Canada', code: 'CA', flag: '🇨🇦' },
+  { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' },
+  { name: 'Australia', code: 'AU', flag: '🇦🇺' },
+];
 
 export default function HomeScreen() {
+  const { isDark, colors } = useTheme();
+
   return (
-    <SafeAreaView>
-      <View className="flex h-screen bg-gray-50 pb-44">
+    <Screen>
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
         {/* Header Section */}
-        <View className="bg-white px-4 py-4">
+        <View
+          className={cn('px-4 pb-4 pt-2', isDark ? 'bg-gray-800' : 'bg-white')}
+        >
           <View className="flex-row items-center justify-between">
             <View>
-              <Text className="text-2xl font-bold text-gray-950">Japa</Text>
-              <Text className="text-md text-gray-500">Welcome back, Alex</Text>
+              <Text
+                className={cn(
+                  'text-2xl font-bold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
+                Welcome back
+              </Text>
+              <Text
+                className={cn(
+                  'text-base',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                What would you like to do today?
+              </Text>
             </View>
-            <Bell color="#4b5563" size={24} />
+            <TouchableOpacity
+              className={cn(
+                'h-10 w-10 items-center justify-center rounded-full',
+                isDark ? 'bg-gray-700' : 'bg-gray-100',
+              )}
+            >
+              <Bell color={colors.icon} size={20} />
+            </TouchableOpacity>
           </View>
         </View>
 
-        <ScrollView>
-          {/* Active Applications Summary */}
-          <View className="px-4 py-4">
-            <View className="rounded-xl bg-blue-50 p-4">
-              <Text className="text-lg font-bold text-blue-900">
-                Active Applications
-              </Text>
-              <View className="mt-3 flex flex-row items-center justify-between">
-                <View className="flex-row items-center gap-3 space-x-3">
-                  <View className="mr-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
-                    <Calendar color="#2563eb" size={24} />
-                  </View>
-                  <View>
-                    <Text className="text-lg font-semibold">
-                      US Tourist Visa
-                    </Text>
-                    <Text className="text-sm text-gray-600">
-                      In Progress • 2 tasks pending
+        {/* Active Application Card */}
+        <Section>
+          <Card
+            variant="highlight"
+            onPress={() => router.push('/me/applications')}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center">
+                <View
+                  className={cn(
+                    'mr-3 h-12 w-12 items-center justify-center rounded-full',
+                    isDark ? 'bg-blue-800' : 'bg-blue-100',
+                  )}
+                >
+                  <Calendar color={colors.primary} size={24} />
+                </View>
+                <View>
+                  <Text
+                    className={cn(
+                      'text-base font-semibold',
+                      isDark ? 'text-white' : 'text-gray-900',
+                    )}
+                  >
+                    US Tourist Visa
+                  </Text>
+                  <View className="mt-1 flex-row items-center">
+                    <Badge variant="warning">In Progress</Badge>
+                    <Text
+                      className={cn(
+                        'ml-2 text-sm',
+                        isDark ? 'text-gray-400' : 'text-gray-500',
+                      )}
+                    >
+                      2 tasks pending
                     </Text>
                   </View>
                 </View>
-                <ArrowRight className="h-5 w-5 text-blue-600" />
               </View>
+              <ArrowRight size={20} color={colors.primary} />
             </View>
-          </View>
+          </Card>
+        </Section>
 
-          {/* Quick Actions */}
-          <View className="px-4 py-2">
-            <Text className="mb-3 text-lg font-bold text-gray-900">
-              Quick Actions
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerClassName="flex-row gap-3 overflow-x-auto"
-            >
-              {[
-                {
-                  path: '/(tabs)/apply/agents',
-                  text: 'Consult Agent',
-                  icon: 'Calendar',
-                  size: 24,
-                  color: '#2563eb',
-                },
-                {
-                  path: '/me/consultations',
-                  text: 'Consultations',
-                  icon: 'Clock',
-                  size: 24,
-                  color: '#2563eb',
-                },
-                {
-                  path: '/me/applications',
-                  text: 'Applications',
-                  icon: 'Calendar',
-                  size: 24,
-                  color: '#2563eb',
-                },
-              ].map((actions, index) => (
+        {/* Quick Actions */}
+        <Section title="Quick Actions">
+          <View className="flex-row flex-wrap justify-between">
+            {QUICK_ACTIONS.map((action, index) => {
+              const IconComponent = action.icon;
+              return (
                 <TouchableOpacity
                   key={index}
-                  className="flex w-48 items-center justify-center rounded-xl border border-gray-200 bg-white p-4"
+                  className={cn(
+                    'mb-3 items-center rounded-xl border p-4',
+                    isDark
+                      ? 'border-gray-700 bg-gray-800'
+                      : 'border-gray-200 bg-white',
+                  )}
+                  style={{ width: '48%' }}
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  onPress={() => router.push(actions.path as any)}
+                  onPress={() => router.push(action.path as any)}
+                  activeOpacity={0.7}
                 >
-                  <Calendar size={24} color="#2563eb" />
-                  <Text className="text-sm font-medium">{actions.text}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Featured Agents */}
-          <View className="px-4 py-4">
-            <View className="mb-3 flex-row justify-between">
-              <Text className="text-lg font-bold text-gray-900">
-                Top Rated Agents
-              </Text>
-              <TouchableOpacity onPress={() => router.push('/apply/agents')}>
-                <Text className="text-md font-medium text-blue-600">
-                  View All
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerClassName="flex-row gap-3 overflow-x-auto"
-            >
-              {[1, 2, 3].map((agent) => (
-                <View
-                  key={agent}
-                  className="w-48 flex-none rounded-xl border border-gray-200 bg-white p-4"
-                >
-                  <View className="mb-3 flex-row items-center gap-3 space-x-3">
-                    <View className="h-10 w-10 rounded-full bg-gray-100" />
-                    <View>
-                      <Text className="font-medium">Sarah Kim</Text>
-                      <Text className="text-sm text-gray-600">
-                        US Visa Expert
-                      </Text>
-                    </View>
+                  <View
+                    className="mb-2 h-12 w-12 items-center justify-center rounded-full"
+                    style={{ backgroundColor: `${action.color}20` }}
+                  >
+                    <IconComponent size={24} color={action.color} />
                   </View>
-                  <View className="flex-row items-center gap-1 space-x-1">
-                    <Award size={16} color="#facc15" />
-                    <Text className="text-sm font-semibold text-gray-600">
-                      4.9 (120 reviews)
+                  <Text
+                    className={cn(
+                      'text-sm font-medium',
+                      isDark ? 'text-white' : 'text-gray-900',
+                    )}
+                  >
+                    {action.text}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Section>
+
+        {/* Top Rated Agents */}
+        <Section
+          title="Top Rated Agents"
+          rightElement={
+            <TouchableOpacity onPress={() => router.push('/apply/agents')}>
+              <Text className="text-sm font-medium text-blue-600">
+                View All
+              </Text>
+            </TouchableOpacity>
+          }
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            {verificationAgents.slice(0, 3).map((agent, index) => (
+              <TouchableOpacity
+                key={agent.id}
+                onPress={() => router.push(`/apply/agents/${agent.id}`)}
+                className={cn(
+                  'rounded-xl border p-4',
+                  isDark
+                    ? 'border-gray-700 bg-gray-800'
+                    : 'border-gray-200 bg-white',
+                )}
+                style={{ width: 200, marginRight: index < 2 ? 12 : 0 }}
+                activeOpacity={0.7}
+              >
+                <View className="mb-3 flex-row items-center">
+                  <View
+                    className={cn(
+                      'h-10 w-10 items-center justify-center rounded-full',
+                      isDark ? 'bg-gray-700' : 'bg-gray-100',
+                    )}
+                  >
+                    <Text
+                      className={cn(
+                        'font-semibold',
+                        isDark ? 'text-gray-300' : 'text-gray-600',
+                      )}
+                    >
+                      {agent.initials}
+                    </Text>
+                  </View>
+                  <View className="ml-3 flex-1">
+                    <Text
+                      className={cn(
+                        'font-medium',
+                        isDark ? 'text-white' : 'text-gray-900',
+                      )}
+                      numberOfLines={1}
+                    >
+                      {agent.name}
+                    </Text>
+                    <Text
+                      className={cn(
+                        'text-sm',
+                        isDark ? 'text-gray-400' : 'text-gray-500',
+                      )}
+                      numberOfLines={1}
+                    >
+                      {agent.specializations[0]}
                     </Text>
                   </View>
                 </View>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Popular Visas */}
-          <View className="px-4 py-2">
-            <View className="mb-3 flex-row justify-between">
-              <Text className="text-lg font-bold text-gray-900">
-                Popular Visas
-              </Text>
-              <TouchableOpacity onPress={() => router.push('/apply')}>
-                <Text className="text-md font-medium text-blue-600">
-                  View All
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerClassName="flex-row overflow-x-auto pb-4 gap-3"
-            >
-              {visas.map((visa) => (
-                <TouchableOpacity
-                  key={visa.id}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/apply/visa-details/[id]',
-                      params: { id: visa.id },
-                    })
-                  }
-                  className="w-48 flex-none rounded-xl border border-gray-200 bg-white p-4"
-                >
+                <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center">
-                    <View className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-50">
-                      <Calendar size={20} color="#2563eb" />
-                    </View>
-                    <View className="ml-3">
-                      <Text className="mb-1 text-lg font-semibold">
-                        {visa.name}
-                      </Text>
-                      <Text className="mb-2 text-gray-600">
-                        {visa.processingTime}
-                      </Text>
-                    </View>
-                  </View>
-                  <View className="flex-row items-center justify-between">
-                    <Text className="font-bold text-blue-600">
-                      ${visa.price}
+                    <Star size={14} color="#facc15" fill="#facc15" />
+                    <Text
+                      className={cn(
+                        'ml-1 text-sm',
+                        isDark ? 'text-gray-300' : 'text-gray-700',
+                      )}
+                    >
+                      {agent.rating}
                     </Text>
-                    <ArrowRight size={20} color="#2563eb" />
                   </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+                  <Text className="text-sm font-semibold text-green-600">
+                    ${agent.price}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </Section>
 
-          {/* Popular Destinations */}
-          <View className="px-4 py-2">
-            <Text className="mb-3 text-lg font-bold text-gray-900">
-              Popular Destinations
-            </Text>
-            <View className="flex-row flex-wrap gap-3">
-              {['United States', 'Canada', 'UK', 'Australia'].map((country) => (
-                <TouchableOpacity
-                  key={country}
-                  className="flex-row items-center justify-between rounded-xl border border-gray-200 bg-white p-4"
-                  style={{ width: '48%' }}
+        {/* Popular Visas */}
+        <Section
+          title="Popular Visas"
+          rightElement={
+            <TouchableOpacity onPress={() => router.push('/apply')}>
+              <Text className="text-sm font-medium text-blue-600">
+                View All
+              </Text>
+            </TouchableOpacity>
+          }
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingRight: 16 }}
+          >
+            {visas.slice(0, 4).map((visa, index) => (
+              <TouchableOpacity
+                key={visa.id}
+                onPress={() =>
+                  router.push({
+                    pathname: '/apply/visa-details/[id]',
+                    params: { id: visa.id },
+                  })
+                }
+                className={cn(
+                  'rounded-xl border p-4',
+                  isDark
+                    ? 'border-gray-700 bg-gray-800'
+                    : 'border-gray-200 bg-white',
+                )}
+                style={{ width: 180, marginRight: index < 3 ? 12 : 0 }}
+                activeOpacity={0.7}
+              >
+                <View className="mb-3 flex-row items-center">
+                  <Image
+                    source={{
+                      uri: getCountryFlag(countryCodeMap[visa.country]),
+                    }}
+                    className="h-8 w-8 rounded-full"
+                    resizeMode="cover"
+                  />
+                  <View className="ml-2 flex-1">
+                    <Text
+                      className={cn(
+                        'font-semibold',
+                        isDark ? 'text-white' : 'text-gray-900',
+                      )}
+                      numberOfLines={1}
+                    >
+                      {visa.name}
+                    </Text>
+                  </View>
+                </View>
+                <Text
+                  className={cn(
+                    'mb-3 text-sm',
+                    isDark ? 'text-gray-400' : 'text-gray-500',
+                  )}
+                  numberOfLines={1}
                 >
-                  <Text className="font-medium">{country}</Text>
-                  <ArrowRight size={20} color="#9ca3af" />
-                </TouchableOpacity>
-              ))}
-            </View>
+                  {visa.processingTime}
+                </Text>
+                <View className="flex-row items-center justify-between">
+                  <Text className="font-bold text-blue-600">${visa.price}</Text>
+                  <ArrowRight size={16} color={colors.primary} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </Section>
+
+        {/* Popular Destinations */}
+        <Section title="Popular Destinations">
+          <View className="flex-row flex-wrap justify-between">
+            {DESTINATIONS.map((country) => (
+              <TouchableOpacity
+                key={country.code}
+                onPress={() => router.push('/apply')}
+                className={cn(
+                  'mb-3 flex-row items-center rounded-xl border p-3',
+                  isDark
+                    ? 'border-gray-700 bg-gray-800'
+                    : 'border-gray-200 bg-white',
+                )}
+                style={{ width: '48%' }}
+                activeOpacity={0.7}
+              >
+                <Image
+                  source={{ uri: getCountryFlag(country.code) }}
+                  className="mr-2 h-8 w-8 rounded-full"
+                  resizeMode="cover"
+                />
+                <Text
+                  className={cn(
+                    'flex-1 font-medium',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                  numberOfLines={1}
+                >
+                  {country.name}
+                </Text>
+                <ArrowRight size={16} color={colors.iconMuted} />
+              </TouchableOpacity>
+            ))}
           </View>
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+        </Section>
+      </ScrollView>
+    </Screen>
   );
 }

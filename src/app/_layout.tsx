@@ -6,6 +6,9 @@ import { useEffect } from 'react';
 import '../../global.css';
 
 import { OnboardingProvider } from '@/context/OnboardingContext';
+import { QueryProvider } from '@/providers/QueryProvider';
+import { ThemeSync } from '@/providers/ThemeSync';
+import { useSettingsStore, useSettingsHydration } from '@/stores/settings.store';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -42,32 +45,41 @@ export const unstable_settings = {
   initialRouteName: 'index',
 };
 
-export default function RootLayout() {
+function RootLayoutContent() {
   const [loaded] = useFonts({
     // eslint-disable-next-line
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
+  const hasHydrated = useSettingsHydration();
+  const isDark = useSettingsStore((state) => state.isDark());
 
   useEffect(() => {
-    if (loaded) {
+    if (loaded && hasHydrated) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [loaded, hasHydrated]);
 
-  if (!loaded) {
+  if (!loaded || !hasHydrated) {
     return null;
   }
 
   return (
-    // <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
     <OnboardingProvider>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        {/* (!!getOnboardingStatus() && <Stack.Screen name="(onboard)" options={{ headerShown: false }} />) */}
         <Stack.Screen name="+not-found" />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
     </OnboardingProvider>
-    // </ThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <QueryProvider>
+      <ThemeSync>
+        <RootLayoutContent />
+      </ThemeSync>
+    </QueryProvider>
   );
 }

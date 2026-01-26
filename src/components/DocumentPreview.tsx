@@ -10,6 +10,7 @@ import { X } from 'lucide-react-native';
 import * as FileSystem from 'expo-file-system';
 import { useState, useEffect } from 'react';
 import WebView from 'react-native-webview';
+import { useTheme, cn } from '@/hooks/useTheme';
 
 interface DocumentPreviewProps {
   uri: string;
@@ -26,6 +27,7 @@ export function DocumentPreview({
 }: DocumentPreviewProps) {
   const [loading, setLoading] = useState(true);
   const [fileInfo, setFileInfo] = useState<FileSystem.FileInfo | null>(null);
+  const { isDark, colors } = useTheme();
 
   useEffect(() => {
     const getFileInfo = async () => {
@@ -61,17 +63,29 @@ export function DocumentPreview({
       animationType="slide"
       presentationStyle="pageSheet"
     >
-      <View className="flex-1 bg-white">
-        <View className="flex-row items-center justify-between border-b border-gray-200 px-4 py-4">
-          <Text className="text-lg font-semibold">{fileName}</Text>
+      <View className={cn('flex-1', isDark ? 'bg-gray-900' : 'bg-white')}>
+        <View
+          className={cn(
+            'flex-row items-center justify-between border-b px-4 py-4',
+            isDark ? 'border-gray-700' : 'border-gray-200',
+          )}
+        >
+          <Text
+            className={cn(
+              'text-lg font-semibold',
+              isDark ? 'text-white' : 'text-gray-900',
+            )}
+          >
+            {fileName}
+          </Text>
           <TouchableOpacity onPress={onClose}>
-            <X size={24} color="#000" />
+            <X size={24} color={isDark ? '#fff' : '#000'} />
           </TouchableOpacity>
         </View>
 
         {loading ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color="#2563eb" />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
         ) : (
           <View className="flex-1">
@@ -88,8 +102,15 @@ export function DocumentPreview({
           </View>
         )}
 
-        <View className="border-t border-gray-200 px-4 py-4">
-          <Text className="text-gray-600">Size: {getFileSizeMB()} MB</Text>
+        <View
+          className={cn(
+            'border-t px-4 py-4',
+            isDark ? 'border-gray-700' : 'border-gray-200',
+          )}
+        >
+          <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+            Size: {getFileSizeMB()} MB
+          </Text>
         </View>
       </View>
     </Modal>

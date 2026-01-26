@@ -1,12 +1,13 @@
 import { useLocalSearchParams, router } from 'expo-router';
 import { ScrollView, View, TouchableOpacity, Text, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, CheckCircle2, Clock } from 'lucide-react-native';
+import { CheckCircle2, Clock } from 'lucide-react-native';
 import { useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import { useVisaTypes } from '@/hooks/useVisaTypes';
 import { DocumentPreview } from '@/components/DocumentPreview';
 import { ScheduleTimeline } from '@/components/ScheduleTimeline';
+import { useTheme, cn } from '@/hooks/useTheme';
+import { Screen, Header, Section, Card, ProgressBar, Button } from '@/components/ui/themed';
 
 interface UploadedDocument {
   id: string;
@@ -32,6 +33,7 @@ export default function SelfServiceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getVisaType } = useVisaTypes();
   const visa = getVisaType(id);
+  const { isDark, colors } = useTheme();
   const [uploadedDocs, setUploadedDocs] = useState<
     Record<string, UploadedDocument[]>
   >({});
@@ -42,7 +44,7 @@ export default function SelfServiceScreen() {
       id: req.id || `req-${index}`,
       title: req.title,
       startDate: new Date(),
-      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 1 week from now
+      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       completed: false,
       documents: (req.documents || []).map((doc, idx) => ({
         id: `${req.id || `req-${index}`}-doc-${idx}`,
@@ -51,7 +53,6 @@ export default function SelfServiceScreen() {
       })),
     })),
   );
-  console.log('visa requirements', visa?.requirements, schedules);
 
   if (!visa) return null;
 
@@ -59,7 +60,6 @@ export default function SelfServiceScreen() {
     scheduleId: string,
     updates: Partial<ScheduleItem>,
   ) => {
-    console.log({ scheduleId, updates });
     setSchedules((prev) =>
       prev.map((schedule) =>
         schedule.id === scheduleId ? { ...schedule, ...updates } : schedule,
@@ -86,8 +86,6 @@ export default function SelfServiceScreen() {
     );
   };
 
-  console.log({ id, schedules });
-
   const handleDocumentUpload = async (requirementId: string) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -97,15 +95,6 @@ export default function SelfServiceScreen() {
 
       if (!result.canceled) {
         const asset = result.assets[0];
-
-        // TODO: Investigate why validation is not working nor triggering alert on failure
-        // Validate document
-        // const validation = await validateDocument(asset.uri, asset.name);
-
-        // if (!validation.isValid) {
-        //   Alert.alert("Invalid Document", validation.errors.join("\n"));
-        //   return;
-        // }
 
         const newDoc: UploadedDocument = {
           id: Date.now().toString(),
@@ -119,8 +108,7 @@ export default function SelfServiceScreen() {
           [requirementId]: [...(prev[requirementId] || []), newDoc],
         }));
 
-        // Update document status in schedule
-        const docId = `${requirementId}-doc-0`; // Assuming single document for now
+        const docId = `${requirementId}-doc-0`;
         updateDocumentStatus(requirementId, docId, 'uploaded');
       }
     } catch (error) {
@@ -142,83 +130,103 @@ export default function SelfServiceScreen() {
   };
 
   return (
-    <SafeAreaView>
-      <ScrollView className="h-screen bg-gray-50">
+    <Screen>
+      <ScrollView className="flex-1">
         {/* Header */}
-        <View className="bg-white px-4 py-4">
-          <TouchableOpacity
-            onPress={() => router.back()}
-            className="mb-4 flex-row items-center"
-          >
-            <ChevronLeft size={24} color="#000" />
-            <Text className="ml-2 text-lg font-semibold">
-              Self-Service Application
-            </Text>
-          </TouchableOpacity>
+        <View className={cn('px-4 py-4', isDark ? 'bg-gray-800' : 'bg-white')}>
+          <Header title="Self-Service Application" showBack />
 
           {/* Progress Bar */}
-          <View className="mt-2">
+          <View className="mt-4">
             <View className="mb-2 flex-row justify-between">
-              <Text className="font-medium text-gray-900">
+              <Text
+                className={cn(
+                  'font-medium',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
                 Application Progress
               </Text>
-              <Text className="text-gray-600">{calculateProgress()}%</Text>
+              <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                {calculateProgress()}%
+              </Text>
             </View>
-            <View className="h-2 overflow-hidden rounded-full bg-gray-100">
-              <View
-                className="h-full rounded-full bg-blue-600"
-                style={{ width: `${calculateProgress()}%` }}
-              />
-            </View>
+            <ProgressBar progress={calculateProgress()} />
           </View>
         </View>
 
         {/* Schedule Timeline */}
-        <View className="px-4 py-4">
-          <Text className="mb-3 text-lg font-bold text-gray-900">Schedule</Text>
+        <Section title="Schedule">
           <ScheduleTimeline
             schedules={schedules}
             onScheduleUpdate={handleScheduleUpdate}
           />
-        </View>
+        </Section>
 
         {/* Requirements List */}
-        <View className="px-4 py-4">
+        <Section>
           {visa.requirements.map((req) => (
-            <View
-              key={req.id}
-              className="mb-4 rounded-xl border border-gray-200 bg-white p-4"
-            >
+            <Card key={req.id} className="mb-4">
               <View className="mb-3 flex-row items-center justify-between">
-                <Text className="text-lg font-semibold">{req.title}</Text>
+                <Text
+                  className={cn(
+                    'text-lg font-semibold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  {req.title}
+                </Text>
                 <View className="flex-row items-center">
-                  <Clock size={16} color="#6b7280" />
-                  <Text className="ml-2 text-gray-600">
+                  <Clock size={16} color={colors.iconMuted} />
+                  <Text
+                    className={cn(
+                      'ml-2',
+                      isDark ? 'text-gray-400' : 'text-gray-600',
+                    )}
+                  >
                     {req.estimatedTime}
                   </Text>
                 </View>
               </View>
 
-              <Text className="mb-4 text-gray-600">{req.description}</Text>
+              <Text
+                className={cn('mb-4', isDark ? 'text-gray-400' : 'text-gray-600')}
+              >
+                {req.description}
+              </Text>
 
               {/* Required Documents */}
-              <View className="mb-4 rounded-lg bg-gray-50 p-3">
-                <Text className="mb-2 font-medium">Required Documents:</Text>
+              <View
+                className={cn(
+                  'mb-4 rounded-lg p-3',
+                  isDark ? 'bg-gray-700' : 'bg-gray-50',
+                )}
+              >
+                <Text
+                  className={cn(
+                    'mb-2 font-medium',
+                    isDark ? 'text-gray-300' : 'text-gray-700',
+                  )}
+                >
+                  Required Documents:
+                </Text>
                 {req.documents.map((doc, idx) => (
                   <View
                     key={idx}
                     className="flex-row items-center justify-between py-2"
                   >
-                    <Text className="text-gray-600">• {doc}</Text>
+                    <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                      - {doc}
+                    </Text>
                     {uploadedDocs[req.id]?.some((d) => d.name.includes(doc)) ? (
                       <CheckCircle2 size={20} color="#16a34a" />
                     ) : (
-                      <TouchableOpacity
+                      <Button
+                        size="sm"
                         onPress={() => handleDocumentUpload(req.id)}
-                        className="rounded-lg bg-blue-600 px-3 py-1"
                       >
-                        <Text className="text-white">Upload</Text>
-                      </TouchableOpacity>
+                        Upload
+                      </Button>
                     )}
                   </View>
                 ))}
@@ -227,13 +235,25 @@ export default function SelfServiceScreen() {
               {/* Uploaded Documents */}
               {uploadedDocs[req.id]?.length > 0 && (
                 <View className="mt-2">
-                  <Text className="mb-2 font-medium">Uploaded Documents:</Text>
+                  <Text
+                    className={cn(
+                      'mb-2 font-medium',
+                      isDark ? 'text-gray-300' : 'text-gray-700',
+                    )}
+                  >
+                    Uploaded Documents:
+                  </Text>
                   {uploadedDocs[req.id].map((doc) => (
                     <View
                       key={doc.id}
-                      className="flex-row items-center justify-between border-b border-gray-100 py-2"
+                      className={cn(
+                        'flex-row items-center justify-between border-b py-2',
+                        isDark ? 'border-gray-700' : 'border-gray-100',
+                      )}
                     >
-                      <Text className="text-gray-600">{doc.name}</Text>
+                      <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                        {doc.name}
+                      </Text>
                       <TouchableOpacity
                         onPress={() => {
                           setSelectedDoc(doc);
@@ -246,9 +266,9 @@ export default function SelfServiceScreen() {
                   ))}
                 </View>
               )}
-            </View>
+            </Card>
           ))}
-        </View>
+        </Section>
       </ScrollView>
 
       {selectedDoc && (
@@ -262,6 +282,6 @@ export default function SelfServiceScreen() {
           }}
         />
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }

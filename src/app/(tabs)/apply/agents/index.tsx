@@ -1,78 +1,210 @@
-import {
-  ScrollView,
-  View,
-  TextInput,
-  TouchableOpacity,
-  Text,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Search } from 'lucide-react-native';
-import { Link, router } from 'expo-router';
+import { useState } from 'react';
+import { ScrollView, View, TouchableOpacity, Text } from 'react-native';
+import { Search, Users, Star, Filter } from 'lucide-react-native';
+import { Link } from 'expo-router';
 import { AgentCard } from '@/components/agents/AgentCard';
 import { verificationAgents } from '@/mock_data/agents';
+import { useTheme, cn } from '@/hooks/useTheme';
+import { Screen, Section, Input, Chip } from '@/components/ui/themed';
+
+const FILTERS = [
+  'All',
+  'Top Rated',
+  'Student Visa',
+  'Work Visa',
+  'Tourist Visa',
+];
 
 export default function AgentsScreen() {
+  const { isDark, colors } = useTheme();
+  const [selectedFilter, setSelectedFilter] = useState(0);
+
   return (
-    <SafeAreaView>
-      {/* Header Section */}
-      <View className="bg-white px-4 py-4">
-        {/* Header */}
-        <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => router.back()} className="mb-4">
-            <ChevronLeft size={24} color="#000" />
-          </TouchableOpacity>
-          <View>
-            <Text className="text-2xl font-bold text-gray-950">
-              Find Available Agent
-            </Text>
-            <Text className="text-md text-gray-500">
-              Expert visa consultants at your service
-            </Text>
-          </View>
-        </View>
-
-        {/* Search Bar */}
-        <View className="mt-4 flex-row items-center justify-center">
-          <TextInput
-            placeholder="Search by name, specialization..."
-            className="w-full rounded-full border border-gray-200 py-2 pl-10 pr-4"
-          />
-          <View className="absolute left-3 top-1/2 -translate-y-1/2">
-            <Search size={20} color="#9CA3AF" />
-          </View>
-        </View>
-      </View>
-
-      {/* Filters */}
+    <Screen>
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        className="px-4 py-2"
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
       >
-        {['All', 'Top Rated', 'Student Visa', 'Work Visa', 'Tourist Visa'].map(
-          (filter) => (
-            <TouchableOpacity
-              key={filter}
-              className="mr-2 rounded-full border border-gray-200 bg-white px-3 py-1"
+        {/* Header Section */}
+        <View
+          className={cn('px-4 pb-4 pt-2', isDark ? 'bg-gray-800' : 'bg-white')}
+        >
+          <View className="mb-1 flex-row items-center">
+            <View
+              className={cn(
+                'mr-3 h-10 w-10 items-center justify-center rounded-full',
+                isDark ? 'bg-blue-900/50' : 'bg-blue-100',
+              )}
             >
-              <Text className="text-gray-600">{filter}</Text>
-            </TouchableOpacity>
-          ),
-        )}
-      </ScrollView>
+              <Users size={20} color={colors.primary} />
+            </View>
+            <View className="flex-1">
+              <Text
+                className={cn(
+                  'text-2xl font-bold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
+                Find an Agent
+              </Text>
+              <Text
+                className={cn(
+                  'text-sm',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                Expert visa consultants ready to help
+              </Text>
+            </View>
+          </View>
 
-      <ScrollView className="h-screen bg-gray-50 pb-44">
+          {/* Stats Row */}
+          <View
+            className={cn(
+              'mt-4 flex-row rounded-xl p-3',
+              isDark ? 'bg-gray-700/50' : 'bg-gray-50',
+            )}
+          >
+            <View
+              className={cn(
+                'flex-1 items-center border-r',
+                isDark ? 'border-gray-600' : 'border-gray-200',
+              )}
+            >
+              <Text
+                className={cn(
+                  'text-xl font-bold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
+                {verificationAgents.length}
+              </Text>
+              <Text
+                className={cn(
+                  'text-xs',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                Available
+              </Text>
+            </View>
+            <View
+              className={cn(
+                'flex-1 items-center border-r',
+                isDark ? 'border-gray-600' : 'border-gray-200',
+              )}
+            >
+              <View className="flex-row items-center">
+                <Star size={14} color="#facc15" />
+                <Text
+                  className={cn(
+                    'ml-1 text-xl font-bold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  4.8
+                </Text>
+              </View>
+              <Text
+                className={cn(
+                  'text-xs',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                Avg Rating
+              </Text>
+            </View>
+            <View className="flex-1 items-center">
+              <Text
+                className={cn(
+                  'text-xl font-bold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
+                95%
+              </Text>
+              <Text
+                className={cn(
+                  'text-xs',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                Success Rate
+              </Text>
+            </View>
+          </View>
+
+          {/* Search Bar */}
+          <View className="mt-4">
+            <Input
+              placeholder="Search by name, specialization..."
+              icon={<Search size={20} color={colors.placeholder} />}
+            />
+          </View>
+        </View>
+
+        {/* Filters */}
+        <View
+          className={cn(
+            'border-b',
+            isDark ? 'border-gray-800' : 'border-gray-100',
+          )}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+            }}
+          >
+            {FILTERS.map((filter, index) => (
+              <TouchableOpacity
+                key={filter}
+                onPress={() => setSelectedFilter(index)}
+                style={{ marginRight: index < FILTERS.length - 1 ? 8 : 0 }}
+              >
+                <Chip selected={selectedFilter === index}>{filter}</Chip>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Results Count */}
+        <View className="flex-row items-center justify-between px-4 py-3">
+          <Text
+            className={cn(
+              'font-medium',
+              isDark ? 'text-gray-300' : 'text-gray-700',
+            )}
+          >
+            {verificationAgents.length} agents found
+          </Text>
+          <TouchableOpacity className="flex-row items-center">
+            <Filter size={16} color={colors.iconMuted} />
+            <Text
+              className={cn(
+                'ml-1 text-sm',
+                isDark ? 'text-gray-400' : 'text-gray-500',
+              )}
+            >
+              Sort by
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Agents List */}
-        <View className="px-4 py-2">
+        <Section className="pt-0">
           {verificationAgents.map((agent) => (
             <Link key={agent.id} href={`/apply/agents/${agent.id}`} asChild>
-              <TouchableOpacity>
+              <TouchableOpacity activeOpacity={0.7}>
                 <AgentCard agent={agent} />
               </TouchableOpacity>
             </Link>
           ))}
-        </View>
+        </Section>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
 }

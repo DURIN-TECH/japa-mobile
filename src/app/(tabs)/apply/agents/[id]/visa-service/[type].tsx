@@ -1,5 +1,5 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { View, ScrollView, TouchableOpacity, Text } from 'react-native';
+import { View, ScrollView, Text } from 'react-native';
 import {
   FileText,
   Clock,
@@ -9,6 +9,8 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import { verificationAgents } from '@/mock_data/agents';
+import { useTheme, cn } from '@/hooks/useTheme';
+import { Screen, Header, Section, Card, StatsCard, Button } from '@/components/ui/themed';
 
 interface VisaStatistics {
   successRate: number;
@@ -158,7 +160,6 @@ const VISA_DETAILS: Record<string, VisaInfo> = {
       ],
     },
   },
-  // Add more visa types as needed
 } as const;
 
 type VisaType = keyof typeof VISA_DETAILS;
@@ -168,6 +169,7 @@ export default function VisaServiceScreen() {
     id: string;
     type: VisaType;
   }>();
+  const { isDark, colors } = useTheme();
 
   const agent = verificationAgents.find((a) => a.id === id);
   if (!agent) return null;
@@ -176,148 +178,156 @@ export default function VisaServiceScreen() {
   if (!visaInfo) return null;
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
-      {/* Header with Back Button */}
-      <View className="bg-white px-4 py-4">
-        {/* <TouchableOpacity
-          onPress={() => router.back()}
-          className="mb-4"
-        >
-          <ChevronLeft color="#000" />
-        </TouchableOpacity> */}
+    <Screen>
+      <Header title={visaInfo.title} showBack />
+      <ScrollView className="flex-1">
+        {/* Header Info */}
+        <View className={cn('px-4 py-4', isDark ? 'bg-gray-800' : 'bg-white')}>
+          <Text className={cn('mt-1', isDark ? 'text-gray-400' : 'text-gray-600')}>
+            {visaInfo.description}
+          </Text>
 
-        <View className="mb-4">
-          <Text className="text-2xl font-bold">{visaInfo.title}</Text>
-          <Text className="mt-1 text-gray-600">{visaInfo.description}</Text>
+          <Card variant="highlight" className="mt-4">
+            <View className="mb-2 flex-row items-center">
+              <Clock size={20} color={colors.primary} />
+              <Text
+                className={cn('ml-2', isDark ? 'text-blue-300' : 'text-blue-900')}
+              >
+                Processing Time: {visaInfo.processingTime}
+              </Text>
+            </View>
+            <View className="flex-row items-center">
+              <FileText size={20} color={colors.primary} />
+              <Text
+                className={cn('ml-2', isDark ? 'text-blue-300' : 'text-blue-900')}
+              >
+                Validity: {visaInfo.validity}
+              </Text>
+            </View>
+          </Card>
         </View>
 
-        <View className="rounded-xl bg-blue-50 p-4">
-          <View className="mb-2 flex-row items-center">
-            <Clock size={20} color="#2563eb" />
-            <Text className="ml-2 text-blue-900">
-              Processing Time: {visaInfo.processingTime}
-            </Text>
-          </View>
-          <View className="flex-row items-center">
-            <FileText size={20} color="#2563eb" />
-            <Text className="ml-2 text-blue-900">
-              Validity: {visaInfo.validity}
-            </Text>
-          </View>
-        </View>
-      </View>
+        {/* Success Rate Statistics */}
+        <Section title="Success Statistics">
+          <Card>
+            <StatsCard
+              items={[
+                {
+                  icon: <Award size={24} color={colors.primary} />,
+                  value: `${visaInfo.statistics.successRate}%`,
+                  label: 'Success Rate',
+                },
+                {
+                  icon: <Users size={24} color={colors.primary} />,
+                  value: visaInfo.statistics.totalApplications.toLocaleString(),
+                  label: 'Applications',
+                },
+                {
+                  icon: <TrendingUp size={24} color={colors.primary} />,
+                  value: visaInfo.statistics.averageProcessingTime,
+                  label: 'Avg. Time',
+                },
+              ]}
+            />
 
-      {/* Success Rate Statistics */}
-      <View className="px-4 py-4">
-        <Text className="mb-3 text-xl font-bold">Success Statistics</Text>
-        <View className="rounded-xl border border-gray-200 bg-white p-4">
-          <View className="mb-4 flex-row justify-between">
-            <View className="flex-1 items-center">
-              <Award size={24} color="#2563eb" />
-              <Text className="mt-2 text-2xl font-bold text-blue-600">
-                {visaInfo.statistics.successRate}%
+            {/* Common Rejection Reasons */}
+            <View
+              className={cn(
+                'mt-4 border-t pt-4',
+                isDark ? 'border-gray-700' : 'border-gray-100',
+              )}
+            >
+              <Text
+                className={cn(
+                  'mb-2 font-semibold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
+                Common Rejection Reasons:
               </Text>
-              <Text className="text-sm text-gray-600">Success Rate</Text>
+              {visaInfo.statistics.commonRejectionReasons.map((reason, index) => (
+                <View key={index} className="mb-2 flex-row items-center">
+                  <View className="mr-2 h-2 w-2 rounded-full bg-red-500" />
+                  <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                    {reason}
+                  </Text>
+                </View>
+              ))}
             </View>
-            <View className="flex-1 items-center">
-              <Users size={24} color="#2563eb" />
-              <Text className="mt-2 text-2xl font-bold text-blue-600">
-                {visaInfo.statistics.totalApplications.toLocaleString()}
-              </Text>
-              <Text className="text-sm text-gray-600">Applications</Text>
-            </View>
-            <View className="flex-1 items-center">
-              <TrendingUp size={24} color="#2563eb" />
-              <Text className="mt-2 text-2xl font-bold text-blue-600">
-                {visaInfo.statistics.averageProcessingTime}
-              </Text>
-              <Text className="text-sm text-gray-600">Avg. Time</Text>
-            </View>
-          </View>
+          </Card>
+        </Section>
 
-          {/* Common Rejection Reasons */}
-          <View className="mt-4 border-t border-gray-100 pt-4">
-            <Text className="mb-2 font-semibold text-gray-900">
-              Common Rejection Reasons:
-            </Text>
-            {visaInfo.statistics.commonRejectionReasons.map((reason, index) => (
-              <View key={index} className="mb-2 flex-row items-center">
-                <View className="mr-2 h-2 w-2 rounded-full bg-red-500" />
-                <Text className="text-gray-600">{reason}</Text>
+        {/* Requirements */}
+        <Section title="Requirements">
+          <Card>
+            {visaInfo.requirements.map((req, index) => (
+              <View key={index} className="mb-3 flex-row items-center last:mb-0">
+                <CheckCircle2 size={20} color={colors.primary} />
+                <Text
+                  className={cn('ml-2', isDark ? 'text-white' : 'text-gray-900')}
+                >
+                  {req}
+                </Text>
               </View>
             ))}
-          </View>
-        </View>
-      </View>
+          </Card>
+        </Section>
 
-      {/* Requirements */}
-      <View className="px-4 py-4">
-        <Text className="mb-3 text-xl font-bold">Requirements</Text>
-        <View className="rounded-xl border border-gray-200 bg-white p-4">
-          {visaInfo.requirements.map((req, index) => (
-            <View key={index} className="mb-3 flex-row items-center last:mb-0">
-              <CheckCircle2 size={20} color="#2563eb" />
-              <Text className="ml-2 text-gray-900">{req}</Text>
+        {/* Agent Support */}
+        <Section title="Agent Support">
+          <Card>
+            <Text className={isDark ? 'text-white' : 'text-gray-900'}>
+              {agent.name} will assist you with:
+            </Text>
+            <View className="mt-2 space-y-2">
+              <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                - Document preparation and review
+              </Text>
+              <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                - Application filing assistance
+              </Text>
+              <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                - Interview preparation
+              </Text>
+              <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                - Case status monitoring
+              </Text>
             </View>
-          ))}
-        </View>
-      </View>
+          </Card>
+        </Section>
 
-      {/* Agent Support */}
-      <View className="px-4 py-4">
-        <Text className="mb-3 text-xl font-bold">Agent Support</Text>
-        <View className="rounded-xl border border-gray-200 bg-white p-4">
-          <Text className="text-gray-900">
-            {agent.name} will assist you with:
-          </Text>
-          <View className="mt-2 space-y-2">
-            <Text className="text-gray-600">
-              • Document preparation and review
-            </Text>
-            <Text className="text-gray-600">
-              • Application filing assistance
-            </Text>
-            <Text className="text-gray-600">• Interview preparation</Text>
-            <Text className="text-gray-600">• Case status monitoring</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Action Buttons */}
-      <View className="space-y-3 px-4 py-4">
-        <TouchableOpacity
-          className="rounded-xl bg-blue-600 p-4"
-          onPress={() => {
-            router.push({
-              pathname: `/apply/agents/[id]/payment` as const,
-              params: {
-                id,
-                type: 'visa',
-                date: new Date().toISOString(),
-                time: 'N/A',
-              },
-            });
-          }}
-        >
-          <Text className="text-center font-bold text-white">
+        {/* Action Buttons */}
+        <Section>
+          <Button
+            className="mb-3"
+            onPress={() => {
+              router.push({
+                pathname: `/apply/agents/[id]/payment` as const,
+                params: {
+                  id,
+                  type: 'visa',
+                  date: new Date().toISOString(),
+                  time: 'N/A',
+                },
+              });
+            }}
+          >
             Start Application (${agent.price})
-          </Text>
-        </TouchableOpacity>
+          </Button>
 
-        <TouchableOpacity
-          className="rounded-xl border border-gray-200 bg-white p-4"
-          onPress={() => {
-            router.push({
-              pathname: `/apply/agents/[id]/book-consultation` as const,
-              params: { id },
-            });
-          }}
-        >
-          <Text className="text-center font-bold text-gray-900">
+          <Button
+            variant="outline"
+            onPress={() => {
+              router.push({
+                pathname: `/apply/agents/[id]/book-consultation` as const,
+                params: { id },
+              });
+            }}
+          >
             Book Consultation First
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          </Button>
+        </Section>
+      </ScrollView>
+    </Screen>
   );
 }
