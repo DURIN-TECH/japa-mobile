@@ -1,0 +1,112 @@
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { getApp } from '@react-native-firebase/app';
+import { getAuth, getIdToken } from '@react-native-firebase/auth';
+
+// API Base URL - update this for production
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001/japa-app/us-central1/api';
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+}
+
+export interface ApiError {
+  code: string;
+  message: string;
+  status: number;
+}
+
+// Create axios instance
+const api: AxiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor - add auth token
+api.interceptors.request.use(
+  async (config: InternalAxiosRequestConfig) => {
+    const auth = getAuth(getApp());
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        const token = await getIdToken(currentUser);
+        config.headers.Authorization = `Bearer ${token}`;
+      } catch (error) {
+        console.error('Error getting auth token:', error);
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor - handle errors
+api.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError<ApiResponse<unknown>>) => {
+    if (error.response) {
+      // Server responded with error status
+      const apiError: ApiError = {
+        code: error.response.data?.error || 'UNKNOWN_ERROR',
+        message: error.response.data?.message || 'An error occurred',
+        status: error.response.status,
+      };
+      return Promise.reject(apiError);
+    } else if (error.request) {
+      // Request made but no response
+      const apiError: ApiError = {
+        code: 'NETWORK_ERROR',
+        message: 'Network error. Please check your connection.',
+        status: 0,
+      };
+      return Promise.reject(apiError);
+    } else {
+      // Request setup error
+      const apiError: ApiError = {
+        code: 'REQUEST_ERROR',
+        message: error.message || 'Failed to make request',
+        status: 0,
+      };
+      return Promise.reject(apiError);
+    }
+  }
+);
+
+// API service methods
+export const apiService = {
+  async get<T>(endpoint: string): Promise<ApiResponse<T>> {
+    const response = await api.get<ApiResponse<T>>(endpoint);
+    return response.data;
+  },
+
+  async post<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+    const response = await api.post<ApiResponse<T>>(endpoint, data);
+    return response.data;
+  },
+
+  async put<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+    const response = await api.put<ApiResponse<T>>(endpoint, data);
+    return response.data;
+  },
+
+  async patch<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+    const response = await api.patch<ApiResponse<T>>(endpoint, data);
+    return response.data;
+  },
+
+  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
+    const response = await api.delete<ApiResponse<T>>(endpoint);
+    return response.data;
+  },
+};
+
+// Export the axios instance for advanced usage
+export { api };
