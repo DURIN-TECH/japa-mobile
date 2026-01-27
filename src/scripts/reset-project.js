@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable */
 
 /**
  * This script is used to reset the project to a blank state.

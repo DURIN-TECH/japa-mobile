@@ -12,8 +12,9 @@ export function CuratorAvatars({ curators }: { curators: Curator[] }) {
       {curators.map((curator, index) => (
         <View
           key={curator.id}
-          className="h-12 w-12 -mr-2 rounded-full bg-blue-500 items-center justify-center"
-          style={{ zIndex: curators.length - index }}>
+          className="-mr-2 h-12 w-12 items-center justify-center rounded-full bg-blue-500"
+          style={{ zIndex: curators.length - index }}
+        >
           <Text className="text-xs font-medium text-white">
             {curator.initials}
           </Text>

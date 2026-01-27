@@ -4,7 +4,7 @@ export const supportedCountries = [
   { code: 'FR', name: 'France' },
   { code: 'DE', name: 'Germany' },
   { code: 'IT', name: 'Italy' },
-]
+];
 
 export const upcomingCountries = [
   { code: 'ES', name: 'Spain' },
@@ -22,5 +22,4 @@ export const upcomingCountries = [
   { code: 'AR', name: 'Argentina' },
   { code: 'NL', name: 'Netherlands' },
   { code: 'SE', name: 'Sweden' },
-]
-
+];

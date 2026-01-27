@@ -1,130 +1,209 @@
-import { useLocalSearchParams, router } from "expo-router";
-import { ScrollView, View, TouchableOpacity, Text, Image } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Users, ChevronRight, FileText, Calendar, ChevronLeft } from "lucide-react-native";
-import { useVisaTypes } from "@/hooks/useVisaTypes";
-import { getCountryFlag, countryCodeMap } from "@/utils/countryFlags";
+import { useLocalSearchParams, router } from 'expo-router';
+import { ScrollView, View, TouchableOpacity, Text, Image } from 'react-native';
+import { Users, ChevronRight, FileText, Calendar } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+
+import { useVisaTypes } from '@/hooks/useVisaTypes';
+import { getCountryFlag, countryCodeMap } from '@/utils/countryFlags';
+import { VisaType } from '@/types/index.type';
+import { useTheme, cn } from '@/hooks/useTheme';
+import { Screen, Header, Section, Card } from '@/components/ui/themed';
 
 export default function VisaDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getVisaType } = useVisaTypes();
   const visa = getVisaType(id);
+  const { isDark, colors } = useTheme();
 
   if (!visa) return null;
 
-  const handleModeSelection = (mode: "self" | "agent") => {
-    if (mode === "agent") {
-      router.push("/apply/agents");
+  const handleModeSelection = (mode: 'self' | 'agent') => {
+    if (mode === 'agent') {
+      router.push('/apply/agents');
     } else {
       router.push({
-        pathname: "/apply/self-service/[id]" as const,
-        params: { id: visa.id }
+        pathname: '/apply/self-service/[id]' as const,
+        params: { id: visa.id },
       });
     }
   };
 
   return (
-    <SafeAreaView>
-      <ScrollView className="h-screen bg-gray-50">
+    <Screen>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
-        <View className="px-4 py-2 bg-white">
-          <TouchableOpacity 
-            onPress={() => router.back()}
-            className="flex-row mb-4 items-center"
-          >
-            <ChevronLeft size={24} color="#000" />
-            <View className="flex-1 flex-row items-center justify-between">
-              <View>
-                <Text className="text-2xl font-bold text-gray-950">{visa.name}</Text>
-                <Text className="text-gray-600 mt-1">{visa.description}</Text>
-              </View>
-              <Image
-                source={{ uri: getCountryFlag(countryCodeMap[visa.country]) }}
-                className="w-8 h-8 rounded-full ml-2"
-                resizeMode="cover"
-              />
+        <View className={cn('px-6 py-4', isDark ? 'bg-gray-800' : 'bg-white')}>
+          <Header title="" showBack />
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-4">
+              <Text
+                className={cn(
+                  'text-3xl font-bold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
+                {visa.name}
+              </Text>
+              <Text
+                className={cn(
+                  'mt-2 text-base',
+                  isDark ? 'text-gray-400' : 'text-gray-600',
+                )}
+              >
+                {visa.description}
+              </Text>
             </View>
-          </TouchableOpacity>
+            <Image
+              source={{ uri: getCountryFlag(countryCodeMap[visa.country]) }}
+              className="h-12 w-12 rounded-full shadow-sm"
+              resizeMode="cover"
+            />
+          </View>
         </View>
 
         {/* Requirements Section */}
-        <View className="px-4 py-4">
-          <Text className="font-bold text-lg text-gray-900 mb-3">Requirements</Text>
-          <View className="bg-white p-4 rounded-xl border border-gray-200">
-            {visa.requirements.map((req) => (
-              <View key={req.id} className="mb-4 last:mb-0">
-                <Text className="font-semibold text-gray-900">{req.title}</Text>
-                <Text className="text-gray-600 mt-1">{req.description}</Text>
-                <View className="flex-row items-center mt-2">
-                  <Calendar size={16} color="#6b7280" />
-                  <Text className="ml-2 text-gray-600">
+        <Section title="Requirements">
+          <Card>
+            {visa.requirements.map((req: VisaType['requirements'][0]) => (
+              <View key={req.id} className="mb-6 last:mb-0">
+                <Text
+                  className={cn(
+                    'text-lg font-semibold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  {req.title}
+                </Text>
+                <Text
+                  className={cn(
+                    'mt-2 text-base leading-relaxed',
+                    isDark ? 'text-gray-400' : 'text-gray-600',
+                  )}
+                >
+                  {req.description}
+                </Text>
+                <View className="mt-3 flex-row items-center">
+                  <Calendar size={18} color={colors.primary} />
+                  <Text className="ml-2 text-base text-blue-600">
                     Est. {req.estimatedTime}
                   </Text>
                 </View>
-                <View className="mt-2 bg-gray-50 p-3 rounded-lg">
-                  <Text className="text-sm font-medium text-gray-700 mb-1">Required Documents:</Text>
-                  {req.documents.map((doc, idx) => (
-                    <Text key={idx} className="text-sm text-gray-600">• {doc}</Text>
+                <View
+                  className={cn(
+                    'mt-4 rounded-xl p-4',
+                    isDark ? 'bg-blue-900/30' : 'bg-blue-50',
+                  )}
+                >
+                  <Text
+                    className={cn(
+                      'mb-2 text-base font-semibold',
+                      isDark ? 'text-blue-300' : 'text-blue-900',
+                    )}
+                  >
+                    Required Documents:
+                  </Text>
+                  {req.documents.map((doc: string, idx: number) => (
+                    <Text
+                      key={idx}
+                      className={cn(
+                        'mb-1 text-base',
+                        isDark ? 'text-blue-200' : 'text-blue-800',
+                      )}
+                    >
+                      - {doc}
+                    </Text>
                   ))}
                 </View>
               </View>
             ))}
-          </View>
-        </View>
+          </Card>
+        </Section>
 
         {/* Application Options */}
-        <View className="px-4 py-4">
-          <Text className="font-bold text-lg text-gray-900 mb-3">Choose Your Path</Text>
-          
-          <TouchableOpacity 
-            className="bg-white p-4 rounded-xl border border-gray-200 mb-3"
-            onPress={() => handleModeSelection("agent")}
-          >
-            <View className="flex-row justify-between items-center">
-              <View>
-                <Text className="font-semibold text-lg text-gray-900">Use an Agent</Text>
-                <Text className="text-gray-600">Get expert guidance throughout the process</Text>
-                <View className="flex-row items-center mt-2">
-                  <Users size={16} color="#6b7280" />
-                  <Text className="ml-2 text-gray-600">
+        <Section title="Choose Your Path">
+          <Card className="mb-4" onPress={() => handleModeSelection('agent')}>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-1 pr-4">
+                <Text
+                  className={cn(
+                    'text-lg font-semibold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  Use an Agent
+                </Text>
+                <Text
+                  className={cn(
+                    'mt-1 text-base',
+                    isDark ? 'text-gray-400' : 'text-gray-600',
+                  )}
+                >
+                  Get expert guidance throughout the process
+                </Text>
+                <View className="mt-3 flex-row items-center">
+                  <Users size={18} color={colors.primary} />
+                  <Text className="ml-2 text-base text-blue-600">
                     {visa.agents.length} Available Agents
                   </Text>
                 </View>
               </View>
-              <ChevronRight size={20} color="#6b7280" />
+              <ChevronRight size={24} color={colors.primary} />
             </View>
-          </TouchableOpacity>
+          </Card>
 
-          <TouchableOpacity 
-            className="bg-white p-4 rounded-xl border border-gray-200"
-            onPress={() => handleModeSelection("self")}
-          >
-            <View className="flex-row justify-between items-center">
-              <View>
-                <Text className="font-semibold text-lg text-gray-900">Self Service</Text>
-                <Text className="text-gray-600">Manage your own application</Text>
-                <View className="flex-row items-center mt-2">
-                  <FileText size={16} color="#6b7280" />
-                  <Text className="ml-2 text-gray-600">
+          <Card onPress={() => handleModeSelection('self')}>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-1 pr-4">
+                <Text
+                  className={cn(
+                    'text-lg font-semibold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  Self Service
+                </Text>
+                <Text
+                  className={cn(
+                    'mt-1 text-base',
+                    isDark ? 'text-gray-400' : 'text-gray-600',
+                  )}
+                >
+                  Manage your own application
+                </Text>
+                <View className="mt-3 flex-row items-center">
+                  <FileText size={18} color={colors.primary} />
+                  <Text className="ml-2 text-base text-blue-600">
                     Step by step guidance
                   </Text>
                 </View>
               </View>
-              <ChevronRight size={20} color="#6b7280" />
+              <ChevronRight size={24} color={colors.primary} />
             </View>
-          </TouchableOpacity>
-        </View>
+          </Card>
+        </Section>
 
         {/* Price Info */}
-        <View className="px-4 py-4">
-          <View className="bg-blue-50 p-4 rounded-xl">
-            <Text className="text-blue-900 font-medium">Processing Time: {visa.processingTime}</Text>
-            <Text className="text-blue-900 font-bold text-lg mt-1">
+        <Section>
+          <LinearGradient
+            colors={isDark ? ['#1e40af', '#1e3a8a'] : ['#3b82f6', '#2563eb']}
+            style={{
+              borderRadius: 16,
+              padding: 16,
+            }}
+          >
+            <Text className="text-lg font-medium text-white">
+              Processing Time: {visa.processingTime}
+            </Text>
+            <Text className="mt-2 text-2xl font-bold text-white">
               Starting from ${visa.price}
             </Text>
-          </View>
-        </View>
+          </LinearGradient>
+        </Section>
       </ScrollView>
-    </SafeAreaView>
+    </Screen>
   );
-} 
+}

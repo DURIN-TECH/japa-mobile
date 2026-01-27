@@ -1,116 +1,197 @@
-import { useLocalSearchParams, router } from "expo-router";
-import { ScrollView, View, TouchableOpacity, Text } from "react-native";
-import { Clock, FileText, CheckCircle2 } from "lucide-react-native";
-import { useApplications } from "@/hooks/useApplications";
-import { format } from "date-fns";
+import { useLocalSearchParams, router } from 'expo-router';
+import { ScrollView, View, Text } from 'react-native';
+import { Clock } from 'lucide-react-native';
+import { format } from 'date-fns';
+import { useApplications } from '@/hooks/useApplications';
+import { useTheme, cn } from '@/hooks/useTheme';
+import {
+  Screen,
+  Header,
+  Section,
+  Card,
+  Button,
+  ProgressBar,
+} from '@/components/ui/themed';
 
 export default function ApplicationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { applications } = useApplications();
-  const application = applications.find(app => app.id === id);
+  const application = applications.find((app) => app.id === id);
+  const { isDark, colors } = useTheme();
 
-  if (!application) return null;
+  if (!application) {
+    return (
+      <Screen>
+        <Header title="Application" showBack />
+        <View className="flex-1 items-center justify-center">
+          <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+            Application not found
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
 
-  const getStatusColor = (status: "completed" | "current" | "upcoming") => {
+  const getStatusColor = (status: 'completed' | 'current' | 'upcoming') => {
     switch (status) {
-      case "completed":
-        return "#16a34a";
-      case "current":
-        return "#2563eb";
-      case "upcoming":
-        return "#6b7280";
+      case 'completed':
+        return '#16a34a';
+      case 'current':
+        return '#2563eb';
+      case 'upcoming':
+        return isDark ? '#6b7280' : '#9ca3af';
     }
   };
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
-      {/* Current Status */}
-      <View className="px-4 py-4">
-        <View className="bg-white p-4 rounded-xl border border-gray-200">
-          <View className="flex-row items-center mb-3">
-            <Clock size={20} color="#2563eb" />
-            <View className="ml-2">
-              <Text className="font-semibold">{application.currentStep}</Text>
-              {application.nextStep && (
-                <Text className="text-gray-600">
-                  Next: {application.nextStep}
+    <Screen>
+      <Header title={application.visaType} showBack />
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
+        {/* Current Status */}
+        <Section>
+          <Card>
+            <View className="mb-3 flex-row items-center">
+              <Clock size={20} color={colors.primary} />
+              <View className="ml-2">
+                <Text
+                  className={cn(
+                    'font-semibold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  {application.currentStep}
                 </Text>
-              )}
+                {application.nextStep && (
+                  <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                    Next: {application.nextStep}
+                  </Text>
+                )}
+              </View>
             </View>
-          </View>
 
-          {/* Progress Bar */}
-          <View className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
-            <View 
-              className="h-full bg-blue-600 rounded-full"
-              style={{ width: `${application.progress}%` }}
-            />
-          </View>
+            <ProgressBar progress={application.progress} className="mb-3" />
 
-          <Text className="text-gray-600">
-            Last updated: {format(new Date(application.lastUpdated), 'MMM d, yyyy')}
-          </Text>
-        </View>
-      </View>
-
-      {/* Document Status */}
-      <View className="px-4 py-4">
-        <Text className="text-xl font-bold mb-3">Documents</Text>
-        <View className="bg-white p-4 rounded-xl border border-gray-200">
-          <View className="flex-row justify-between mb-3">
-            <View>
-              <Text className="font-semibold">Required</Text>
-              <Text className="text-2xl font-bold">{application.documents.required}</Text>
-            </View>
-            <View>
-              <Text className="font-semibold">Uploaded</Text>
-              <Text className="text-2xl font-bold text-blue-600">
-                {application.documents.uploaded}
-              </Text>
-            </View>
-            <View>
-              <Text className="font-semibold">Verified</Text>
-              <Text className="text-2xl font-bold text-green-600">
-                {application.documents.verified}
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity className="bg-blue-600 p-3 rounded-lg">
-            <Text className="text-white text-center font-semibold">
-              Manage Documents
+            <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+              Last updated:{' '}
+              {format(new Date(application.lastUpdated), 'MMM d, yyyy')}
             </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+          </Card>
+        </Section>
 
-      {/* Timeline */}
-      <View className="px-4 py-4">
-        <Text className="text-xl font-bold mb-3">Timeline</Text>
-        <View className="bg-white p-4 rounded-xl border border-gray-200">
-          {application.timeline.map((event, index) => (
-            <View 
-              key={index}
-              className={`
-                flex-row items-start pb-4
-                ${index !== application.timeline.length - 1 ? "border-b border-gray-100 mb-4" : ""}
-              `}
-            >
-              <View 
-                className="w-3 h-3 rounded-full mt-1.5 mr-3"
-                style={{ backgroundColor: getStatusColor(event.status) }}
-              />
-              <View className="flex-1">
-                <Text className="font-semibold">{event.title}</Text>
-                <Text className="text-gray-600 mt-1">{event.description}</Text>
-                <Text className="text-gray-500 text-sm mt-1">
-                  {format(new Date(event.date), 'MMM d, yyyy')}
+        {/* Document Status */}
+        <Section title="Documents">
+          <Card>
+            <View className="mb-3 flex-row justify-between">
+              <View>
+                <Text
+                  className={cn(
+                    'font-semibold',
+                    isDark ? 'text-gray-300' : 'text-gray-700',
+                  )}
+                >
+                  Required
+                </Text>
+                <Text
+                  className={cn(
+                    'text-2xl font-bold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  {application.documents.required}
+                </Text>
+              </View>
+              <View>
+                <Text
+                  className={cn(
+                    'font-semibold',
+                    isDark ? 'text-gray-300' : 'text-gray-700',
+                  )}
+                >
+                  Uploaded
+                </Text>
+                <Text className="text-2xl font-bold text-blue-600">
+                  {application.documents.uploaded}
+                </Text>
+              </View>
+              <View>
+                <Text
+                  className={cn(
+                    'font-semibold',
+                    isDark ? 'text-gray-300' : 'text-gray-700',
+                  )}
+                >
+                  Verified
+                </Text>
+                <Text className="text-2xl font-bold text-green-600">
+                  {application.documents.verified}
                 </Text>
               </View>
             </View>
-          ))}
-        </View>
-      </View>
-    </ScrollView>
+
+            <Button
+              onPress={() =>
+                router.push({
+                  pathname: '/apply/self-service/[id]',
+                  params: { id: application.id },
+                })
+              }
+            >
+              Manage Documents
+            </Button>
+          </Card>
+        </Section>
+
+        {/* Timeline */}
+        <Section title="Timeline">
+          <Card>
+            {application.timeline.map((event, index) => (
+              <View
+                key={index}
+                className={cn(
+                  'flex-row items-start pb-4',
+                  index !== application.timeline.length - 1 &&
+                    `mb-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-100'}`,
+                )}
+              >
+                <View
+                  className="mr-3 mt-1.5 h-3 w-3 rounded-full"
+                  style={{ backgroundColor: getStatusColor(event.status) }}
+                />
+                <View className="flex-1">
+                  <Text
+                    className={cn(
+                      'font-semibold',
+                      isDark ? 'text-white' : 'text-gray-900',
+                    )}
+                  >
+                    {event.title}
+                  </Text>
+                  <Text
+                    className={cn(
+                      'mt-1',
+                      isDark ? 'text-gray-400' : 'text-gray-600',
+                    )}
+                  >
+                    {event.description}
+                  </Text>
+                  <Text
+                    className={cn(
+                      'mt-1 text-sm',
+                      isDark ? 'text-gray-500' : 'text-gray-500',
+                    )}
+                  >
+                    {format(new Date(event.date), 'MMM d, yyyy')}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </Card>
+        </Section>
+      </ScrollView>
+    </Screen>
   );
-} 
+}

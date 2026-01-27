@@ -1,41 +1,57 @@
-import { Link } from "expo-router";
-import { useState } from "react";
-import { ThemedView } from "@/components/ThemedView";
-import { useOnboarding } from "@/context/OnboardingContext";
-import { View, Text } from "react-native";
+import { Link, RelativePathString } from 'expo-router';
+import { useState } from 'react';
+import { View, Text } from 'react-native';
+import { ThemedView } from '@/components/ThemedView';
+import { useOnboarding } from '@/context/OnboardingContext';
 
 export default function Onboard() {
-  const [user] = useState('User')  
+  const [user] = useState('User');
   const { onboardingData, updateOnboardingData } = useOnboarding();
 
   const hasPassport = (hasPassport: boolean): void => {
-    if(!hasPassport) {
-      console.error("No passport status specified");
+    if (!hasPassport) {
+      console.error('No passport status specified');
       return;
     }
-    updateOnboardingData({
-      hasPassport
-    });
-    console.log(onboardingData)
-  }
-  
+    if (updateOnboardingData) {
+      updateOnboardingData({
+        hasPassport,
+      });
+    }
+    console.log(onboardingData);
+  };
+
   return (
     <View className="m-2">
-      <Text className="text-lg font-bold px-3 my-4">Welcome {user}, Let's get you onboarded</Text>
+      <Text className="my-4 px-3 text-lg font-bold">
+        Welcome {user}, Let's get you onboarded
+      </Text>
       <ThemedView>
-        <Text className="text-md font-semibold mb-3">Do you have a passport</Text>
+        <Text className="text-md mb-3 font-semibold">
+          Do you have a passport
+        </Text>
 
         <ThemedView className="flex-row gap-5">
-          <Link href='/country' onPress={() => hasPassport(true)}>
+          <Link
+            href={{
+              pathname: '/(onboard)/country' as RelativePathString,
+            }}
+            onPress={() => hasPassport(true)}
+          >
             <Text>Yes</Text>
           </Link>
-          
+
           {/* To passport acquisition page */}
-          <Link href='/passport' onPress={() => hasPassport(true)}>
+          <Link
+            href={{
+              pathname: '/passport' as RelativePathString,
+            }}
+            onPress={() => hasPassport(true)}
+          >
             <Text>No</Text>
           </Link>
-        </ThemedView>        
+        </ThemedView>
       </ThemedView>
     </View>
-  )
-} 
+  );
+}

@@ -19,9 +19,22 @@ const compat = new FlatCompat({
 
 export default [
   {
-    ignores: ['dist/*'],
+    ignores: [
+      'dist/*',
+      'node_modules/*',
+      'package.json',
+      'package-lock.json',
+      '*.json',
+      '*.md',
+      'tailwind.config.js',
+    ],
   },
-  ...compat.extends('plugin:prettier/recommended', 'prettier'),
+  ...compat.extends(
+    'plugin:prettier/recommended',
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+    'prettier',
+  ),
   {
     plugins: {
       prettier,

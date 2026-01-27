@@ -1,4 +1,9 @@
-export type DocumentStatus = "pending" | "uploaded" | "verified" | "rejected" | "resubmitted";
+export type DocumentStatus =
+  | 'pending'
+  | 'uploaded'
+  | 'verified'
+  | 'rejected'
+  | 'resubmitted';
 
 export interface DocumentRequirement {
   id: string;
@@ -45,11 +50,11 @@ export interface VerificationRequest {
   id: string;
   documentIds: string[];
   agentId: string;
-  status: "pending" | "in_progress" | "completed";
+  status: 'pending' | 'in_progress' | 'completed';
   createdAt: Date;
   completedAt?: Date;
   totalPrice: number;
-  paymentStatus: "pending" | "paid" | "refunded";
+  paymentStatus: 'pending' | 'paid' | 'refunded';
 }
 
 export interface ScheduleItem {
@@ -61,6 +66,6 @@ export interface ScheduleItem {
   documents: {
     id: string;
     name: string;
-    status: "pending" | "uploaded" | "verified" | "rejected";
+    status: 'pending' | 'uploaded' | 'verified' | 'rejected';
   }[];
 }

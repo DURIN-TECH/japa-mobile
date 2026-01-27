@@ -13,15 +13,23 @@ export interface VisaType {
   processingTime: string;
   price: number;
   country: string;
+  curators: Curator[];
+  img: string;
+}
+
+export interface Curator {
+  id: string;
+  name: string;
+  initials: string;
 }
 
 export interface VisaApplication {
   id: string;
   visaTypeId: string;
   userId: string;
-  mode: "self" | "agent";
+  mode: 'self' | 'agent';
   agentId?: string;
-  status: "pending" | "in_progress" | "completed" | "rejected";
+  status: 'pending' | 'in_progress' | 'completed' | 'rejected';
   progress: number;
   schedule: {
     requirementId: string;
@@ -31,10 +39,10 @@ export interface VisaApplication {
     documents: {
       id: string;
       name: string;
-      status: "pending" | "uploaded" | "verified" | "rejected";
+      status: 'pending' | 'uploaded' | 'verified' | 'rejected';
       url?: string;
     }[];
   }[];
   startDate: string;
   lastUpdated: string;
-} 
+}

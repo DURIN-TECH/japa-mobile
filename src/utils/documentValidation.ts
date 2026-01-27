@@ -1,4 +1,4 @@
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from 'expo-file-system';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -13,12 +13,10 @@ interface ValidationOptions {
 export async function validateDocument(
   uri: string,
   fileName: string,
-  options: ValidationOptions = {}
+  options: ValidationOptions = {},
 ): Promise<ValidationResult> {
-  const {
-    maxSizeMB = 10,
-    allowedTypes = ["pdf", "jpg", "jpeg", "png"]
-  } = options;
+  const { maxSizeMB = 10, allowedTypes = ['pdf', 'jpg', 'jpeg', 'png'] } =
+    options;
 
   const errors: string[] = [];
 
@@ -33,13 +31,13 @@ export async function validateDocument(
         errors.push(`File size must be less than ${maxSizeMB}MB`);
       }
     } else {
-      errors.push("File does not exist");
+      errors.push('File does not exist');
     }
 
     // Check file type
-    const fileType = fileName.split(".").pop()?.toLowerCase();
+    const fileType = fileName.split('.').pop()?.toLowerCase();
     if (!fileType || !allowedTypes.includes(fileType)) {
-      errors.push(`File type must be one of: ${allowedTypes.join(", ")}`);
+      errors.push(`File type must be one of: ${allowedTypes.join(', ')}`);
     }
 
     // Additional validations can be added here
@@ -51,12 +49,12 @@ export async function validateDocument(
 
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   } catch (error) {
     return {
       isValid: false,
-      errors: ["Error validating document"]
+      errors: ['Error validating document', error as string],
     };
   }
-} 
+}
