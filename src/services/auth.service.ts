@@ -1,5 +1,5 @@
 import { getApp } from '@react-native-firebase/app';
-import {
+import auth, {
   getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -13,6 +13,20 @@ import {
 
 export type ConfirmationResult = FirebaseAuthTypes.ConfirmationResult;
 export type FirebaseUser = FirebaseAuthTypes.User;
+
+// Connect to Auth emulator in development
+const USE_EMULATOR = __DEV__;
+const AUTH_EMULATOR_HOST = 'localhost'; // Use '10.0.2.2' for Android emulator
+const AUTH_EMULATOR_PORT = 9099;
+
+// Initialize emulator connection before class instantiation
+if (USE_EMULATOR) {
+  const authInstance = auth();
+  if (!(authInstance as unknown as { _customUrlOrRegion?: string })._customUrlOrRegion) {
+    authInstance.useEmulator(`http://${AUTH_EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`);
+    console.log('Auth emulator connected at', `http://${AUTH_EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`);
+  }
+}
 
 class AuthService {
   private auth = getAuth(getApp());

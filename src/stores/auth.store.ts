@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService, FirebaseUser, ConfirmationResult } from '@/services/auth.service';
 import { apiService } from '@/services/api.service';
-import { UserProfile } from '@/types/user.type';
+import { UserProfile, OnboardingData } from '@/types/user.type';
 
 interface AuthState {
   // State
@@ -31,6 +31,8 @@ interface AuthState {
   // Actions - Common
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
+  completeOnboarding: (data: OnboardingData) => Promise<boolean>;
+  finalizeOnboarding: () => void;
   clearError: () => void;
 
   // Internal
@@ -177,6 +179,32 @@ export const useAuthStore = create<AuthState>()(
           if (apiError.status !== 404) {
             console.error('Error fetching profile:', error);
           }
+        }
+      },
+
+      completeOnboarding: async (data: OnboardingData) => {
+        set({ isLoading: true, error: null });
+        try {
+          const response = await apiService.post<UserProfile>('/users/onboarding', data);
+          if (response.success && response.data) {
+            // Store the profile but don't trigger redirect yet
+            // The complete screen will call finalizeOnboarding to trigger the redirect
+            set({ profile: { ...response.data, onboardingCompleted: false } });
+          }
+          return true;
+        } catch (error) {
+          const apiError = error as { message?: string };
+          set({ error: apiError.message || 'Failed to complete onboarding' });
+          return false;
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      finalizeOnboarding: () => {
+        const profile = get().profile;
+        if (profile) {
+          set({ profile: { ...profile, onboardingCompleted: true } });
         }
       },
 

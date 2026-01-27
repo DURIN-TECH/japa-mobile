@@ -1,52 +1,101 @@
-import { View, Text } from 'react-native';
-import { Screen, Button, Typography } from '@/components/ui/themed';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
+import { Screen, Button, Typography, Card } from '@/components/ui/themed';
 import { useTheme, cn } from '@/hooks/useTheme';
+import { useOnboardingStore } from '@/stores/onboarding.store';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function OnboardingScreen() {
-  const { isDark } = useTheme();
+export default function PassportQuestionScreen() {
+  const { isDark, colors } = useTheme();
+  const setHasPassport = useOnboardingStore((state) => state.setHasPassport);
 
-  // TODO: Implement full onboarding flow in Phase 2
-  // This is a placeholder that will be replaced with:
-  // - Passport question
-  // - Country selection
-  // - Personal info
-  // - Complete
+  const handleSelection = (hasPassport: boolean) => {
+    setHasPassport(hasPassport);
+    router.push('/(onboard)/country');
+  };
 
   return (
     <Screen>
-      <View className="flex-1 justify-center px-6">
-        <View className="items-center">
-          <Text className={cn('text-4xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
+      <View className="flex-1 px-6 pt-12">
+        {/* Progress indicator */}
+        <View className="mb-8 flex-row">
+          <View className="mr-2 h-1 flex-1 rounded-full bg-blue-500" />
+          <View className={cn('mr-2 h-1 flex-1 rounded-full', isDark ? 'bg-gray-700' : 'bg-gray-200')} />
+          <View className={cn('mr-2 h-1 flex-1 rounded-full', isDark ? 'bg-gray-700' : 'bg-gray-200')} />
+          <View className={cn('h-1 flex-1 rounded-full', isDark ? 'bg-gray-700' : 'bg-gray-200')} />
+        </View>
+
+        {/* Header */}
+        <View className="mb-8">
+          <Text className={cn('text-3xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
             Welcome to JAPA
           </Text>
-          <Typography variant="body" color="muted" className="mt-4 text-center">
-            Let&apos;s set up your profile to get started with your visa journey.
+          <Typography variant="body" color="muted" className="mt-2">
+            Let&apos;s get you set up. First, a quick question:
           </Typography>
         </View>
 
-        <View className="mt-12">
-          <Typography variant="h3" className="mb-4">
-            Coming in Phase 2:
+        {/* Question */}
+        <View className="mb-6">
+          <Typography variant="h3" className="mb-6">
+            Do you currently have a valid passport?
           </Typography>
-          <Typography color="muted">• Passport information</Typography>
-          <Typography color="muted">• Country selection</Typography>
-          <Typography color="muted">• Personal details</Typography>
-          <Typography color="muted">• Profile completion</Typography>
         </View>
 
-        {/* Temporary: Skip onboarding for testing */}
-        <Button
-          variant="outline"
-          className="mt-8"
-          onPress={() => {
-            // This would normally complete onboarding via API
-            console.log('Onboarding will be implemented in Phase 2');
-          }}
-        >
-          <Text className={cn('font-semibold', isDark ? 'text-white' : 'text-gray-900')}>
-            Continue (Phase 2)
-          </Text>
-        </Button>
+        {/* Options */}
+        <View className="gap-4">
+          <TouchableOpacity onPress={() => handleSelection(true)}>
+            <Card className="flex-row items-center p-4">
+              <View className={cn(
+                'mr-4 h-12 w-12 items-center justify-center rounded-full',
+                isDark ? 'bg-green-900/30' : 'bg-green-100'
+              )}>
+                <Ionicons name="checkmark-circle" size={24} color={colors.success} />
+              </View>
+              <View className="flex-1">
+                <Typography variant="body" className="font-semibold">
+                  Yes, I have a passport
+                </Typography>
+                <Typography variant="caption" color="muted">
+                  Great! You&apos;re ready to explore visa options
+                </Typography>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+            </Card>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => handleSelection(false)}>
+            <Card className="flex-row items-center p-4">
+              <View className={cn(
+                'mr-4 h-12 w-12 items-center justify-center rounded-full',
+                isDark ? 'bg-orange-900/30' : 'bg-orange-100'
+              )}>
+                <Ionicons name="time" size={24} color={colors.warning} />
+              </View>
+              <View className="flex-1">
+                <Typography variant="body" className="font-semibold">
+                  Not yet
+                </Typography>
+                <Typography variant="caption" color="muted">
+                  No problem! You can still explore and plan
+                </Typography>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+            </Card>
+          </TouchableOpacity>
+        </View>
+
+        {/* Info note */}
+        <View className="mt-auto pb-8">
+          <Card className={cn('p-4', isDark ? 'bg-blue-900/20' : 'bg-blue-50')}>
+            <View className="flex-row items-start">
+              <Ionicons name="information-circle" size={20} color={colors.primary} className="mr-2" />
+              <Typography variant="caption" color="muted" className="ml-2 flex-1">
+                You&apos;ll need a valid passport to apply for most visas. If you don&apos;t have one yet, we can help guide you through the process.
+              </Typography>
+            </View>
+          </Card>
+        </View>
       </View>
     </Screen>
   );

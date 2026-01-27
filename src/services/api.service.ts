@@ -1,10 +1,11 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { getApp } from '@react-native-firebase/app';
-import { getAuth, getIdToken } from '@react-native-firebase/auth';
+import { getAuth, getIdToken, signOut } from '@react-native-firebase/auth';
+import { router } from 'expo-router';
 
 // API Base URL - update this for production
 const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001/japa-app/us-central1/api';
+  process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001/japa-platform/us-central1/api';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -51,8 +52,21 @@ api.interceptors.request.use(
 // Response interceptor - handle errors
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<ApiResponse<unknown>>) => {
+  async (error: AxiosError<ApiResponse<unknown>>) => {
     if (error.response) {
+      // Handle 401 Unauthorized - sign out and redirect to login
+      if (error.response.status === 401) {
+        console.log('Unauthorized - signing out and redirecting to login');
+        try {
+          const auth = getAuth(getApp());
+          await signOut(auth);
+        } catch (signOutError) {
+          console.error('Error signing out:', signOutError);
+        }
+        // Redirect to login
+        router.replace('/(auth)/login');
+      }
+
       // Server responded with error status
       const apiError: ApiError = {
         code: error.response.data?.error || 'UNKNOWN_ERROR',
