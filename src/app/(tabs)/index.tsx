@@ -1,4 +1,4 @@
-import { TouchableOpacity, View, Text, ScrollView, Image } from 'react-native';
+import { TouchableOpacity, View, Text, ScrollView, Image, ActivityIndicator } from 'react-native';
 import {
   Bell,
   Calendar,
@@ -10,11 +10,12 @@ import {
   Globe,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { visas } from '@/mock_data/visas';
 import { verificationAgents } from '@/mock_data/agents';
-import { countryCodeMap, getCountryFlag } from '@/utils/countryFlags';
+import { getCountryFlag } from '@/utils/countryFlags';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Section, Card, Badge } from '@/components/ui/themed';
+import { usePopularVisaTypes, useCountriesWithVisas } from '@/hooks/useVisaTypes';
+import { useAuthStore } from '@/stores/auth.store';
 
 const QUICK_ACTIONS = [
   {
@@ -43,15 +44,14 @@ const QUICK_ACTIONS = [
   },
 ];
 
-const DESTINATIONS = [
-  { name: 'United States', code: 'US', flag: '🇺🇸' },
-  { name: 'Canada', code: 'CA', flag: '🇨🇦' },
-  { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' },
-  { name: 'Australia', code: 'AU', flag: '🇦🇺' },
-];
-
 export default function HomeScreen() {
   const { isDark, colors } = useTheme();
+  const profile = useAuthStore((state) => state.profile);
+  const { data: popularVisas, isLoading: visasLoading } = usePopularVisaTypes(4);
+  const { data: countries, isLoading: countriesLoading } = useCountriesWithVisas();
+
+  // Get top 4 countries for destinations
+  const topDestinations = (countries ?? []).slice(0, 4);
 
   return (
     <Screen>
@@ -72,7 +72,7 @@ export default function HomeScreen() {
                   isDark ? 'text-white' : 'text-gray-900',
                 )}
               >
-                Welcome back
+                Welcome{profile?.firstName ? `, ${profile.firstName}` : ' back'}
               </Text>
               <Text
                 className={cn(
@@ -274,101 +274,118 @@ export default function HomeScreen() {
             </TouchableOpacity>
           }
         >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingRight: 16 }}
-          >
-            {visas.slice(0, 4).map((visa, index) => (
-              <TouchableOpacity
-                key={visa.id}
-                onPress={() =>
-                  router.push({
-                    pathname: '/apply/visa-details/[id]',
-                    params: { id: visa.id },
-                  })
-                }
-                className={cn(
-                  'rounded-xl border p-4',
-                  isDark
-                    ? 'border-gray-700 bg-gray-800'
-                    : 'border-gray-200 bg-white',
-                )}
-                style={{ width: 180, marginRight: index < 3 ? 12 : 0 }}
-                activeOpacity={0.7}
-              >
-                <View className="mb-3 flex-row items-center">
-                  <Image
-                    source={{
-                      uri: getCountryFlag(countryCodeMap[visa.country]),
-                    }}
-                    className="h-8 w-8 rounded-full"
-                    resizeMode="cover"
-                  />
-                  <View className="ml-2 flex-1">
-                    <Text
-                      className={cn(
-                        'font-semibold',
-                        isDark ? 'text-white' : 'text-gray-900',
-                      )}
-                      numberOfLines={1}
-                    >
-                      {visa.name}
-                    </Text>
-                  </View>
-                </View>
-                <Text
+          {visasLoading ? (
+            <View className="items-center py-4">
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingRight: 16 }}
+            >
+              {(popularVisas ?? []).map((visa, index) => (
+                <TouchableOpacity
+                  key={visa.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/apply/visa-details/[id]',
+                      params: { id: visa.id, countryCode: visa.countryCode },
+                    })
+                  }
                   className={cn(
-                    'mb-3 text-sm',
-                    isDark ? 'text-gray-400' : 'text-gray-500',
+                    'rounded-xl border p-4',
+                    isDark
+                      ? 'border-gray-700 bg-gray-800'
+                      : 'border-gray-200 bg-white',
                   )}
-                  numberOfLines={1}
+                  style={{ width: 180, marginRight: index < 3 ? 12 : 0 }}
+                  activeOpacity={0.7}
                 >
-                  {visa.processingTime}
-                </Text>
-                <View className="flex-row items-center justify-between">
-                  <Text className="font-bold text-blue-600">${visa.price}</Text>
-                  <ArrowRight size={16} color={colors.primary} />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+                  <View className="mb-3 flex-row items-center">
+                    <Image
+                      source={{
+                        uri: getCountryFlag(visa.countryCode),
+                      }}
+                      className="h-8 w-8 rounded-full"
+                      resizeMode="cover"
+                    />
+                    <View className="ml-2 flex-1">
+                      <Text
+                        className={cn(
+                          'font-semibold',
+                          isDark ? 'text-white' : 'text-gray-900',
+                        )}
+                        numberOfLines={1}
+                      >
+                        {visa.name}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text
+                    className={cn(
+                      'mb-3 text-sm',
+                      isDark ? 'text-gray-400' : 'text-gray-500',
+                    )}
+                    numberOfLines={1}
+                  >
+                    {visa.processingTime}
+                  </Text>
+                  <View className="flex-row items-center justify-between">
+                    <Text className="font-bold text-blue-600">${visa.baseCostUsd}</Text>
+                    <ArrowRight size={16} color={colors.primary} />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
         </Section>
 
         {/* Popular Destinations */}
         <Section title="Popular Destinations">
-          <View className="flex-row flex-wrap justify-between">
-            {DESTINATIONS.map((country) => (
-              <TouchableOpacity
-                key={country.code}
-                onPress={() => router.push('/apply')}
-                className={cn(
-                  'mb-3 flex-row items-center rounded-xl border p-3',
-                  isDark
-                    ? 'border-gray-700 bg-gray-800'
-                    : 'border-gray-200 bg-white',
-                )}
-                style={{ width: '48%' }}
-                activeOpacity={0.7}
-              >
-                <Image
-                  source={{ uri: getCountryFlag(country.code) }}
-                  className="mr-2 h-8 w-8 rounded-full"
-                  resizeMode="cover"
-                />
-                <Text
+          {countriesLoading ? (
+            <View className="items-center py-4">
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (
+            <View className="flex-row flex-wrap justify-between">
+              {topDestinations.map((country) => (
+                <TouchableOpacity
+                  key={country.code}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/apply',
+                      params: { countryCode: country.code },
+                    })
+                  }
                   className={cn(
-                    'flex-1 font-medium',
-                    isDark ? 'text-white' : 'text-gray-900',
+                    'mb-3 flex-row items-center rounded-xl border p-3',
+                    isDark
+                      ? 'border-gray-700 bg-gray-800'
+                      : 'border-gray-200 bg-white',
                   )}
-                  numberOfLines={1}
+                  style={{ width: '48%' }}
+                  activeOpacity={0.7}
                 >
-                  {country.name}
-                </Text>
-                <ArrowRight size={16} color={colors.iconMuted} />
-              </TouchableOpacity>
-            ))}
-          </View>
+                  <Image
+                    source={{ uri: country.flagUrl }}
+                    className="mr-2 h-8 w-8 rounded-full"
+                    resizeMode="cover"
+                  />
+                  <Text
+                    className={cn(
+                      'flex-1 font-medium',
+                      isDark ? 'text-white' : 'text-gray-900',
+                    )}
+                    numberOfLines={1}
+                  >
+                    {country.name}
+                  </Text>
+                  <ArrowRight size={16} color={colors.iconMuted} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </Section>
       </ScrollView>
     </Screen>

@@ -1,4 +1,5 @@
-export interface VisaType {
+// Legacy types for backwards compatibility with mock data
+export interface LegacyVisaType {
   id: string;
   name: string;
   description: string;
@@ -21,6 +22,68 @@ export interface Curator {
   id: string;
   name: string;
   initials: string;
+}
+
+// API types matching backend schema
+export type VisaCategory =
+  | 'work'
+  | 'student'
+  | 'tourist'
+  | 'business'
+  | 'family'
+  | 'investor'
+  | 'transit'
+  | 'other';
+
+export interface VisaType {
+  id: string;
+  countryCode: string;
+  name: string;
+  code: string;
+  description: string;
+  category: VisaCategory;
+  processingTime: string;
+  processingDaysMin: number;
+  processingDaysMax: number;
+  baseCostUsd: number;
+  validityPeriod: string;
+  isExtendable: boolean;
+  maxExtensions?: number;
+  eligibilityCriteria: string[];
+  successRate?: number;
+  totalApplications?: number;
+  isActive: boolean;
+  quotaLimit?: number;
+  currentQuotaUsed?: number;
+  agentIds: string[];
+}
+
+export interface RequiredDocument {
+  id: string;
+  name: string;
+  description: string;
+  acceptedFormats: string[];
+  maxSizeMb: number;
+  isRequired: boolean;
+  validationCriteria?: string[];
+  sampleUrl?: string;
+}
+
+export interface VisaRequirement {
+  id: string;
+  visaTypeId: string;
+  title: string;
+  description: string;
+  estimatedTime: string;
+  orderIndex: number;
+  requiredDocuments: RequiredDocument[];
+  dependsOn?: string[];
+  isOptional: boolean;
+}
+
+export interface VisaTypeWithRequirements {
+  visaType: VisaType;
+  requirements: VisaRequirement[];
 }
 
 export interface VisaApplication {
