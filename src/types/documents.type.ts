@@ -1,34 +1,69 @@
+// Document types matching backend schema
+
 export type DocumentStatus =
-  | 'pending'
+  | 'pending_upload'
+  | 'uploading'
   | 'uploaded'
+  | 'under_review'
   | 'verified'
   | 'rejected'
-  | 'resubmitted';
-
-export interface DocumentRequirement {
-  id: string;
-  title: string;
-  description: string;
-  required: boolean;
-  format: string[];
-  maxSize: number; // in MB
-  validationCriteria?: string[];
-}
+  | 'resubmission_required';
 
 export interface Document {
   id: string;
+  applicationId: string;
   requirementId: string;
   userId: string;
-  fileUrl: string;
+
+  // File info
+  fileName: string;
+  fileType: string;
+  fileSizeMb: number;
+  storageUrl: string;
+
+  // Status
   status: DocumentStatus;
-  uploadedAt: Date;
-  verifiedAt?: Date;
-  verifiedBy?: string;
+
+  // Review
+  reviewedBy?: string;
+  reviewedAt?: string;
   rejectionReason?: string;
-  agentComments?: string[];
+  agentComments?: string;
+
+  // Tracking
   resubmissionCount: number;
+
+  uploadedAt: string;
+  updatedAt: string;
 }
 
+export interface DocumentRequirement {
+  id: string;
+  name: string;
+  description: string;
+  acceptedFormats: string[];
+  maxSizeMb: number;
+  isRequired: boolean;
+  validationCriteria?: string[];
+  sampleUrl?: string;
+}
+
+export interface UploadUrlResponse {
+  uploadUrl: string;
+  storagePath: string;
+  expiresAt: string;
+}
+
+export interface CreateDocumentInput {
+  applicationId: string;
+  requirementId: string;
+  fileName: string;
+  fileType: string;
+  fileSizeMb: number;
+  storagePath: string;
+}
+
+// Legacy types for backward compatibility (to be removed)
 export interface Agent {
   id: string;
   name: string;

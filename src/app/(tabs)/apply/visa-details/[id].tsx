@@ -1,9 +1,11 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { ScrollView, View, Text, Image, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, Image, ActivityIndicator, Alert } from 'react-native';
 import { Users, ChevronRight, FileText, Calendar } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useState } from 'react';
 
 import { useVisaType } from '@/hooks/useVisaTypes';
+import { useCreateApplication } from '@/hooks/useApplications';
 import { getCountryFlag } from '@/utils/countryFlags';
 import { VisaRequirement } from '@/types/visas.type';
 import { useTheme, cn } from '@/hooks/useTheme';
@@ -13,6 +15,8 @@ export default function VisaDetailsScreen() {
   const { id, countryCode } = useLocalSearchParams<{ id: string; countryCode: string }>();
   const { data, isLoading, error } = useVisaType(countryCode, id);
   const { isDark, colors } = useTheme();
+  const createApplication = useCreateApplication();
+  const [isCreating, setIsCreating] = useState(false);
 
   if (isLoading) {
     return (
@@ -41,14 +45,34 @@ export default function VisaDetailsScreen() {
 
   const { visaType: visa, requirements } = data;
 
-  const handleModeSelection = (mode: 'self' | 'agent') => {
+  const handleModeSelection = async (mode: 'self' | 'agent') => {
     if (mode === 'agent') {
       router.push('/apply/agents');
-    } else {
-      router.push({
-        pathname: '/apply/self-service/[id]' as const,
-        params: { id: visa.id, countryCode: visa.countryCode },
+      return;
+    }
+
+    // Create a new self-service application
+    setIsCreating(true);
+    try {
+      const application = await createApplication.mutateAsync({
+        visaTypeId: visa.id,
+        countryCode: visa.countryCode,
+        mode: 'self',
       });
+
+      if (application) {
+        router.push({
+          pathname: '/apply/self-service/[id]' as const,
+          params: { id: application.id },
+        });
+      }
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        'Failed to create application. Please try again.',
+      );
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -204,7 +228,7 @@ export default function VisaDetailsScreen() {
             </View>
           </Card>
 
-          <Card onPress={() => handleModeSelection('self')}>
+          <Card onPress={() => !isCreating && handleModeSelection('self')}>
             <View className="flex-row items-center justify-between">
               <View className="flex-1 pr-4">
                 <Text
@@ -230,7 +254,11 @@ export default function VisaDetailsScreen() {
                   </Text>
                 </View>
               </View>
-              <ChevronRight size={24} color={colors.primary} />
+              {isCreating ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <ChevronRight size={24} color={colors.primary} />
+              )}
             </View>
           </Card>
         </Section>
