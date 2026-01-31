@@ -50,6 +50,8 @@ export interface VisaType {
   isExtendable: boolean;
   maxExtensions?: number;
   eligibilityCriteria: string[];
+  applicationUrl?: string; // URL to official online application form
+  applicationInstructions?: string; // Brief instructions for completing official application
   successRate?: number;
   totalApplications?: number;
   isActive: boolean;

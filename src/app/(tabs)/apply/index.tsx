@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
-import { Search, ArrowRight, X } from 'lucide-react-native';
-import { router } from 'expo-router';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { ScrollView, View, Text, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import { Search, ArrowRight, X, MapPin } from 'lucide-react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { getCountryFlag } from '@/utils/countryFlags';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Section, Input, Chip, Card } from '@/components/ui/themed';
-import { useVisaTypes, useVisaSearch } from '@/hooks/useVisaTypes';
+import { useVisaTypes, useVisaSearch, useVisaTypesByCountry, useCountriesWithVisas } from '@/hooks/useVisaTypes';
 import { VisaCategory } from '@/types/visas.type';
 
 const CATEGORIES: { label: string; value: VisaCategory }[] = [
@@ -18,32 +18,102 @@ const CATEGORIES: { label: string; value: VisaCategory }[] = [
 
 export default function Apply() {
   const { isDark, colors } = useTheme();
+  const params = useLocalSearchParams<{ countryCode?: string }>();
+  const initialCountryCode = params.countryCode;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<VisaCategory | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
 
-  // Fetch all visa types
-  const { data: visaData, isLoading: visasLoading } = useVisaTypes({
+  // Update selectedCountry when route param changes
+  useEffect(() => {
+    console.log('[Apply] Route params changed:', params);
+    console.log('[Apply] initialCountryCode:', initialCountryCode);
+    if (initialCountryCode && initialCountryCode !== selectedCountry) {
+      console.log('[Apply] Setting selectedCountry to:', initialCountryCode);
+      setSelectedCountry(initialCountryCode);
+    }
+  }, [initialCountryCode]);
+
+  // Fetch countries for displaying country name
+  const { data: countries } = useCountriesWithVisas();
+  const selectedCountryData = useMemo(() => {
+    return countries?.find((c) => c.code === selectedCountry);
+  }, [countries, selectedCountry]);
+
+  // Fetch all visa types (when no country filter)
+  const { data: visaData, isLoading: visasLoading, refetch: refetchVisas } = useVisaTypes({
     category: selectedCategory ?? undefined,
     limit: 20,
   });
 
+  // Fetch visa types by country (when country filter is active)
+  const { data: countryVisas, isLoading: countryVisasLoading, refetch: refetchCountryVisas } = useVisaTypesByCountry(selectedCountry ?? '');
+
+  // Debug logging
+  useEffect(() => {
+    console.log('[Apply] selectedCountry:', selectedCountry);
+    console.log('[Apply] countryVisas:', countryVisas);
+    console.log('[Apply] countryVisasLoading:', countryVisasLoading);
+  }, [selectedCountry, countryVisas, countryVisasLoading]);
+
   // Search visa types
-  const { data: searchResults, isLoading: searchLoading } = useVisaSearch(searchQuery);
+  const { data: searchResults, isLoading: searchLoading, refetch: refetchSearch } = useVisaSearch(searchQuery);
+
+  // Pull-to-refresh state
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (searchQuery.length >= 2) {
+        await refetchSearch();
+      } else if (selectedCountry) {
+        await refetchCountryVisas();
+      } else {
+        await refetchVisas();
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [searchQuery, selectedCountry, refetchVisas, refetchCountryVisas, refetchSearch]);
 
   // Determine which visas to display
   const displayedVisas = useMemo(() => {
-    return searchQuery.length >= 2 ? (searchResults ?? []) : (visaData?.visaTypes ?? []);
-  }, [searchQuery, searchResults, visaData]);
+    if (searchQuery.length >= 2) {
+      return searchResults ?? [];
+    }
+    if (selectedCountry) {
+      // Filter by category if selected
+      const visas = countryVisas ?? [];
+      if (selectedCategory) {
+        return visas.filter((v) => v.category === selectedCategory);
+      }
+      return visas;
+    }
+    return visaData?.visaTypes ?? [];
+  }, [searchQuery, searchResults, selectedCountry, countryVisas, selectedCategory, visaData]);
 
-  const isLoading = searchQuery.length >= 2 ? searchLoading : visasLoading;
+  const isLoading = searchQuery.length >= 2
+    ? searchLoading
+    : selectedCountry
+      ? countryVisasLoading
+      : visasLoading;
 
   const clearFilters = () => {
     setSelectedCategory(null);
+    setSelectedCountry(null);
     setSearchQuery('');
+    // Clear the URL param as well
+    router.setParams({ countryCode: '' });
   };
 
-  const hasActiveFilters = selectedCategory || searchQuery;
+  const clearCountryFilter = () => {
+    setSelectedCountry(null);
+    router.setParams({ countryCode: '' });
+  };
+
+  const hasActiveFilters = selectedCategory || searchQuery || selectedCountry;
 
   // TODO: Consider adding "Filter by Country" section for better UX when visa catalog grows
   // Would allow users to filter visas by destination country (e.g., US, UK, Canada)
@@ -71,6 +141,39 @@ export default function Apply() {
           />
         </View>
 
+        {/* Country filter indicator */}
+        {selectedCountry && selectedCountryData && (
+          <View className="mt-3 flex-row items-center">
+            <View
+              className={cn(
+                'flex-row items-center rounded-full px-3 py-2',
+                isDark ? 'bg-blue-900/50' : 'bg-blue-50'
+              )}
+            >
+              <Image
+                source={{ uri: getCountryFlag(selectedCountry) }}
+                className="h-5 w-5 rounded-full"
+                resizeMode="cover"
+              />
+              <Text
+                className={cn(
+                  'ml-2 font-medium',
+                  isDark ? 'text-blue-300' : 'text-blue-700'
+                )}
+              >
+                {selectedCountryData.name}
+              </Text>
+              <TouchableOpacity
+                onPress={clearCountryFilter}
+                className="ml-2"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <X size={16} color={isDark ? '#93c5fd' : '#1d4ed8'} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Active filters indicator */}
         {hasActiveFilters && (
           <TouchableOpacity
@@ -78,7 +181,7 @@ export default function Apply() {
             className="mt-2 flex-row items-center"
           >
             <X size={16} color={colors.primary} />
-            <Text className="ml-1 text-sm text-blue-600">Clear filters</Text>
+            <Text className="ml-1 text-sm text-blue-600">Clear all filters</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -87,6 +190,14 @@ export default function Apply() {
         className="flex-1"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {/* Categories */}
         <Section title="Categories">
@@ -121,13 +232,17 @@ export default function Apply() {
 
         {/* Available Visas */}
         <Section
-          title={searchQuery ? 'Search Results' : 'Available Visas'}
+          title={
+            searchQuery
+              ? 'Search Results'
+              : selectedCountry && selectedCountryData
+                ? `Visas for ${selectedCountryData.name}`
+                : 'Available Visas'
+          }
           rightElement={
-            visaData && visaData.total > 0 ? (
-              <Text className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                {visaData.total} visas
-              </Text>
-            ) : null
+            <Text className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-500')}>
+              {displayedVisas.length} visa{displayedVisas.length !== 1 ? 's' : ''}
+            </Text>
           }
         >
           {isLoading ? (

@@ -1,6 +1,6 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { ScrollView, View, TouchableOpacity, Text, Alert, ActivityIndicator } from 'react-native';
-import { CheckCircle2, Clock, AlertCircle, Upload, Trash2, RefreshCw } from 'lucide-react-native';
+import { ScrollView, View, TouchableOpacity, Text, Alert, ActivityIndicator, Linking } from 'react-native';
+import { CheckCircle2, Clock, AlertCircle, Upload, Trash2, RefreshCw, ExternalLink, FileText } from 'lucide-react-native';
 import { useState, useCallback } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import { useApplication, useApplicationTimeline, getApplicationStatusInfo } from '@/hooks/useApplications';
@@ -342,8 +342,69 @@ export default function SelfServiceScreen() {
           </Section>
         )}
 
+        {/* Official Application Link */}
+        {visaData?.visaType.applicationUrl && (
+          <Section title="Step 1: Complete Official Application">
+            <Card className={isDark ? 'bg-amber-900/30 border-amber-700' : 'bg-amber-50 border-amber-200'}>
+              <View className="flex-row items-start">
+                <View
+                  className={cn(
+                    'mr-3 h-10 w-10 items-center justify-center rounded-full',
+                    isDark ? 'bg-amber-800' : 'bg-amber-100',
+                  )}
+                >
+                  <FileText size={20} color={isDark ? '#fcd34d' : '#b45309'} />
+                </View>
+                <View className="flex-1">
+                  <Text
+                    className={cn(
+                      'text-lg font-semibold',
+                      isDark ? 'text-amber-200' : 'text-amber-900',
+                    )}
+                  >
+                    Complete Online Application
+                  </Text>
+                  <Text
+                    className={cn(
+                      'mt-1',
+                      isDark ? 'text-amber-300/80' : 'text-amber-800',
+                    )}
+                  >
+                    {visaData.visaType.applicationInstructions ||
+                      'Complete your application on the official government portal before uploading documents.'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  if (visaData?.visaType.applicationUrl) {
+                    Linking.openURL(visaData.visaType.applicationUrl);
+                  }
+                }}
+                className={cn(
+                  'mt-4 flex-row items-center justify-center rounded-lg py-3',
+                  isDark ? 'bg-amber-700' : 'bg-amber-500',
+                )}
+              >
+                <ExternalLink size={18} color="white" />
+                <Text className="ml-2 font-semibold text-white">
+                  Open Official Application
+                </Text>
+              </TouchableOpacity>
+              <Text
+                className={cn(
+                  'mt-2 text-center text-xs',
+                  isDark ? 'text-amber-400/60' : 'text-amber-700/60',
+                )}
+              >
+                Opens in your browser
+              </Text>
+            </Card>
+          </Section>
+        )}
+
         {/* Requirements List */}
-        <Section title="Required Documents">
+        <Section title={visaData?.visaType.applicationUrl ? 'Step 2: Upload Documents' : 'Required Documents'}>
           {visaLoading ? (
             <Card>
               <View className="items-center py-4">

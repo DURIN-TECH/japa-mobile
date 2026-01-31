@@ -34,7 +34,7 @@ export function useVisaTypes(options?: {
       const response = await apiService.get<GetAllVisasResponse>(endpoint);
       return response.data ?? { visaTypes: [], total: 0 };
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 0, // TODO: Change back to 1000 * 60 * 5 (5 minutes) after debugging
   });
 }
 
@@ -45,13 +45,15 @@ export function useVisaTypesByCountry(countryCode: string) {
   return useQuery({
     queryKey: ['visaTypes', 'country', countryCode],
     queryFn: async () => {
+      console.log('[useVisaTypesByCountry] Fetching visas for:', countryCode);
       const response = await apiService.get<VisaType[]>(
         `/countries/${countryCode}/visas`
       );
+      console.log('[useVisaTypesByCountry] Response:', response.data);
       return response.data ?? [];
     },
     enabled: !!countryCode,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 0, // TODO: Change back to 1000 * 60 * 5 (5 minutes) after debugging
   });
 }
 

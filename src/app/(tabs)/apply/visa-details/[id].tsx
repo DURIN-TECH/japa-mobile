@@ -1,11 +1,12 @@
 import { useLocalSearchParams, router } from 'expo-router';
 import { ScrollView, View, Text, Image, ActivityIndicator, Alert } from 'react-native';
-import { Users, ChevronRight, FileText, Calendar } from 'lucide-react-native';
+import { Users, ChevronRight, FileText, Calendar, ClipboardCheck } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 
 import { useVisaType } from '@/hooks/useVisaTypes';
 import { useCreateApplication } from '@/hooks/useApplications';
+import { useLatestEligibilityCheck, getEligibilityLevelInfo } from '@/hooks/useEligibility';
 import { getCountryFlag } from '@/utils/countryFlags';
 import { VisaRequirement } from '@/types/visas.type';
 import { useTheme, cn } from '@/hooks/useTheme';
@@ -17,6 +18,12 @@ export default function VisaDetailsScreen() {
   const { isDark, colors } = useTheme();
   const createApplication = useCreateApplication();
   const [isCreating, setIsCreating] = useState(false);
+
+  // Get latest eligibility check for this visa
+  const { data: latestCheck } = useLatestEligibilityCheck(id ?? '');
+  const hasCheckedEligibility = !!latestCheck;
+  const eligibilityLevel = latestCheck?.eligibilityLevel;
+  const eligibilityInfo = eligibilityLevel ? getEligibilityLevelInfo(eligibilityLevel) : null;
 
   if (isLoading) {
     return (
@@ -195,6 +202,69 @@ export default function VisaDetailsScreen() {
             </Card>
           </Section>
         )}
+
+        {/* Eligibility Check Section */}
+        <Section title="Check Your Eligibility">
+          <Card
+            onPress={() =>
+              router.push({
+                pathname: '/apply/eligibility/[visaId]' as const,
+                params: { visaId: visa.id, countryCode: visa.countryCode },
+              })
+            }
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-1 pr-4">
+                <Text
+                  className={cn(
+                    'text-lg font-semibold',
+                    isDark ? 'text-white' : 'text-gray-900'
+                  )}
+                >
+                  {hasCheckedEligibility ? 'Review Your Eligibility' : 'Take Eligibility Quiz'}
+                </Text>
+                <Text
+                  className={cn(
+                    'mt-1 text-base',
+                    isDark ? 'text-gray-400' : 'text-gray-600'
+                  )}
+                >
+                  {hasCheckedEligibility
+                    ? 'See your results and recommendations'
+                    : 'Find out if you qualify for this visa'}
+                </Text>
+                {hasCheckedEligibility && eligibilityInfo && (
+                  <View className="mt-3 flex-row items-center">
+                    <View
+                      className={cn(
+                        'px-2 py-1 rounded',
+                        isDark ? eligibilityInfo.darkBgColor : eligibilityInfo.bgColor
+                      )}
+                    >
+                      <Text
+                        className={cn(
+                          'text-sm font-medium',
+                          isDark ? eligibilityInfo.darkColor : eligibilityInfo.color
+                        )}
+                      >
+                        {eligibilityInfo.label} - {latestCheck?.score}%
+                      </Text>
+                    </View>
+                  </View>
+                )}
+                {!hasCheckedEligibility && (
+                  <View className="mt-3 flex-row items-center">
+                    <ClipboardCheck size={18} color={colors.primary} />
+                    <Text className="ml-2 text-base text-blue-600">
+                      5-8 quick questions
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <ChevronRight size={24} color={colors.primary} />
+            </View>
+          </Card>
+        </Section>
 
         {/* Application Options */}
         <Section title="Choose Your Path">
