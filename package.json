@@ -3,7 +3,7 @@
   "main": "index.ts",
   "version": "1.0.0",
   "scripts": {
-    "clean": "rm -rf node_modules && rm -rf ios/build && rm -rf android/app/build && rm -rf ios/Pods && rm -rf ios/.expo && rm -rf android/.expo && rm -rf ios/.expo-shared && rm -rf android/.expo-shared",
+    "clean": "rm -rf node_modules && rm package-lock.json && rm -rf ios/build && rm -rf android/app/build && rm -rf ios/Pods && rm -rf ios/.expo && rm -rf android/.expo && rm -rf ios/.expo-shared && rm -rf android/.expo-shared",
     "prebuild": "npx expo prebuild --clean",
     "pod:install": "cd ios && pod install && cd ..",
     "pod:update": "cd ios && pod update && cd ..",

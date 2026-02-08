@@ -1,13 +1,19 @@
 import { useState, useMemo } from 'react';
-import { View, Text, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+} from 'react-native';
 import { router } from 'expo-router';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { Screen, Typography, Card, Input } from '@/components/ui/themed';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { useOnboardingStore } from '@/stores/onboarding.store';
 import { useCountries } from '@/hooks/useCountries';
 import { Country } from '@/types/country.type';
-import { Ionicons } from '@expo/vector-icons';
 
 export default function CountrySelectionScreen() {
   const { isDark, colors } = useTheme();
@@ -23,7 +29,7 @@ export default function CountrySelectionScreen() {
     return countries.filter(
       (c) =>
         c.name.toLowerCase().includes(searchLower) ||
-        c.code.toLowerCase().includes(searchLower)
+        c.code.toLowerCase().includes(searchLower),
     );
   }, [countries, search]);
 
@@ -45,7 +51,7 @@ export default function CountrySelectionScreen() {
         <Card
           className={cn(
             'mb-2 flex-row items-center p-3',
-            isSelected && 'border-2 border-blue-500'
+            isSelected && 'border-2 border-blue-500',
           )}
         >
           <Image
@@ -57,7 +63,11 @@ export default function CountrySelectionScreen() {
             {item.name}
           </Typography>
           {isSelected && (
-            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+            <Ionicons
+              name="checkmark-circle"
+              size={24}
+              color={colors.primary}
+            />
           )}
         </Card>
       </TouchableOpacity>
@@ -71,8 +81,18 @@ export default function CountrySelectionScreen() {
         <View className="mb-8 flex-row">
           <View className="mr-2 h-1 flex-1 rounded-full bg-blue-500" />
           <View className="mr-2 h-1 flex-1 rounded-full bg-blue-500" />
-          <View className={cn('mr-2 h-1 flex-1 rounded-full', isDark ? 'bg-gray-700' : 'bg-gray-200')} />
-          <View className={cn('h-1 flex-1 rounded-full', isDark ? 'bg-gray-700' : 'bg-gray-200')} />
+          <View
+            className={cn(
+              'mr-2 h-1 flex-1 rounded-full',
+              isDark ? 'bg-gray-700' : 'bg-gray-200',
+            )}
+          />
+          <View
+            className={cn(
+              'h-1 flex-1 rounded-full',
+              isDark ? 'bg-gray-700' : 'bg-gray-200',
+            )}
+          />
         </View>
 
         {/* Back button */}
@@ -82,7 +102,12 @@ export default function CountrySelectionScreen() {
 
         {/* Header */}
         <View className="mb-6">
-          <Text className={cn('text-2xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
+          <Text
+            className={cn(
+              'text-2xl font-bold',
+              isDark ? 'text-white' : 'text-gray-900',
+            )}
+          >
             Where do you currently live?
           </Text>
           <Typography variant="body" color="muted" className="mt-2">
@@ -102,12 +127,16 @@ export default function CountrySelectionScreen() {
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color={colors.primary} />
-            <Typography color="muted" className="mt-2">Loading countries...</Typography>
+            <Typography color="muted" className="mt-2">
+              Loading countries...
+            </Typography>
           </View>
         ) : error ? (
           <View className="flex-1 items-center justify-center">
             <Ionicons name="alert-circle" size={48} color={colors.error} />
-            <Typography color="error" className="mt-2">Failed to load countries</Typography>
+            <Typography color="error" className="mt-2">
+              Failed to load countries
+            </Typography>
           </View>
         ) : (
           <FlatList
@@ -131,10 +160,19 @@ export default function CountrySelectionScreen() {
             disabled={!selectedCode}
             className={cn(
               'items-center rounded-xl py-4',
-              selectedCode ? 'bg-blue-500' : isDark ? 'bg-gray-700' : 'bg-gray-300'
+              selectedCode
+                ? 'bg-blue-500'
+                : isDark
+                  ? 'bg-gray-700'
+                  : 'bg-gray-300',
             )}
           >
-            <Text className={cn('font-semibold', selectedCode ? 'text-white' : 'text-gray-500')}>
+            <Text
+              className={cn(
+                'font-semibold',
+                selectedCode ? 'text-white' : 'text-gray-500',
+              )}
+            >
               Continue
             </Text>
           </TouchableOpacity>

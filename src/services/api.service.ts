@@ -1,11 +1,16 @@
-import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import axios, {
+  AxiosInstance,
+  AxiosError,
+  InternalAxiosRequestConfig,
+} from 'axios';
 import { getApp } from '@react-native-firebase/app';
 import { getAuth, getIdToken, signOut } from '@react-native-firebase/auth';
 import { router } from 'expo-router';
 
 // API Base URL - update this for production
 const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5001/japa-platform/us-central1/api';
+  process.env.EXPO_PUBLIC_API_URL ||
+  'http://localhost:5001/japa-platform/us-central1/api';
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -46,7 +51,7 @@ api.interceptors.request.use(
   },
   (error) => {
     return Promise.reject(error);
-  }
+  },
 );
 
 // Response interceptor - handle errors
@@ -91,7 +96,7 @@ api.interceptors.response.use(
       };
       return Promise.reject(apiError);
     }
-  }
+  },
 );
 
 // API service methods
