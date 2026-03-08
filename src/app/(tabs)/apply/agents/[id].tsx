@@ -1,18 +1,58 @@
+/**
+ * Agent Detail Screen
+ *
+ * Shows a single agent's profile: name, rating, bio, stats, consultation
+ * booking card, and visa services offered.
+ *
+ * INTEGRATION CHANGE: Previously looked up the agent from the mock
+ * `verificationAgents` array by ID. Now fetches the real agent from
+ * GET /agents/:id via the `useAgent` hook.
+ *
+ * The `formatAgentForDisplay()` helper converts API fields to the legacy
+ * display format used by VisaServiceCard and ConsultationCard components.
+ *
+ * Backend endpoint: GET /agents/:id
+ * Hook: useAgent(id) from @/hooks/useAgents
+ */
+
 import { useLocalSearchParams } from 'expo-router';
-import { ScrollView, View, Image, Text } from 'react-native';
+import { ScrollView, View, Image, Text, ActivityIndicator } from 'react-native';
 import { Star, Clock, Globe, Award } from 'lucide-react-native';
-import { verificationAgents } from '@/mock_data/agents';
+// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
+// Now using real API data via useAgent hook
+import { useAgent, formatAgentForDisplay } from '@/hooks/useAgents';
 import { VisaServiceCard } from '@/components/agents/VisaServiceCard';
 import { ConsultationCard } from '@/components/agents/ConsultationCard';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Header, Section, StatsCard } from '@/components/ui/themed';
+import { analyticsService } from '@/services/analytics.service';
 
 export default function AgentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const agent = verificationAgents.find((a) => a.id === id);
   const { isDark, colors } = useTheme();
 
-  if (!agent) {
+  // Fetch agent data from backend API (replaces mock array lookup)
+  const { data: apiAgent, isLoading, error } = useAgent(id);
+
+  // Track agent profile view for analytics
+  if (id) {
+    analyticsService.trackAgentViewed(id);
+  }
+
+  // Loading state — show spinner while fetching from API
+  if (isLoading) {
+    return (
+      <Screen>
+        <Header title="Agent Profile" showBack />
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </Screen>
+    );
+  }
+
+  // Error or not found state
+  if (!apiAgent || error) {
     return (
       <Screen>
         <Header title="Agent" showBack />
@@ -25,6 +65,9 @@ export default function AgentDetailScreen() {
     );
   }
 
+  // Convert API agent to the display format used by child components
+  const agent = formatAgentForDisplay(apiAgent);
+
   return (
     <Screen>
       <Header title="Agent Profile" showBack />
@@ -33,9 +76,10 @@ export default function AgentDetailScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
       >
-        {/* Agent Header */}
+        {/* Agent Header — avatar, name, rating */}
         <View className={cn('px-4 py-4', isDark ? 'bg-gray-800' : 'bg-white')}>
           <View className="mb-4 flex-row items-center">
+            {/* Avatar using ui-avatars.com service (generates from name) */}
             <Image
               source={{ uri: `https://ui-avatars.com/api/?name=${agent.name}` }}
               className="mr-4 h-20 w-20 rounded-full"
@@ -57,19 +101,21 @@ export default function AgentDetailScreen() {
                     isDark ? 'text-gray-400' : 'text-gray-600',
                   )}
                 >
+                  {/* verificationCount maps to totalReviews from the API */}
                   {agent.rating} ({agent.verificationCount} reviews)
                 </Text>
               </View>
             </View>
           </View>
 
+          {/* Agent bio/description */}
           <Text
             className={cn('mb-4', isDark ? 'text-gray-400' : 'text-gray-600')}
           >
             {agent.description}
           </Text>
 
-          {/* Stats */}
+          {/* Stats cards — success rate, response time, languages */}
           <StatsCard
             items={[
               {
@@ -91,16 +137,29 @@ export default function AgentDetailScreen() {
           />
         </View>
 
-        {/* Consultation Section */}
+        {/* Consultation booking card — price comes from API consultationFee */}
         <Section title="Book a Consultation">
           <ConsultationCard price={agent.consultationFee} agentId={agent.id} />
         </Section>
 
-        {/* Visa Services */}
+        {/* Visa Services — lists the agent's featured visa types */}
         <Section title="Visa Services">
-          {agent.featuredVisas.map((visa) => (
-            <VisaServiceCard key={visa} visaType={visa} agentId={agent.id} />
-          ))}
+          {agent.featuredVisas.length > 0
+            ? agent.featuredVisas.map((visa: string) => (
+                <VisaServiceCard
+                  key={visa}
+                  visaType={visa}
+                  agentId={agent.id}
+                />
+              ))
+            : // Show specializations if no specific featured visas are set
+              agent.specializations.map((spec: string) => (
+                <VisaServiceCard
+                  key={spec}
+                  visaType={spec}
+                  agentId={agent.id}
+                />
+              ))}
         </Section>
       </ScrollView>
     </Screen>

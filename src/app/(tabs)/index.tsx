@@ -1,4 +1,37 @@
-import { TouchableOpacity, View, Text, ScrollView, Image, ActivityIndicator } from 'react-native';
+/**
+ * Home Screen
+ *
+ * The main dashboard shown after authentication. Displays:
+ * - Welcome greeting with the user's first name
+ * - Notification bell with unread count badge
+ * - Active application card (most recent in-progress application)
+ * - Quick action buttons (Find Agent, Consultations, Applications, Browse Visas)
+ * - Top rated agents carousel
+ * - Popular visas carousel
+ * - Popular destinations grid
+ *
+ * INTEGRATION CHANGES:
+ * - Replaced `verificationAgents` mock import with `useTopAgents()` hook
+ * - Replaced hardcoded "US Tourist Visa" card with real active application
+ * - Added notification bell badge from `useUnreadNotificationCount()`
+ * - Added analytics screen view tracking
+ *
+ * Backend endpoints used:
+ * - GET /agents/top?limit=3 — top rated agents
+ * - GET /visas/popular?limit=4 — popular visa types
+ * - GET /countries/with-visas — countries with visa types
+ * - GET /applications — user's applications (for active app card)
+ * - GET /notifications/unread-count — notification badge count
+ */
+
+import {
+  TouchableOpacity,
+  View,
+  Text,
+  ScrollView,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
 import {
   Bell,
   Calendar,
@@ -10,13 +43,24 @@ import {
   Globe,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { verificationAgents } from '@/mock_data/agents';
+// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
+import { useTopAgents, formatAgentForDisplay } from '@/hooks/useAgents';
+import {
+  useApplications,
+  getApplicationStatusInfo,
+} from '@/hooks/useApplications';
+import { useUnreadNotificationCount } from '@/hooks/useNotifications';
 import { getCountryFlag } from '@/utils/countryFlags';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Section, Card, Badge } from '@/components/ui/themed';
-import { usePopularVisaTypes, useCountriesWithVisas } from '@/hooks/useVisaTypes';
+import {
+  usePopularVisaTypes,
+  useCountriesWithVisas,
+} from '@/hooks/useVisaTypes';
 import { useAuthStore } from '@/stores/auth.store';
+import { analyticsService } from '@/services/analytics.service';
 
+/** Quick action buttons on the home screen */
 const QUICK_ACTIONS = [
   {
     path: '/(tabs)/apply/agents',
@@ -47,11 +91,43 @@ const QUICK_ACTIONS = [
 export default function HomeScreen() {
   const { isDark, colors } = useTheme();
   const profile = useAuthStore((state) => state.profile);
-  const { data: popularVisas, isLoading: visasLoading } = usePopularVisaTypes(4);
-  const { data: countries, isLoading: countriesLoading } = useCountriesWithVisas();
 
-  // Get top 4 countries for destinations
+  // Fetch real data from backend APIs
+  const { data: popularVisas, isLoading: visasLoading } =
+    usePopularVisaTypes(4);
+  const { data: countries, isLoading: countriesLoading } =
+    useCountriesWithVisas();
+  // REPLACED: was `verificationAgents.slice(0, 3)` (mock data)
+  const { data: topAgents, isLoading: agentsLoading } = useTopAgents(3);
+  // Fetch user's applications to show the most recent active one
+  const { data: applications } = useApplications();
+  // Fetch notification unread count for the bell badge
+  const { data: unreadCount } = useUnreadNotificationCount();
+
+  // Track screen view for analytics
+  analyticsService.trackScreenView('HomeScreen');
+
+  // Get top 4 countries for destinations section
   const topDestinations = (countries ?? []).slice(0, 4);
+
+  // Convert API agents to display format for the carousel
+  const displayAgents = (topAgents ?? []).map(formatAgentForDisplay);
+
+  /**
+   * Find the most recent active application to show in the hero card.
+   * "Active" = not completed, not rejected, not withdrawn, not expired.
+   * Sort by updatedAt desc to get the most recently updated one.
+   */
+  const activeApplication = (applications ?? []).find((app) =>
+    [
+      'draft',
+      'pending_payment',
+      'pending_documents',
+      'under_review',
+      'submitted_to_embassy',
+      'interview_scheduled',
+    ].includes(app.status),
+  );
 
   return (
     <Screen>
@@ -60,7 +136,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
       >
-        {/* Header Section */}
+        {/* Header Section — greeting + notification bell */}
         <View
           className={cn('px-4 pb-4 pt-2', isDark ? 'bg-gray-800' : 'bg-white')}
         >
@@ -83,6 +159,7 @@ export default function HomeScreen() {
                 What would you like to do today?
               </Text>
             </View>
+            {/* Notification bell — now shows unread count badge */}
             <TouchableOpacity
               className={cn(
                 'h-10 w-10 items-center justify-center rounded-full',
@@ -90,52 +167,118 @@ export default function HomeScreen() {
               )}
             >
               <Bell color={colors.icon} size={20} />
+              {/* Unread count badge — only shown when there are unread notifications */}
+              {(unreadCount ?? 0) > 0 && (
+                <View className="absolute -right-1 -top-1 h-5 w-5 items-center justify-center rounded-full bg-red-500">
+                  <Text className="text-xs font-bold text-white">
+                    {unreadCount! > 9 ? '9+' : unreadCount}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Active Application Card */}
-        <Section>
-          <Card
-            variant="highlight"
-            onPress={() => router.push('/me/applications')}
-          >
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <View
-                  className={cn(
-                    'mr-3 h-12 w-12 items-center justify-center rounded-full',
-                    isDark ? 'bg-blue-800' : 'bg-blue-100',
-                  )}
-                >
-                  <Calendar color={colors.primary} size={24} />
-                </View>
-                <View>
-                  <Text
+        {/* Active Application Card — shows real data instead of hardcoded "US Tourist Visa" */}
+        {activeApplication ? (
+          <Section>
+            <Card
+              variant="highlight"
+              onPress={() =>
+                router.push(`/me/applications/${activeApplication.id}`)
+              }
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center">
+                  <View
                     className={cn(
-                      'text-base font-semibold',
-                      isDark ? 'text-white' : 'text-gray-900',
+                      'mr-3 h-12 w-12 items-center justify-center rounded-full',
+                      isDark ? 'bg-blue-800' : 'bg-blue-100',
                     )}
                   >
-                    US Tourist Visa
-                  </Text>
-                  <View className="mt-1 flex-row items-center">
-                    <Badge variant="warning">In Progress</Badge>
+                    <Calendar color={colors.primary} size={24} />
+                  </View>
+                  <View>
                     <Text
                       className={cn(
-                        'ml-2 text-sm',
+                        'text-base font-semibold',
+                        isDark ? 'text-white' : 'text-gray-900',
+                      )}
+                    >
+                      {/* Show visa type name from the real application */}
+                      {activeApplication.visaTypeName ??
+                        activeApplication.currentStep}
+                    </Text>
+                    <View className="mt-1 flex-row items-center">
+                      <Badge
+                        variant={
+                          getApplicationStatusInfo(activeApplication.status)
+                            .label === 'Approved'
+                            ? 'success'
+                            : 'warning'
+                        }
+                      >
+                        {
+                          getApplicationStatusInfo(activeApplication.status)
+                            .label
+                        }
+                      </Badge>
+                      <Text
+                        className={cn(
+                          'ml-2 text-sm',
+                          isDark ? 'text-gray-400' : 'text-gray-500',
+                        )}
+                      >
+                        {activeApplication.progress}% complete
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+                <ArrowRight size={20} color={colors.primary} />
+              </View>
+            </Card>
+          </Section>
+        ) : (
+          // No active application — show a CTA to start one
+          <Section>
+            <Card
+              variant="highlight"
+              onPress={() => router.push('/(tabs)/apply')}
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center">
+                  <View
+                    className={cn(
+                      'mr-3 h-12 w-12 items-center justify-center rounded-full',
+                      isDark ? 'bg-blue-800' : 'bg-blue-100',
+                    )}
+                  >
+                    <Globe color={colors.primary} size={24} />
+                  </View>
+                  <View>
+                    <Text
+                      className={cn(
+                        'text-base font-semibold',
+                        isDark ? 'text-white' : 'text-gray-900',
+                      )}
+                    >
+                      Start Your Visa Application
+                    </Text>
+                    <Text
+                      className={cn(
+                        'mt-1 text-sm',
                         isDark ? 'text-gray-400' : 'text-gray-500',
                       )}
                     >
-                      2 tasks pending
+                      Browse available visa types
                     </Text>
                   </View>
                 </View>
+                <ArrowRight size={20} color={colors.primary} />
               </View>
-              <ArrowRight size={20} color={colors.primary} />
-            </View>
-          </Card>
-        </Section>
+            </Card>
+          </Section>
+        )}
 
         {/* Quick Actions */}
         <Section title="Quick Actions">
@@ -176,7 +319,7 @@ export default function HomeScreen() {
           </View>
         </Section>
 
-        {/* Top Rated Agents */}
+        {/* Top Rated Agents — now fetched from GET /agents/top */}
         <Section
           title="Top Rated Agents"
           rightElement={
@@ -187,80 +330,89 @@ export default function HomeScreen() {
             </TouchableOpacity>
           }
         >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingRight: 16 }}
-          >
-            {verificationAgents.slice(0, 3).map((agent, index) => (
-              <TouchableOpacity
-                key={agent.id}
-                onPress={() => router.push(`/apply/agents/${agent.id}`)}
-                className={cn(
-                  'rounded-xl border p-4',
-                  isDark
-                    ? 'border-gray-700 bg-gray-800'
-                    : 'border-gray-200 bg-white',
-                )}
-                style={{ width: 200, marginRight: index < 2 ? 12 : 0 }}
-                activeOpacity={0.7}
-              >
-                <View className="mb-3 flex-row items-center">
-                  <View
-                    className={cn(
-                      'h-10 w-10 items-center justify-center rounded-full',
-                      isDark ? 'bg-gray-700' : 'bg-gray-100',
-                    )}
-                  >
-                    <Text
+          {agentsLoading ? (
+            <View className="items-center py-4">
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingRight: 16 }}
+            >
+              {displayAgents.map((agent, index) => (
+                <TouchableOpacity
+                  key={agent.id}
+                  onPress={() => router.push(`/apply/agents/${agent.id}`)}
+                  className={cn(
+                    'rounded-xl border p-4',
+                    isDark
+                      ? 'border-gray-700 bg-gray-800'
+                      : 'border-gray-200 bg-white',
+                  )}
+                  style={{
+                    width: 200,
+                    marginRight: index < displayAgents.length - 1 ? 12 : 0,
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View className="mb-3 flex-row items-center">
+                    <View
                       className={cn(
-                        'font-semibold',
-                        isDark ? 'text-gray-300' : 'text-gray-600',
+                        'h-10 w-10 items-center justify-center rounded-full',
+                        isDark ? 'bg-gray-700' : 'bg-gray-100',
                       )}
                     >
-                      {agent.initials}
+                      <Text
+                        className={cn(
+                          'font-semibold',
+                          isDark ? 'text-gray-300' : 'text-gray-600',
+                        )}
+                      >
+                        {agent.initials}
+                      </Text>
+                    </View>
+                    <View className="ml-3 flex-1">
+                      <Text
+                        className={cn(
+                          'font-medium',
+                          isDark ? 'text-white' : 'text-gray-900',
+                        )}
+                        numberOfLines={1}
+                      >
+                        {agent.name}
+                      </Text>
+                      <Text
+                        className={cn(
+                          'text-sm',
+                          isDark ? 'text-gray-400' : 'text-gray-500',
+                        )}
+                        numberOfLines={1}
+                      >
+                        {agent.specializations[0]}
+                      </Text>
+                    </View>
+                  </View>
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center">
+                      <Star size={14} color="#facc15" fill="#facc15" />
+                      <Text
+                        className={cn(
+                          'ml-1 text-sm',
+                          isDark ? 'text-gray-300' : 'text-gray-700',
+                        )}
+                      >
+                        {agent.rating}
+                      </Text>
+                    </View>
+                    <Text className="text-sm font-semibold text-green-600">
+                      ${agent.price}
                     </Text>
                   </View>
-                  <View className="ml-3 flex-1">
-                    <Text
-                      className={cn(
-                        'font-medium',
-                        isDark ? 'text-white' : 'text-gray-900',
-                      )}
-                      numberOfLines={1}
-                    >
-                      {agent.name}
-                    </Text>
-                    <Text
-                      className={cn(
-                        'text-sm',
-                        isDark ? 'text-gray-400' : 'text-gray-500',
-                      )}
-                      numberOfLines={1}
-                    >
-                      {agent.specializations[0]}
-                    </Text>
-                  </View>
-                </View>
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center">
-                    <Star size={14} color="#facc15" fill="#facc15" />
-                    <Text
-                      className={cn(
-                        'ml-1 text-sm',
-                        isDark ? 'text-gray-300' : 'text-gray-700',
-                      )}
-                    >
-                      {agent.rating}
-                    </Text>
-                  </View>
-                  <Text className="text-sm font-semibold text-green-600">
-                    ${agent.price}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
         </Section>
 
         {/* Popular Visas */}
@@ -332,7 +484,9 @@ export default function HomeScreen() {
                     {visa.processingTime}
                   </Text>
                   <View className="flex-row items-center justify-between">
-                    <Text className="font-bold text-blue-600">${visa.baseCostUsd}</Text>
+                    <Text className="font-bold text-blue-600">
+                      ${visa.baseCostUsd}
+                    </Text>
                     <ArrowRight size={16} color={colors.primary} />
                   </View>
                 </TouchableOpacity>

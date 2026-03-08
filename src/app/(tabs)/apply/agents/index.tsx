@@ -1,12 +1,37 @@
-import { useState } from 'react';
-import { ScrollView, View, TouchableOpacity, Text } from 'react-native';
+/**
+ * Agents Listing Screen
+ *
+ * Shows a searchable, filterable directory of immigration agents.
+ * Users can browse agents, view stats, and tap to see agent profiles.
+ *
+ * INTEGRATION CHANGE: Previously imported `verificationAgents` from mock data.
+ * Now fetches real agents from GET /agents via the `useAgents` hook.
+ * The `formatAgentForDisplay()` helper converts the API response to the
+ * legacy display format expected by the AgentCard component.
+ *
+ * Backend endpoint: GET /agents
+ * Hook: useAgents() from @/hooks/useAgents
+ */
+
+import { useState, useMemo } from 'react';
+import {
+  ScrollView,
+  View,
+  TouchableOpacity,
+  Text,
+  ActivityIndicator,
+} from 'react-native';
 import { Search, Users, Star, Filter } from 'lucide-react-native';
 import { Link } from 'expo-router';
 import { AgentCard } from '@/components/agents/AgentCard';
-import { verificationAgents } from '@/mock_data/agents';
+// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
+// Now using real API data via useAgents hook
+import { useAgents, formatAgentForDisplay } from '@/hooks/useAgents';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Section, Input, Chip } from '@/components/ui/themed';
+import { analyticsService } from '@/services/analytics.service';
 
+/** Filter categories for the agent list */
 const FILTERS = [
   'All',
   'Top Rated',
@@ -18,6 +43,72 @@ const FILTERS = [
 export default function AgentsScreen() {
   const { isDark, colors } = useTheme();
   const [selectedFilter, setSelectedFilter] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch agents from backend API (replaces mock verificationAgents)
+  const { data: agents, isLoading } = useAgents();
+
+  // Track screen view for analytics
+  analyticsService.trackScreenView('AgentsScreen');
+
+  /**
+   * Apply search and filter to the agents list.
+   * - Search matches against name, specializations, and languages
+   * - Filters match against specializations (e.g. "Student Visa")
+   * - "Top Rated" sorts by rating descending
+   */
+  const filteredAgents = useMemo(() => {
+    if (!agents) return [];
+
+    let result = agents;
+
+    // Apply search filter — match name, specializations, or languages
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        (a) =>
+          a.displayName.toLowerCase().includes(query) ||
+          a.specializations.some((s) => s.toLowerCase().includes(query)) ||
+          a.languages.some((l) => l.toLowerCase().includes(query)),
+      );
+    }
+
+    // Apply category filter
+    const filterName = FILTERS[selectedFilter];
+    if (filterName === 'Top Rated') {
+      // Sort by rating descending for "Top Rated" filter
+      result = [...result].sort((a, b) => b.rating - a.rating);
+    } else if (filterName !== 'All') {
+      // Filter by specialization (e.g. "Student Visa", "Work Visa")
+      result = result.filter((a) =>
+        a.specializations.some((s) =>
+          s.toLowerCase().includes(filterName.toLowerCase()),
+        ),
+      );
+    }
+
+    return result;
+  }, [agents, searchQuery, selectedFilter]);
+
+  // Convert API agents to the display format for AgentCard
+  const displayAgents = filteredAgents.map(formatAgentForDisplay);
+
+  /**
+   * Compute aggregate stats for the header.
+   * These used to be hardcoded (2 agents, 4.8 avg, 95% success).
+   * Now computed from real data.
+   */
+  const agentCount = agents?.length ?? 0;
+  const avgRating =
+    agentCount > 0
+      ? (agents!.reduce((sum, a) => sum + a.rating, 0) / agentCount).toFixed(1)
+      : '0';
+  const avgSuccess =
+    agentCount > 0
+      ? Math.round(
+          agents!.reduce((sum, a) => sum + a.successRate, 0) / agentCount,
+        )
+      : 0;
 
   return (
     <Screen>
@@ -59,7 +150,7 @@ export default function AgentsScreen() {
             </View>
           </View>
 
-          {/* Stats Row */}
+          {/* Stats Row — now uses real computed data instead of hardcoded values */}
           <View
             className={cn(
               'mt-4 flex-row rounded-xl p-3',
@@ -78,7 +169,8 @@ export default function AgentsScreen() {
                   isDark ? 'text-white' : 'text-gray-900',
                 )}
               >
-                {verificationAgents.length}
+                {/* REPLACED: was hardcoded `verificationAgents.length` */}
+                {agentCount}
               </Text>
               <Text
                 className={cn(
@@ -103,7 +195,8 @@ export default function AgentsScreen() {
                     isDark ? 'text-white' : 'text-gray-900',
                   )}
                 >
-                  4.8
+                  {/* REPLACED: was hardcoded "4.8" */}
+                  {avgRating}
                 </Text>
               </View>
               <Text
@@ -122,7 +215,8 @@ export default function AgentsScreen() {
                   isDark ? 'text-white' : 'text-gray-900',
                 )}
               >
-                95%
+                {/* REPLACED: was hardcoded "95%" */}
+                {avgSuccess}%
               </Text>
               <Text
                 className={cn(
@@ -135,11 +229,19 @@ export default function AgentsScreen() {
             </View>
           </View>
 
-          {/* Search Bar */}
+          {/* Search Bar — now functional (filters agents by name/specialization) */}
           <View className="mt-4">
             <Input
               placeholder="Search by name, specialization..."
               icon={<Search size={20} color={colors.placeholder} />}
+              value={searchQuery}
+              onChangeText={(text: string) => {
+                setSearchQuery(text);
+                // Track search queries for analytics (debounced in the Input)
+                if (text.length >= 3) {
+                  analyticsService.trackSearch(text, 'agents');
+                }
+              }}
             />
           </View>
         </View>
@@ -171,7 +273,7 @@ export default function AgentsScreen() {
           </ScrollView>
         </View>
 
-        {/* Results Count */}
+        {/* Results Count — now shows filtered count from real data */}
         <View className="flex-row items-center justify-between px-4 py-3">
           <Text
             className={cn(
@@ -179,7 +281,7 @@ export default function AgentsScreen() {
               isDark ? 'text-gray-300' : 'text-gray-700',
             )}
           >
-            {verificationAgents.length} agents found
+            {displayAgents.length} agents found
           </Text>
           <TouchableOpacity className="flex-row items-center">
             <Filter size={16} color={colors.iconMuted} />
@@ -194,15 +296,44 @@ export default function AgentsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Agents List */}
+        {/* Agents List — Loading / Empty / Results states */}
         <Section className="pt-0">
-          {verificationAgents.map((agent) => (
-            <Link key={agent.id} href={`/apply/agents/${agent.id}`} asChild>
-              <TouchableOpacity activeOpacity={0.7}>
-                <AgentCard agent={agent} />
-              </TouchableOpacity>
-            </Link>
-          ))}
+          {isLoading ? (
+            // Show loading spinner while fetching agents from API
+            <View className="items-center py-8">
+              <ActivityIndicator color={colors.primary} />
+              <Text
+                className={cn(
+                  'mt-2 text-sm',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                Loading agents...
+              </Text>
+            </View>
+          ) : displayAgents.length === 0 ? (
+            // Empty state when no agents match the search/filter
+            <View className="items-center py-8">
+              <Users size={40} color={colors.iconMuted} />
+              <Text
+                className={cn(
+                  'mt-2 text-center',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                No agents found matching your criteria
+              </Text>
+            </View>
+          ) : (
+            // Render the filtered agent cards
+            displayAgents.map((agent) => (
+              <Link key={agent.id} href={`/apply/agents/${agent.id}`} asChild>
+                <TouchableOpacity activeOpacity={0.7}>
+                  <AgentCard agent={agent} />
+                </TouchableOpacity>
+              </Link>
+            ))
+          )}
         </Section>
       </ScrollView>
     </Screen>

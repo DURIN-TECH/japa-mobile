@@ -1,8 +1,22 @@
+/**
+ * Book Consultation Screen
+ *
+ * Step 1 of the consultation booking flow: select date and time.
+ * User picks a date and available time slot, then proceeds to payment.
+ *
+ * INTEGRATION CHANGE: Replaced mock `verificationAgents` lookup with
+ * real `useAgent()` hook that fetches from GET /agents/:id.
+ * Agent's response time and availability slots come from real data.
+ *
+ * Backend endpoint: GET /agents/:id (for agent info)
+ */
+
 import { useLocalSearchParams, router } from 'expo-router';
 import { useState } from 'react';
-import { View, ScrollView, Text } from 'react-native';
+import { View, ScrollView, Text, ActivityIndicator } from 'react-native';
 import { Clock, Calendar as CalendarIcon } from 'lucide-react-native';
-import { verificationAgents } from '@/mock_data/agents';
+// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
+import { useAgent, formatAgentForDisplay } from '@/hooks/useAgents';
 import { TimeSlotPicker } from '@/components/consultation/TimeSlotPicker';
 import { DatePicker } from '@/components/consultation/DatePicker';
 import { useTheme, cn } from '@/hooks/useTheme';
@@ -14,8 +28,24 @@ export default function BookConsultation() {
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const { isDark, colors } = useTheme();
 
-  const agent = verificationAgents.find((a) => a.id === id);
-  if (!agent) return null;
+  // Fetch agent from API instead of mock array
+  const { data: apiAgent, isLoading } = useAgent(id);
+
+  // Loading state while fetching agent
+  if (isLoading) {
+    return (
+      <Screen>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!apiAgent) return null;
+
+  // Convert to display format for showing agent name and response time
+  const agent = formatAgentForDisplay(apiAgent);
 
   return (
     <Screen>
@@ -28,18 +58,23 @@ export default function BookConsultation() {
           )}
         >
           <Header title="Book Consultation" showBack />
-          <Text className={cn('mt-1', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn('mt-1', isDark ? 'text-gray-400' : 'text-gray-600')}
+          >
             Schedule a consultation with {agent.name}
           </Text>
         </View>
 
-        {/* Consultation Info */}
+        {/* Consultation Info — shows duration and agent availability */}
         <Section>
           <Card variant="highlight">
             <View className="mb-2 flex-row items-center">
               <Clock size={20} color={colors.primary} />
               <Text
-                className={cn('ml-2', isDark ? 'text-blue-300' : 'text-blue-900')}
+                className={cn(
+                  'ml-2',
+                  isDark ? 'text-blue-300' : 'text-blue-900',
+                )}
               >
                 30 Minutes
               </Text>
@@ -47,7 +82,10 @@ export default function BookConsultation() {
             <View className="flex-row items-center">
               <CalendarIcon size={20} color={colors.primary} />
               <Text
-                className={cn('ml-2', isDark ? 'text-blue-300' : 'text-blue-900')}
+                className={cn(
+                  'ml-2',
+                  isDark ? 'text-blue-300' : 'text-blue-900',
+                )}
               >
                 Available within {agent.responseTime}
               </Text>
@@ -57,7 +95,10 @@ export default function BookConsultation() {
 
         {/* Date Selection */}
         <Section title="Select Date">
-          <DatePicker selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+          <DatePicker
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+          />
         </Section>
 
         {/* Time Slots */}
@@ -68,7 +109,7 @@ export default function BookConsultation() {
           />
         </Section>
 
-        {/* Continue Button */}
+        {/* Continue Button — passes agent fee to payment screen */}
         <Section>
           <Button
             disabled={!selectedTime}
@@ -77,10 +118,12 @@ export default function BookConsultation() {
               router.replace({
                 pathname: '/apply/agents/[id]/payment',
                 params: {
-                  id,
+                  id: id!,
                   type: 'consultation',
                   date: selectedDate.toISOString(),
                   time: selectedTime as string,
+                  // Pass the consultation fee from the API agent data (in cents)
+                  fee: String(apiAgent.consultationFee),
                 },
               });
             }}

@@ -1,8 +1,21 @@
+/**
+ * Confirmation Screen
+ *
+ * Step 3 of the consultation booking flow: success confirmation.
+ * Shows booking details and navigation options.
+ *
+ * INTEGRATION CHANGE: Replaced mock `verificationAgents` lookup
+ * with `useAgent()` hook for agent name display.
+ *
+ * Backend endpoint: GET /agents/:id
+ */
+
 import { useLocalSearchParams, router } from 'expo-router';
-import { View, ScrollView, Text } from 'react-native';
+import { View, ScrollView, Text, ActivityIndicator } from 'react-native';
 import { CheckCircle2, Calendar, Clock, CreditCard } from 'lucide-react-native';
 import { format } from 'date-fns';
-import { verificationAgents } from '@/mock_data/agents';
+// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
+import { useAgent } from '@/hooks/useAgents';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Section, Card, Button } from '@/components/ui/themed';
 
@@ -19,8 +32,20 @@ export default function ConfirmationScreen() {
   const { id, type, date, time, paymentMethod } = params;
   const { isDark, colors } = useTheme();
 
-  const agent = verificationAgents.find((a) => a.id === id);
-  if (!agent) return null;
+  // Fetch agent from API instead of mock array
+  const { data: apiAgent, isLoading } = useAgent(id);
+
+  if (isLoading) {
+    return (
+      <Screen>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!apiAgent) return null;
 
   const handleViewDetails = () => {
     if (type === 'consultation') {
@@ -69,7 +94,10 @@ export default function ConfirmationScreen() {
               : 'Application Started!'}
           </Text>
           <Text
-            className={cn('text-center', isDark ? 'text-gray-400' : 'text-gray-600')}
+            className={cn(
+              'text-center',
+              isDark ? 'text-gray-400' : 'text-gray-600',
+            )}
           >
             {type === 'consultation'
               ? 'Your consultation has been successfully scheduled'

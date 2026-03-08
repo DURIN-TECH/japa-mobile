@@ -1,5 +1,17 @@
+/**
+ * Visa Service Detail Screen
+ *
+ * Shows details about a specific visa type that an agent can help with,
+ * including requirements, statistics, and action buttons.
+ *
+ * INTEGRATION CHANGE: Replaced mock `verificationAgents` lookup
+ * with `useAgent()` hook for agent name and fee display.
+ *
+ * Backend endpoint: GET /agents/:id
+ */
+
 import { useLocalSearchParams, router } from 'expo-router';
-import { View, ScrollView, Text } from 'react-native';
+import { View, ScrollView, Text, ActivityIndicator } from 'react-native';
 import {
   FileText,
   Clock,
@@ -8,9 +20,17 @@ import {
   Users,
   TrendingUp,
 } from 'lucide-react-native';
-import { verificationAgents } from '@/mock_data/agents';
+// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
+import { useAgent, formatAgentForDisplay } from '@/hooks/useAgents';
 import { useTheme, cn } from '@/hooks/useTheme';
-import { Screen, Header, Section, Card, StatsCard, Button } from '@/components/ui/themed';
+import {
+  Screen,
+  Header,
+  Section,
+  Card,
+  StatsCard,
+  Button,
+} from '@/components/ui/themed';
 
 interface VisaStatistics {
   successRate: number;
@@ -171,8 +191,22 @@ export default function VisaServiceScreen() {
   }>();
   const { isDark, colors } = useTheme();
 
-  const agent = verificationAgents.find((a) => a.id === id);
-  if (!agent) return null;
+  // Fetch agent from API instead of mock array
+  const { data: apiAgent, isLoading } = useAgent(id);
+
+  if (isLoading) {
+    return (
+      <Screen>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!apiAgent) return null;
+
+  const agent = formatAgentForDisplay(apiAgent);
 
   const visaInfo = VISA_DETAILS[type];
   if (!visaInfo) return null;
@@ -183,7 +217,9 @@ export default function VisaServiceScreen() {
       <ScrollView className="flex-1">
         {/* Header Info */}
         <View className={cn('px-4 py-4', isDark ? 'bg-gray-800' : 'bg-white')}>
-          <Text className={cn('mt-1', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn('mt-1', isDark ? 'text-gray-400' : 'text-gray-600')}
+          >
             {visaInfo.description}
           </Text>
 
@@ -191,7 +227,10 @@ export default function VisaServiceScreen() {
             <View className="mb-2 flex-row items-center">
               <Clock size={20} color={colors.primary} />
               <Text
-                className={cn('ml-2', isDark ? 'text-blue-300' : 'text-blue-900')}
+                className={cn(
+                  'ml-2',
+                  isDark ? 'text-blue-300' : 'text-blue-900',
+                )}
               >
                 Processing Time: {visaInfo.processingTime}
               </Text>
@@ -199,7 +238,10 @@ export default function VisaServiceScreen() {
             <View className="flex-row items-center">
               <FileText size={20} color={colors.primary} />
               <Text
-                className={cn('ml-2', isDark ? 'text-blue-300' : 'text-blue-900')}
+                className={cn(
+                  'ml-2',
+                  isDark ? 'text-blue-300' : 'text-blue-900',
+                )}
               >
                 Validity: {visaInfo.validity}
               </Text>
@@ -245,14 +287,18 @@ export default function VisaServiceScreen() {
               >
                 Common Rejection Reasons:
               </Text>
-              {visaInfo.statistics.commonRejectionReasons.map((reason, index) => (
-                <View key={index} className="mb-2 flex-row items-center">
-                  <View className="mr-2 h-2 w-2 rounded-full bg-red-500" />
-                  <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
-                    {reason}
-                  </Text>
-                </View>
-              ))}
+              {visaInfo.statistics.commonRejectionReasons.map(
+                (reason, index) => (
+                  <View key={index} className="mb-2 flex-row items-center">
+                    <View className="mr-2 h-2 w-2 rounded-full bg-red-500" />
+                    <Text
+                      className={isDark ? 'text-gray-400' : 'text-gray-600'}
+                    >
+                      {reason}
+                    </Text>
+                  </View>
+                ),
+              )}
             </View>
           </Card>
         </Section>
@@ -261,10 +307,16 @@ export default function VisaServiceScreen() {
         <Section title="Requirements">
           <Card>
             {visaInfo.requirements.map((req, index) => (
-              <View key={index} className="mb-3 flex-row items-center last:mb-0">
+              <View
+                key={index}
+                className="mb-3 flex-row items-center last:mb-0"
+              >
                 <CheckCircle2 size={20} color={colors.primary} />
                 <Text
-                  className={cn('ml-2', isDark ? 'text-white' : 'text-gray-900')}
+                  className={cn(
+                    'ml-2',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
                 >
                   {req}
                 </Text>

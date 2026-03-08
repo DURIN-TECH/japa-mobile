@@ -8,7 +8,14 @@ import '../../global.css';
 import { OnboardingProvider } from '@/context/OnboardingContext';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { ThemeSync } from '@/providers/ThemeSync';
-import { useSettingsStore, useSettingsHydration } from '@/stores/settings.store';
+// ErrorBoundary catches rendering errors in any descendant component
+// and shows a fallback UI instead of a white screen crash.
+// Must wrap the entire app tree to be effective.
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import {
+  useSettingsStore,
+  useSettingsHydration,
+} from '@/stores/settings.store';
 import { useAuthStore, useAuthHydration } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
 
@@ -57,7 +64,14 @@ export const unstable_settings = {
 function useProtectedRoute() {
   const segments = useSegments();
   const router = useRouter();
-  const { isAuthenticated, profile, isInitialized, setUser, setInitialized, fetchProfile } = useAuthStore();
+  const {
+    isAuthenticated,
+    profile,
+    isInitialized,
+    setUser,
+    setInitialized,
+    fetchProfile,
+  } = useAuthStore();
 
   // Listen to Firebase auth state changes
   useEffect(() => {
@@ -135,12 +149,20 @@ function RootLayoutContent() {
   );
 }
 
+/**
+ * Root layout wraps the entire app in:
+ * 1. ErrorBoundary — catches rendering crashes and shows a retry screen
+ * 2. QueryProvider — React Query context for all API hooks
+ * 3. ThemeSync — syncs system theme changes to the settings store
+ */
 export default function RootLayout() {
   return (
-    <QueryProvider>
-      <ThemeSync>
-        <RootLayoutContent />
-      </ThemeSync>
-    </QueryProvider>
+    <ErrorBoundary>
+      <QueryProvider>
+        <ThemeSync>
+          <RootLayoutContent />
+        </ThemeSync>
+      </QueryProvider>
+    </ErrorBoundary>
   );
 }
