@@ -8,9 +8,9 @@ import { getAuth, getIdToken, signOut } from '@react-native-firebase/auth';
 import { router } from 'expo-router';
 
 // API Base URL - update this for production
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ||
-  'http://localhost:5001/japa-platform/us-central1/api';
+const API_BASE_URL = __DEV__
+  ? process.env.EXPO_PUBLIC_DEV_API_URL
+  : process.env.EXPO_PUBLIC_API_URL;
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -37,6 +37,7 @@ const api: AxiosInstance = axios.create({
 // Request interceptor - add auth token
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
+    console.log('API Request:', config.method?.toUpperCase(), config.url);
     const auth = getAuth(getApp());
     const currentUser = auth.currentUser;
     if (currentUser) {
@@ -121,8 +122,8 @@ export const apiService = {
     return response.data;
   },
 
-  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
-    const response = await api.delete<ApiResponse<T>>(endpoint);
+  async delete<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+    const response = await api.delete<ApiResponse<T>>(endpoint, { data });
     return response.data;
   },
 };
