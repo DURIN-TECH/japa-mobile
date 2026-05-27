@@ -18,43 +18,11 @@ import {
 } from '@/stores/settings.store';
 import { useAuthStore, useAuthHydration } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
+import { pushNotificationService } from '@/services/push-notification.service';
+import { registerDevMenu } from '@/utils/dev-menu';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
-
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace ReactNavigation {
-    interface RootParamList {
-      '/(auth)/login': undefined;
-      '/(auth)/register': undefined;
-      '/(auth)/verify-otp': undefined;
-      '/(auth)/forgot-password': undefined;
-      '/(onboard)': undefined;
-      '/(tabs)': undefined;
-      '/apply/agents/[id]': { id: string };
-      '/apply/agents/[id]/book-consultation': { agentId: string };
-      '/apply/agents/[id]/payment': {
-        id: string;
-        type: 'consultation' | 'visa';
-        date: string;
-        time: string;
-      };
-      '/apply/agents/[id]/confirmation': {
-        id: string;
-        type: 'consultation' | 'visa';
-        date: string;
-        time: string;
-        paymentMethod: string;
-      };
-      '/apply/agents/[id]/visa-service/[type]': { id: string; type: string };
-      '/applications/[id]': { id: string };
-      '/consultations/[id]': { id: string };
-      '/apply/visa-details/[id]': { id: string };
-      '/apply/self-service/[id]': { id: string };
-    }
-  }
-}
 
 export const unstable_settings = {
   initialRouteName: '(auth)',
@@ -79,6 +47,8 @@ function useProtectedRoute() {
       setUser(user);
       if (user) {
         await fetchProfile();
+        // Initialize push notifications for returning authenticated users
+        pushNotificationService.initialize().catch(() => {});
       }
       setInitialized(true);
     });
@@ -86,31 +56,38 @@ function useProtectedRoute() {
     return unsubscribe;
   }, [setUser, setInitialized, fetchProfile]);
 
+  const hasSeenIntro = useSettingsStore((state) => state.hasSeenIntro);
+
   // Handle navigation based on auth state
   useEffect(() => {
     if (!isInitialized) return;
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboardGroup = segments[0] === '(onboard)';
-    const isOnboarded = profile?.onboardingCompleted ?? false;
+    const inIntro = segments[0] === 'intro';
+    const isOnboarded = true; // TEMP: onboarding disabled for demo
 
     if (!isAuthenticated) {
-      // Not authenticated - redirect to login
+      // First-run: show the introductory flow before login
+      if (!hasSeenIntro) {
+        if (!inIntro) {
+          router.replace('/intro');
+        }
+        return;
+      }
       if (!inAuthGroup) {
         router.replace('/(auth)/login');
       }
     } else if (!isOnboarded) {
-      // Authenticated but not onboarded - redirect to onboarding
       if (!inOnboardGroup) {
         router.replace('/(onboard)');
       }
     } else {
-      // Authenticated and onboarded - redirect to main app
-      if (inAuthGroup || inOnboardGroup) {
+      if (inAuthGroup || inOnboardGroup || inIntro) {
         router.replace('/(tabs)');
       }
     }
-  }, [isAuthenticated, isInitialized, profile, segments, router]);
+  }, [isAuthenticated, isInitialized, profile, segments, router, hasSeenIntro]);
 }
 
 function RootLayoutContent() {
@@ -127,6 +104,10 @@ function RootLayoutContent() {
   useProtectedRoute();
 
   useEffect(() => {
+    registerDevMenu();
+  }, []);
+
+  useEffect(() => {
     if (loaded && settingsHydrated && authHydrated && isInitialized) {
       SplashScreen.hideAsync();
     }
@@ -139,6 +120,7 @@ function RootLayoutContent() {
   return (
     <OnboardingProvider>
       <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="intro" options={{ animation: 'fade' }} />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboard)" />
         <Stack.Screen name="(tabs)" />

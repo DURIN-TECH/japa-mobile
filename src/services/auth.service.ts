@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { getApp } from '@react-native-firebase/app';
 import {
   getAuth,
@@ -15,9 +16,11 @@ import {
 export type ConfirmationResult = FirebaseAuthTypes.ConfirmationResult;
 export type FirebaseUser = FirebaseAuthTypes.User;
 
-// Connect to Auth emulator in development
+// Connect to Auth emulator in development.
+// Android emulators can't reach the host machine via "localhost" — that's the emulator itself.
+// Use 10.0.2.2 instead (Android emulator's alias for the host's loopback).
 const USE_EMULATOR = __DEV__;
-const AUTH_EMULATOR_HOST = 'localhost'; // Use '10.0.2.2' for Android emulator
+const AUTH_EMULATOR_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 const AUTH_EMULATOR_PORT = 9099;
 
 // Get auth instance once
@@ -25,16 +28,29 @@ const authInstance = getAuth(getApp());
 
 // Initialize emulator connection
 if (USE_EMULATOR) {
-  connectAuthEmulator(authInstance, `http://${AUTH_EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`);
-  console.log('Auth emulator connected at', `http://${AUTH_EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`);
+  connectAuthEmulator(
+    authInstance,
+    `http://${AUTH_EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`,
+  );
+  console.log(
+    'Auth emulator connected at',
+    `http://${AUTH_EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`,
+  );
 }
 
 class AuthService {
   private auth = authInstance;
 
   // Email/Password Authentication
-  async registerWithEmail(email: string, password: string): Promise<FirebaseUser> {
-    const result = await createUserWithEmailAndPassword(this.auth, email, password);
+  async registerWithEmail(
+    email: string,
+    password: string,
+  ): Promise<FirebaseUser> {
+    const result = await createUserWithEmailAndPassword(
+      this.auth,
+      email,
+      password,
+    );
     return result.user;
   }
 
@@ -54,7 +70,7 @@ class AuthService {
 
   async verifyOtp(
     confirmationResult: ConfirmationResult,
-    code: string
+    code: string,
   ): Promise<FirebaseUser> {
     const result = await confirmationResult.confirm(code);
     if (!result?.user) {

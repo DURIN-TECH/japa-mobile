@@ -3,13 +3,20 @@ import axios, {
   AxiosError,
   InternalAxiosRequestConfig,
 } from 'axios';
+import { Platform } from 'react-native';
 import { getApp } from '@react-native-firebase/app';
 import { getAuth, getIdToken, signOut } from '@react-native-firebase/auth';
 import { router } from 'expo-router';
 
-// API Base URL - update this for production
+// Android emulators can't reach the host's "localhost" — that resolves to the
+// emulator itself. Rewrite "localhost" to 10.0.2.2 when running on Android.
+const rewriteForAndroid = (url: string | undefined) =>
+  Platform.OS === 'android' && url
+    ? url.replace(/\/\/(localhost|127\.0\.0\.1)(?=[:/])/g, '//10.0.2.2')
+    : url;
+
 const API_BASE_URL = __DEV__
-  ? process.env.EXPO_PUBLIC_DEV_API_URL
+  ? rewriteForAndroid(process.env.EXPO_PUBLIC_DEV_API_URL)
   : process.env.EXPO_PUBLIC_API_URL;
 
 export interface ApiResponse<T> {

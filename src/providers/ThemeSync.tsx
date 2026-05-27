@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme } from '@/hooks/useColorScheme';
 import { useSettingsStore } from '@/stores/settings.store';
 
 export function ThemeSync({ children }: { children: React.ReactNode }) {
