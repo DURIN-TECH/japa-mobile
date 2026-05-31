@@ -3,11 +3,14 @@ on:
   pull_request:
     branches:
       - main
+    types:
+      - closed
 
 jobs:
   build:
     name: Install and build
     runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
     steps:
       - name: Check EXPO_TOKEN
         run: |
