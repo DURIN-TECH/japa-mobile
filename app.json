@@ -8,7 +8,12 @@
     "icon": "./src/assets/images/icon.png",
     "scheme": "durintech",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "updates": {
+      "url": "https://u.expo.dev/e3bd1f16-8be7-45f5-9737-bdaa3006f37f"
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
     "ios": {
       "supportsTablet": true,
       "googleServicesFile": "./GoogleService-Info.plist",
@@ -41,7 +46,12 @@
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "static"
+            "useFrameworks": "static",
+            "forceStaticLinking": [
+              "RNFBApp",
+              "RNFBAuth",
+              "RNFBCrashlytics"
+            ]
           }
         }
       ],
