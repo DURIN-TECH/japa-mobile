@@ -99,3 +99,4 @@ yarn-error.*
 
 .cursor/
 handoff/
+*.zip
