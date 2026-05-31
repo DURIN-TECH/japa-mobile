@@ -1,8 +1,22 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from 'react-native';
 import { router } from 'expo-router';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
-import { Screen, Input, Button, Typography, Card } from '@/components/ui/themed';
+import {
+  Screen,
+  Input,
+  Button,
+  Typography,
+  Card,
+} from '@/components/ui/themed';
 import { useAuthStore } from '@/stores/auth.store';
 import { useTheme, cn } from '@/hooks/useTheme';
 
@@ -62,7 +76,12 @@ export default function RegisterScreen() {
             <TouchableOpacity onPress={() => router.back()} className="mb-4">
               <Typography color="primary">← Back to Login</Typography>
             </TouchableOpacity>
-            <Text className={cn('text-3xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
+            <Text
+              className={cn(
+                'text-3xl font-bold',
+                isDark ? 'text-white' : 'text-gray-900',
+              )}
+            >
               Create Account
             </Text>
             <Typography variant="body" color="muted" className="mt-2">
@@ -152,7 +171,11 @@ export default function RegisterScreen() {
           </Button>
 
           {/* Terms */}
-          <Typography variant="caption" color="muted" className="mt-4 text-center">
+          <Typography
+            variant="caption"
+            color="muted"
+            className="mt-4 text-center"
+          >
             By creating an account, you agree to our{' '}
             <Text className="text-blue-600">Terms of Service</Text> and{' '}
             <Text className="text-blue-600">Privacy Policy</Text>

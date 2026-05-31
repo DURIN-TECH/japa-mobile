@@ -18,7 +18,7 @@ export function useVisaPreCheck() {
     mutationFn: async (input: VisaPreCheckInput) => {
       const response = await apiService.post<VisaPreCheckResult>(
         '/eligibility/pre-check',
-        input
+        input,
       );
       return response.data;
     },
@@ -31,17 +31,25 @@ export function useVisaPreCheck() {
 export function useEligibilityQuestions(
   visaTypeId: string,
   nationality?: string,
-  destinationCountry?: string
+  destinationCountry?: string,
 ) {
   const params = new URLSearchParams();
   if (nationality) params.append('nationality', nationality);
-  if (destinationCountry) params.append('destinationCountry', destinationCountry);
+  if (destinationCountry)
+    params.append('destinationCountry', destinationCountry);
 
   const queryString = params.toString();
-  const endpoint = `/eligibility/questions/${visaTypeId}${queryString ? `?${queryString}` : ''}`;
+  const endpoint = `/eligibility/questions/${visaTypeId}${
+    queryString ? `?${queryString}` : ''
+  }`;
 
   return useQuery({
-    queryKey: ['eligibilityQuestions', visaTypeId, nationality, destinationCountry],
+    queryKey: [
+      'eligibilityQuestions',
+      visaTypeId,
+      nationality,
+      destinationCountry,
+    ],
     queryFn: async () => {
       const response = await apiService.get<EligibilityQuestion[]>(endpoint);
       return response.data ?? [];
@@ -61,7 +69,7 @@ export function useSubmitEligibilityCheck() {
     mutationFn: async (input: EligibilityCheckInput) => {
       const response = await apiService.post<EligibilityCheck>(
         '/eligibility/check',
-        input
+        input,
       );
       return response.data;
     },
@@ -85,7 +93,7 @@ export function useEligibilityChecks() {
     queryKey: ['eligibilityChecks'],
     queryFn: async () => {
       const response = await apiService.get<EligibilityCheck[]>(
-        '/eligibility/checks'
+        '/eligibility/checks',
       );
       return response.data ?? [];
     },
@@ -101,7 +109,7 @@ export function useEligibilityCheck(checkId: string) {
     queryKey: ['eligibilityCheck', checkId],
     queryFn: async () => {
       const response = await apiService.get<EligibilityCheck>(
-        `/eligibility/checks/${checkId}`
+        `/eligibility/checks/${checkId}`,
       );
       return response.data;
     },
@@ -118,7 +126,7 @@ export function useLatestEligibilityCheck(visaTypeId: string) {
     queryKey: ['eligibilityCheck', 'latest', visaTypeId],
     queryFn: async () => {
       const response = await apiService.get<EligibilityCheck | null>(
-        `/eligibility/checks/latest/${visaTypeId}`
+        `/eligibility/checks/latest/${visaTypeId}`,
       );
       return response.data;
     },
@@ -238,7 +246,7 @@ export function getSuggestedPathInfo(path: SuggestedPath): {
  */
 export function calculateQuestionProgress(
   currentIndex: number,
-  totalQuestions: number
+  totalQuestions: number,
 ): number {
   if (totalQuestions === 0) return 0;
   return Math.round(((currentIndex + 1) / totalQuestions) * 100);

@@ -24,8 +24,18 @@ import {
 } from '@/hooks/useEligibility';
 import { useAuthStore } from '@/stores/auth.store';
 import { useTheme, cn } from '@/hooks/useTheme';
-import { Screen, Header, Section, Card, Button, ProgressBar } from '@/components/ui/themed';
-import { EligibilityAnswer, EligibilityQuestion } from '@/types/eligibility.type';
+import {
+  Screen,
+  Header,
+  Section,
+  Card,
+  Button,
+  ProgressBar,
+} from '@/components/ui/themed';
+import {
+  EligibilityAnswer,
+  EligibilityQuestion,
+} from '@/types/eligibility.type';
 
 export default function EligibilityWizardScreen() {
   const { visaId, countryCode } = useLocalSearchParams<{
@@ -47,16 +57,22 @@ export default function EligibilityWizardScreen() {
   const submitCheck = useSubmitEligibilityCheck();
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string | string[] | number | boolean>>({});
+  const [answers, setAnswers] = useState<
+    Record<string, string | string[] | number | boolean>
+  >({});
   const [showHelp, setShowHelp] = useState(false);
 
   const currentQuestion = questions?.[currentIndex];
   const isLastQuestion = currentIndex === (questions?.length ?? 0) - 1;
-  const progress = calculateQuestionProgress(currentIndex, questions?.length ?? 0);
+  const progress = calculateQuestionProgress(
+    currentIndex,
+    questions?.length ?? 0,
+  );
 
   // Derive current answer directly from state
-  const currentAnswer = currentQuestion ? answers[currentQuestion.id] : undefined;
-  const canProceed = !currentQuestion?.isRequired || currentAnswer !== undefined;
+  const currentAnswer = currentQuestion
+    ? answers[currentQuestion.id]
+    : undefined;
 
   const handleAnswer = (value: string | string[] | number | boolean) => {
     if (!currentQuestion) return;
@@ -77,12 +93,12 @@ export default function EligibilityWizardScreen() {
 
     if (isLastQuestion) {
       // Submit the check
-      const eligibilityAnswers: EligibilityAnswer[] = Object.entries(answers).map(
-        ([questionId, answer]) => ({
-          questionId,
-          answer,
-        })
-      );
+      const eligibilityAnswers: EligibilityAnswer[] = Object.entries(
+        answers,
+      ).map(([questionId, answer]) => ({
+        questionId,
+        answer,
+      }));
 
       try {
         const result = await submitCheck.mutateAsync({
@@ -98,8 +114,11 @@ export default function EligibilityWizardScreen() {
             params: { checkId: result.id },
           });
         }
-      } catch (err) {
-        Alert.alert('Error', 'Failed to submit eligibility check. Please try again.');
+      } catch {
+        Alert.alert(
+          'Error',
+          'Failed to submit eligibility check. Please try again.',
+        );
       }
     } else {
       setCurrentIndex((prev) => prev + 1);
@@ -122,7 +141,9 @@ export default function EligibilityWizardScreen() {
         <Header title="Eligibility Check" showBack />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text className={cn('mt-4', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn('mt-4', isDark ? 'text-gray-400' : 'text-gray-600')}
+          >
             Loading questions...
           </Text>
         </View>
@@ -136,7 +157,12 @@ export default function EligibilityWizardScreen() {
         <Header title="Eligibility Check" showBack />
         <View className="flex-1 items-center justify-center px-6">
           <AlertCircle size={48} color={isDark ? '#ef4444' : '#dc2626'} />
-          <Text className={cn('mt-4 text-center', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn(
+              'mt-4 text-center',
+              isDark ? 'text-gray-400' : 'text-gray-600',
+            )}
+          >
             Unable to load eligibility questions. Please try again.
           </Text>
           <Button onPress={() => router.back()} className="mt-4">
@@ -153,10 +179,20 @@ export default function EligibilityWizardScreen() {
       <View className={cn('px-6 pb-4', isDark ? 'bg-gray-900' : 'bg-gray-50')}>
         <Header title="Eligibility Check" showBack />
         <View className="flex-row items-center justify-between mb-2 mt-2">
-          <Text className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn(
+              'text-sm',
+              isDark ? 'text-gray-400' : 'text-gray-600',
+            )}
+          >
             Question {currentIndex + 1} of {questions.length}
           </Text>
-          <Text className={cn('text-sm font-medium', isDark ? 'text-blue-400' : 'text-blue-600')}>
+          <Text
+            className={cn(
+              'text-sm font-medium',
+              isDark ? 'text-blue-400' : 'text-blue-600',
+            )}
+          >
             {progress}%
           </Text>
         </View>
@@ -176,7 +212,7 @@ export default function EligibilityWizardScreen() {
                 <Text
                   className={cn(
                     'flex-1 text-xl font-semibold',
-                    isDark ? 'text-white' : 'text-gray-900'
+                    isDark ? 'text-white' : 'text-gray-900',
                   )}
                 >
                   {currentQuestion.question}
@@ -196,7 +232,7 @@ export default function EligibilityWizardScreen() {
                 <Text
                   className={cn(
                     'mt-2 text-base',
-                    isDark ? 'text-gray-400' : 'text-gray-600'
+                    isDark ? 'text-gray-400' : 'text-gray-600',
                   )}
                 >
                   {currentQuestion.description}
@@ -208,10 +244,12 @@ export default function EligibilityWizardScreen() {
                 <View
                   className={cn(
                     'mt-4 rounded-lg p-3',
-                    isDark ? 'bg-blue-900/30' : 'bg-blue-50'
+                    isDark ? 'bg-blue-900/30' : 'bg-blue-50',
                   )}
                 >
-                  <Text className={cn(isDark ? 'text-blue-200' : 'text-blue-800')}>
+                  <Text
+                    className={cn(isDark ? 'text-blue-200' : 'text-blue-800')}
+                  >
                     {currentQuestion.helpText}
                   </Text>
                 </View>
@@ -224,7 +262,6 @@ export default function EligibilityWizardScreen() {
                   value={answers[currentQuestion.id]}
                   onChange={handleAnswer}
                   isDark={isDark}
-                  colors={colors}
                 />
               </View>
             </Card>
@@ -236,18 +273,22 @@ export default function EligibilityWizardScreen() {
       <View
         className={cn(
           'flex-row items-center justify-between px-6 py-4',
-          isDark ? 'bg-gray-800 border-t border-gray-700' : 'bg-white border-t border-gray-200'
+          isDark
+            ? 'bg-gray-800 border-t border-gray-700'
+            : 'bg-white border-t border-gray-200',
         )}
       >
         <TouchableOpacity
           onPress={handleBack}
           className={cn(
             'flex-row items-center px-4 py-3 rounded-xl',
-            isDark ? 'bg-gray-700' : 'bg-gray-100'
+            isDark ? 'bg-gray-700' : 'bg-gray-100',
           )}
         >
           <ChevronLeft size={20} color={isDark ? '#9ca3af' : '#6b7280'} />
-          <Text className={cn('ml-1', isDark ? 'text-gray-300' : 'text-gray-700')}>
+          <Text
+            className={cn('ml-1', isDark ? 'text-gray-300' : 'text-gray-700')}
+          >
             Back
           </Text>
         </TouchableOpacity>
@@ -257,7 +298,7 @@ export default function EligibilityWizardScreen() {
           disabled={submitCheck.isPending}
           className={cn(
             'flex-row items-center px-6 py-3 rounded-xl',
-            submitCheck.isPending ? 'bg-blue-400' : 'bg-blue-600'
+            submitCheck.isPending ? 'bg-blue-400' : 'bg-blue-600',
           )}
         >
           {submitCheck.isPending ? (
@@ -289,10 +330,14 @@ interface QuestionInputProps {
   value: string | string[] | number | boolean | undefined;
   onChange: (value: string | string[] | number | boolean) => void;
   isDark: boolean;
-  colors: { primary: string };
 }
 
-function QuestionInput({ question, value, onChange, isDark, colors }: QuestionInputProps) {
+function QuestionInput({
+  question,
+  value,
+  onChange,
+  isDark,
+}: QuestionInputProps) {
   switch (question.type) {
     case 'boolean':
       return (
@@ -300,7 +345,6 @@ function QuestionInput({ question, value, onChange, isDark, colors }: QuestionIn
           value={value as boolean | undefined}
           onChange={onChange}
           isDark={isDark}
-          colors={colors}
         />
       );
 
@@ -311,7 +355,6 @@ function QuestionInput({ question, value, onChange, isDark, colors }: QuestionIn
           value={value as string | undefined}
           onChange={onChange}
           isDark={isDark}
-          colors={colors}
         />
       );
 
@@ -322,7 +365,6 @@ function QuestionInput({ question, value, onChange, isDark, colors }: QuestionIn
           value={value as string[] | undefined}
           onChange={onChange}
           isDark={isDark}
-          colors={colors}
         />
       );
 
@@ -356,12 +398,10 @@ function BooleanInput({
   value,
   onChange,
   isDark,
-  colors,
 }: {
   value: boolean | undefined;
   onChange: (val: boolean) => void;
   isDark: boolean;
-  colors: { primary: string };
 }) {
   return (
     <View className="flex-row gap-4">
@@ -372,8 +412,8 @@ function BooleanInput({
           value === true
             ? 'border-blue-500 bg-blue-500/10'
             : isDark
-            ? 'border-gray-600 bg-gray-700'
-            : 'border-gray-200 bg-gray-50'
+              ? 'border-gray-600 bg-gray-700'
+              : 'border-gray-200 bg-gray-50',
         )}
       >
         <Text
@@ -382,8 +422,8 @@ function BooleanInput({
             value === true
               ? 'text-blue-600'
               : isDark
-              ? 'text-gray-300'
-              : 'text-gray-700'
+                ? 'text-gray-300'
+                : 'text-gray-700',
           )}
         >
           Yes
@@ -397,8 +437,8 @@ function BooleanInput({
           value === false
             ? 'border-blue-500 bg-blue-500/10'
             : isDark
-            ? 'border-gray-600 bg-gray-700'
-            : 'border-gray-200 bg-gray-50'
+              ? 'border-gray-600 bg-gray-700'
+              : 'border-gray-200 bg-gray-50',
         )}
       >
         <Text
@@ -407,8 +447,8 @@ function BooleanInput({
             value === false
               ? 'text-blue-600'
               : isDark
-              ? 'text-gray-300'
-              : 'text-gray-700'
+                ? 'text-gray-300'
+                : 'text-gray-700',
           )}
         >
           No
@@ -423,13 +463,11 @@ function SingleChoiceInput({
   value,
   onChange,
   isDark,
-  colors,
 }: {
   options: string[];
   value: string | undefined;
   onChange: (val: string) => void;
   isDark: boolean;
-  colors: { primary: string };
 }) {
   return (
     <View className="gap-3">
@@ -442,8 +480,8 @@ function SingleChoiceInput({
             value === option
               ? 'border-blue-500 bg-blue-500/10'
               : isDark
-              ? 'border-gray-600 bg-gray-700'
-              : 'border-gray-200 bg-gray-50'
+                ? 'border-gray-600 bg-gray-700'
+                : 'border-gray-200 bg-gray-50',
           )}
         >
           <View className="flex-row items-center">
@@ -453,8 +491,8 @@ function SingleChoiceInput({
                 value === option
                   ? 'border-blue-500 bg-blue-500'
                   : isDark
-                  ? 'border-gray-500'
-                  : 'border-gray-300'
+                    ? 'border-gray-500'
+                    : 'border-gray-300',
               )}
             >
               {value === option && <Check size={14} color="#fff" />}
@@ -462,7 +500,7 @@ function SingleChoiceInput({
             <Text
               className={cn(
                 'text-base',
-                isDark ? 'text-gray-200' : 'text-gray-800'
+                isDark ? 'text-gray-200' : 'text-gray-800',
               )}
             >
               {option}
@@ -479,13 +517,11 @@ function MultipleChoiceInput({
   value,
   onChange,
   isDark,
-  colors,
 }: {
   options: string[];
   value: string[] | undefined;
   onChange: (val: string[]) => void;
   isDark: boolean;
-  colors: { primary: string };
 }) {
   const selectedOptions = value || [];
 
@@ -510,8 +546,8 @@ function MultipleChoiceInput({
               isSelected
                 ? 'border-blue-500 bg-blue-500/10'
                 : isDark
-                ? 'border-gray-600 bg-gray-700'
-                : 'border-gray-200 bg-gray-50'
+                  ? 'border-gray-600 bg-gray-700'
+                  : 'border-gray-200 bg-gray-50',
             )}
           >
             <View className="flex-row items-center">
@@ -521,8 +557,8 @@ function MultipleChoiceInput({
                   isSelected
                     ? 'border-blue-500 bg-blue-500'
                     : isDark
-                    ? 'border-gray-500'
-                    : 'border-gray-300'
+                      ? 'border-gray-500'
+                      : 'border-gray-300',
                 )}
               >
                 {isSelected && <Check size={14} color="#fff" />}
@@ -530,7 +566,7 @@ function MultipleChoiceInput({
               <Text
                 className={cn(
                   'text-base',
-                  isDark ? 'text-gray-200' : 'text-gray-800'
+                  isDark ? 'text-gray-200' : 'text-gray-800',
                 )}
               >
                 {option}
@@ -571,15 +607,24 @@ function NumberInput({
           }
         }}
         keyboardType="numeric"
-        placeholder={min !== undefined && max !== undefined ? `${min}-${max}` : 'Enter number'}
+        placeholder={
+          min !== undefined && max !== undefined
+            ? `${min}-${max}`
+            : 'Enter number'
+        }
         placeholderTextColor={isDark ? '#6b7280' : '#9ca3af'}
         className={cn(
           'flex-1 rounded-xl py-4 px-4 text-lg',
-          isDark ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900'
+          isDark ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900',
         )}
       />
       {unit && (
-        <Text className={cn('ml-3 text-base', isDark ? 'text-gray-400' : 'text-gray-600')}>
+        <Text
+          className={cn(
+            'ml-3 text-base',
+            isDark ? 'text-gray-400' : 'text-gray-600',
+          )}
+        >
           {unit}
         </Text>
       )}
@@ -607,7 +652,7 @@ function TextInputField({
       textAlignVertical="top"
       className={cn(
         'rounded-xl py-4 px-4 text-base min-h-[120px]',
-        isDark ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900'
+        isDark ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-900',
       )}
     />
   );

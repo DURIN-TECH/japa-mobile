@@ -1,9 +1,29 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { ScrollView, View, TouchableOpacity, Text, Alert, ActivityIndicator, Linking } from 'react-native';
-import { CheckCircle2, Clock, AlertCircle, Upload, Trash2, RefreshCw, ExternalLink, FileText } from 'lucide-react-native';
+import {
+  ScrollView,
+  View,
+  TouchableOpacity,
+  Text,
+  Alert,
+  ActivityIndicator,
+  Linking,
+} from 'react-native';
+import {
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Upload,
+  Trash2,
+  ExternalLink,
+  FileText,
+} from 'lucide-react-native';
 import { useState, useCallback } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
-import { useApplication, useApplicationTimeline, getApplicationStatusInfo } from '@/hooks/useApplications';
+import {
+  useApplication,
+  useApplicationTimeline,
+  getApplicationStatusInfo,
+} from '@/hooks/useApplications';
 import { useVisaType } from '@/hooks/useVisaTypes';
 import {
   useApplicationDocuments,
@@ -15,7 +35,14 @@ import {
 } from '@/hooks/useDocuments';
 import { DocumentPreview } from '@/components/DocumentPreview';
 import { useTheme, cn } from '@/hooks/useTheme';
-import { Screen, Header, Section, Card, ProgressBar, Button } from '@/components/ui/themed';
+import {
+  Screen,
+  Header,
+  Section,
+  Card,
+  ProgressBar,
+  Button,
+} from '@/components/ui/themed';
 import { Document } from '@/types/documents.type';
 
 interface LocalUploadState {
@@ -28,15 +55,21 @@ interface LocalUploadState {
 
 export default function SelfServiceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: application, isLoading, error, refetch: refetchApplication } = useApplication(id ?? '');
+  const {
+    data: application,
+    isLoading,
+    error,
+    refetch: refetchApplication,
+  } = useApplication(id ?? '');
   const { data: timeline } = useApplicationTimeline(id ?? '');
-  const { data: documents, refetch: refetchDocuments } = useApplicationDocuments(id ?? '');
+  const { data: documents, refetch: refetchDocuments } =
+    useApplicationDocuments(id ?? '');
   const { isDark, colors } = useTheme();
 
   // Fetch visa details for requirements
   const { data: visaData, isLoading: visaLoading } = useVisaType(
     application?.countryCode ?? '',
-    application?.visaTypeId ?? ''
+    application?.visaTypeId ?? '',
   );
 
   // Upload mutations
@@ -49,126 +82,152 @@ export default function SelfServiceScreen() {
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
 
-  const handleDocumentUpload = useCallback(async (requirementId: string) => {
-    if (!application) return;
-
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'],
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled) return;
-
-      const asset = result.assets[0];
-      const contentType = asset.mimeType || 'application/octet-stream';
-
-      // Add to local uploading state
-      const localUpload: LocalUploadState = {
-        requirementId,
-        fileName: asset.name,
-        uri: asset.uri,
-        status: 'uploading',
-      };
-      setUploading((prev) => [...prev, localUpload]);
+  const handleDocumentUpload = useCallback(
+    async (requirementId: string) => {
+      if (!application) return;
 
       try {
-        // Step 1: Get signed upload URL
-        const uploadUrlResponse = await getUploadUrl.mutateAsync({
-          applicationId: application.id,
-          fileName: asset.name,
-          contentType,
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'],
+          copyToCacheDirectory: true,
         });
 
-        if (!uploadUrlResponse) {
-          throw new Error('Failed to get upload URL');
-        }
+        if (result.canceled) return;
 
-        // Step 2: Upload file to Firebase Storage
-        await uploadToStorage(uploadUrlResponse.uploadUrl, {
-          uri: asset.uri,
-          type: contentType,
-          name: asset.name,
-        });
+        const asset = result.assets[0];
+        const contentType = asset.mimeType || 'application/octet-stream';
 
-        // Step 3: Register document in backend
-        const fileSizeBytes = asset.size || 0;
-        const fileSizeMb = fileSizeBytes / (1024 * 1024);
-
-        await createDocument.mutateAsync({
-          applicationId: application.id,
+        // Add to local uploading state
+        const localUpload: LocalUploadState = {
           requirementId,
           fileName: asset.name,
-          fileType: contentType,
-          fileSizeMb,
-          storagePath: uploadUrlResponse.storagePath,
-        });
+          uri: asset.uri,
+          status: 'uploading',
+        };
+        setUploading((prev) => [...prev, localUpload]);
 
-        // Remove from local uploading state
-        setUploading((prev) =>
-          prev.filter((u) => !(u.requirementId === requirementId && u.fileName === asset.name))
-        );
+        try {
+          // Step 1: Get signed upload URL
+          const uploadUrlResponse = await getUploadUrl.mutateAsync({
+            applicationId: application.id,
+            fileName: asset.name,
+            contentType,
+          });
 
-        // Refetch documents and application
-        refetchDocuments();
-        refetchApplication();
-      } catch (uploadError) {
-        console.error('Upload error:', uploadError);
-        // Update local state to show error
-        setUploading((prev) =>
-          prev.map((u) =>
-            u.requirementId === requirementId && u.fileName === asset.name
-              ? { ...u, status: 'error', error: 'Upload failed' }
-              : u
-          )
-        );
+          if (!uploadUrlResponse) {
+            throw new Error('Failed to get upload URL');
+          }
+
+          // Step 2: Upload file to Firebase Storage
+          await uploadToStorage(uploadUrlResponse.uploadUrl, {
+            uri: asset.uri,
+            type: contentType,
+            name: asset.name,
+          });
+
+          // Step 3: Register document in backend
+          const fileSizeBytes = asset.size || 0;
+          const fileSizeMb = fileSizeBytes / (1024 * 1024);
+
+          await createDocument.mutateAsync({
+            applicationId: application.id,
+            requirementId,
+            fileName: asset.name,
+            fileType: contentType,
+            fileSizeMb,
+            storagePath: uploadUrlResponse.storagePath,
+          });
+
+          // Remove from local uploading state
+          setUploading((prev) =>
+            prev.filter(
+              (u) =>
+                !(
+                  u.requirementId === requirementId && u.fileName === asset.name
+                ),
+            ),
+          );
+
+          // Refetch documents and application
+          refetchDocuments();
+          refetchApplication();
+        } catch (uploadError) {
+          console.error('Upload error:', uploadError);
+          // Update local state to show error
+          setUploading((prev) =>
+            prev.map((u) =>
+              u.requirementId === requirementId && u.fileName === asset.name
+                ? { ...u, status: 'error', error: 'Upload failed' }
+                : u,
+            ),
+          );
+        }
+      } catch (err) {
+        console.error('Error picking document:', err);
+        Alert.alert('Error', 'There was an error selecting your document');
       }
-    } catch (err) {
-      console.error('Error picking document:', err);
-      Alert.alert('Error', 'There was an error selecting your document');
-    }
-  }, [application, getUploadUrl, createDocument, refetchDocuments, refetchApplication]);
+    },
+    [
+      application,
+      getUploadUrl,
+      createDocument,
+      refetchDocuments,
+      refetchApplication,
+    ],
+  );
 
-  const handleDeleteDocument = useCallback(async (document: Document) => {
-    Alert.alert(
-      'Delete Document',
-      `Are you sure you want to delete "${document.fileName}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteDocument.mutateAsync({
-                documentId: document.id,
-                applicationId: document.applicationId,
-              });
-              refetchDocuments();
-              refetchApplication();
-            } catch (err) {
-              Alert.alert('Error', 'Failed to delete document');
-            }
+  const handleDeleteDocument = useCallback(
+    async (document: Document) => {
+      Alert.alert(
+        'Delete Document',
+        `Are you sure you want to delete "${document.fileName}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await deleteDocument.mutateAsync({
+                  documentId: document.id,
+                  applicationId: document.applicationId,
+                });
+                refetchDocuments();
+                refetchApplication();
+              } catch {
+                Alert.alert('Error', 'Failed to delete document');
+              }
+            },
           },
-        },
-      ]
-    );
-  }, [deleteDocument, refetchDocuments, refetchApplication]);
+        ],
+      );
+    },
+    [deleteDocument, refetchDocuments, refetchApplication],
+  );
 
-  const clearUploadError = useCallback((requirementId: string, fileName: string) => {
-    setUploading((prev) =>
-      prev.filter((u) => !(u.requirementId === requirementId && u.fileName === fileName))
-    );
-  }, []);
+  const clearUploadError = useCallback(
+    (requirementId: string, fileName: string) => {
+      setUploading((prev) =>
+        prev.filter(
+          (u) =>
+            !(u.requirementId === requirementId && u.fileName === fileName),
+        ),
+      );
+    },
+    [],
+  );
 
   // Group documents by requirement
-  const documentsByRequirement = (documents ?? []).reduce((acc, doc) => {
-    if (!acc[doc.requirementId]) {
-      acc[doc.requirementId] = [];
-    }
-    acc[doc.requirementId].push(doc);
-    return acc;
-  }, {} as Record<string, Document[]>);
+  const documentsByRequirement = (documents ?? []).reduce(
+    (acc, doc) => {
+      if (!acc[doc.requirementId]) {
+        acc[doc.requirementId] = [];
+      }
+      acc[doc.requirementId].push(doc);
+      return acc;
+    },
+    {} as Record<string, Document[]>,
+  );
 
   if (isLoading) {
     return (
@@ -176,7 +235,9 @@ export default function SelfServiceScreen() {
         <Header title="Self-Service Application" showBack />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color={colors.primary} size="large" />
-          <Text className={cn('mt-4', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn('mt-4', isDark ? 'text-gray-400' : 'text-gray-600')}
+          >
             Loading application...
           </Text>
         </View>
@@ -190,10 +251,19 @@ export default function SelfServiceScreen() {
         <Header title="Application" showBack />
         <View className="flex-1 items-center justify-center px-4">
           <AlertCircle size={48} color={isDark ? '#ef4444' : '#dc2626'} />
-          <Text className={cn('mt-4 text-center', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn(
+              'mt-4 text-center',
+              isDark ? 'text-gray-400' : 'text-gray-600',
+            )}
+          >
             {error ? 'Failed to load application' : 'Application not found'}
           </Text>
-          <Button variant="outline" onPress={() => router.back()} className="mt-4">
+          <Button
+            variant="outline"
+            onPress={() => router.back()}
+            className="mt-4"
+          >
             Go Back
           </Button>
         </View>
@@ -228,7 +298,12 @@ export default function SelfServiceScreen() {
                 {statusInfo.label}
               </Text>
             </View>
-            <Text className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
+            <Text
+              className={cn(
+                'text-sm',
+                isDark ? 'text-gray-400' : 'text-gray-600',
+              )}
+            >
               {application.currentStep}
             </Text>
           </View>
@@ -254,10 +329,20 @@ export default function SelfServiceScreen() {
           {/* Document Summary */}
           <View className="mt-4 flex-row justify-between">
             <View className="items-center">
-              <Text className={cn('text-2xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
+              <Text
+                className={cn(
+                  'text-2xl font-bold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
                 {application.documentsUploaded}
               </Text>
-              <Text className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
+              <Text
+                className={cn(
+                  'text-xs',
+                  isDark ? 'text-gray-400' : 'text-gray-600',
+                )}
+              >
                 Uploaded
               </Text>
             </View>
@@ -265,15 +350,30 @@ export default function SelfServiceScreen() {
               <Text className="text-2xl font-bold text-green-600">
                 {application.documentsVerified}
               </Text>
-              <Text className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
+              <Text
+                className={cn(
+                  'text-xs',
+                  isDark ? 'text-gray-400' : 'text-gray-600',
+                )}
+              >
                 Verified
               </Text>
             </View>
             <View className="items-center">
-              <Text className={cn('text-2xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
+              <Text
+                className={cn(
+                  'text-2xl font-bold',
+                  isDark ? 'text-white' : 'text-gray-900',
+                )}
+              >
                 {application.documentsRequired}
               </Text>
-              <Text className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
+              <Text
+                className={cn(
+                  'text-xs',
+                  isDark ? 'text-gray-400' : 'text-gray-600',
+                )}
+              >
                 Required
               </Text>
             </View>
@@ -282,7 +382,12 @@ export default function SelfServiceScreen() {
                 <Text className="text-2xl font-bold text-red-600">
                   {application.documentsRejected}
                 </Text>
-                <Text className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                <Text
+                  className={cn(
+                    'text-xs',
+                    isDark ? 'text-gray-400' : 'text-gray-600',
+                  )}
+                >
                   Rejected
                 </Text>
               </View>
@@ -295,7 +400,10 @@ export default function SelfServiceScreen() {
           <Section title="Current Status">
             <Card>
               {timeline
-                .filter((event) => event.status === 'current' || event.status === 'completed')
+                .filter(
+                  (event) =>
+                    event.status === 'current' || event.status === 'completed',
+                )
                 .slice(0, 3)
                 .map((event, index, arr) => (
                   <View
@@ -309,7 +417,9 @@ export default function SelfServiceScreen() {
                     <View
                       className={cn(
                         'mr-3 mt-1 h-2.5 w-2.5 rounded-full',
-                        event.status === 'completed' ? 'bg-green-500' : 'bg-blue-500',
+                        event.status === 'completed'
+                          ? 'bg-green-500'
+                          : 'bg-blue-500',
                       )}
                     />
                     <View className="flex-1">
@@ -333,10 +443,14 @@ export default function SelfServiceScreen() {
                   </View>
                 ))}
               <TouchableOpacity
-                onPress={() => router.push(`/me/applications/${application.id}`)}
+                onPress={() =>
+                  router.push(`/me/applications/${application.id}`)
+                }
                 className="mt-3"
               >
-                <Text className="text-center text-blue-600">View Full Timeline</Text>
+                <Text className="text-center text-blue-600">
+                  View Full Timeline
+                </Text>
               </TouchableOpacity>
             </Card>
           </Section>
@@ -345,7 +459,13 @@ export default function SelfServiceScreen() {
         {/* Official Application Link */}
         {visaData?.visaType.applicationUrl && (
           <Section title="Step 1: Complete Official Application">
-            <Card className={isDark ? 'bg-amber-900/30 border-amber-700' : 'bg-amber-50 border-amber-200'}>
+            <Card
+              className={
+                isDark
+                  ? 'bg-amber-900/30 border-amber-700'
+                  : 'bg-amber-50 border-amber-200'
+              }
+            >
               <View className="flex-row items-start">
                 <View
                   className={cn(
@@ -404,7 +524,13 @@ export default function SelfServiceScreen() {
         )}
 
         {/* Requirements List */}
-        <Section title={visaData?.visaType.applicationUrl ? 'Step 2: Upload Documents' : 'Required Documents'}>
+        <Section
+          title={
+            visaData?.visaType.applicationUrl
+              ? 'Step 2: Upload Documents'
+              : 'Required Documents'
+          }
+        >
           {visaLoading ? (
             <Card>
               <View className="items-center py-4">
@@ -420,7 +546,9 @@ export default function SelfServiceScreen() {
           ) : (
             requirements.map((req) => {
               const reqDocuments = documentsByRequirement[req.id] || [];
-              const uploadingForReq = uploading.filter((u) => u.requirementId === req.id);
+              const uploadingForReq = uploading.filter(
+                (u) => u.requirementId === req.id,
+              );
 
               return (
                 <Card key={req.id} className="mb-4">
@@ -447,61 +575,74 @@ export default function SelfServiceScreen() {
                   </View>
 
                   <Text
-                    className={cn('mb-4', isDark ? 'text-gray-400' : 'text-gray-600')}
+                    className={cn(
+                      'mb-4',
+                      isDark ? 'text-gray-400' : 'text-gray-600',
+                    )}
                   >
                     {req.description}
                   </Text>
 
                   {/* Required Documents Checklist */}
-                  {req.requiredDocuments && req.requiredDocuments.length > 0 && (
-                    <View
-                      className={cn(
-                        'rounded-lg p-3 mb-3',
-                        isDark ? 'bg-gray-700' : 'bg-gray-50',
-                      )}
-                    >
-                      <Text
+                  {req.requiredDocuments &&
+                    req.requiredDocuments.length > 0 && (
+                      <View
                         className={cn(
-                          'mb-2 text-sm font-medium',
-                          isDark ? 'text-gray-300' : 'text-gray-700',
+                          'rounded-lg p-3 mb-3',
+                          isDark ? 'bg-gray-700' : 'bg-gray-50',
                         )}
                       >
-                        Documents needed:
-                      </Text>
-                      {req.requiredDocuments.map((doc) => {
-                        const hasUploaded = reqDocuments.some((d) =>
-                          d.fileName.toLowerCase().includes(doc.name.toLowerCase()) ||
-                          doc.name.toLowerCase().includes(d.fileName.toLowerCase().split('.')[0])
-                        );
-                        return (
-                          <View
-                            key={doc.id}
-                            className="flex-row items-center py-1"
-                          >
-                            {hasUploaded ? (
-                              <CheckCircle2 size={16} color="#16a34a" />
-                            ) : (
-                              <View
-                                className={cn(
-                                  'h-4 w-4 rounded-full border-2',
-                                  isDark ? 'border-gray-500' : 'border-gray-300',
-                                )}
-                              />
-                            )}
-                            <Text
-                              className={cn(
-                                'ml-2 flex-1',
-                                isDark ? 'text-gray-300' : 'text-gray-700',
-                                hasUploaded && 'line-through opacity-60',
-                              )}
+                        <Text
+                          className={cn(
+                            'mb-2 text-sm font-medium',
+                            isDark ? 'text-gray-300' : 'text-gray-700',
+                          )}
+                        >
+                          Documents needed:
+                        </Text>
+                        {req.requiredDocuments.map((doc) => {
+                          const hasUploaded = reqDocuments.some(
+                            (d) =>
+                              d.fileName
+                                .toLowerCase()
+                                .includes(doc.name.toLowerCase()) ||
+                              doc.name
+                                .toLowerCase()
+                                .includes(
+                                  d.fileName.toLowerCase().split('.')[0],
+                                ),
+                          );
+                          return (
+                            <View
+                              key={doc.id}
+                              className="flex-row items-center py-1"
                             >
-                              {doc.name}
-                            </Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )}
+                              {hasUploaded ? (
+                                <CheckCircle2 size={16} color="#16a34a" />
+                              ) : (
+                                <View
+                                  className={cn(
+                                    'h-4 w-4 rounded-full border-2',
+                                    isDark
+                                      ? 'border-gray-500'
+                                      : 'border-gray-300',
+                                  )}
+                                />
+                              )}
+                              <Text
+                                className={cn(
+                                  'ml-2 flex-1',
+                                  isDark ? 'text-gray-300' : 'text-gray-700',
+                                  hasUploaded && 'line-through opacity-60',
+                                )}
+                              >
+                                {doc.name}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
 
                   {/* Uploads in Progress */}
                   {uploadingForReq.length > 0 && (
@@ -516,7 +657,10 @@ export default function SelfServiceScreen() {
                         >
                           <View className="flex-1 flex-row items-center">
                             {upload.status === 'uploading' ? (
-                              <ActivityIndicator size="small" color={colors.primary} />
+                              <ActivityIndicator
+                                size="small"
+                                color={colors.primary}
+                              />
                             ) : (
                               <AlertCircle size={16} color="#dc2626" />
                             )}
@@ -532,10 +676,17 @@ export default function SelfServiceScreen() {
                           </View>
                           {upload.status === 'error' && (
                             <TouchableOpacity
-                              onPress={() => clearUploadError(upload.requirementId, upload.fileName)}
+                              onPress={() =>
+                                clearUploadError(
+                                  upload.requirementId,
+                                  upload.fileName,
+                                )
+                              }
                               className="ml-2"
                             >
-                              <Text className="text-red-500 text-sm">Dismiss</Text>
+                              <Text className="text-red-500 text-sm">
+                                Dismiss
+                              </Text>
                             </TouchableOpacity>
                           )}
                         </View>
@@ -556,7 +707,11 @@ export default function SelfServiceScreen() {
                       </Text>
                       {reqDocuments.map((doc) => {
                         const docStatusInfo = getDocumentStatusInfo(doc.status);
-                        const canDelete = ['uploaded', 'rejected', 'resubmission_required'].includes(doc.status);
+                        const canDelete = [
+                          'uploaded',
+                          'rejected',
+                          'resubmission_required',
+                        ].includes(doc.status);
 
                         return (
                           <View
@@ -580,20 +735,27 @@ export default function SelfServiceScreen() {
                                 <View
                                   className={cn(
                                     'rounded-full px-2 py-0.5',
-                                    isDark ? docStatusInfo.darkBgColor : docStatusInfo.bgColor,
+                                    isDark
+                                      ? docStatusInfo.darkBgColor
+                                      : docStatusInfo.bgColor,
                                   )}
                                 >
                                   <Text
                                     className={cn(
                                       'text-xs',
-                                      isDark ? docStatusInfo.darkColor : docStatusInfo.color,
+                                      isDark
+                                        ? docStatusInfo.darkColor
+                                        : docStatusInfo.color,
                                     )}
                                   >
                                     {docStatusInfo.label}
                                   </Text>
                                 </View>
                                 {doc.rejectionReason && (
-                                  <Text className="ml-2 text-xs text-red-500" numberOfLines={1}>
+                                  <Text
+                                    className="ml-2 text-xs text-red-500"
+                                    numberOfLines={1}
+                                  >
                                     {doc.rejectionReason}
                                   </Text>
                                 )}
@@ -618,7 +780,9 @@ export default function SelfServiceScreen() {
                   {/* Upload Button */}
                   <TouchableOpacity
                     onPress={() => handleDocumentUpload(req.id)}
-                    disabled={uploadingForReq.some((u) => u.status === 'uploading')}
+                    disabled={uploadingForReq.some(
+                      (u) => u.status === 'uploading',
+                    )}
                     className={cn(
                       'flex-row items-center justify-center rounded-lg py-3',
                       uploadingForReq.some((u) => u.status === 'uploading')
@@ -629,12 +793,16 @@ export default function SelfServiceScreen() {
                     {uploadingForReq.some((u) => u.status === 'uploading') ? (
                       <>
                         <ActivityIndicator size="small" color="white" />
-                        <Text className="ml-2 font-medium text-white">Uploading...</Text>
+                        <Text className="ml-2 font-medium text-white">
+                          Uploading...
+                        </Text>
                       </>
                     ) : (
                       <>
                         <Upload size={18} color="white" />
-                        <Text className="ml-2 font-medium text-white">Upload Document</Text>
+                        <Text className="ml-2 font-medium text-white">
+                          Upload Document
+                        </Text>
                       </>
                     )}
                   </TouchableOpacity>

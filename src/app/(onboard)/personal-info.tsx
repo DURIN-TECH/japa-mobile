@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { router } from 'expo-router';
 import { Screen, Typography, Card, Input } from '@/components/ui/themed';
 import { useTheme, cn } from '@/hooks/useTheme';
@@ -7,7 +14,7 @@ import { useOnboardingStore } from '@/stores/onboarding.store';
 import { useAuthStore } from '@/stores/auth.store';
 
 export default function PersonalInfoScreen() {
-  const { isDark, colors } = useTheme();
+  const { isDark } = useTheme();
   const setPersonalInfo = useOnboardingStore((state) => state.setPersonalInfo);
   const getData = useOnboardingStore((state) => state.getData);
   const { completeOnboarding, isLoading, error, clearError } = useAuthStore();
@@ -47,7 +54,12 @@ export default function PersonalInfoScreen() {
             <View className="mr-2 h-1 flex-1 rounded-full bg-blue-500" />
             <View className="mr-2 h-1 flex-1 rounded-full bg-blue-500" />
             <View className="mr-2 h-1 flex-1 rounded-full bg-blue-500" />
-            <View className={cn('h-1 flex-1 rounded-full', isDark ? 'bg-gray-700' : 'bg-gray-200')} />
+            <View
+              className={cn(
+                'h-1 flex-1 rounded-full',
+                isDark ? 'bg-gray-700' : 'bg-gray-200',
+              )}
+            />
           </View>
 
           {/* Back button */}
@@ -57,7 +69,12 @@ export default function PersonalInfoScreen() {
 
           {/* Header */}
           <View className="mb-6">
-            <Text className={cn('text-2xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
+            <Text
+              className={cn(
+                'text-2xl font-bold',
+                isDark ? 'text-white' : 'text-gray-900',
+              )}
+            >
               What&apos;s your name?
             </Text>
             <Typography variant="body" color="muted" className="mt-2">
@@ -108,13 +125,22 @@ export default function PersonalInfoScreen() {
               disabled={!isValid || isLoading}
               className={cn(
                 'items-center rounded-xl py-4',
-                isValid && !isLoading ? 'bg-blue-500' : isDark ? 'bg-gray-700' : 'bg-gray-300'
+                isValid && !isLoading
+                  ? 'bg-blue-500'
+                  : isDark
+                    ? 'bg-gray-700'
+                    : 'bg-gray-300',
               )}
             >
               {isLoading ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <Text className={cn('font-semibold', isValid ? 'text-white' : 'text-gray-500')}>
+                <Text
+                  className={cn(
+                    'font-semibold',
+                    isValid ? 'text-white' : 'text-gray-500',
+                  )}
+                >
                   Complete Setup
                 </Text>
               )}

@@ -20,7 +20,10 @@ export function ConsultationCard({
       <View className="mb-3 flex-row items-center">
         <Calendar size={20} color={colors.primary} />
         <Text
-          className={cn('ml-2 font-semibold', isDark ? 'text-white' : 'text-gray-900')}
+          className={cn(
+            'ml-2 font-semibold',
+            isDark ? 'text-white' : 'text-gray-900',
+          )}
         >
           30-minute Video Consultation
         </Text>
@@ -28,7 +31,9 @@ export function ConsultationCard({
 
       <View className="mb-4 flex-row items-center">
         <Clock size={16} color={colors.iconMuted} />
-        <Text className={cn('ml-2', isDark ? 'text-gray-400' : 'text-gray-600')}>
+        <Text
+          className={cn('ml-2', isDark ? 'text-gray-400' : 'text-gray-600')}
+        >
           Available within 24 hours
         </Text>
       </View>

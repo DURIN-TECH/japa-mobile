@@ -1,19 +1,38 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { ScrollView, View, Text, Image, ActivityIndicator, Alert } from 'react-native';
-import { Users, ChevronRight, FileText, Calendar, ClipboardCheck } from 'lucide-react-native';
+import {
+  ScrollView,
+  View,
+  Text,
+  Image,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import {
+  Users,
+  ChevronRight,
+  FileText,
+  Calendar,
+  ClipboardCheck,
+} from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 
 import { useVisaType } from '@/hooks/useVisaTypes';
 import { useCreateApplication } from '@/hooks/useApplications';
-import { useLatestEligibilityCheck, getEligibilityLevelInfo } from '@/hooks/useEligibility';
+import {
+  useLatestEligibilityCheck,
+  getEligibilityLevelInfo,
+} from '@/hooks/useEligibility';
 import { getCountryFlag } from '@/utils/countryFlags';
 import { VisaRequirement } from '@/types/visas.type';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Header, Section, Card } from '@/components/ui/themed';
 
 export default function VisaDetailsScreen() {
-  const { id, countryCode } = useLocalSearchParams<{ id: string; countryCode: string }>();
+  const { id, countryCode } = useLocalSearchParams<{
+    id: string;
+    countryCode: string;
+  }>();
   const { data, isLoading, error } = useVisaType(countryCode, id);
   const { isDark, colors } = useTheme();
   const createApplication = useCreateApplication();
@@ -23,7 +42,9 @@ export default function VisaDetailsScreen() {
   const { data: latestCheck } = useLatestEligibilityCheck(id ?? '');
   const hasCheckedEligibility = !!latestCheck;
   const eligibilityLevel = latestCheck?.eligibilityLevel;
-  const eligibilityInfo = eligibilityLevel ? getEligibilityLevelInfo(eligibilityLevel) : null;
+  const eligibilityInfo = eligibilityLevel
+    ? getEligibilityLevelInfo(eligibilityLevel)
+    : null;
 
   if (isLoading) {
     return (
@@ -42,7 +63,12 @@ export default function VisaDetailsScreen() {
           <Header title="" showBack />
         </View>
         <View className="flex-1 items-center justify-center px-6">
-          <Text className={cn('text-center', isDark ? 'text-gray-400' : 'text-gray-500')}>
+          <Text
+            className={cn(
+              'text-center',
+              isDark ? 'text-gray-400' : 'text-gray-500',
+            )}
+          >
             Visa details not found
           </Text>
         </View>
@@ -73,11 +99,8 @@ export default function VisaDetailsScreen() {
           params: { id: application.id },
         });
       }
-    } catch (err) {
-      Alert.alert(
-        'Error',
-        'Failed to create application. Please try again.',
-      );
+    } catch {
+      Alert.alert('Error', 'Failed to create application. Please try again.');
     } finally {
       setIsCreating(false);
     }
@@ -125,7 +148,10 @@ export default function VisaDetailsScreen() {
           <Section title="Requirements">
             <Card>
               {requirements.map((req: VisaRequirement, index: number) => (
-                <View key={req.id} className={index < requirements.length - 1 ? 'mb-6' : ''}>
+                <View
+                  key={req.id}
+                  className={index < requirements.length - 1 ? 'mb-6' : ''}
+                >
                   <Text
                     className={cn(
                       'text-lg font-semibold',
@@ -148,34 +174,35 @@ export default function VisaDetailsScreen() {
                       Est. {req.estimatedTime}
                     </Text>
                   </View>
-                  {req.requiredDocuments && req.requiredDocuments.length > 0 && (
-                    <View
-                      className={cn(
-                        'mt-4 rounded-xl p-4',
-                        isDark ? 'bg-blue-900/30' : 'bg-blue-50',
-                      )}
-                    >
-                      <Text
+                  {req.requiredDocuments &&
+                    req.requiredDocuments.length > 0 && (
+                      <View
                         className={cn(
-                          'mb-2 text-base font-semibold',
-                          isDark ? 'text-blue-300' : 'text-blue-900',
+                          'mt-4 rounded-xl p-4',
+                          isDark ? 'bg-blue-900/30' : 'bg-blue-50',
                         )}
                       >
-                        Required Documents:
-                      </Text>
-                      {req.requiredDocuments.map((doc) => (
                         <Text
-                          key={doc.id}
                           className={cn(
-                            'mb-1 text-base',
-                            isDark ? 'text-blue-200' : 'text-blue-800',
+                            'mb-2 text-base font-semibold',
+                            isDark ? 'text-blue-300' : 'text-blue-900',
                           )}
                         >
-                          - {doc.name}
+                          Required Documents:
                         </Text>
-                      ))}
-                    </View>
-                  )}
+                        {req.requiredDocuments.map((doc) => (
+                          <Text
+                            key={doc.id}
+                            className={cn(
+                              'mb-1 text-base',
+                              isDark ? 'text-blue-200' : 'text-blue-800',
+                            )}
+                          >
+                            - {doc.name}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
                 </View>
               ))}
             </Card>
@@ -187,8 +214,21 @@ export default function VisaDetailsScreen() {
           <Section title="Eligibility Criteria">
             <Card>
               {visa.eligibilityCriteria.map((criteria, index) => (
-                <View key={index} className={cn('flex-row', index < visa.eligibilityCriteria.length - 1 ? 'mb-3' : '')}>
-                  <Text className={cn('mr-2', isDark ? 'text-blue-400' : 'text-blue-600')}>•</Text>
+                <View
+                  key={index}
+                  className={cn(
+                    'flex-row',
+                    index < visa.eligibilityCriteria.length - 1 ? 'mb-3' : '',
+                  )}
+                >
+                  <Text
+                    className={cn(
+                      'mr-2',
+                      isDark ? 'text-blue-400' : 'text-blue-600',
+                    )}
+                  >
+                    •
+                  </Text>
                   <Text
                     className={cn(
                       'flex-1 text-base',
@@ -218,15 +258,17 @@ export default function VisaDetailsScreen() {
                 <Text
                   className={cn(
                     'text-lg font-semibold',
-                    isDark ? 'text-white' : 'text-gray-900'
+                    isDark ? 'text-white' : 'text-gray-900',
                   )}
                 >
-                  {hasCheckedEligibility ? 'Review Your Eligibility' : 'Take Eligibility Quiz'}
+                  {hasCheckedEligibility
+                    ? 'Review Your Eligibility'
+                    : 'Take Eligibility Quiz'}
                 </Text>
                 <Text
                   className={cn(
                     'mt-1 text-base',
-                    isDark ? 'text-gray-400' : 'text-gray-600'
+                    isDark ? 'text-gray-400' : 'text-gray-600',
                   )}
                 >
                   {hasCheckedEligibility
@@ -238,13 +280,17 @@ export default function VisaDetailsScreen() {
                     <View
                       className={cn(
                         'px-2 py-1 rounded',
-                        isDark ? eligibilityInfo.darkBgColor : eligibilityInfo.bgColor
+                        isDark
+                          ? eligibilityInfo.darkBgColor
+                          : eligibilityInfo.bgColor,
                       )}
                     >
                       <Text
                         className={cn(
                           'text-sm font-medium',
-                          isDark ? eligibilityInfo.darkColor : eligibilityInfo.color
+                          isDark
+                            ? eligibilityInfo.darkColor
+                            : eligibilityInfo.color,
                         )}
                       >
                         {eligibilityInfo.label} - {latestCheck?.score}%
@@ -351,17 +397,13 @@ export default function VisaDetailsScreen() {
               </Text>
             </View>
             <View className="mt-2 flex-row items-center justify-between">
-              <Text className="text-lg font-medium text-white">
-                Validity
-              </Text>
+              <Text className="text-lg font-medium text-white">Validity</Text>
               <Text className="text-lg font-semibold text-white">
                 {visa.validityPeriod}
               </Text>
             </View>
             <View className="mt-4 border-t border-white/20 pt-4">
-              <Text className="text-base text-white/80">
-                Starting from
-              </Text>
+              <Text className="text-base text-white/80">Starting from</Text>
               <Text className="mt-1 text-3xl font-bold text-white">
                 ${visa.baseCostUsd}
               </Text>

@@ -1,5 +1,5 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { ScrollView, View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { ScrollView, View, Text, ActivityIndicator } from 'react-native';
 import {
   CheckCircle2,
   XCircle,
@@ -32,7 +32,9 @@ export default function EligibilityResultScreen() {
         <Header title="Results" showBack />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text className={cn('mt-4', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn('mt-4', isDark ? 'text-gray-400' : 'text-gray-600')}
+          >
             Loading results...
           </Text>
         </View>
@@ -46,7 +48,12 @@ export default function EligibilityResultScreen() {
         <Header title="Results" showBack />
         <View className="flex-1 items-center justify-center px-6">
           <XCircle size={48} color={isDark ? '#ef4444' : '#dc2626'} />
-          <Text className={cn('mt-4 text-center', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn(
+              'mt-4 text-center',
+              isDark ? 'text-gray-400' : 'text-gray-600',
+            )}
+          >
             Unable to load results. Please try again.
           </Text>
           <Button onPress={() => router.back()} className="mt-4">
@@ -66,10 +73,10 @@ export default function EligibilityResultScreen() {
     pathInfo.icon === 'check'
       ? Plane
       : pathInfo.icon === 'self'
-      ? FileText
-      : pathInfo.icon === 'agent'
-      ? Users
-      : AlertTriangle;
+        ? FileText
+        : pathInfo.icon === 'agent'
+          ? Users
+          : AlertTriangle;
 
   const handleContinue = () => {
     switch (check.suggestedPath) {
@@ -109,7 +116,7 @@ export default function EligibilityResultScreen() {
           <Card
             className={cn(
               'items-center py-8',
-              !check.visaRequired && 'bg-blue-500'
+              !check.visaRequired && 'bg-blue-500',
             )}
           >
             {!check.visaRequired ? (
@@ -132,14 +139,19 @@ export default function EligibilityResultScreen() {
                     check.eligibilityLevel === 'high'
                       ? 'border-green-500'
                       : check.eligibilityLevel === 'medium'
-                      ? 'border-yellow-500'
-                      : 'border-red-500'
+                        ? 'border-yellow-500'
+                        : 'border-red-500',
                   )}
                 >
                   <Text className={cn('text-4xl font-bold', scoreInfo.color)}>
                     {check.score}
                   </Text>
-                  <Text className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                  <Text
+                    className={cn(
+                      'text-sm',
+                      isDark ? 'text-gray-400' : 'text-gray-600',
+                    )}
+                  >
                     / 100
                   </Text>
                 </View>
@@ -148,13 +160,13 @@ export default function EligibilityResultScreen() {
                 <View
                   className={cn(
                     'mt-4 px-4 py-2 rounded-full',
-                    isDark ? levelInfo.darkBgColor : levelInfo.bgColor
+                    isDark ? levelInfo.darkBgColor : levelInfo.bgColor,
                   )}
                 >
                   <Text
                     className={cn(
                       'font-semibold',
-                      isDark ? levelInfo.darkColor : levelInfo.color
+                      isDark ? levelInfo.darkColor : levelInfo.color,
                     )}
                   >
                     {levelInfo.label}
@@ -164,7 +176,7 @@ export default function EligibilityResultScreen() {
                 <Text
                   className={cn(
                     'mt-3 text-center px-4',
-                    isDark ? 'text-gray-400' : 'text-gray-600'
+                    isDark ? 'text-gray-400' : 'text-gray-600',
                   )}
                 >
                   {levelInfo.description}
@@ -184,7 +196,7 @@ export default function EligibilityResultScreen() {
                   <Text
                     className={cn(
                       'ml-3 flex-1',
-                      isDark ? 'text-gray-200' : 'text-gray-800'
+                      isDark ? 'text-gray-200' : 'text-gray-800',
                     )}
                   >
                     Maximum stay: {check.exemptionDetails.maxStayDays} days
@@ -193,13 +205,18 @@ export default function EligibilityResultScreen() {
               )}
               {check.exemptionDetails.conditions?.map((condition, index) => (
                 <View key={index} className="flex-row items-start mb-2">
-                  <Text className={cn('mr-2', isDark ? 'text-blue-400' : 'text-blue-600')}>
+                  <Text
+                    className={cn(
+                      'mr-2',
+                      isDark ? 'text-blue-400' : 'text-blue-600',
+                    )}
+                  >
                     *
                   </Text>
                   <Text
                     className={cn(
                       'flex-1',
-                      isDark ? 'text-gray-300' : 'text-gray-700'
+                      isDark ? 'text-gray-300' : 'text-gray-700',
                     )}
                   >
                     {condition}
@@ -221,10 +238,10 @@ export default function EligibilityResultScreen() {
                     pathInfo.color === 'green'
                       ? 'bg-green-100'
                       : pathInfo.color === 'blue'
-                      ? 'bg-blue-100'
-                      : pathInfo.color === 'yellow'
-                      ? 'bg-yellow-100'
-                      : 'bg-red-100'
+                        ? 'bg-blue-100'
+                        : pathInfo.color === 'yellow'
+                          ? 'bg-yellow-100'
+                          : 'bg-red-100',
                   )}
                 >
                   <PathIcon
@@ -233,10 +250,10 @@ export default function EligibilityResultScreen() {
                       pathInfo.color === 'green'
                         ? '#16a34a'
                         : pathInfo.color === 'blue'
-                        ? '#2563eb'
-                        : pathInfo.color === 'yellow'
-                        ? '#ca8a04'
-                        : '#dc2626'
+                          ? '#2563eb'
+                          : pathInfo.color === 'yellow'
+                            ? '#ca8a04'
+                            : '#dc2626'
                     }
                   />
                 </View>
@@ -244,7 +261,7 @@ export default function EligibilityResultScreen() {
                   <Text
                     className={cn(
                       'text-lg font-semibold',
-                      isDark ? 'text-white' : 'text-gray-900'
+                      isDark ? 'text-white' : 'text-gray-900',
                     )}
                   >
                     {pathInfo.label}
@@ -252,7 +269,7 @@ export default function EligibilityResultScreen() {
                   <Text
                     className={cn(
                       'mt-1',
-                      isDark ? 'text-gray-400' : 'text-gray-600'
+                      isDark ? 'text-gray-400' : 'text-gray-600',
                     )}
                   >
                     {pathInfo.description}
@@ -265,21 +282,28 @@ export default function EligibilityResultScreen() {
 
         {/* Recommendations */}
         {check.recommendations && check.recommendations.length > 0 && (
-          <Section title={check.visaRequired ? 'Recommendations' : 'Next Steps'}>
+          <Section
+            title={check.visaRequired ? 'Recommendations' : 'Next Steps'}
+          >
             <Card>
               {check.recommendations.map((rec, index) => (
                 <View
                   key={index}
                   className={cn(
                     'flex-row items-start',
-                    index < check.recommendations.length - 1 && 'mb-3'
+                    index < check.recommendations.length - 1 && 'mb-3',
                   )}
                 >
                   <View className="mt-1">
                     {index === 0 ? (
                       <Info size={16} color={colors.primary} />
                     ) : (
-                      <Text className={cn('mr-2', isDark ? 'text-blue-400' : 'text-blue-600')}>
+                      <Text
+                        className={cn(
+                          'mr-2',
+                          isDark ? 'text-blue-400' : 'text-blue-600',
+                        )}
+                      >
                         *
                       </Text>
                     )}
@@ -292,8 +316,8 @@ export default function EligibilityResultScreen() {
                           ? 'text-gray-200 font-medium'
                           : 'text-gray-800 font-medium'
                         : isDark
-                        ? 'text-gray-400'
-                        : 'text-gray-600'
+                          ? 'text-gray-400'
+                          : 'text-gray-600',
                     )}
                   >
                     {rec}
@@ -305,38 +329,42 @@ export default function EligibilityResultScreen() {
         )}
 
         {/* Detailed Breakdown */}
-        {check.visaRequired && check.breakdown && check.breakdown.length > 0 && (
-          <Section title="Detailed Breakdown">
-            <Card>
-              {check.breakdown.map((item, index) => (
-                <BreakdownItem
-                  key={item.questionId}
-                  item={item}
-                  isDark={isDark}
-                  isLast={index === check.breakdown.length - 1}
-                />
-              ))}
-            </Card>
-          </Section>
-        )}
+        {check.visaRequired &&
+          check.breakdown &&
+          check.breakdown.length > 0 && (
+            <Section title="Detailed Breakdown">
+              <Card>
+                {check.breakdown.map((item, index) => (
+                  <BreakdownItem
+                    key={item.questionId}
+                    item={item}
+                    isDark={isDark}
+                    isLast={index === check.breakdown.length - 1}
+                  />
+                ))}
+              </Card>
+            </Section>
+          )}
 
         {/* Missing Requirements */}
         {check.missingRequirements && check.missingRequirements.length > 0 && (
           <Section title="Missing Information">
-            <Card className={isDark ? 'border-yellow-500/50' : 'border-yellow-200'}>
+            <Card
+              className={isDark ? 'border-yellow-500/50' : 'border-yellow-200'}
+            >
               {check.missingRequirements.map((req, index) => (
                 <View
                   key={index}
                   className={cn(
                     'flex-row items-center',
-                    index < check.missingRequirements.length - 1 && 'mb-2'
+                    index < check.missingRequirements.length - 1 && 'mb-2',
                   )}
                 >
                   <AlertTriangle size={16} color="#ca8a04" />
                   <Text
                     className={cn(
                       'ml-2 flex-1',
-                      isDark ? 'text-yellow-200' : 'text-yellow-800'
+                      isDark ? 'text-yellow-200' : 'text-yellow-800',
                     )}
                   >
                     {req}
@@ -352,7 +380,9 @@ export default function EligibilityResultScreen() {
       <View
         className={cn(
           'absolute bottom-0 left-0 right-0 px-6 py-4',
-          isDark ? 'bg-gray-800 border-t border-gray-700' : 'bg-white border-t border-gray-200'
+          isDark
+            ? 'bg-gray-800 border-t border-gray-700'
+            : 'bg-white border-t border-gray-200',
         )}
       >
         <Button onPress={handleContinue} className="w-full">
@@ -361,8 +391,8 @@ export default function EligibilityResultScreen() {
               {check.suggestedPath === 'visa_free'
                 ? 'Back to Visa Details'
                 : check.suggestedPath === 'self_service'
-                ? 'Start Application'
-                : 'Find an Agent'}
+                  ? 'Start Application'
+                  : 'Find an Agent'}
             </Text>
             <ChevronRight size={20} color="#fff" />
           </View>
@@ -389,7 +419,7 @@ function BreakdownItem({
     <View
       className={cn(
         'py-3',
-        !isLast && `border-b ${isDark ? 'border-gray-700' : 'border-gray-100'}`
+        !isLast && `border-b ${isDark ? 'border-gray-700' : 'border-gray-100'}`,
       )}
     >
       <View className="flex-row items-start justify-between">
@@ -397,7 +427,7 @@ function BreakdownItem({
           <Text
             className={cn(
               'font-medium',
-              isDark ? 'text-gray-200' : 'text-gray-800'
+              isDark ? 'text-gray-200' : 'text-gray-800',
             )}
           >
             {item.question}
@@ -405,7 +435,7 @@ function BreakdownItem({
           <Text
             className={cn(
               'mt-1 text-sm',
-              isDark ? 'text-gray-400' : 'text-gray-600'
+              isDark ? 'text-gray-400' : 'text-gray-600',
             )}
           >
             Your answer: {item.answer}
@@ -421,7 +451,7 @@ function BreakdownItem({
           <Text
             className={cn(
               'ml-2 text-sm font-medium',
-              item.passed ? 'text-green-600' : 'text-red-600'
+              item.passed ? 'text-green-600' : 'text-red-600',
             )}
           >
             {item.points}/{item.maxPoints}
@@ -433,10 +463,12 @@ function BreakdownItem({
         <View
           className={cn(
             'mt-2 rounded-lg p-2',
-            isDark ? 'bg-red-900/20' : 'bg-red-50'
+            isDark ? 'bg-red-900/20' : 'bg-red-50',
           )}
         >
-          <Text className={cn('text-sm', isDark ? 'text-red-200' : 'text-red-700')}>
+          <Text
+            className={cn('text-sm', isDark ? 'text-red-200' : 'text-red-700')}
+          >
             {item.recommendation}
           </Text>
         </View>

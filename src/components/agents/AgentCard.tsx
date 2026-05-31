@@ -41,7 +41,9 @@ export function AgentCard({ agent }: Readonly<AgentCardProps>) {
           </Text>
           <View className="flex-row items-center">
             <Star size={16} color="#facc15" />
-            <Text className={cn('ml-1', isDark ? 'text-gray-400' : 'text-gray-600')}>
+            <Text
+              className={cn('ml-1', isDark ? 'text-gray-400' : 'text-gray-600')}
+            >
               {agent.rating} ({agent.verificationCount} reviews)
             </Text>
           </View>

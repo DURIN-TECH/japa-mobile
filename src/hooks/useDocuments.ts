@@ -10,7 +10,10 @@ import {
 /**
  * Get all documents for an application
  */
-export function useApplicationDocuments(applicationId: string, requirementId?: string) {
+export function useApplicationDocuments(
+  applicationId: string,
+  requirementId?: string,
+) {
   return useQuery({
     queryKey: ['documents', applicationId, requirementId],
     queryFn: async () => {
@@ -32,7 +35,9 @@ export function useDocument(documentId: string) {
   return useQuery({
     queryKey: ['document', documentId],
     queryFn: async () => {
-      const response = await apiService.get<Document>(`/documents/${documentId}`);
+      const response = await apiService.get<Document>(
+        `/documents/${documentId}`,
+      );
       return response.data;
     },
     enabled: !!documentId,
@@ -54,11 +59,14 @@ export function useGetUploadUrl() {
       fileName: string;
       contentType: string;
     }) => {
-      const response = await apiService.post<UploadUrlResponse>('/documents/upload-url', {
-        applicationId,
-        fileName,
-        contentType,
-      });
+      const response = await apiService.post<UploadUrlResponse>(
+        '/documents/upload-url',
+        {
+          applicationId,
+          fileName,
+          contentType,
+        },
+      );
       return response.data;
     },
   });
@@ -78,8 +86,12 @@ export function useCreateDocument() {
     onSuccess: (data) => {
       if (data) {
         // Invalidate relevant queries
-        queryClient.invalidateQueries({ queryKey: ['documents', data.applicationId] });
-        queryClient.invalidateQueries({ queryKey: ['application', data.applicationId] });
+        queryClient.invalidateQueries({
+          queryKey: ['documents', data.applicationId],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ['application', data.applicationId],
+        });
         queryClient.invalidateQueries({ queryKey: ['applications'] });
       }
     },
@@ -105,8 +117,12 @@ export function useDeleteDocument() {
     },
     onSuccess: (data) => {
       // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['documents', data.applicationId] });
-      queryClient.invalidateQueries({ queryKey: ['application', data.applicationId] });
+      queryClient.invalidateQueries({
+        queryKey: ['documents', data.applicationId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['application', data.applicationId],
+      });
       queryClient.invalidateQueries({ queryKey: ['applications'] });
     },
   });
@@ -119,7 +135,7 @@ export function useGetDownloadUrl() {
   return useMutation({
     mutationFn: async (documentId: string) => {
       const response = await apiService.get<{ downloadUrl: string }>(
-        `/documents/${documentId}/download`
+        `/documents/${documentId}/download`,
       );
       return response.data?.downloadUrl;
     },
@@ -131,7 +147,7 @@ export function useGetDownloadUrl() {
  */
 export async function uploadToStorage(
   uploadUrl: string,
-  file: { uri: string; type: string; name: string }
+  file: { uri: string; type: string; name: string },
 ): Promise<void> {
   // Read file as blob
   const response = await fetch(file.uri);
@@ -157,13 +173,16 @@ export function getDocumentStatusInfo(status: DocumentStatus): {
   darkColor: string;
   darkBgColor: string;
 } {
-  const statusMap: Record<DocumentStatus, {
-    label: string;
-    color: string;
-    bgColor: string;
-    darkColor: string;
-    darkBgColor: string;
-  }> = {
+  const statusMap: Record<
+    DocumentStatus,
+    {
+      label: string;
+      color: string;
+      bgColor: string;
+      darkColor: string;
+      darkBgColor: string;
+    }
+  > = {
     pending_upload: {
       label: 'Pending Upload',
       color: 'text-gray-700',

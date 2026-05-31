@@ -1,8 +1,21 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { router } from 'expo-router';
 import { Mail, Lock, Phone, Eye, EyeOff } from 'lucide-react-native';
-import { Screen, Input, Button, Typography, Card } from '@/components/ui/themed';
+import {
+  Screen,
+  Input,
+  Button,
+  Typography,
+  Card,
+} from '@/components/ui/themed';
 import { useAuthStore } from '@/stores/auth.store';
 import { useTheme, cn } from '@/hooks/useTheme';
 
@@ -10,7 +23,8 @@ type LoginMethod = 'email' | 'phone';
 
 export default function LoginScreen() {
   const { isDark, colors } = useTheme();
-  const { loginWithEmail, sendOtp, isLoading, error, clearError } = useAuthStore();
+  const { loginWithEmail, sendOtp, isLoading, error, clearError } =
+    useAuthStore();
 
   const [loginMethod, setLoginMethod] = useState<LoginMethod>('email');
   const [email, setEmail] = useState('');
@@ -43,7 +57,12 @@ export default function LoginScreen() {
         <View className="flex-1 justify-center px-6">
           {/* Logo/Header */}
           <View className="mb-10 items-center">
-            <Text className={cn('text-4xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
+            <Text
+              className={cn(
+                'text-4xl font-bold',
+                isDark ? 'text-white' : 'text-gray-900',
+              )}
+            >
               JAPA
             </Text>
             <Typography variant="body" color="muted" className="mt-2">
@@ -52,39 +71,61 @@ export default function LoginScreen() {
           </View>
 
           {/* Login Method Toggle */}
-          <View className={cn(
-            'mb-6 flex-row rounded-xl p-1',
-            isDark ? 'bg-gray-800' : 'bg-gray-100'
-          )}>
+          <View
+            className={cn(
+              'mb-6 flex-row rounded-xl p-1',
+              isDark ? 'bg-gray-800' : 'bg-gray-100',
+            )}
+          >
             <TouchableOpacity
-              onPress={() => { setLoginMethod('email'); clearError(); }}
+              onPress={() => {
+                setLoginMethod('email');
+                clearError();
+              }}
               className={cn(
                 'flex-1 items-center rounded-lg py-3',
-                loginMethod === 'email' && (isDark ? 'bg-gray-700' : 'bg-white')
+                loginMethod === 'email' &&
+                  (isDark ? 'bg-gray-700' : 'bg-white'),
               )}
             >
-              <Text className={cn(
-                'font-medium',
-                loginMethod === 'email'
-                  ? isDark ? 'text-white' : 'text-gray-900'
-                  : isDark ? 'text-gray-400' : 'text-gray-500'
-              )}>
+              <Text
+                className={cn(
+                  'font-medium',
+                  loginMethod === 'email'
+                    ? isDark
+                      ? 'text-white'
+                      : 'text-gray-900'
+                    : isDark
+                      ? 'text-gray-400'
+                      : 'text-gray-500',
+                )}
+              >
                 Email
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => { setLoginMethod('phone'); clearError(); }}
+              onPress={() => {
+                setLoginMethod('phone');
+                clearError();
+              }}
               className={cn(
                 'flex-1 items-center rounded-lg py-3',
-                loginMethod === 'phone' && (isDark ? 'bg-gray-700' : 'bg-white')
+                loginMethod === 'phone' &&
+                  (isDark ? 'bg-gray-700' : 'bg-white'),
               )}
             >
-              <Text className={cn(
-                'font-medium',
-                loginMethod === 'phone'
-                  ? isDark ? 'text-white' : 'text-gray-900'
-                  : isDark ? 'text-gray-400' : 'text-gray-500'
-              )}>
+              <Text
+                className={cn(
+                  'font-medium',
+                  loginMethod === 'phone'
+                    ? isDark
+                      ? 'text-white'
+                      : 'text-gray-900'
+                    : isDark
+                      ? 'text-gray-400'
+                      : 'text-gray-500',
+                )}
+              >
                 Phone
               </Text>
             </TouchableOpacity>
@@ -168,11 +209,7 @@ export default function LoginScreen() {
           )}
 
           {/* Login Button */}
-          <Button
-            onPress={handleLogin}
-            disabled={isLoading}
-            className="mt-6"
-          >
+          <Button onPress={handleLogin} disabled={isLoading} className="mt-6">
             {isLoading ? (
               <ActivityIndicator color="white" />
             ) : (

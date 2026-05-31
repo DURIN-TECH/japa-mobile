@@ -1,5 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  TextInput,
+} from 'react-native';
 import { router } from 'expo-router';
 import { Screen, Button, Typography, Card } from '@/components/ui/themed';
 import { useAuthStore } from '@/stores/auth.store';
@@ -8,8 +14,9 @@ import { useTheme, cn } from '@/hooks/useTheme';
 const OTP_LENGTH = 6;
 
 export default function VerifyOtpScreen() {
-  const { isDark, colors } = useTheme();
-  const { verifyOtp, sendOtp, phoneNumber, isLoading, error, clearError } = useAuthStore();
+  const { isDark } = useTheme();
+  const { verifyOtp, sendOtp, phoneNumber, isLoading, error, clearError } =
+    useAuthStore();
 
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [resendTimer, setResendTimer] = useState(30);
@@ -83,7 +90,12 @@ export default function VerifyOtpScreen() {
           <TouchableOpacity onPress={() => router.back()} className="mb-4">
             <Typography color="primary">← Back</Typography>
           </TouchableOpacity>
-          <Text className={cn('text-3xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
+          <Text
+            className={cn(
+              'text-3xl font-bold',
+              isDark ? 'text-white' : 'text-gray-900',
+            )}
+          >
             Verify Phone
           </Text>
           <Typography variant="body" color="muted" className="mt-2">
@@ -106,10 +118,14 @@ export default function VerifyOtpScreen() {
           {otp.map((digit, index) => (
             <TextInput
               key={index}
-              ref={(ref) => { inputRefs.current[index] = ref; }}
+              ref={(ref) => {
+                inputRefs.current[index] = ref;
+              }}
               value={digit}
               onChangeText={(value) => handleOtpChange(value, index)}
-              onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
+              onKeyPress={({ nativeEvent }) =>
+                handleKeyPress(nativeEvent.key, index)
+              }
               keyboardType="number-pad"
               maxLength={index === 0 ? OTP_LENGTH : 1}
               className={cn(
@@ -117,7 +133,7 @@ export default function VerifyOtpScreen() {
                 isDark
                   ? 'border-gray-700 bg-gray-800 text-white'
                   : 'border-gray-200 bg-white text-gray-900',
-                digit && 'border-blue-500'
+                digit && 'border-blue-500',
               )}
               style={{ color: isDark ? '#fff' : '#111' }}
             />
@@ -140,9 +156,7 @@ export default function VerifyOtpScreen() {
         {/* Resend */}
         <View className="mt-6 items-center">
           {resendTimer > 0 ? (
-            <Typography color="muted">
-              Resend code in {resendTimer}s
-            </Typography>
+            <Typography color="muted">Resend code in {resendTimer}s</Typography>
           ) : (
             <TouchableOpacity onPress={handleResend} disabled={isLoading}>
               <Typography color="primary">Resend Code</Typography>

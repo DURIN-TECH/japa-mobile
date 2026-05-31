@@ -1,11 +1,24 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
-import { Search, ArrowRight, X, MapPin } from 'lucide-react-native';
+import {
+  ScrollView,
+  View,
+  Text,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
+import { Search, ArrowRight, X } from 'lucide-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { getCountryFlag } from '@/utils/countryFlags';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Section, Input, Chip, Card } from '@/components/ui/themed';
-import { useVisaTypes, useVisaSearch, useVisaTypesByCountry, useCountriesWithVisas } from '@/hooks/useVisaTypes';
+import {
+  useVisaTypes,
+  useVisaSearch,
+  useVisaTypesByCountry,
+  useCountriesWithVisas,
+} from '@/hooks/useVisaTypes';
 import { VisaCategory } from '@/types/visas.type';
 
 const CATEGORIES: { label: string; value: VisaCategory }[] = [
@@ -22,7 +35,9 @@ export default function Apply() {
   const initialCountryCode = params.countryCode;
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<VisaCategory | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<VisaCategory | null>(
+    null,
+  );
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
 
   // Update selectedCountry when route param changes
@@ -42,13 +57,21 @@ export default function Apply() {
   }, [countries, selectedCountry]);
 
   // Fetch all visa types (when no country filter)
-  const { data: visaData, isLoading: visasLoading, refetch: refetchVisas } = useVisaTypes({
+  const {
+    data: visaData,
+    isLoading: visasLoading,
+    refetch: refetchVisas,
+  } = useVisaTypes({
     category: selectedCategory ?? undefined,
     limit: 20,
   });
 
   // Fetch visa types by country (when country filter is active)
-  const { data: countryVisas, isLoading: countryVisasLoading, refetch: refetchCountryVisas } = useVisaTypesByCountry(selectedCountry ?? '');
+  const {
+    data: countryVisas,
+    isLoading: countryVisasLoading,
+    refetch: refetchCountryVisas,
+  } = useVisaTypesByCountry(selectedCountry ?? '');
 
   // Debug logging
   useEffect(() => {
@@ -58,7 +81,11 @@ export default function Apply() {
   }, [selectedCountry, countryVisas, countryVisasLoading]);
 
   // Search visa types
-  const { data: searchResults, isLoading: searchLoading, refetch: refetchSearch } = useVisaSearch(searchQuery);
+  const {
+    data: searchResults,
+    isLoading: searchLoading,
+    refetch: refetchSearch,
+  } = useVisaSearch(searchQuery);
 
   // Pull-to-refresh state
   const [refreshing, setRefreshing] = useState(false);
@@ -76,7 +103,13 @@ export default function Apply() {
     } finally {
       setRefreshing(false);
     }
-  }, [searchQuery, selectedCountry, refetchVisas, refetchCountryVisas, refetchSearch]);
+  }, [
+    searchQuery,
+    selectedCountry,
+    refetchVisas,
+    refetchCountryVisas,
+    refetchSearch,
+  ]);
 
   // Determine which visas to display
   const displayedVisas = useMemo(() => {
@@ -92,13 +125,21 @@ export default function Apply() {
       return visas;
     }
     return visaData?.visaTypes ?? [];
-  }, [searchQuery, searchResults, selectedCountry, countryVisas, selectedCategory, visaData]);
+  }, [
+    searchQuery,
+    searchResults,
+    selectedCountry,
+    countryVisas,
+    selectedCategory,
+    visaData,
+  ]);
 
-  const isLoading = searchQuery.length >= 2
-    ? searchLoading
-    : selectedCountry
-      ? countryVisasLoading
-      : visasLoading;
+  const isLoading =
+    searchQuery.length >= 2
+      ? searchLoading
+      : selectedCountry
+        ? countryVisasLoading
+        : visasLoading;
 
   const clearFilters = () => {
     setSelectedCategory(null);
@@ -147,7 +188,7 @@ export default function Apply() {
             <View
               className={cn(
                 'flex-row items-center rounded-full px-3 py-2',
-                isDark ? 'bg-blue-900/50' : 'bg-blue-50'
+                isDark ? 'bg-blue-900/50' : 'bg-blue-50',
               )}
             >
               <Image
@@ -158,7 +199,7 @@ export default function Apply() {
               <Text
                 className={cn(
                   'ml-2 font-medium',
-                  isDark ? 'text-blue-300' : 'text-blue-700'
+                  isDark ? 'text-blue-300' : 'text-blue-700',
                 )}
               >
                 {selectedCountryData.name}
@@ -181,7 +222,9 @@ export default function Apply() {
             className="mt-2 flex-row items-center"
           >
             <X size={16} color={colors.primary} />
-            <Text className="ml-1 text-sm text-blue-600">Clear all filters</Text>
+            <Text className="ml-1 text-sm text-blue-600">
+              Clear all filters
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -215,10 +258,12 @@ export default function Apply() {
                   key={category.value}
                   onPress={() =>
                     setSelectedCategory(
-                      category.value === 'other' ? null : category.value
+                      category.value === 'other' ? null : category.value,
                     )
                   }
-                  style={{ marginRight: index < CATEGORIES.length - 1 ? 12 : 0 }}
+                  style={{
+                    marginRight: index < CATEGORIES.length - 1 ? 12 : 0,
+                  }}
                 >
                   <Chip variant={isSelected ? 'primary' : 'default'}>
                     {category.label}
@@ -228,7 +273,6 @@ export default function Apply() {
             })}
           </ScrollView>
         </Section>
-
 
         {/* Available Visas */}
         <Section
@@ -240,8 +284,14 @@ export default function Apply() {
                 : 'Available Visas'
           }
           rightElement={
-            <Text className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-500')}>
-              {displayedVisas.length} visa{displayedVisas.length !== 1 ? 's' : ''}
+            <Text
+              className={cn(
+                'text-sm',
+                isDark ? 'text-gray-400' : 'text-gray-500',
+              )}
+            >
+              {displayedVisas.length} visa
+              {displayedVisas.length !== 1 ? 's' : ''}
             </Text>
           }
         >
@@ -252,8 +302,15 @@ export default function Apply() {
           ) : displayedVisas.length === 0 ? (
             <Card>
               <View className="items-center py-4">
-                <Text className={cn('text-center', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                  {searchQuery ? 'No visas found for your search' : 'No visas available'}
+                <Text
+                  className={cn(
+                    'text-center',
+                    isDark ? 'text-gray-400' : 'text-gray-500',
+                  )}
+                >
+                  {searchQuery
+                    ? 'No visas found for your search'
+                    : 'No visas available'}
                 </Text>
               </View>
             </Card>
@@ -304,54 +361,74 @@ export default function Apply() {
                 </Text>
 
                 {/* Eligibility Criteria */}
-                {visa.eligibilityCriteria && visa.eligibilityCriteria.length > 0 && (
-                  <View
-                    className={cn(
-                      'mb-4 rounded-lg p-3',
-                      isDark ? 'bg-gray-700' : 'bg-gray-50',
-                    )}
-                  >
-                    <Text
+                {visa.eligibilityCriteria &&
+                  visa.eligibilityCriteria.length > 0 && (
+                    <View
                       className={cn(
-                        'mb-2 font-medium',
-                        isDark ? 'text-gray-300' : 'text-gray-700',
+                        'mb-4 rounded-lg p-3',
+                        isDark ? 'bg-gray-700' : 'bg-gray-50',
                       )}
                     >
-                      Eligibility
-                    </Text>
-                    {visa.eligibilityCriteria.slice(0, 3).map((criteria, idx) => (
                       <Text
-                        key={idx}
                         className={cn(
-                          'mb-1 text-sm',
-                          isDark ? 'text-gray-400' : 'text-gray-600',
+                          'mb-2 font-medium',
+                          isDark ? 'text-gray-300' : 'text-gray-700',
                         )}
                       >
-                        - {criteria}
+                        Eligibility
                       </Text>
-                    ))}
-                    {visa.eligibilityCriteria.length > 3 && (
-                      <Text className="mt-1 text-sm text-blue-600">
-                        +{visa.eligibilityCriteria.length - 3} more
-                      </Text>
-                    )}
-                  </View>
-                )}
+                      {visa.eligibilityCriteria
+                        .slice(0, 3)
+                        .map((criteria, idx) => (
+                          <Text
+                            key={idx}
+                            className={cn(
+                              'mb-1 text-sm',
+                              isDark ? 'text-gray-400' : 'text-gray-600',
+                            )}
+                          >
+                            - {criteria}
+                          </Text>
+                        ))}
+                      {visa.eligibilityCriteria.length > 3 && (
+                        <Text className="mt-1 text-sm text-blue-600">
+                          +{visa.eligibilityCriteria.length - 3} more
+                        </Text>
+                      )}
+                    </View>
+                  )}
 
                 {/* Footer with processing time and price */}
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center">
-                    <Text className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                    <Text
+                      className={cn(
+                        'text-sm',
+                        isDark ? 'text-gray-400' : 'text-gray-500',
+                      )}
+                    >
                       {visa.processingTime}
                     </Text>
-                    <Text className={cn('mx-2', isDark ? 'text-gray-600' : 'text-gray-300')}>
+                    <Text
+                      className={cn(
+                        'mx-2',
+                        isDark ? 'text-gray-600' : 'text-gray-300',
+                      )}
+                    >
                       •
                     </Text>
-                    <Text className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                    <Text
+                      className={cn(
+                        'text-sm',
+                        isDark ? 'text-gray-400' : 'text-gray-500',
+                      )}
+                    >
                       {visa.validityPeriod}
                     </Text>
                   </View>
-                  <Text className="font-bold text-blue-600">${visa.baseCostUsd}</Text>
+                  <Text className="font-bold text-blue-600">
+                    ${visa.baseCostUsd}
+                  </Text>
                 </View>
 
                 {/* Agents available */}
@@ -364,7 +441,7 @@ export default function Apply() {
                             key={idx}
                             className={cn(
                               'h-8 w-8 items-center justify-center rounded-full',
-                              isDark ? 'bg-blue-800' : 'bg-blue-500'
+                              isDark ? 'bg-blue-800' : 'bg-blue-500',
                             )}
                             style={{
                               marginLeft: idx > 0 ? -12 : 0,
@@ -385,14 +462,17 @@ export default function Apply() {
                           isDark ? 'text-gray-400' : 'text-gray-600',
                         )}
                       >
-                        {visa.agentIds.length} agent{visa.agentIds.length !== 1 ? 's' : ''} available
+                        {visa.agentIds.length} agent
+                        {visa.agentIds.length !== 1 ? 's' : ''} available
                       </Text>
                     </View>
                     <TouchableOpacity
                       onPress={() => router.push('/apply/agents')}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                      <Text className="text-sm font-medium text-blue-600">View</Text>
+                      <Text className="text-sm font-medium text-blue-600">
+                        View
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 )}
