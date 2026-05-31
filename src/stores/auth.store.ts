@@ -1,8 +1,13 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authService, FirebaseUser, ConfirmationResult } from '@/services/auth.service';
+import {
+  authService,
+  FirebaseUser,
+  ConfirmationResult,
+} from '@/services/auth.service';
 import { apiService } from '@/services/api.service';
+import { pushNotificationService } from '@/services/push-notification.service';
 import { UserProfile, OnboardingData } from '@/types/user.type';
 
 interface AuthState {
@@ -66,6 +71,8 @@ export const useAuthStore = create<AuthState>()(
           const user = await authService.loginWithEmail(email, password);
           set({ user, isAuthenticated: true });
           await get().fetchProfile();
+          // Register for push notifications after successful login
+          pushNotificationService.initialize().catch(() => {});
           return true;
         } catch (error) {
           set({ error: authService.getErrorMessage(error) });
@@ -135,6 +142,8 @@ export const useAuthStore = create<AuthState>()(
             phoneNumber: null,
           });
           await get().fetchProfile();
+          // Register for push notifications after successful phone auth
+          pushNotificationService.initialize().catch(() => {});
           return true;
         } catch (error) {
           set({ error: authService.getErrorMessage(error) });
@@ -152,6 +161,9 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         set({ isLoading: true });
         try {
+          // Unregister FCM token before signing out so the device
+          // stops receiving push notifications for this user
+          await pushNotificationService.unregisterToken().catch(() => {});
           await authService.logout();
           set({
             user: null,
@@ -185,7 +197,10 @@ export const useAuthStore = create<AuthState>()(
       completeOnboarding: async (data: OnboardingData) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await apiService.post<UserProfile>('/users/onboarding', data);
+          const response = await apiService.post<UserProfile>(
+            '/users/onboarding',
+            data,
+          );
           if (response.success && response.data) {
             // Store the profile but don't trigger redirect yet
             // The complete screen will call finalizeOnboarding to trigger the redirect
@@ -222,15 +237,15 @@ export const useAuthStore = create<AuthState>()(
       name: 'japa-auth',
       storage: createJSONStorage(() => AsyncStorage),
       // Only persist minimal data - Firebase handles the actual auth state
-      partialize: (state) => ({
+      partialize: () => ({
         // We don't persist user or profile - Firebase Auth handles persistence
         // Just persist any app-level auth preferences if needed
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
-    }
-  )
+    },
+  ),
 );
 
 // Hook to check if auth store is hydrated
