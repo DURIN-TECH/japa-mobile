@@ -1,4 +1,10 @@
-import { ScrollView, View, TouchableOpacity, Text } from 'react-native';
+import {
+  ScrollView,
+  View,
+  TouchableOpacity,
+  Text,
+  ActivityIndicator,
+} from 'react-native';
 import {
   Clock,
   FileText,
@@ -21,7 +27,7 @@ const FILTERS = [
 ];
 
 export default function ApplicationsScreen() {
-  const { applications } = useApplications();
+  const { data: applications, isLoading } = useApplications();
   const { isDark, colors } = useTheme();
 
   const handleApplicationPress = (application: Application) => {
@@ -106,17 +112,43 @@ export default function ApplicationsScreen() {
           ))}
         </ScrollView>
 
-        {/* Applications List */}
+        {/* Applications List — Loading / Empty / Results */}
         <View className="px-4">
-          {applications.map((application: Application) => (
-            <TouchableOpacity
-              key={application.id}
-              onPress={() => handleApplicationPress(application)}
-              activeOpacity={0.7}
-            >
-              <ApplicationCard application={application} />
-            </TouchableOpacity>
-          ))}
+          {isLoading ? (
+            <View className="items-center py-8">
+              <ActivityIndicator color={colors.primary} />
+              <Text
+                className={cn(
+                  'mt-2 text-sm',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                Loading applications...
+              </Text>
+            </View>
+          ) : !applications || applications.length === 0 ? (
+            <View className="items-center py-8">
+              <FileText size={40} color={colors.iconMuted} />
+              <Text
+                className={cn(
+                  'mt-2 text-center',
+                  isDark ? 'text-gray-400' : 'text-gray-500',
+                )}
+              >
+                No applications yet
+              </Text>
+            </View>
+          ) : (
+            applications.map((application: Application) => (
+              <TouchableOpacity
+                key={application.id}
+                onPress={() => handleApplicationPress(application)}
+                activeOpacity={0.7}
+              >
+                <ApplicationCard application={application} />
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </ScrollView>
     </Screen>

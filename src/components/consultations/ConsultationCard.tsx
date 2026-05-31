@@ -23,12 +23,24 @@ import {
   AlertCircle,
   LucideIcon,
 } from 'lucide-react-native';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import {
   type ApiConsultation,
   getConsultationDisplayStatus,
   getConsultationTypeLabel,
 } from '@/hooks/useConsultations';
+
+/**
+ * Parse a date that may be a string, number, or serialized
+ * Firestore Timestamp ({ _seconds, _nanoseconds }).
+ */
+function parseDate(value: unknown): Date {
+  if (!value) return new Date();
+  if (typeof value === 'object' && value !== null && '_seconds' in value) {
+    return new Date((value as { _seconds: number })._seconds * 1000);
+  }
+  return new Date(value as string | number);
+}
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Card } from '@/components/ui/themed';
 
@@ -81,13 +93,15 @@ export function ConsultationCard({
   // Get human-readable type label (e.g. 'document_review' → 'Document Review')
   const typeLabel = getConsultationTypeLabel(consultation.type);
 
-  // Parse the ISO date string for formatting
-  // Backend sends scheduledDate as "2024-03-15" and scheduledTime as "10:30"
-  let formattedDate = consultation.scheduledDate;
+  // Parse scheduledDate — may be an ISO string or serialized Firestore Timestamp
+  let formattedDate = String(consultation.scheduledDate);
   try {
-    formattedDate = format(parseISO(consultation.scheduledDate), 'MMM d, yyyy');
+    formattedDate = format(
+      parseDate(consultation.scheduledDate),
+      'MMM d, yyyy',
+    );
   } catch {
-    // Keep raw date string if parsing fails
+    // Keep raw string if parsing fails
   }
 
   return (

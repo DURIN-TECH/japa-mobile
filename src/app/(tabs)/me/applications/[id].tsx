@@ -1,8 +1,22 @@
+import { useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { ScrollView, View, Text, ActivityIndicator } from 'react-native';
 import { Clock, AlertCircle } from 'lucide-react-native';
 import { format } from 'date-fns';
-import { useApplication, useApplicationTimeline, getApplicationStatusInfo } from '@/hooks/useApplications';
+import {
+  usePaymentRequests,
+  useApprovePaymentRequest,
+  useRejectPaymentRequest,
+} from '@/hooks/usePaymentRequests';
+import { PaymentRequestCard } from '@/components/payment/PaymentRequestCard';
+import { ApprovePaymentModal } from '@/components/payment/ApprovePaymentModal';
+import { RejectPaymentModal } from '@/components/payment/RejectPaymentModal';
+import { PaymentRequest as PaymentRequestType } from '@/types/payment-requests.type';
+import {
+  useApplication,
+  useApplicationTimeline,
+  getApplicationStatusInfo,
+} from '@/hooks/useApplications';
 import { useTheme, cn } from '@/hooks/useTheme';
 import {
   Screen,
@@ -30,8 +44,45 @@ function parseDate(value: unknown): Date {
 export default function ApplicationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: application, isLoading, error } = useApplication(id ?? '');
-  const { data: timeline, isLoading: timelineLoading } = useApplicationTimeline(id ?? '');
+  const { data: timeline, isLoading: timelineLoading } = useApplicationTimeline(
+    id ?? '',
+  );
   const { isDark, colors } = useTheme();
+
+  // Payment requests for this application
+  const { data: paymentRequests, isLoading: paymentsLoading } =
+    usePaymentRequests(id);
+  const approveMutation = useApprovePaymentRequest();
+  const rejectMutation = useRejectPaymentRequest();
+
+  // Modal state for approve/reject flows
+  const [approveTarget, setApproveTarget] = useState<PaymentRequestType | null>(
+    null,
+  );
+  const [rejectTarget, setRejectTarget] = useState<PaymentRequestType | null>(
+    null,
+  );
+
+  // Count of pending payment requests for badge display
+  const pendingCount =
+    paymentRequests?.filter((r) => r.status === 'pending').length ?? 0;
+
+  const handleApprove = () => {
+    if (!approveTarget) return;
+    approveMutation.mutate(approveTarget.id, {
+      onSuccess: () => setApproveTarget(null),
+    });
+  };
+
+  const handleReject = (reason: string) => {
+    if (!rejectTarget) return;
+    rejectMutation.mutate(
+      { requestId: rejectTarget.id, reason },
+      {
+        onSuccess: () => setRejectTarget(null),
+      },
+    );
+  };
 
   const getTimelineStatusColor = (status: ApplicationTimeline['status']) => {
     switch (status) {
@@ -64,10 +115,19 @@ export default function ApplicationDetailScreen() {
         <Header title="Application" showBack />
         <View className="flex-1 items-center justify-center px-4">
           <AlertCircle size={48} color={isDark ? '#ef4444' : '#dc2626'} />
-          <Text className={cn('mt-4 text-center', isDark ? 'text-gray-400' : 'text-gray-600')}>
+          <Text
+            className={cn(
+              'mt-4 text-center',
+              isDark ? 'text-gray-400' : 'text-gray-600',
+            )}
+          >
             {error ? 'Failed to load application' : 'Application not found'}
           </Text>
-          <Button variant="outline" onPress={() => router.back()} className="mt-4">
+          <Button
+            variant="outline"
+            onPress={() => router.back()}
+            className="mt-4"
+          >
             Go Back
           </Button>
         </View>
@@ -218,6 +278,34 @@ export default function ApplicationDetailScreen() {
           </Card>
         </Section>
 
+        {/* Payment Requests */}
+        <Section
+          title={`Payment Requests${
+            pendingCount > 0 ? ` (${pendingCount} pending)` : ''
+          }`}
+        >
+          {paymentsLoading ? (
+            <View className="items-center py-4">
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : !paymentRequests || paymentRequests.length === 0 ? (
+            <Card>
+              <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                No payment requests yet
+              </Text>
+            </Card>
+          ) : (
+            paymentRequests.map((request) => (
+              <PaymentRequestCard
+                key={request.id}
+                request={request}
+                onApprove={setApproveTarget}
+                onReject={setRejectTarget}
+              />
+            ))
+          )}
+        </Section>
+
         {/* Timeline */}
         <Section title="Timeline">
           <Card>
@@ -236,12 +324,16 @@ export default function ApplicationDetailScreen() {
                   className={cn(
                     'flex-row items-start pb-4',
                     index !== timeline.length - 1 &&
-                      `mb-4 border-b ${isDark ? 'border-gray-700' : 'border-gray-100'}`,
+                      `mb-4 border-b ${
+                        isDark ? 'border-gray-700' : 'border-gray-100'
+                      }`,
                   )}
                 >
                   <View
                     className="mr-3 mt-1.5 h-3 w-3 rounded-full"
-                    style={{ backgroundColor: getTimelineStatusColor(event.status) }}
+                    style={{
+                      backgroundColor: getTimelineStatusColor(event.status),
+                    }}
                   />
                   <View className="flex-1">
                     <Text
@@ -276,7 +368,10 @@ export default function ApplicationDetailScreen() {
                             isDark ? 'text-gray-500' : 'text-gray-400',
                           )}
                         >
-                          • {event.responsibility === 'user' ? 'You' : event.responsibility}
+                          •{' '}
+                          {event.responsibility === 'user'
+                            ? 'You'
+                            : event.responsibility}
                         </Text>
                       )}
                     </View>
@@ -302,11 +397,29 @@ export default function ApplicationDetailScreen() {
         {application.status === 'rejected' && application.rejectionReason && (
           <Section title="Rejection Reason">
             <Card className="border-red-500">
-              <Text className="text-red-600">{application.rejectionReason}</Text>
+              <Text className="text-red-600">
+                {application.rejectionReason}
+              </Text>
             </Card>
           </Section>
         )}
       </ScrollView>
+
+      {/* Payment approval/rejection modals */}
+      <ApprovePaymentModal
+        visible={!!approveTarget}
+        request={approveTarget}
+        isLoading={approveMutation.isPending}
+        onConfirm={handleApprove}
+        onCancel={() => setApproveTarget(null)}
+      />
+      <RejectPaymentModal
+        visible={!!rejectTarget}
+        request={rejectTarget}
+        isLoading={rejectMutation.isPending}
+        onConfirm={handleReject}
+        onCancel={() => setRejectTarget(null)}
+      />
     </Screen>
   );
 }

@@ -24,13 +24,25 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Calendar, Video, MessageSquare } from 'lucide-react-native';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import {
   useConsultation,
   useCancelConsultation,
   getConsultationDisplayStatus,
   getConsultationTypeLabel,
 } from '@/hooks/useConsultations';
+
+/**
+ * Parse a date that may be a string, number, or serialized
+ * Firestore Timestamp ({ _seconds, _nanoseconds }).
+ */
+function parseDate(value: unknown): Date {
+  if (!value) return new Date();
+  if (typeof value === 'object' && value !== null && '_seconds' in value) {
+    return new Date((value as { _seconds: number })._seconds * 1000);
+  }
+  return new Date(value as string | number);
+}
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Header, Section, Card, Button } from '@/components/ui/themed';
 
@@ -73,15 +85,15 @@ export default function ConsultationDetailScreen() {
   const displayStatus = getConsultationDisplayStatus(consultation.status);
   const typeLabel = getConsultationTypeLabel(consultation.type);
 
-  // Format date from ISO string
-  let formattedDate = consultation.scheduledDate;
+  // Format date — may be an ISO string or Firestore Timestamp ({ _seconds, _nanoseconds })
+  let formattedDate: string;
   try {
     formattedDate = format(
-      parseISO(consultation.scheduledDate),
+      parseDate(consultation.scheduledDate),
       'EEEE, MMMM d, yyyy',
     );
   } catch {
-    // Keep raw date if parsing fails
+    formattedDate = String(consultation.scheduledDate);
   }
 
   /**
