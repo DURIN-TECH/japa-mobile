@@ -1,3 +1,8 @@
+# Manually triggered native preview build from any branch.
+# Use for feature branches that touch native code (new modules, plugin
+# config edits) — OTA via preview.yml can't ship those because the
+# fingerprint runtime version diverges. Trigger from the Actions tab and
+# pick a platform.
 name: Preview Native Build
 on:
   workflow_dispatch:

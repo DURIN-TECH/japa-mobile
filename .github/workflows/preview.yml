@@ -1,3 +1,8 @@
+# OTA preview on every PR opened/synced against dev.
+# Publishes the current branch's JS bundle to an EAS Update branch named
+# after the git branch, and posts a QR code in the PR comment. Reviewers
+# scan with a pre-installed `preview` channel build to load the PR's JS.
+# JS-only — for native-touching branches use preview-native.yml instead.
 name: preview
 on:
   pull_request:
@@ -10,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # write access needed so the preview action can post the QR comment.
       pull-requests: write
     steps:
       - name: Check EXPO_TOKEN
@@ -40,6 +46,8 @@ jobs:
       - name: Run linter
         run: npm run lint
 
+      # --auto derives the EAS Update branch name and message from git,
+      # so each PR ships to its own update branch automatically.
       - name: Create Preview
         uses: expo/expo-github-action/preview@v8
         with:

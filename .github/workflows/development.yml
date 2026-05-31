@@ -1,3 +1,7 @@
+# Full EAS development build on every push to dev.
+# Produces a dev-client APK + IPA subscribed to the `development` EAS Update
+# channel (see eas.json). Install once; subsequent dev pushes can ship JS
+# OTA without a fresh native build (runtime fingerprint permitting).
 name: Development Build
 on:
   push:
@@ -6,13 +10,14 @@ on:
 
 jobs:
   build:
-    # Only run if the PR is merged
     name: Install and build
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
+      # Fail fast if the EAS auth token isn't configured — otherwise the
+      # build step would fail later with a less obvious error.
       - name: Check EXPO_TOKEN
         run: |
           if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
