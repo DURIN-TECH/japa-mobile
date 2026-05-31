@@ -2,8 +2,8 @@
   "extends": "expo/tsconfig.base",
   "module": "commonjs",
   "compilerOptions": {
-    // Strict Typechencking
     "strict": true,
+    "jsx": "react-native",
 
     "paths": {
       "@/*": [
@@ -17,5 +17,12 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "pre-commit-config.yaml",
+    "prettier.config.js"
   ]
 }

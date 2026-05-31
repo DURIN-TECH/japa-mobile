@@ -1,96 +1,257 @@
-import { useLocalSearchParams } from "expo-router";
-import { ScrollView, View, TouchableOpacity, Text } from "react-native";
-import { Calendar, Clock, Video, MessageSquare } from "lucide-react-native";
-import { useConsultations } from "@/hooks/useConsultations";
-import { format } from "date-fns";
+/**
+ * Consultation Detail Screen
+ *
+ * Shows full details for a single consultation including date/time,
+ * agent info, and action buttons (Join, Reschedule, Cancel).
+ *
+ * INTEGRATION CHANGE: Previously found the consultation from the mock
+ * array by ID. Now fetches from GET /consultations/:id via useConsultation().
+ * Cancel action now calls PUT /consultations/:id/status via useCancelConsultation().
+ *
+ * Backend endpoints:
+ * - GET /consultations/:id — fetch detail
+ * - PUT /consultations/:id/status — cancel consultation
+ */
+
+import { useLocalSearchParams, router } from 'expo-router';
+import {
+  ScrollView,
+  View,
+  TouchableOpacity,
+  Text,
+  Alert,
+  Linking,
+  ActivityIndicator,
+} from 'react-native';
+import { Calendar, Video, MessageSquare } from 'lucide-react-native';
+import { format, parseISO } from 'date-fns';
+import {
+  useConsultation,
+  useCancelConsultation,
+  getConsultationDisplayStatus,
+  getConsultationTypeLabel,
+} from '@/hooks/useConsultations';
+import { useTheme, cn } from '@/hooks/useTheme';
+import { Screen, Header, Section, Card, Button } from '@/components/ui/themed';
 
 export default function ConsultationDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { consultations } = useConsultations();
-  const consultation = consultations.find(c => c.id === id);
+  const { isDark, colors } = useTheme();
 
-  if (!consultation) return null;
+  // Fetch single consultation from API (replaces array.find from mock)
+  const { data: consultation, isLoading } = useConsultation(id);
+  // Mutation for cancelling the consultation
+  const cancelMutation = useCancelConsultation();
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <Screen>
+        <Header title="Consultation" showBack />
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </Screen>
+    );
+  }
+
+  // Not found state
+  if (!consultation) {
+    return (
+      <Screen>
+        <Header title="Consultation" showBack />
+        <View className="flex-1 items-center justify-center">
+          <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+            Consultation not found
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  // Map to simplified display status for action visibility
+  const displayStatus = getConsultationDisplayStatus(consultation.status);
+  const typeLabel = getConsultationTypeLabel(consultation.type);
+
+  // Format date from ISO string
+  let formattedDate = consultation.scheduledDate;
+  try {
+    formattedDate = format(
+      parseISO(consultation.scheduledDate),
+      'EEEE, MMMM d, yyyy',
+    );
+  } catch {
+    // Keep raw date if parsing fails
+  }
+
+  /**
+   * Handle consultation cancellation.
+   * Shows a confirmation alert, then calls the cancel mutation.
+   * On success, navigates back to the consultations list.
+   */
+  const handleCancel = () => {
+    Alert.alert(
+      'Cancel Consultation',
+      'Are you sure you want to cancel this consultation?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelMutation.mutateAsync(consultation.id);
+              router.back();
+            } catch {
+              Alert.alert(
+                'Error',
+                'Failed to cancel consultation. Please try again.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
 
   return (
-    <ScrollView className="flex-1 bg-gray-50">
-      {/* Consultation Info */}
-      <View className="px-4 py-4">
-        <View className="bg-white p-4 rounded-xl border border-gray-200">
-          <View className="flex-row items-center mb-4">
-            <Calendar size={20} color="#2563eb" />
-            <View className="ml-2">
-              <Text className="font-semibold">
-                {format(new Date(consultation.date), 'EEEE, MMMM d, yyyy')}
-              </Text>
-              <Text className="text-gray-600">
-                {consultation.time}
+    <Screen>
+      <Header title="Consultation Details" showBack />
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
+        {/* Consultation Info — date, time, type, duration */}
+        <Section>
+          <Card>
+            <View className="mb-4 flex-row items-center">
+              <Calendar size={20} color={colors.primary} />
+              <View className="ml-2">
+                <Text
+                  className={cn(
+                    'font-semibold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  {formattedDate}
+                </Text>
+                <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                  {consultation.scheduledTime}
+                </Text>
+              </View>
+            </View>
+
+            <View className="flex-row items-center">
+              <Video size={20} color={colors.primary} />
+              <Text
+                className={cn(
+                  'ml-2',
+                  isDark ? 'text-gray-400' : 'text-gray-600',
+                )}
+              >
+                {consultation.durationMinutes} Minutes {typeLabel}
               </Text>
             </View>
-          </View>
+          </Card>
+        </Section>
 
-          <View className="flex-row items-center">
-            <Video size={20} color="#2563eb" />
-            <Text className="ml-2 text-gray-600">
-              30 Minutes Video Consultation
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Agent Info */}
-      <View className="px-4 py-4">
-        <Text className="text-xl font-bold mb-3">Agent</Text>
-        <View className="bg-white p-4 rounded-xl border border-gray-200">
-          <View className="flex-row items-center justify-between">
-            <View>
-              <Text className="font-semibold text-lg">
-                {consultation.agentName}
-              </Text>
-              <Text className="text-gray-600">
-                Visa Consultant
-              </Text>
+        {/* Agent Info */}
+        <Section title="Agent">
+          <Card>
+            <View className="flex-row items-center justify-between">
+              <View>
+                <Text
+                  className={cn(
+                    'text-lg font-semibold',
+                    isDark ? 'text-white' : 'text-gray-900',
+                  )}
+                >
+                  {consultation.agentName}
+                </Text>
+                <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                  Visa Consultant
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() =>
+                  Linking.openURL(
+                    `mailto:support@durintech.com?subject=Consultation with ${consultation.agentName}`,
+                  )
+                }
+                className={cn(
+                  'rounded-full p-2',
+                  isDark ? 'bg-blue-900/50' : 'bg-blue-50',
+                )}
+              >
+                <MessageSquare size={20} color={colors.primary} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity 
-              className="bg-blue-50 p-2 rounded-full"
+          </Card>
+        </Section>
+
+        {/* Actions — only shown for upcoming consultations */}
+        {displayStatus === 'upcoming' && (
+          <Section>
+            <Button
+              className="mb-3"
+              onPress={() => Linking.openURL('https://meet.google.com')}
             >
-              <MessageSquare size={20} color="#2563eb" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-
-      {/* Actions */}
-      {consultation.status === "upcoming" && (
-        <View className="px-4 py-4">
-          <TouchableOpacity className="bg-blue-600 p-4 rounded-xl">
-            <Text className="text-white text-center font-semibold">
               Join Meeting
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity className="mt-3 bg-white p-4 rounded-xl border border-gray-200">
-            <Text className="text-gray-900 text-center font-semibold">
+            </Button>
+            <Button
+              variant="outline"
+              className="mb-3"
+              onPress={() =>
+                Alert.alert(
+                  'Reschedule',
+                  'Contact support to reschedule your consultation.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Contact Support',
+                      onPress: () =>
+                        Linking.openURL('mailto:support@durintech.com'),
+                    },
+                  ],
+                )
+              }
+            >
               Reschedule
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity className="mt-3">
-            <Text className="text-red-600 text-center font-semibold">
-              Cancel Consultation
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+            </Button>
+            {/* Cancel button — now wired to PUT /consultations/:id/status */}
+            <TouchableOpacity className="mt-3" onPress={handleCancel}>
+              <Text className="text-center font-semibold text-red-600">
+                {cancelMutation.isPending
+                  ? 'Cancelling...'
+                  : 'Cancel Consultation'}
+              </Text>
+            </TouchableOpacity>
+          </Section>
+        )}
 
-      {/* Summary (for completed consultations) */}
-      {consultation.status === "completed" && consultation.summary && (
-        <View className="px-4 py-4">
-          <Text className="text-xl font-bold mb-3">Summary</Text>
-          <View className="bg-white p-4 rounded-xl border border-gray-200">
-            <Text className="text-gray-600">
-              {consultation.summary}
-            </Text>
-          </View>
-        </View>
-      )}
-    </ScrollView>
+        {/* Notes (if any) */}
+        {consultation.notes && (
+          <Section title="Notes">
+            <Card>
+              <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                {consultation.notes}
+              </Text>
+            </Card>
+          </Section>
+        )}
+
+        {/* Summary (for completed consultations) */}
+        {displayStatus === 'completed' && consultation.summary && (
+          <Section title="Summary">
+            <Card>
+              <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
+                {consultation.summary}
+              </Text>
+            </Card>
+          </Section>
+        )}
+      </ScrollView>
+    </Screen>
   );
-} 
+}

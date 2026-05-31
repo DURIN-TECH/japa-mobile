@@ -1,31 +1,41 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
 import { Platform } from 'react-native';
 
-import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
 import { FileStack, House, User2 } from 'lucide-react-native';
+import { HapticTab } from '@/components/HapticTab';
+import TabBarBackground from '@/components/ui/TabBarBackground';
+import { useSettingsStore } from '@/stores/settings.store';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const isDark = useSettingsStore((state) => state.isDark());
+
+  const colors = {
+    tint: isDark ? '#fff' : '#2563eb',
+    tabBarBackground: isDark ? '#1f2937' : '#fff',
+    tabBarBorder: isDark ? '#374151' : '#e5e7eb',
+  };
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: colors.tint,
+        tabBarInactiveTintColor: isDark ? '#9ca3af' : '#6b7280',
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
         tabBarStyle: Platform.select({
           ios: {
             position: 'absolute',
+            backgroundColor: colors.tabBarBackground,
+            borderTopColor: colors.tabBarBorder,
           },
-          default: {},
+          default: {
+            backgroundColor: colors.tabBarBackground,
+            borderTopColor: colors.tabBarBorder,
+          },
         }),
-      }}>
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{

@@ -1,8 +1,16 @@
-import { View, Modal, TouchableOpacity, Text, Image, ActivityIndicator } from "react-native";
-import { X } from "lucide-react-native";
-import * as FileSystem from "expo-file-system";
-import { useState, useEffect } from "react";
-import WebView from "react-native-webview";
+import {
+  View,
+  Modal,
+  TouchableOpacity,
+  Text,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
+import { X } from 'lucide-react-native';
+import * as FileSystem from 'expo-file-system';
+import { useState, useEffect } from 'react';
+import WebView from 'react-native-webview';
+import { useTheme, cn } from '@/hooks/useTheme';
 
 interface DocumentPreviewProps {
   uri: string;
@@ -11,9 +19,15 @@ interface DocumentPreviewProps {
   fileName: string;
 }
 
-export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentPreviewProps) {
+export function DocumentPreview({
+  uri,
+  isVisible,
+  onClose,
+  fileName,
+}: DocumentPreviewProps) {
   const [loading, setLoading] = useState(true);
   const [fileInfo, setFileInfo] = useState<FileSystem.FileInfo | null>(null);
+  const { isDark, colors } = useTheme();
 
   useEffect(() => {
     const getFileInfo = async () => {
@@ -23,7 +37,7 @@ export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentP
           setFileInfo(info as FileSystem.FileInfo);
         }
       } catch (error) {
-        console.error("Error getting file info:", error);
+        console.error('Error getting file info:', error);
       } finally {
         setLoading(false);
       }
@@ -35,31 +49,47 @@ export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentP
   }, [uri, isVisible]);
 
   const getFileType = () => {
-    return fileName.split(".").pop()?.toLowerCase() || "";
+    return fileName.split('.').pop()?.toLowerCase() || '';
   };
 
   const getFileSizeMB = () => {
-    if (!fileInfo || !("size" in fileInfo)) return 0;
+    if (!fileInfo || !('size' in fileInfo)) return 0;
     return (fileInfo.size / (1024 * 1024)).toFixed(2);
   };
 
   return (
-    <Modal visible={isVisible} animationType="slide" presentationStyle="pageSheet">
-      <View className="flex-1 bg-white">
-        <View className="px-4 py-4 border-b border-gray-200 flex-row justify-between items-center">
-          <Text className="text-lg font-semibold">{fileName}</Text>
+    <Modal
+      visible={isVisible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+    >
+      <View className={cn('flex-1', isDark ? 'bg-gray-900' : 'bg-white')}>
+        <View
+          className={cn(
+            'flex-row items-center justify-between border-b px-4 py-4',
+            isDark ? 'border-gray-700' : 'border-gray-200',
+          )}
+        >
+          <Text
+            className={cn(
+              'text-lg font-semibold',
+              isDark ? 'text-white' : 'text-gray-900',
+            )}
+          >
+            {fileName}
+          </Text>
           <TouchableOpacity onPress={onClose}>
-            <X size={24} color="#000" />
+            <X size={24} color={isDark ? '#fff' : '#000'} />
           </TouchableOpacity>
         </View>
 
         {loading ? (
-          <View className="flex-1 justify-center items-center">
-            <ActivityIndicator size="large" color="#2563eb" />
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
         ) : (
           <View className="flex-1">
-            {getFileType() === "pdf" ? (
+            {getFileType() === 'pdf' ? (
               <WebView
                 source={{ uri }}
                 className="flex-1"
@@ -67,21 +97,22 @@ export function DocumentPreview({ uri, isVisible, onClose, fileName }: DocumentP
                 onLoadEnd={() => setLoading(false)}
               />
             ) : (
-              <Image
-                source={{ uri }}
-                className="flex-1"
-                resizeMode="contain"
-              />
+              <Image source={{ uri }} className="flex-1" resizeMode="contain" />
             )}
           </View>
         )}
 
-        <View className="px-4 py-4 border-t border-gray-200">
-          <Text className="text-gray-600">
+        <View
+          className={cn(
+            'border-t px-4 py-4',
+            isDark ? 'border-gray-700' : 'border-gray-200',
+          )}
+        >
+          <Text className={isDark ? 'text-gray-400' : 'text-gray-600'}>
             Size: {getFileSizeMB()} MB
           </Text>
         </View>
       </View>
     </Modal>
   );
-} 
+}

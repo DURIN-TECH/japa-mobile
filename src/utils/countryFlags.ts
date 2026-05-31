@@ -5,7 +5,7 @@ export const getCountryFlag = (countryCode: string) => {
 export const countryCodeMap: { [key: string]: string } = {
   'United States': 'us',
   'United Kingdom': 'gb',
-  'Canada': 'ca',
-  'Australia': 'au',
+  Canada: 'ca',
+  Australia: 'au',
   // Add more countries as needed
 };

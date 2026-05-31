@@ -1,0 +1,82 @@
+%YAML 1.2
+# yaml-language-server: $schema=https://json.schemastore.org/pre-commit-config
+---
+default_install_hook_types:
+  - pre-commit
+  - prepare-commit-msg
+  - commit-msg
+  - post-commit
+  - pre-push
+
+default_stages: [pre-commit]
+
+fail_fast: true # stop on first failure
+
+repos:
+  - repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
+    rev: v0.9.0
+    hooks:
+      - id: pre-commit-update
+        args: [--dry-run, --exclude, black, --keep, isort]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args:
+          - --unsafe # handle Gitlab `- !reference` blocks
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, dev]
+      - id: check-json
+      - id: check-added-large-files
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, dev]
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        types_or: [javascript, jsx, ts, tsx, json]
+
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v10.0.3
+    hooks:
+      - id: eslint
+        files: \.[jt]sx?$
+        types: [file]
+        additional_dependencies:
+          - eslint@^9.16.0
+          - "@typescript-eslint/parser@^8.17.0"
+          - "@typescript-eslint/eslint-plugin@^8.17.0"
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.48.0
+    hooks:
+      - id: markdownlint
+        args: ["--fix"]
+
+  - repo: https://github.com/N-Hoque/mirrors-TypeScript
+    rev: v4.4.4
+    hooks:
+      - id: tsc
+        files: ^src/.*\.[jt]sx?$
+        exclude: ^node_modules/
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]

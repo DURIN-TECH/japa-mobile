@@ -31,12 +31,9 @@ type IconSymbolProps = {
   weight?: SymbolWeight;
 };
 
-export function IconSymbol({
-  name,
-  size = 24,
-  color,
-  style,
-}: IconSymbolProps) {
+export function IconSymbol({ name, size = 24, color, style }: IconSymbolProps) {
   const iconName = MAPPING[name] as MaterialIconName;
-  return <MaterialIcons color={color} size={size} name={iconName} style={style} />;
+  return (
+    <MaterialIcons color={color} size={size} name={iconName} style={style} />
+  );
 }

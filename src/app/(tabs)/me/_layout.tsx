@@ -1,30 +1,37 @@
-import { Stack } from "expo-router";
+import { Stack } from 'expo-router';
 
 export default function MeLayout() {
   return (
     <Stack>
       <Stack.Screen
-        name='index'
+        name="index"
         options={{
-          title: "Me",
+          title: 'Me',
           headerShown: false,
-          presentation: "card",
+          presentation: 'card',
         }}
       />
-      <Stack.Screen 
-        name="applications" 
+      <Stack.Screen
+        name="applications"
         options={{
           headerShown: false,
-          presentation: "card"
+          presentation: 'card',
         }}
       />
-      <Stack.Screen 
-        name="consultations" 
+      <Stack.Screen
+        name="consultations"
         options={{
           headerShown: false,
-          presentation: "card"
+          presentation: 'card',
+        }}
+      />
+      <Stack.Screen
+        name="settings"
+        options={{
+          headerShown: false,
+          presentation: 'card',
         }}
       />
     </Stack>
-  )
+  );
 }

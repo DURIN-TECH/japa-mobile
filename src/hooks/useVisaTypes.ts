@@ -1,82 +1,143 @@
-import { useState, useEffect } from "react";
-import { VisaType } from "@/types/visas";
+import { useQuery } from '@tanstack/react-query';
+import { apiService } from '@/services/api.service';
+import { VisaType, VisaRequirement, VisaTypeWithRequirements, VisaCategory } from '@/types/visas.type';
+import { Country } from '@/types/country.type';
+import { getCountryFlag } from '@/utils/countryFlags';
 
-const MOCK_VISA_TYPES: VisaType[] = [
-  {
-    id: "h1b",
-    name: "H-1B Work Visa",
-    description: "For foreign workers in specialty occupations",
-    requirements: [
-      {
-        id: "edu",
-        title: "Educational Qualification",
-        description: "Bachelor's degree or higher in related field",
-        estimatedTime: "1-2 weeks",
-        documents: ["Degree Certificate", "Transcripts", "Evaluations"]
-      },
-      {
-        id: "emp",
-        title: "Employment Details",
-        description: "Valid job offer from US employer",
-        estimatedTime: "2-3 weeks",
-        documents: ["Job Offer Letter", "Employment Contract", "Company Documents"]
-      }
-    ],
-    agents: ["agent1", "agent2"],
-    processingTime: "6-8 months",
-    price: 460,
-    country: "United States"
-  },
-  {
-    id: "f1",
-    name: "F-1 Student Visa",
-    description: "For international students studying in the US",
-    requirements: [
-      {
-        id: "i20",
-        title: "Form I-20",
-        description: "Certificate of Eligibility for Nonimmigrant Student Status",
-        estimatedTime: "1 week",
-        documents: ["School Acceptance Letter", "I-20 Form"]
-      },
-      {
-        id: "fin",
-        title: "Financial Documents",
-        description: "Proof of sufficient funds for study and living expenses",
-        estimatedTime: "1-2 weeks",
-        documents: ["Bank Statements", "Sponsorship Letter", "Scholarship Documents"]
-      }
-    ],
-    agents: ["agent1"],
-    processingTime: "2-3 months",
-    price: 350,
-    country: "United States"
-  }
-];
+interface GetAllVisasResponse {
+  visaTypes: VisaType[];
+  total: number;
+}
 
-export function useVisaTypes() {
-  const [visaTypes, setVisaTypes] = useState<VisaType[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+// ============================================
+// HOOKS
+// ============================================
 
-  useEffect(() => {
-    const fetchVisaTypes = async () => {
-      try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setVisaTypes(MOCK_VISA_TYPES);
-      } catch (error) {
-        console.error("Error fetching visa types:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+/**
+ * Get all visa types across all countries
+ */
+export function useVisaTypes(options?: {
+  category?: VisaCategory;
+  limit?: number;
+  offset?: number;
+}) {
+  return useQuery({
+    queryKey: ['visaTypes', options],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (options?.category) params.append('category', options.category);
+      if (options?.limit) params.append('limit', options.limit.toString());
+      if (options?.offset) params.append('offset', options.offset.toString());
 
-    fetchVisaTypes();
-  }, []);
+      const query = params.toString();
+      const endpoint = query ? `/visas?${query}` : '/visas';
+      const response = await apiService.get<GetAllVisasResponse>(endpoint);
+      return response.data ?? { visaTypes: [], total: 0 };
+    },
+    staleTime: 0, // TODO: Change back to 1000 * 60 * 5 (5 minutes) after debugging
+  });
+}
 
-  const getVisaType = (id: string) => {
-    return visaTypes.find(visa => visa.id === id);
-  };
+/**
+ * Get visa types for a specific country
+ */
+export function useVisaTypesByCountry(countryCode: string) {
+  return useQuery({
+    queryKey: ['visaTypes', 'country', countryCode],
+    queryFn: async () => {
+      console.log('[useVisaTypesByCountry] Fetching visas for:', countryCode);
+      const response = await apiService.get<VisaType[]>(
+        `/countries/${countryCode}/visas`
+      );
+      console.log('[useVisaTypesByCountry] Response:', response.data);
+      return response.data ?? [];
+    },
+    enabled: !!countryCode,
+    staleTime: 0, // TODO: Change back to 1000 * 60 * 5 (5 minutes) after debugging
+  });
+}
 
-  return { visaTypes, isLoading, getVisaType };
-} 
+/**
+ * Get a single visa type with its requirements
+ */
+export function useVisaType(countryCode: string, visaTypeId: string) {
+  return useQuery({
+    queryKey: ['visaType', countryCode, visaTypeId],
+    queryFn: async () => {
+      const response = await apiService.get<VisaTypeWithRequirements>(
+        `/countries/${countryCode}/visas/${visaTypeId}/full`
+      );
+      return response.data;
+    },
+    enabled: !!countryCode && !!visaTypeId,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+/**
+ * Get requirements for a visa type
+ */
+export function useVisaRequirements(countryCode: string, visaTypeId: string) {
+  return useQuery({
+    queryKey: ['visaRequirements', countryCode, visaTypeId],
+    queryFn: async () => {
+      const response = await apiService.get<VisaRequirement[]>(
+        `/countries/${countryCode}/visas/${visaTypeId}/requirements`
+      );
+      return response.data ?? [];
+    },
+    enabled: !!countryCode && !!visaTypeId,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+/**
+ * Search visa types across all countries
+ */
+export function useVisaSearch(query: string) {
+  return useQuery({
+    queryKey: ['visaSearch', query],
+    queryFn: async () => {
+      const response = await apiService.get<VisaType[]>(
+        `/visas/search?q=${encodeURIComponent(query)}`
+      );
+      return response.data ?? [];
+    },
+    enabled: query.length >= 2,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Get popular visa types
+ */
+export function usePopularVisaTypes(limit = 10) {
+  return useQuery({
+    queryKey: ['visaTypes', 'popular', limit],
+    queryFn: async () => {
+      const response = await apiService.get<VisaType[]>(
+        `/visas/popular?limit=${limit}`
+      );
+      return response.data ?? [];
+    },
+    staleTime: 1000 * 60 * 10, // 10 minutes
+  });
+}
+
+/**
+ * Get countries with their visa counts
+ */
+export function useCountriesWithVisas() {
+  return useQuery({
+    queryKey: ['countries', 'withVisas'],
+    queryFn: async () => {
+      const response = await apiService.get<Country[]>('/countries');
+      // Add flag URLs using fallback
+      return (response.data ?? []).map((country) => ({
+        ...country,
+        flagUrl: country.flagUrl || getCountryFlag(country.code),
+      }));
+    },
+    staleTime: 1000 * 60 * 60, // 1 hour
+  });
+}

@@ -1,48 +1,115 @@
-import { Text, View, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ChevronRight, FileText, Calendar, ChevronDown, ChevronUp } from "lucide-react-native";
-import { router } from "expo-router";
-import { useState } from "react";
-import { mockApplications, mockConsultations } from "@/mock_data/applications";
-import { Application } from "@/types/applications";
-import { Consultation } from "@/types/consultations";
 /**
- * Helper function to get status color
+ * Me Screen (Profile / Dashboard)
+ *
+ * Shows the user's applications and consultations in collapsible sections.
+ * Acts as the user's personal dashboard.
+ *
+ * INTEGRATION CHANGES:
+ * - Replaced `mockConsultations` import with real `useConsultations()` hook
+ * - Consultations now show backend data (type label, scheduled date/time)
+ * - Pull-to-refresh invalidates both applications and consultations queries
+ * - Added analytics screen tracking
+ *
+ * Backend endpoints:
+ * - GET /applications — user's applications (via useApplications hook)
+ * - GET /consultations — user's consultations (via useConsultations hook)
  */
-const getStatusColor = (status: string): string => {
-  const statusColors: Record<string, string> = {
-    pending: "bg-yellow-100 text-yellow-800",
-    in_progress: "bg-blue-100 text-blue-800",
-    completed: "bg-green-100 text-green-800",
-    rejected: "bg-red-100 text-red-800",
-    scheduled: "bg-purple-100 text-purple-800",
-    cancelled: "bg-gray-100 text-gray-800",
-  };
-  return statusColors[status] || "bg-gray-100 text-gray-800";
-};
+
+import {
+  Text,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  ChevronRight,
+  FileText,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  Settings,
+  Plus,
+  MessageSquare,
+} from 'lucide-react-native';
+import { router } from 'expo-router';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+// REPLACED: was `import { mockConsultations } from '@/mock_data/applications';`
+import {
+  useConsultations,
+  getConsultationDisplayStatus,
+  getConsultationTypeLabel,
+  formatConsultationDateTime,
+} from '@/hooks/useConsultations';
+import { useSettingsStore } from '@/stores/settings.store';
+import {
+  useApplications,
+  getApplicationStatusInfo,
+} from '@/hooks/useApplications';
+import { analyticsService } from '@/services/analytics.service';
 
 /**
- * Collapsible Section Component
+ * Status color helper for consultation badges.
+ * Maps the simplified display status to Tailwind class strings.
  */
+const getConsultationStatusColor = (
+  status: string,
+  isDark: boolean,
+): string => {
+  const colorMap: Record<string, string> = {
+    upcoming: isDark
+      ? 'bg-purple-900/50 text-purple-300'
+      : 'bg-purple-100 text-purple-800',
+    completed: isDark
+      ? 'bg-green-900/50 text-green-300'
+      : 'bg-green-100 text-green-800',
+    cancelled: isDark
+      ? 'bg-gray-700 text-gray-300'
+      : 'bg-gray-100 text-gray-800',
+  };
+  return (
+    colorMap[status] ||
+    (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-800')
+  );
+};
+
 interface CollapsibleSectionProps {
   title: string;
   children: React.ReactNode;
+  isDark: boolean;
 }
 
-function CollapsibleSection({ title, children }: Readonly<CollapsibleSectionProps>) {
+function CollapsibleSection({
+  title,
+  children,
+  isDark,
+}: Readonly<CollapsibleSectionProps>) {
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <View className="px-4 py-4 border-b border-gray-200">
-      <TouchableOpacity 
+    <View
+      className={`border-b px-4 py-4 ${
+        isDark ? 'border-gray-700' : 'border-gray-200'
+      }`}
+    >
+      <TouchableOpacity
         onPress={() => setIsExpanded(!isExpanded)}
-        className="flex-row justify-between items-center mb-2"
+        className="mb-2 flex-row items-center justify-between"
       >
-        <Text className="text-xl font-bold text-gray-900">{title}</Text>
+        <Text
+          className={`text-xl font-bold ${
+            isDark ? 'text-white' : 'text-gray-900'
+          }`}
+        >
+          {title}
+        </Text>
         {isExpanded ? (
-          <ChevronUp size={20} color="#6b7280" />
+          <ChevronUp size={20} color={isDark ? '#9ca3af' : '#6b7280'} />
         ) : (
-          <ChevronDown size={20} color="#6b7280" />
+          <ChevronDown size={20} color={isDark ? '#9ca3af' : '#6b7280'} />
         )}
       </TouchableOpacity>
       {isExpanded && children}
@@ -52,8 +119,20 @@ function CollapsibleSection({ title, children }: Readonly<CollapsibleSectionProp
 
 export default function Me() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [applications] = useState<Partial<Application>[]>(mockApplications);
-  const [consultations] = useState<Partial<Consultation>[]>(mockConsultations);
+  const {
+    data: applications,
+    isLoading: applicationsLoading,
+    refetch: refetchApplications,
+  } = useApplications();
+  // REPLACED: was `useState<Partial<Consultation>[]>(mockConsultations)`
+  // Now fetches real consultations from GET /consultations
+  const { data: consultations, isLoading: consultationsLoading } =
+    useConsultations();
+  const isDark = useSettingsStore((state) => state.isDark());
+  const queryClient = useQueryClient();
+
+  // Track screen view for analytics
+  analyticsService.trackScreenView('MeScreen');
 
   const handleApplicationPress = (applicationId: string) => {
     router.push(`/me/applications/${applicationId}`);
@@ -63,103 +142,284 @@ export default function Me() {
     router.push(`/me/consultations/${consultationId}`);
   };
 
+  const handleSettingsPress = () => {
+    router.push('/me/settings');
+  };
+
+  const handleNewApplication = () => {
+    router.push('/(tabs)/apply');
+  };
+
+  /**
+   * Pull-to-refresh handler.
+   * Invalidates both applications and consultations query caches
+   * so both sections get fresh data from the API.
+   */
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      // Add API calls to refresh data here
       await Promise.all([
-        // fetchApplications(),
-        // fetchConsultations()
+        queryClient.invalidateQueries({ queryKey: ['applications'] }),
+        queryClient.invalidateQueries({ queryKey: ['consultations'] }),
       ]);
+      await refetchApplications();
     } catch (error) {
-      console.error("Error refreshing data:", error);
+      console.error('Error refreshing data:', error);
     } finally {
       setRefreshing(false);
     }
   };
 
+  const iconColor = isDark ? '#9ca3af' : '#6b7280';
+
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
-      <ScrollView 
+    <SafeAreaView className={`flex-1 ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+      {/* Header */}
+      <View
+        className={`flex-row items-center justify-between border-b px-4 py-3 ${
+          isDark ? 'border-gray-800' : 'border-gray-200'
+        }`}
+      >
+        <Text
+          className={`text-2xl font-bold ${
+            isDark ? 'text-white' : 'text-gray-900'
+          }`}
+        >
+          Me
+        </Text>
+        <TouchableOpacity
+          onPress={handleSettingsPress}
+          className="p-2"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Settings size={24} color={isDark ? '#fff' : '#374151'} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
         className="flex-1"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Applications Section */}
-        <CollapsibleSection title="Applications">
-          {applications.map((application) => (
-            <TouchableOpacity
-              key={application.id}
-              onPress={() => handleApplicationPress(application.id ?? '')}
-              className="bg-white rounded-xl p-4 mb-3 border border-gray-200"
-            >
-              <View className="flex-row justify-between items-start mb-2">
-                <View className="flex-1">
-                  <Text className="font-semibold text-gray-900">{application.visaType}</Text>
-                  <Text className="text-sm text-gray-500">
-                    Submitted {application.startDate?.toLocaleDateString()}
-                  </Text>
-                </View>
-                <FileText size={20} color="#6b7280" />
-              </View>
-              
-              {/* Progress Bar */}
-              <View className="mt-2">
-                <View className="flex-row justify-between mb-1">
-                  <Text className="text-sm text-gray-600">Progress</Text>
-                  <Text className="text-sm text-gray-600">{application.progress}%</Text>
-                </View>
-                <View className="h-2 bg-gray-100 rounded-full">
-                  <View
-                    className="h-full bg-blue-600 rounded-full"
-                    style={{ width: `${application.progress ?? 0}%` }}
-                  />
-                </View>
-              </View>
+        {/* Applications Section — already wired to API (unchanged) */}
+        <CollapsibleSection title="Applications" isDark={isDark}>
+          {applicationsLoading ? (
+            <View className="items-center py-4">
+              <ActivityIndicator color={isDark ? '#60a5fa' : '#3b82f6'} />
+            </View>
+          ) : !applications || applications.length === 0 ? (
+            <View className="items-center py-6">
+              <FileText size={40} color={iconColor} />
+              <Text
+                className={`mt-2 text-center ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}
+              >
+                No applications yet
+              </Text>
+              <TouchableOpacity
+                onPress={handleNewApplication}
+                className="mt-3 flex-row items-center rounded-lg bg-blue-600 px-4 py-2"
+              >
+                <Plus size={18} color="white" />
+                <Text className="ml-2 font-medium text-white">
+                  Start Application
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            applications.map((application) => {
+              const statusInfo = getApplicationStatusInfo(application.status);
+              const startDate = new Date(application.startDate);
+              return (
+                <TouchableOpacity
+                  key={application.id}
+                  onPress={() => handleApplicationPress(application.id)}
+                  className={`mb-3 rounded-xl border p-4 ${
+                    isDark
+                      ? 'border-gray-700 bg-gray-800'
+                      : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <View className="mb-2 flex-row items-start justify-between">
+                    <View className="flex-1">
+                      <Text
+                        className={`font-semibold ${
+                          isDark ? 'text-white' : 'text-gray-900'
+                        }`}
+                      >
+                        {application.currentStep}
+                      </Text>
+                      <Text
+                        className={`text-sm ${
+                          isDark ? 'text-gray-400' : 'text-gray-500'
+                        }`}
+                      >
+                        Started {startDate.toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <FileText size={20} color={iconColor} />
+                  </View>
 
-              <View className="flex-row justify-between items-center mt-3">
-                <View className={`px-2 py-1 rounded-full ${getStatusColor(application.status ?? '')}`}>
-                  <Text className="text-xs font-medium capitalize">
-                    {application.status?.replace("_", " ")}
-                  </Text>
-                </View>
-                <ChevronRight size={20} color="#6b7280" />
-              </View>
-            </TouchableOpacity>
-          ))}
+                  {/* Progress Bar */}
+                  <View className="mt-2">
+                    <View className="mb-1 flex-row justify-between">
+                      <Text
+                        className={`text-sm ${
+                          isDark ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        Progress
+                      </Text>
+                      <Text
+                        className={`text-sm ${
+                          isDark ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        {application.progress}%
+                      </Text>
+                    </View>
+                    <View
+                      className={`h-2 rounded-full ${
+                        isDark ? 'bg-gray-700' : 'bg-gray-100'
+                      }`}
+                    >
+                      <View
+                        className="h-full rounded-full bg-blue-600"
+                        style={{ width: `${application.progress}%` }}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Documents progress */}
+                  <View className="mt-2 flex-row items-center">
+                    <Text
+                      className={`text-xs ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}
+                    >
+                      Documents: {application.documentsUploaded}/
+                      {application.documentsRequired} uploaded
+                    </Text>
+                  </View>
+
+                  <View className="mt-3 flex-row items-center justify-between">
+                    <View
+                      className={`rounded-full px-2 py-1 ${
+                        isDark ? statusInfo.darkBgColor : statusInfo.bgColor
+                      }`}
+                    >
+                      <Text
+                        className={`text-xs font-medium ${
+                          isDark ? statusInfo.darkColor : statusInfo.color
+                        }`}
+                      >
+                        {statusInfo.label}
+                      </Text>
+                    </View>
+                    <ChevronRight size={20} color={iconColor} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </CollapsibleSection>
 
-        {/* Consultations Section */}
-        <CollapsibleSection title="Consultations">
-          {consultations.map((consultation) => (
-            <TouchableOpacity
-              key={consultation.id}
-              onPress={() => handleConsultationPress(consultation.id ?? '')}
-              className="bg-white rounded-xl p-4 mb-3 border border-gray-200"
-            >
-              <View className="flex-row justify-between items-start mb-2">
-                <View className="flex-1">
-                  <Text className="font-semibold text-gray-900">{consultation.type}</Text>
-                  <Text className="text-sm text-gray-500">with {consultation.agentName}</Text>
-                </View>
-                <Calendar size={20} color="#6b7280" />
-              </View>
+        {/* Consultations Section — now uses real API data */}
+        <CollapsibleSection title="Consultations" isDark={isDark}>
+          {consultationsLoading ? (
+            <View className="items-center py-4">
+              <ActivityIndicator color={isDark ? '#60a5fa' : '#3b82f6'} />
+            </View>
+          ) : !consultations || consultations.length === 0 ? (
+            // Empty state when user has no consultations
+            <View className="items-center py-6">
+              <MessageSquare size={40} color={iconColor} />
+              <Text
+                className={`mt-2 text-center ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`}
+              >
+                No consultations yet
+              </Text>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/apply/agents')}
+                className="mt-3 flex-row items-center rounded-lg bg-blue-600 px-4 py-2"
+              >
+                <Plus size={18} color="white" />
+                <Text className="ml-2 font-medium text-white">
+                  Find an Agent
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            // Render real consultation cards
+            consultations.map((consultation) => {
+              const displayStatus = getConsultationDisplayStatus(
+                consultation.status,
+              );
+              const typeLabel = getConsultationTypeLabel(consultation.type);
+              const dateTimeLabel = formatConsultationDateTime(
+                consultation.scheduledDate,
+                consultation.scheduledTime,
+              );
 
-              <View className="flex-row justify-between items-center mt-3">
-                <View className="flex-row items-center">
-                  <Text className="text-sm text-gray-600">
-                    {consultation.date?.toLocaleDateString()}
-                  </Text>
-                </View>
-                <View className={`px-2 py-1 rounded-full ${getStatusColor(consultation.status ?? '')}`}>
-                  <Text className="text-xs font-medium capitalize">
-                    {consultation.status?.replace("_", " ")}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
+              return (
+                <TouchableOpacity
+                  key={consultation.id}
+                  onPress={() => handleConsultationPress(consultation.id)}
+                  className={`mb-3 rounded-xl border p-4 ${
+                    isDark
+                      ? 'border-gray-700 bg-gray-800'
+                      : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <View className="mb-2 flex-row items-start justify-between">
+                    <View className="flex-1">
+                      <Text
+                        className={`font-semibold ${
+                          isDark ? 'text-white' : 'text-gray-900'
+                        }`}
+                      >
+                        {typeLabel}
+                      </Text>
+                      <Text
+                        className={`text-sm ${
+                          isDark ? 'text-gray-400' : 'text-gray-500'
+                        }`}
+                      >
+                        with {consultation.agentName}
+                      </Text>
+                    </View>
+                    <Calendar size={20} color={iconColor} />
+                  </View>
+
+                  <View className="mt-3 flex-row items-center justify-between">
+                    <View className="flex-row items-center">
+                      <Text
+                        className={`text-sm ${
+                          isDark ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        {dateTimeLabel}
+                      </Text>
+                    </View>
+                    <View
+                      className={`rounded-full px-2 py-1 ${getConsultationStatusColor(
+                        displayStatus,
+                        isDark,
+                      )}`}
+                    >
+                      <Text className="text-xs font-medium capitalize">
+                        {displayStatus}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </CollapsibleSection>
       </ScrollView>
     </SafeAreaView>
