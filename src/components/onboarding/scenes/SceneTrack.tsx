@@ -50,7 +50,8 @@ export function SceneTrack({ playing }: SceneProps) {
   const statusProps = useAnimatedProps(() => ({ opacity: statusOp.value }));
   const notifProps = useAnimatedProps(() => ({
     opacity: notifOp.value,
-    transform: `translate(${68 + notifX.value} 110)`,
+    translateX: 68 + notifX.value,
+    translateY: 110,
   }));
 
   return (
@@ -180,7 +181,9 @@ function TimelineStep({
 
   const props = useAnimatedProps(() => ({
     opacity: op.value,
-    transform: `translate(25 ${y}) scale(${scale.value})`,
+    translateX: 25,
+    translateY: y,
+    scale: scale.value,
   }));
 
   return (

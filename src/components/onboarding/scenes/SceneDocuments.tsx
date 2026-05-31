@@ -55,7 +55,9 @@ function PaperBack({ playing }: SceneProps) {
     };
   }, [playing, ty, op]);
   const props = useAnimatedProps(() => ({
-    transform: `translate(-90 ${-100 + ty.value}) rotate(-6)`,
+    translateX: -90,
+    translateY: -100 + ty.value,
+    rotation: -6,
     opacity: op.value,
   }));
   return (
@@ -89,7 +91,8 @@ function PaperFront({ playing }: SceneProps) {
     };
   }, [playing, ty, op]);
   const props = useAnimatedProps(() => ({
-    transform: `translate(-90 ${-110 + ty.value})`,
+    translateX: -90,
+    translateY: -110 + ty.value,
     opacity: op.value,
   }));
   return (
@@ -204,7 +207,9 @@ function CheckBadge({ playing }: SceneProps) {
   }, [playing, op, scale]);
   const props = useAnimatedProps(() => ({
     opacity: op.value,
-    transform: `translate(80 90) scale(${scale.value})`,
+    translateX: 80,
+    translateY: 90,
+    scale: scale.value,
   }));
   return (
     <AnimatedG animatedProps={props}>

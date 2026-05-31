@@ -145,12 +145,16 @@ export function SceneProtect({ playing }: Readonly<SceneProps>) {
 
   const shieldProps = useAnimatedProps(() => ({
     opacity: shieldOp.value,
-    transform: `translate(60 130) scale(${shieldScale.value})`,
+    translateX: 60,
+    translateY: 130,
+    scale: shieldScale.value,
   }));
   const escrowProps = useAnimatedProps(() => ({ opacity: escrowOp.value }));
   const lockProps = useAnimatedProps(() => ({
     opacity: lockOp.value,
-    transform: `translate(${PROTECT_CENTER.x} ${PROTECT_CENTER.y}) scale(${lockScale.value})`,
+    translateX: PROTECT_CENTER.x,
+    translateY: PROTECT_CENTER.y,
+    scale: lockScale.value,
   }));
 
   return (
@@ -425,24 +429,28 @@ function CoinBadge({
     const lift = Math.abs(bob.value) / BOB_AMPLITUDE; // 0 at rest → 1 at peak
     return {
       opacity: op.value * (0.22 - 0.12 * lift),
-      transform: `translate(${anchorX} ${anchorY}) scale(${
-        scale.value * (1 - 0.3 * lift)
-      } ${scale.value})`,
+      translateX: anchorX,
+      translateY: anchorY,
+      scaleX: scale.value * (1 - 0.3 * lift),
+      scaleY: scale.value,
     };
   });
 
   // Coin body + inner ring + symbol — bounces.
   const bodyProps = useAnimatedProps(() => ({
     opacity: op.value,
-    transform: `translate(${anchorX} ${anchorY + bob.value}) scale(${
-      scale.value
-    }) rotate(${coin.rot})`,
+    translateX: anchorX,
+    translateY: anchorY + bob.value,
+    scale: scale.value,
+    rotation: coin.rot,
   }));
 
   // Label pill — grounded at anchor.
   const labelProps = useAnimatedProps(() => ({
     opacity: op.value,
-    transform: `translate(${anchorX} ${anchorY}) scale(${scale.value})`,
+    translateX: anchorX,
+    translateY: anchorY,
+    scale: scale.value,
   }));
 
   return (

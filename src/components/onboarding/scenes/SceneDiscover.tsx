@@ -94,26 +94,35 @@ export function SceneDiscover({ playing }: SceneProps) {
     () => 150 + 40 * Math.sin((satOrbit.value * Math.PI) / 180) + satBob.value,
   );
   const satelliteProps = useAnimatedProps(() => ({
-    transform: `translate(${satX.value} ${satY.value})`,
+    translateX: satX.value,
+    translateY: satY.value,
   }));
   const satSignalProps = useAnimatedProps(() => ({
     opacity: 0.35 + 0.35 * Math.abs(Math.sin((satOrbit.value * Math.PI) / 90)),
   }));
 
   const orbitProps = useAnimatedProps(() => ({
-    transform: `rotate(${spin.value} 180 150)`,
+    originX: 180,
+    originY: 150,
+    rotation: spin.value,
   }));
   const globeProps = useAnimatedProps(() => ({
-    transform: `rotate(${globeSpin.value} 180 150)`,
+    originX: 180,
+    originY: 150,
+    rotation: globeSpin.value,
   }));
   const routeProps = useAnimatedProps(() => ({
     strokeDashoffset: routeDash.value,
   }));
   const stamp1Props = useAnimatedProps(() => ({
-    transform: `translate(72 ${70 + floaty1.value}) rotate(-14)`,
+    translateX: 72,
+    translateY: 70 + floaty1.value,
+    rotation: -14,
   }));
   const stamp2Props = useAnimatedProps(() => ({
-    transform: `translate(290 ${215 + floaty2.value}) rotate(12)`,
+    translateX: 290,
+    translateY: 215 + floaty2.value,
+    rotation: 12,
   }));
 
   return (

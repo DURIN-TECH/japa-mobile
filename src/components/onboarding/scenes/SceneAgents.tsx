@@ -73,7 +73,9 @@ export function SceneAgents({ playing }: SceneProps) {
     opacity: ringOp.value,
   }));
   const userProps = useAnimatedProps(() => ({
-    transform: `translate(${USER_ORIGIN.x} ${USER_ORIGIN.y}) scale(${userScale.value})`,
+    translateX: USER_ORIGIN.x,
+    translateY: USER_ORIGIN.y,
+    scale: userScale.value,
   }));
 
   return (
@@ -147,7 +149,9 @@ function AgentBadge({
   }, [playing, op, scale, index]);
   const props = useAnimatedProps(() => ({
     opacity: op.value,
-    transform: `translate(${a.x} ${a.y}) scale(${scale.value})`,
+    translateX: a.x,
+    translateY: a.y,
+    scale: scale.value,
   }));
   return (
     <AnimatedG animatedProps={props}>
