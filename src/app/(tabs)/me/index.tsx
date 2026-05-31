@@ -33,6 +33,8 @@ import {
   Settings,
   Plus,
   MessageSquare,
+  Bell,
+  Mail,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useState } from 'react';
@@ -44,11 +46,25 @@ import {
   getConsultationTypeLabel,
   formatConsultationDateTime,
 } from '@/hooks/useConsultations';
+
+/**
+ * Parse a date value that may be a string, number, or
+ * serialized Firestore Timestamp ({ _seconds, _nanoseconds }).
+ */
+function parseDate(value: unknown): Date {
+  if (!value) return new Date();
+  if (typeof value === 'object' && value !== null && '_seconds' in value) {
+    return new Date((value as { _seconds: number })._seconds * 1000);
+  }
+  return new Date(value as string | number);
+}
 import { useSettingsStore } from '@/stores/settings.store';
 import {
   useApplications,
   getApplicationStatusInfo,
 } from '@/hooks/useApplications';
+import { useConversations } from '@/hooks/useMessaging';
+import { useUnreadNotificationCount } from '@/hooks/useNotifications';
 import { analyticsService } from '@/services/analytics.service';
 
 /**
@@ -128,6 +144,10 @@ export default function Me() {
   // Now fetches real consultations from GET /consultations
   const { data: consultations, isLoading: consultationsLoading } =
     useConsultations();
+  // Fetch conversations for the messages section
+  const { data: conversations } = useConversations();
+  // Fetch unread notification count for badge display
+  const { data: unreadNotifCount } = useUnreadNotificationCount();
   const isDark = useSettingsStore((state) => state.isDark());
   const queryClient = useQueryClient();
 
@@ -161,6 +181,8 @@ export default function Me() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['applications'] }),
         queryClient.invalidateQueries({ queryKey: ['consultations'] }),
+        queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
       ]);
       await refetchApplications();
     } catch (error) {
@@ -231,7 +253,7 @@ export default function Me() {
           ) : (
             applications.map((application) => {
               const statusInfo = getApplicationStatusInfo(application.status);
-              const startDate = new Date(application.startDate);
+              const startDate = parseDate(application.startDate);
               return (
                 <TouchableOpacity
                   key={application.id}
@@ -325,6 +347,76 @@ export default function Me() {
             })
           )}
         </CollapsibleSection>
+
+        {/* Quick Access — Notifications & Messages */}
+        <View
+          className={`flex-row border-b px-4 py-3 ${
+            isDark ? 'border-gray-700' : 'border-gray-200'
+          }`}
+        >
+          {/* Notifications shortcut */}
+          <TouchableOpacity
+            onPress={() => router.push('/me/notifications')}
+            className={`mr-3 flex-1 flex-row items-center rounded-xl border p-3 ${
+              isDark
+                ? 'border-gray-700 bg-gray-800'
+                : 'border-gray-200 bg-white'
+            }`}
+          >
+            <View className="relative">
+              <Bell size={20} color={isDark ? '#9ca3af' : '#6b7280'} />
+              {(unreadNotifCount ?? 0) > 0 && (
+                <View className="absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded-full bg-red-500">
+                  <Text className="text-[10px] font-bold text-white">
+                    {unreadNotifCount! > 9 ? '9+' : unreadNotifCount}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text
+              className={`ml-2 font-medium ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}
+            >
+              Notifications
+            </Text>
+            <ChevronRight
+              size={16}
+              color={isDark ? '#9ca3af' : '#6b7280'}
+              className="ml-auto"
+            />
+          </TouchableOpacity>
+
+          {/* Messages shortcut */}
+          <TouchableOpacity
+            onPress={() => router.push('/me/conversations')}
+            className={`flex-1 flex-row items-center rounded-xl border p-3 ${
+              isDark
+                ? 'border-gray-700 bg-gray-800'
+                : 'border-gray-200 bg-white'
+            }`}
+          >
+            <View className="relative">
+              <Mail size={20} color={isDark ? '#9ca3af' : '#6b7280'} />
+              {/* Show unread badge if any conversation has unread messages */}
+              {(conversations ?? []).some((c) => c.unreadCountUser > 0) && (
+                <View className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-blue-600" />
+              )}
+            </View>
+            <Text
+              className={`ml-2 font-medium ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}
+            >
+              Messages
+            </Text>
+            <ChevronRight
+              size={16}
+              color={isDark ? '#9ca3af' : '#6b7280'}
+              className="ml-auto"
+            />
+          </TouchableOpacity>
+        </View>
 
         {/* Consultations Section — now uses real API data */}
         <CollapsibleSection title="Consultations" isDark={isDark}>

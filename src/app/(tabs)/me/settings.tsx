@@ -25,6 +25,7 @@ import { router } from 'expo-router';
 import Constants from 'expo-constants';
 
 import { useSettingsStore, ThemePreference } from '@/stores/settings.store';
+import { useAuthStore } from '@/stores/auth.store';
 
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 const COMPANY_NAME = 'Durin Technologies';
@@ -65,7 +66,9 @@ function SettingItem({
       </View>
       <View className="flex-1">
         <Text
-          className={`text-base font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}
+          className={`text-base font-medium ${
+            isDark ? 'text-white' : 'text-gray-900'
+          }`}
         >
           {title}
         </Text>
@@ -106,7 +109,9 @@ function SettingSection({
         {title}
       </Text>
       <View
-        className={`overflow-hidden rounded-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`}
+        className={`overflow-hidden rounded-xl ${
+          isDark ? 'bg-gray-800' : 'bg-white'
+        }`}
       >
         {children}
       </View>
@@ -206,8 +211,7 @@ export default function Settings() {
         text: 'Sign Out',
         style: 'destructive',
         onPress: () => {
-          // TODO: Implement sign out logic with Firebase Auth
-          console.log('Sign out');
+          useAuthStore.getState().logout();
         },
       },
     ]);
@@ -234,7 +238,9 @@ export default function Settings() {
           <ChevronLeft size={24} color={isDark ? '#fff' : '#000'} />
         </TouchableOpacity>
         <Text
-          className={`text-xl font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}
+          className={`text-xl font-bold ${
+            isDark ? 'text-white' : 'text-gray-900'
+          }`}
         >
           Settings
         </Text>
@@ -324,17 +330,23 @@ export default function Settings() {
         {/* App Info */}
         <View className="items-center py-6">
           <Text
-            className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}
+            className={`text-lg font-semibold ${
+              isDark ? 'text-white' : 'text-gray-900'
+            }`}
           >
             Japa
           </Text>
           <Text
-            className={`mt-1 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}
+            className={`mt-1 text-sm ${
+              isDark ? 'text-gray-400' : 'text-gray-500'
+            }`}
           >
             Version {APP_VERSION}
           </Text>
           <Text
-            className={`mt-2 text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}
+            className={`mt-2 text-xs ${
+              isDark ? 'text-gray-500' : 'text-gray-400'
+            }`}
           >
             Made with care by {COMPANY_NAME}
           </Text>

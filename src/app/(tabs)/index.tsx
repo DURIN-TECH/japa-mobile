@@ -161,6 +161,7 @@ export default function HomeScreen() {
             </View>
             {/* Notification bell — now shows unread count badge */}
             <TouchableOpacity
+              onPress={() => router.push('/me/notifications')}
               className={cn(
                 'h-10 w-10 items-center justify-center rounded-full',
                 isDark ? 'bg-gray-700' : 'bg-gray-100',
