@@ -15,7 +15,6 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useState } from 'react';
 import { View, ScrollView, Text, ActivityIndicator } from 'react-native';
 import { Clock, Calendar as CalendarIcon } from 'lucide-react-native';
-// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
 import { useAgent, formatAgentForDisplay } from '@/hooks/useAgents';
 import { TimeSlotPicker } from '@/components/consultation/TimeSlotPicker';
 import { DatePicker } from '@/components/consultation/DatePicker';

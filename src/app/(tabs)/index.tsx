@@ -43,7 +43,6 @@ import {
   Globe,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
-// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
 import { useTopAgents, formatAgentForDisplay } from '@/hooks/useAgents';
 import {
   useApplications,

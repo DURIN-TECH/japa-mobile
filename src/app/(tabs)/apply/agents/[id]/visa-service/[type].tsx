@@ -20,7 +20,6 @@ import {
   Users,
   TrendingUp,
 } from 'lucide-react-native';
-// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
 import { useAgent, formatAgentForDisplay } from '@/hooks/useAgents';
 import { useTheme, cn } from '@/hooks/useTheme';
 import {

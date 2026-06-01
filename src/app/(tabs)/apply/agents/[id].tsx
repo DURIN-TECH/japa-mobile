@@ -18,8 +18,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { ScrollView, View, Image, Text, ActivityIndicator } from 'react-native';
 import { Star, Clock, Globe, Award } from 'lucide-react-native';
-// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
-// Now using real API data via useAgent hook
 import { useAgent, formatAgentForDisplay } from '@/hooks/useAgents';
 import { VisaServiceCard } from '@/components/agents/VisaServiceCard';
 import { ConsultationCard } from '@/components/agents/ConsultationCard';

@@ -14,7 +14,6 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { View, ScrollView, Text, ActivityIndicator } from 'react-native';
 import { CheckCircle2, Calendar, Clock, CreditCard } from 'lucide-react-native';
 import { format } from 'date-fns';
-// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
 import { useAgent } from '@/hooks/useAgents';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Section, Card, Button } from '@/components/ui/themed';

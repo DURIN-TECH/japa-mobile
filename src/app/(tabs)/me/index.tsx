@@ -39,7 +39,6 @@ import {
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-// REPLACED: was `import { mockConsultations } from '@/mock_data/applications';`
 import {
   useConsultations,
   getConsultationDisplayStatus,

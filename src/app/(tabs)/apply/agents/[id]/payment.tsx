@@ -19,7 +19,6 @@ import { useState } from 'react';
 import { View, ScrollView, Text, Alert, ActivityIndicator } from 'react-native';
 import { CreditCard, Calendar, Clock } from 'lucide-react-native';
 import { format } from 'date-fns';
-// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
 import { useAgent, formatAgentForDisplay } from '@/hooks/useAgents';
 import { useCreateConsultation } from '@/hooks/useConsultations';
 import { PaymentMethodSelector } from '@/components/payment/PaymentMethodSelector';

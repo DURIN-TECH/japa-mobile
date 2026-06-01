@@ -2,7 +2,6 @@
  * useAgents Hook
  *
  * React Query hooks for fetching agent data from the backend API.
- * Replaces the mock `verificationAgents` array from `mock_data/agents.ts`.
  *
  * Backend endpoints used:
  * - GET /agents          → all agents (paginated)

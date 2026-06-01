@@ -24,8 +24,6 @@ import {
 import { Search, Users, Star, Filter } from 'lucide-react-native';
 import { Link } from 'expo-router';
 import { AgentCard } from '@/components/agents/AgentCard';
-// REPLACED: was `import { verificationAgents } from '@/mock_data/agents';`
-// Now using real API data via useAgents hook
 import { useAgents, formatAgentForDisplay } from '@/hooks/useAgents';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Section, Input, Chip } from '@/components/ui/themed';
