@@ -53,7 +53,7 @@ export function DocumentPreview({
   };
 
   const getFileSizeMB = () => {
-    if (!fileInfo || !('size' in fileInfo)) return 0;
+    if (!fileInfo || fileInfo.size === undefined) return 0;
     return (fileInfo.size / (1024 * 1024)).toFixed(2);
   };
 

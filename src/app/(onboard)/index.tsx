@@ -6,7 +6,7 @@ import { useTheme, cn } from '@/hooks/useTheme';
 import { useOnboardingStore } from '@/stores/onboarding.store';
 
 export default function PassportQuestionScreen() {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const setHasPassport = useOnboardingStore((state) => state.setHasPassport);
 
   const handleSelection = (hasPassport: boolean) => {
@@ -86,7 +86,11 @@ export default function PassportQuestionScreen() {
                   Great! You&apos;re ready to explore visa options
                 </Typography>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={colors.iconMuted}
+              />
             </Card>
           </TouchableOpacity>
 
@@ -108,7 +112,11 @@ export default function PassportQuestionScreen() {
                   No problem! You can still explore and plan
                 </Typography>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={colors.iconMuted}
+              />
             </Card>
           </TouchableOpacity>
         </View>

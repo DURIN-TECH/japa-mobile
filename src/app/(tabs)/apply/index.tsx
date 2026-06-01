@@ -265,9 +265,7 @@ export default function Apply() {
                     marginRight: index < CATEGORIES.length - 1 ? 12 : 0,
                   }}
                 >
-                  <Chip variant={isSelected ? 'primary' : 'default'}>
-                    {category.label}
-                  </Chip>
+                  <Chip selected={isSelected}>{category.label}</Chip>
                 </TouchableOpacity>
               );
             })}
