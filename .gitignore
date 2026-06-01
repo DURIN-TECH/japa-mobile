@@ -22,6 +22,9 @@ credentials.json
 *.key
 *.mobileprovision
 
+# Play Store submit credentials
+play-service-account*.json
+
 # Metro
 .metro-health-check*
 
