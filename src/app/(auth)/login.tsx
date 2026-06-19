@@ -63,7 +63,7 @@ export default function LoginScreen() {
                 isDark ? 'text-white' : 'text-gray-900',
               )}
             >
-              JAPA
+              Seli
             </Text>
             <Typography variant="body" color="muted" className="mt-2">
               Your visa journey starts here

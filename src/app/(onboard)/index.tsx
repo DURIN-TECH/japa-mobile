@@ -48,7 +48,7 @@ export default function PassportQuestionScreen() {
               isDark ? 'text-white' : 'text-gray-900',
             )}
           >
-            Welcome to JAPA
+            Welcome to Seli
           </Text>
           <Typography variant="body" color="muted" className="mt-2">
             Let&apos;s get you set up. First, a quick question:

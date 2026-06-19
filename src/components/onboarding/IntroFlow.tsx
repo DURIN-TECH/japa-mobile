@@ -172,7 +172,7 @@ export function IntroFlow({ onFinish }: Props) {
               </Text>
             </View>
             <Text style={{ fontWeight: '700', fontSize: 16, color: '#030712' }}>
-              Japa
+              Seli
             </Text>
           </View>
           {!isLast && (

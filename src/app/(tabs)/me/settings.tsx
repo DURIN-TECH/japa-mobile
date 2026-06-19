@@ -334,7 +334,7 @@ export default function Settings() {
               isDark ? 'text-white' : 'text-gray-900'
             }`}
           >
-            Japa
+            Seli
           </Text>
           <Text
             className={`mt-1 text-sm ${
