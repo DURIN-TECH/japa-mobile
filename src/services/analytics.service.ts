@@ -1,7 +1,7 @@
 /**
  * Analytics Service
  *
- * Centralized Firebase Analytics wrapper for the JAPA mobile app.
+ * Centralized Firebase Analytics wrapper for the Seli mobile app.
  * All analytics events go through this service so we have a single
  * source of truth for event names, parameters, and error handling.
  *

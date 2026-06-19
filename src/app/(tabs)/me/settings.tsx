@@ -326,7 +326,7 @@ export default function Settings() {
           <Text
             className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}
           >
-            Japa
+            Seli
           </Text>
           <Text
             className={`mt-1 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}
