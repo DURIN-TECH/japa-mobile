@@ -28,7 +28,7 @@ export default function PassportQuestionScreen() {
         {/* Header */}
         <View className="mb-8">
           <Text className={cn('text-3xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
-            Welcome to JAPA
+            Welcome to Seli
           </Text>
           <Typography variant="body" color="muted" className="mt-2">
             Let&apos;s get you set up. First, a quick question:

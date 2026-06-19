@@ -44,7 +44,7 @@ export default function LoginScreen() {
           {/* Logo/Header */}
           <View className="mb-10 items-center">
             <Text className={cn('text-4xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
-              JAPA
+              Seli
             </Text>
             <Typography variant="body" color="muted" className="mt-2">
               Your visa journey starts here

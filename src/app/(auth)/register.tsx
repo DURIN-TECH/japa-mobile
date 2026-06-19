@@ -66,7 +66,7 @@ export default function RegisterScreen() {
               Create Account
             </Text>
             <Typography variant="body" color="muted" className="mt-2">
-              Start your visa journey with JAPA
+              Start your visa journey with Seli
             </Typography>
           </View>
 
