@@ -20,12 +20,28 @@ import {
   MessageSquare,
   LogOut,
   ChevronLeft,
+  CreditCard,
 } from 'lucide-react-native';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import Constants from 'expo-constants';
 
 import { useSettingsStore, ThemePreference } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
+import { useMySubscription } from '@/hooks/useSubscription';
+
+/** Short plan-tier label for the settings subtitle, e.g. "client_pro" → "Pro". */
+function tierLabel(
+  sub:
+    | { unlimited?: boolean; entitlements: { planId: string } | null }
+    | null
+    | undefined,
+): string {
+  if (sub?.unlimited) return 'Unlimited';
+  const planId = sub?.entitlements?.planId;
+  if (!planId) return 'Free';
+  const seg = planId.split('_').pop() ?? planId;
+  return seg.charAt(0).toUpperCase() + seg.slice(1);
+}
 
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 const COMPANY_NAME = 'Durin Technologies';
@@ -135,6 +151,7 @@ export default function Settings() {
   } = useSettingsStore();
 
   const isDark = getIsDark();
+  const { data: subscription } = useMySubscription();
 
   const handleThemeSelect = () => {
     Alert.alert(
@@ -277,6 +294,18 @@ export default function Settings() {
                 thumbColor="#fff"
               />
             }
+            isDark={isDark}
+          />
+        </SettingSection>
+
+        {/* Billing */}
+        <SettingSection title="Billing" isDark={isDark}>
+          <SettingItem
+            icon={<CreditCard size={20} color={iconColor} />}
+            title="Subscription"
+            subtitle={`${tierLabel(subscription)} plan`}
+            // Cast: typed-route table regenerates on `expo start` (route is valid).
+            onPress={() => router.push('/me/subscription' as Href)}
             isDark={isDark}
           />
         </SettingSection>
