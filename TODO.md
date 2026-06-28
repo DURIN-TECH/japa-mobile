@@ -104,3 +104,34 @@
 ## Quick actions
 
 - [] Remove outlines to see if look is closer to mobile
+
+---
+
+## Authorization & subscription gating — Manual / Ops (RBAC + entitlements)
+
+Code is done and typechecks/lints clean. The app reads `GET /users/me/authorization`, rebuilds the CASL
+ability, and gates features via `useAuthorization` / `useFeature` + `<FeatureGate>`. These items need
+**human action**:
+
+### Private package access — EAS build secret
+`.npmrc` is committed (reads `${NODE_AUTH_TOKEN}`). EAS cloud builds run `npm install` without your local
+token, so they can't fetch the private `@durin-tech/authz` until the secret exists.
+- [] Create / reuse the **read-only** GitHub Packages token (fine-grained PAT, DURIN-TECH → Packages:
+     read-only — same token across services; NOT a personal PAT).
+- [] `eas secret:create --name NODE_AUTH_TOKEN --value <token>` (or via the EAS dashboard). Confirm the
+     EAS build resolves `@durin-tech/authz`.
+
+### App-to-web purchase (paywall)
+Subscriptions are bought on the **web portal** (Paystack), not via App/Play IAP — the app just reads the
+resulting entitlement.
+- [] Replace the placeholder URL `https://seli.app/upgrade` in `src/components/auth/FeatureGate.tsx` with the
+     real upgrade page once it exists.
+- [] Before release, re-check current App Store / Play rules on linking out to web purchases (policy is
+     evolving in 2026).
+
+### Verify
+- [] `eas build` (with the secret), then confirm a gated action (e.g. the consultation-booking card on the
+     agent screen) shows the paywall when the plan lacks the feature and works when it does.
+
+> Backend is authoritative — this is UI gating only. Safe-rollout: ungated until the user has an
+> entitlements doc, so nothing paywalls before plans are seeded/assigned.
