@@ -21,6 +21,7 @@ import { Star, Clock, Globe, Award } from 'lucide-react-native';
 import { useAgent, formatAgentForDisplay } from '@/hooks/useAgents';
 import { VisaServiceCard } from '@/components/agents/VisaServiceCard';
 import { ConsultationCard } from '@/components/agents/ConsultationCard';
+import { FeatureGate } from '@/components/auth/FeatureGate';
 import { useTheme, cn } from '@/hooks/useTheme';
 import { Screen, Header, Section, StatsCard } from '@/components/ui/themed';
 import { analyticsService } from '@/services/analytics.service';
@@ -135,9 +136,16 @@ export default function AgentDetailScreen() {
           />
         </View>
 
-        {/* Consultation booking card — price comes from API consultationFee */}
+        {/* Consultation booking card — price comes from API consultationFee.
+            Gated by the "consultations.book" entitlement (paywall when locked;
+            ungated until plans are seeded, so no premature lock). */}
         <Section title="Book a Consultation">
-          <ConsultationCard price={agent.consultationFee} agentId={agent.id} />
+          <FeatureGate feature="consultations.book">
+            <ConsultationCard
+              price={agent.consultationFee}
+              agentId={agent.id}
+            />
+          </FeatureGate>
         </Section>
 
         {/* Visa Services — lists the agent's featured visa types */}
