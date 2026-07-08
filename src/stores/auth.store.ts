@@ -97,13 +97,34 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      // Whitelabeled "forgot password".
+      // Calls the BACKEND (POST /auth/forgot-password) so the reset email is the
+      // Seli-branded Resend template, NOT Firebase's stock client-side email
+      // (authService.resetPassword). This is a PUBLIC endpoint — no user is signed
+      // in, so the axios interceptor attaches no token, which is expected.
+      //
+      // The backend is enumeration-safe: it returns the same success whether or not
+      // the email maps to an account, so `true` here just means "request accepted".
       resetPassword: async (email: string) => {
         set({ isLoading: true, error: null });
         try {
-          await authService.resetPassword(email);
+          const response = await apiService.post('/auth/forgot-password', {
+            email,
+          });
+          // 2xx with success:false shouldn't normally happen, but guard anyway.
+          if (!response.success) {
+            set({ error: response.message || 'Failed to send reset email' });
+            return false;
+          }
           return true;
         } catch (error) {
-          set({ error: authService.getErrorMessage(error) });
+          // apiService rejects with an ApiError { code, message, status } on non-2xx
+          // (e.g. a 400 for a malformed email) or network failure — its `message`
+          // is already human-readable, so surface it directly.
+          const message =
+            (error as { message?: string })?.message ||
+            'Failed to send reset email';
+          set({ error: message });
           return false;
         } finally {
           set({ isLoading: false });
