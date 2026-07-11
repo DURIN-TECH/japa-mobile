@@ -13,6 +13,7 @@
 
 import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -27,6 +28,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { addDays, addMinutes, format, setHours, setMinutes } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
 import { NAIRA, agentById, CONSULT_TOPICS } from '@/components/explorer/data';
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useAgent } from '@/hooks/useAgents';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Verified } from '@/components/explorer/primitives';
 
@@ -134,7 +137,10 @@ export default function BookConsultation() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { agentId } = useLocalSearchParams<{ agentId: string }>();
-  const a = agentById(agentId);
+  // Demo agents resolve from static AGENTS; live agents fetch GET /agents/:id.
+  const demo = agentById(agentId);
+  const liveQ = useAgent(demo ? undefined : agentId);
+  const a = demo ?? (liveQ.data ? mapAgent(liveQ.data) : undefined);
 
   // ── Form state ─────────────────────────────────────────────────────────────
   const [date, setDate] = useState<Date | null>(null);
@@ -157,6 +163,14 @@ export default function BookConsultation() {
       format(addMinutes(base, i * 30), 'h:mm a'),
     );
   }, []);
+
+  if (!demo && liveQ.isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
 
   if (!a) {
     return (

@@ -16,7 +16,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { AGENTS, REQS, destById, type Dest, type Req } from '@/components/explorer/data';
 import { mapRequirements, visaTypeToDest } from '@/components/explorer/liveExplore';
+import { mapAgent } from '@/components/explorer/liveAgents';
 import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
+import { useTopAgents } from '@/hooks/useAgents';
 import { Ic } from '@/components/explorer/icons';
 import { Flag, GlassButton, Portrait, Scrim } from '@/components/explorer/primitives';
 
@@ -99,6 +101,13 @@ export default function DestinationDetail() {
     return rq && rq.length ? mapRequirements(rq) : REQS;
   }, [demo, liveQ.data]);
 
+  // Top agents rail — live (GET /agents/top) with a demo fallback.
+  const topAgentsQ = useTopAgents(3);
+  const topAgents = useMemo(() => {
+    const live = (topAgentsQ.data ?? []).map(mapAgent);
+    return live.length ? live : AGENTS;
+  }, [topAgentsQ.data]);
+
   // Live fetch still in flight.
   if (!demo && liveQ.isLoading) {
     return (
@@ -174,7 +183,7 @@ export default function DestinationDetail() {
           {/* Choose your path */}
           <Text style={[displayText(18, 'bold'), { fontFamily: undefined, fontWeight: '700', letterSpacing: -0.18, marginTop: 24, marginBottom: 12, marginHorizontal: 2 }]}>Choose your path</Text>
           <View style={{ gap: 10 }}>
-            <PathCard dark icon={Ic.users} title="Work with an agent" sub="Guided by 12 verified experts" badge="Popular" onPress={() => router.push(`/(explorer)/agent/${AGENTS[0].id}`)} />
+            <PathCard dark icon={Ic.users} title="Work with an agent" sub="Guided by 12 verified experts" badge="Popular" onPress={() => router.push(`/(explorer)/agent/${topAgents[0].id}`)} />
             <PathCard icon={Ic.docs} title="Self-service" sub="Step-by-step DIY application" onPress={() => router.push(`/(explorer)/self-service/${d.id}`)} />
           </View>
 
@@ -230,7 +239,7 @@ export default function DestinationDetail() {
           {/* Top agents */}
           <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18, marginTop: 26, marginBottom: 12, marginHorizontal: 2 }}>Top agents for {d.country}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ gap: 11, paddingHorizontal: 20, paddingVertical: 2 }}>
-            {AGENTS.map((a) => (
+            {topAgents.map((a) => (
               <Pressable
                 key={a.id}
                 onPress={() => router.push(`/(explorer)/agent/${a.id}`)}

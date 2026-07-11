@@ -18,6 +18,8 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import { AGENCIES, AGENTS, agencyById } from '@/components/explorer/data';
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useAgents } from '@/hooks/useAgents';
 import { Ic } from '@/components/explorer/icons';
 import {
   Portrait,
@@ -170,6 +172,12 @@ export function AgentRow({ a }: { a: Agent }) {
 export default function AgentsScreen() {
   const insets = useSafeAreaInsets();
 
+  // Live agents (GET /agents, verified + available) with a demo fallback. The
+  // agencies carousel stays demo until an agencies endpoint is available.
+  const agentsQ = useAgents();
+  const liveAgents = (agentsQ.data ?? []).map(mapAgent);
+  const agentList = liveAgents.length ? liveAgents : AGENTS;
+
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
       <ScrollView
@@ -206,7 +214,7 @@ export default function AgentsScreen() {
         <View style={{ paddingHorizontal: EX.space.screenX }}>
           <SectionTitle action="Filters">Top agents</SectionTitle>
           <View style={{ gap: 12 }}>
-            {AGENTS.map((a) => (
+            {agentList.map((a) => (
               <AgentRow key={a.id} a={a} />
             ))}
           </View>

@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +25,8 @@ import {
   agencyById,
   reviewsForAgent,
 } from '@/components/explorer/data';
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useAgent } from '@/hooks/useAgents';
 import { Ic } from '@/components/explorer/icons';
 import {
   Chip,
@@ -131,7 +133,19 @@ export default function AgentDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const a = agentById(id);
+
+  // Demo agents resolve from static AGENTS; otherwise fetch live (GET /agents/:id).
+  const demo = agentById(id);
+  const liveQ = useAgent(demo ? undefined : id);
+  const a = demo ?? (liveQ.data ? mapAgent(liveQ.data) : undefined);
+
+  if (!demo && liveQ.isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
 
   if (!a) {
     return (
@@ -141,6 +155,7 @@ export default function AgentDetail() {
     );
   }
 
+  // Agency + reviews are demo-only for now; both sections self-hide when absent.
   const agency = agencyById(a.agencyId);
   const reviews = reviewsForAgent(a.id);
 
