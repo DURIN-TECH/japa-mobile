@@ -167,9 +167,7 @@ export default function DocumentsView() {
   const missing = DOCUMENTS.filter((d) => d.status === 'missing').length;
 
   // Filtered list for the active chip.
-  const list = DOCUMENTS.filter(
-    (d) => filter === 'all' || d.status === filter,
-  );
+  const list = DOCUMENTS.filter((d) => filter === 'all' || d.status === filter);
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -200,7 +198,9 @@ export default function DocumentsView() {
           </Pressable>
           <View>
             <Text style={displayText(24, 'semibold')}>My documents</Text>
-            <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}>
+            <Text
+              style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}
+            >
               {DOCUMENTS.length} documents across your applications
             </Text>
           </View>
@@ -229,10 +229,18 @@ export default function DocumentsView() {
               elevation: 1,
             }}
           >
-            <CountCell value={verified} label="Verified" color={EX.color.success} />
-            <View style={{ width: 1, height: 34, backgroundColor: EX.color.line08 }} />
+            <CountCell
+              value={verified}
+              label="Verified"
+              color={EX.color.success}
+            />
+            <View
+              style={{ width: 1, height: 34, backgroundColor: EX.color.line08 }}
+            />
             <CountCell value={inReview} label="In review" color="#2F62A0" />
-            <View style={{ width: 1, height: 34, backgroundColor: EX.color.line08 }} />
+            <View
+              style={{ width: 1, height: 34, backgroundColor: EX.color.line08 }}
+            />
             <CountCell value={missing} label="Missing" color={EX.color.muted} />
           </View>
         </View>

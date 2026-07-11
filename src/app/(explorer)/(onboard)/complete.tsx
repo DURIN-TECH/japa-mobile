@@ -103,7 +103,9 @@ function FeatureRow({
         <IconCmp size={19} color={EX.color.primary} strokeWidth={1.8} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={{ fontSize: 14.5, fontWeight: '700', color: EX.color.ink }}>
+        <Text
+          style={{ fontSize: 14.5, fontWeight: '700', color: EX.color.ink }}
+        >
           {title}
         </Text>
         <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 1 }}>
@@ -157,7 +159,10 @@ export default function CompleteStep() {
 
         {/* ── Headline + subtitle ────────────────────────────────────────────── */}
         <Text
-          style={[displayText(28, 'bold'), { marginTop: 22, textAlign: 'center' }]}
+          style={[
+            displayText(28, 'bold'),
+            { marginTop: 22, textAlign: 'center' },
+          ]}
         >
           You&apos;re all set!
         </Text>

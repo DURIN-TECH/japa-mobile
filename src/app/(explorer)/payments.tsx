@@ -142,7 +142,9 @@ export default function PaymentsView() {
           </Pressable>
           <View>
             <Text style={displayText(24, 'semibold')}>Payments</Text>
-            <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}>
+            <Text
+              style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}
+            >
               Your transaction history
             </Text>
           </View>
@@ -177,10 +179,7 @@ export default function PaymentsView() {
               Total paid
             </Text>
             <Text
-              style={[
-                displayText(30, 'bold'),
-                { color: '#fff', marginTop: 6 },
-              ]}
+              style={[displayText(30, 'bold'), { color: '#fff', marginTop: 6 }]}
             >
               {NAIRA(totalPaid)}
             </Text>

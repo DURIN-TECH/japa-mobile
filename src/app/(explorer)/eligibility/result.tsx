@@ -28,7 +28,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import { ELIG_RESULT, agentById } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
-import { GlassButton, Portrait, SectionTitle } from '@/components/explorer/primitives';
+import {
+  GlassButton,
+  Portrait,
+  SectionTitle,
+} from '@/components/explorer/primitives';
 
 // Animate the SVG circle's dash offset (the arc "unrolls" to the score).
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -260,7 +264,11 @@ export default function EligibilityResult() {
         <View style={{ paddingTop: 22, paddingHorizontal: 22 }}>
           {/* Summary paragraph — 14.5 / lineHeight 1.6 / #5B5468 */}
           <Text
-            style={{ fontSize: 14.5, lineHeight: 23.2, color: EX.color.inkMuted }}
+            style={{
+              fontSize: 14.5,
+              lineHeight: 23.2,
+              color: EX.color.inkMuted,
+            }}
           >
             {summary}
           </Text>

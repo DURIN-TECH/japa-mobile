@@ -34,14 +34,36 @@ type IconType = React.ComponentType<{
 }>;
 
 // ── Payment methods (label + icon; `key` is passed through as `method`) ───────
-const METHODS: { key: string; label: string; icon: IconType; hint: string }[] = [
-  { key: 'Card', label: 'Card', icon: Ic.cards, hint: 'Visa · Mastercard · Verve' },
-  { key: 'Bank transfer', label: 'Bank transfer', icon: Ic.brief, hint: 'Pay from any Nigerian bank' },
-  { key: 'Paystack', label: 'Paystack', icon: Ic.zap, hint: 'Fast, secure checkout' },
-];
+const METHODS: { key: string; label: string; icon: IconType; hint: string }[] =
+  [
+    {
+      key: 'Card',
+      label: 'Card',
+      icon: Ic.cards,
+      hint: 'Visa · Mastercard · Verve',
+    },
+    {
+      key: 'Bank transfer',
+      label: 'Bank transfer',
+      icon: Ic.brief,
+      hint: 'Pay from any Nigerian bank',
+    },
+    {
+      key: 'Paystack',
+      label: 'Paystack',
+      icon: Ic.zap,
+      hint: 'Fast, secure checkout',
+    },
+  ];
 
 // ── SummaryRow — icon + label row inside the booking summary card ─────────────
-function SummaryRow({ icon: IconCmp, label }: { icon: IconType; label: string }) {
+function SummaryRow({
+  icon: IconCmp,
+  label,
+}: {
+  icon: IconType;
+  label: string;
+}) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
       {/* Bare coral icon (matches detail-screen fact rows). */}

@@ -16,23 +16,54 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
-  useAnimatedScrollHandler, useAnimatedStyle, useSharedValue,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import {
-  AppStep, CONVOS, NAIRA, agentById, appById, convoForAgent, destById, paymentRequestsForApp,
+  AppStep,
+  CONVOS,
+  NAIRA,
+  agentById,
+  appById,
+  convoForAgent,
+  destById,
+  paymentRequestsForApp,
 } from '@/components/explorer/data';
-import { mapApplication, mapTimeline } from '@/components/explorer/liveApplications';
-import { useApplication, useApplicationTimeline } from '@/hooks/useApplications';
+import {
+  mapApplication,
+  mapTimeline,
+} from '@/components/explorer/liveApplications';
+import {
+  useApplication,
+  useApplicationTimeline,
+} from '@/hooks/useApplications';
 import { Ic } from '@/components/explorer/icons';
-import { Flag, GlassButton, Pill, Portrait, StatusPill } from '@/components/explorer/primitives';
+import {
+  Flag,
+  GlassButton,
+  Pill,
+  Portrait,
+  StatusPill,
+} from '@/components/explorer/primitives';
 
 // Preset reasons a client can pick when declining an agent-raised payment request.
 const REJECT_REASONS = [
@@ -49,7 +80,11 @@ const HERO = 240;
 // Each event carries a title, a description, and a "date · actor" line. The dot
 // colour encodes the actor / state: green = you, blue = agent, teal = system,
 // grey (hollow) = upcoming. The `current` step gets a soft ring highlight.
-const ACTOR_LABEL: Record<string, string> = { you: 'You', agent: 'agent', system: 'system' };
+const ACTOR_LABEL: Record<string, string> = {
+  you: 'You',
+  agent: 'agent',
+  system: 'system',
+};
 function Timeline({ steps }: { steps: AppStep[] }) {
   return (
     <View>
@@ -68,33 +103,97 @@ function Timeline({ steps }: { steps: AppStep[] }) {
         const actor = ACTOR_LABEL[step.by ?? 'system'] ?? 'system';
 
         return (
-          <View key={`${step.t}-${i}`} style={{ flexDirection: 'row', gap: 14, paddingBottom: last ? 0 : 20 }}>
+          <View
+            key={`${step.t}-${i}`}
+            style={{
+              flexDirection: 'row',
+              gap: 14,
+              paddingBottom: last ? 0 : 20,
+            }}
+          >
             {/* Marker + connector column */}
             <View style={{ alignItems: 'center', width: 14 }}>
-              <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center', marginTop: 3 }}>
+              <View
+                style={{
+                  width: 14,
+                  height: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginTop: 3,
+                }}
+              >
                 {/* soft ring on the in-progress step */}
-                {isCurrent ? <View style={{ position: 'absolute', top: -4, left: -4, width: 22, height: 22, borderRadius: 11, backgroundColor: `${dot}22` }} /> : null}
+                {isCurrent ? (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: -4,
+                      left: -4,
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      backgroundColor: `${dot}22`,
+                    }}
+                  />
+                ) : null}
                 <View
                   style={{
-                    width: 13, height: 13, borderRadius: 6.5,
+                    width: 13,
+                    height: 13,
+                    borderRadius: 6.5,
                     backgroundColor: isNext ? '#fff' : dot,
-                    borderWidth: isNext ? 2 : 0, borderColor: dot,
+                    borderWidth: isNext ? 2 : 0,
+                    borderColor: dot,
                   }}
                 />
               </View>
               {/* faint connector line */}
-              {!last ? <View style={{ width: 2, flex: 1, minHeight: 22, marginTop: 4, borderRadius: 1, backgroundColor: 'rgba(23,19,38,0.1)' }} /> : null}
+              {!last ? (
+                <View
+                  style={{
+                    width: 2,
+                    flex: 1,
+                    minHeight: 22,
+                    marginTop: 4,
+                    borderRadius: 1,
+                    backgroundColor: 'rgba(23,19,38,0.1)',
+                  }}
+                />
+              ) : null}
             </View>
 
             {/* Event content */}
             <View style={{ flex: 1, paddingBottom: 2 }}>
-              <Text style={{ fontSize: 15, fontWeight: '700', color: isNext ? EX.color.muted : EX.color.ink, letterSpacing: -0.1 }}>
+              <Text
+                style={{
+                  fontSize: 15,
+                  fontWeight: '700',
+                  color: isNext ? EX.color.muted : EX.color.ink,
+                  letterSpacing: -0.1,
+                }}
+              >
                 {step.t}
               </Text>
               {step.desc ? (
-                <Text style={{ fontSize: 13.5, lineHeight: 19.5, color: EX.color.inkMuted, marginTop: 3 }}>{step.desc}</Text>
+                <Text
+                  style={{
+                    fontSize: 13.5,
+                    lineHeight: 19.5,
+                    color: EX.color.inkMuted,
+                    marginTop: 3,
+                  }}
+                >
+                  {step.desc}
+                </Text>
               ) : null}
-              <Text style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500', marginTop: 5 }}>
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  color: EX.color.muted,
+                  fontWeight: '500',
+                  marginTop: 5,
+                }}
+              >
                 {step.d} · {actor}
               </Text>
             </View>
@@ -125,12 +224,18 @@ export default function AppDetail() {
 
   // Parallax: hero translates up at py * -0.3 (source transform translateY).
   const scrollY = useSharedValue(0);
-  const onScroll = useAnimatedScrollHandler((e) => { scrollY.value = e.contentOffset.y; });
-  const heroStyle = useAnimatedStyle(() => ({ transform: [{ translateY: scrollY.value * -0.3 }] }));
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
+  const heroStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: scrollY.value * -0.3 }],
+  }));
 
   // Local approve / reject decision per agent-raised payment request (demo state,
   // keyed by request id; falls back to the request's own status).
-  const [reqOverride, setReqOverride] = useState<Record<string, 'pending' | 'approved' | 'rejected'>>({});
+  const [reqOverride, setReqOverride] = useState<
+    Record<string, 'pending' | 'approved' | 'rejected'>
+  >({});
   // Reason captured when the client declines a request (id → reason).
   const [reqReason, setReqReason] = useState<Record<string, string>>({});
   // Reject-reason modal: which request is being declined, + the picked reason.
@@ -141,7 +246,14 @@ export default function AppDetail() {
   // Spinner while the live application is still loading (demo path is instant).
   if (!demo && liveQ.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <ActivityIndicator color={EX.color.primary} />
       </View>
     );
@@ -149,14 +261,22 @@ export default function AppDetail() {
 
   if (!app || !dest) {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <Text style={{ color: EX.color.muted }}>Application not found.</Text>
       </View>
     );
   }
 
   // Timeline: live events (mapped) when present, else the demo app's own steps.
-  const steps: AppStep[] = !demo && tl.data?.length ? mapTimeline(tl.data) : app.steps;
+  const steps: AppStep[] =
+    !demo && tl.data?.length ? mapTimeline(tl.data) : app.steps;
 
   const pct = Math.round(app.progress * 100);
   const actionable = app.next.cta != null;
@@ -171,7 +291,11 @@ export default function AppDetail() {
   };
 
   // Reject-reason modal controls.
-  const closeReject = () => { setRejectId(null); setReasonSel(null); setReasonText(''); };
+  const closeReject = () => {
+    setRejectId(null);
+    setReasonSel(null);
+    setReasonText('');
+  };
   const confirmReject = () => {
     if (!rejectId) return;
     const reason = reasonSel === 'Other' ? reasonText.trim() : reasonSel;
@@ -183,7 +307,9 @@ export default function AppDetail() {
 
   // Sticky / nudge action: perform the next step (self-service flow) when
   // actionable, otherwise open the agent conversation.
-  const openConvo = () => { if (convo) router.push(`/(explorer)/messages/${convo.id}`); };
+  const openConvo = () => {
+    if (convo) router.push(`/(explorer)/messages/${convo.id}`);
+  };
   const onNext = () => {
     if (actionable) router.push(`/(explorer)/self-service/${dest.id}`);
     else openConvo();
@@ -192,11 +318,41 @@ export default function AppDetail() {
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
       {/* HERO (240) — fixed behind, parallaxes up at py * -0.3 as the sheet rises */}
-      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: HERO, overflow: 'hidden', backgroundColor: dest.tone }, heroStyle]}>
-        <Image source={{ uri: dest.img }} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, width: '100%', height: '100%' }} contentFit="cover" transition={200} />
+      <Animated.View
+        style={[
+          {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: HERO,
+            overflow: 'hidden',
+            backgroundColor: dest.tone,
+          },
+          heroStyle,
+        ]}
+      >
+        <Image
+          source={{ uri: dest.img }}
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: '100%',
+            height: '100%',
+          }}
+          contentFit="cover"
+          transition={200}
+        />
         {/* Scrim to top: rgba(12,10,8, .8 @0% → .2 @50% → .36 @100%) */}
         <LinearGradient
-          colors={['rgba(12,10,8,0.8)', 'rgba(12,10,8,0.2)', 'rgba(12,10,8,0.36)']}
+          colors={[
+            'rgba(12,10,8,0.8)',
+            'rgba(12,10,8,0.2)',
+            'rgba(12,10,8,0.36)',
+          ]}
           locations={[0, 0.5, 1]}
           start={{ x: 0.5, y: 1 }}
           end={{ x: 0.5, y: 0 }}
@@ -210,15 +366,30 @@ export default function AppDetail() {
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Flag code={dest.flag} size={20} radius={5} />
-            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600', opacity: 0.95 }} numberOfLines={1}>
+            <Text
+              style={{
+                color: '#fff',
+                fontSize: 13,
+                fontWeight: '600',
+                opacity: 0.95,
+              }}
+              numberOfLines={1}
+            >
               {dest.country} · Ref {app.ref}
             </Text>
           </View>
           {/* Visa 28 Space Grotesk (600), letterSpacing -0.01em, marginTop 5 */}
           <Text
             style={{
-              color: '#fff', fontFamily: EX.font.display.semibold, fontSize: 28, lineHeight: 32, letterSpacing: -0.28,
-              marginTop: 5, textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 14,
+              color: '#fff',
+              fontFamily: EX.font.display.semibold,
+              fontSize: 28,
+              lineHeight: 32,
+              letterSpacing: -0.28,
+              marginTop: 5,
+              textShadowColor: 'rgba(0,0,0,0.3)',
+              textShadowOffset: { width: 0, height: 2 },
+              textShadowRadius: 14,
             }}
           >
             {dest.visa}
@@ -227,7 +398,18 @@ export default function AppDetail() {
       </Animated.View>
 
       {/* Top glass controls: back + message (source top 54 → insets.top + 6) */}
-      <View style={{ position: 'absolute', top: insets.top + 6, left: 0, right: 0, zIndex: 50, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 18 }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: insets.top + 6,
+          left: 0,
+          right: 0,
+          zIndex: 50,
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          paddingHorizontal: 18,
+        }}
+      >
         <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
         <GlassButton icon={Ic.msg} onPress={openConvo} />
       </View>
@@ -243,113 +425,395 @@ export default function AppDetail() {
 
         <View
           style={{
-            backgroundColor: EX.color.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, minHeight: 600,
-            paddingTop: 20, paddingHorizontal: 22, paddingBottom: EX.space.ctaClear,
+            backgroundColor: EX.color.bg,
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+            minHeight: 600,
+            paddingTop: 20,
+            paddingHorizontal: 22,
+            paddingBottom: EX.space.ctaClear,
             // Source boxShadow: 0 -8px 30px -14px rgba(23,19,38,0.26).
-            shadowColor: '#171326', shadowOpacity: 0.26, shadowRadius: 15, shadowOffset: { width: 0, height: -8 },
+            shadowColor: '#171326',
+            shadowOpacity: 0.26,
+            shadowRadius: 15,
+            shadowOffset: { width: 0, height: -8 },
           }}
         >
           {/* ── Dark "Next step" card (only when actionable) ────────────────── */}
           {actionable ? (
-            <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: EX.color.ink, borderRadius: 18, padding: 15, marginBottom: 18 }, EXShadow.darkNudge]}>
-              <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' }}>
+            <View
+              style={[
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  backgroundColor: EX.color.ink,
+                  borderRadius: 18,
+                  padding: 15,
+                  marginBottom: 18,
+                },
+                EXShadow.darkNudge,
+              ]}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(255,255,255,0.12)',
+                }}
+              >
                 <Ic.upload size={19} color="#fff" strokeWidth={1.8} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontWeight: '600' }}>Next step</Text>
-                <Text style={{ fontSize: 14.5, color: '#fff', fontWeight: '700' }} numberOfLines={2}>{app.next.label}</Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: 'rgba(255,255,255,0.6)',
+                    fontWeight: '600',
+                  }}
+                >
+                  Next step
+                </Text>
+                <Text
+                  style={{ fontSize: 14.5, color: '#fff', fontWeight: '700' }}
+                  numberOfLines={2}
+                >
+                  {app.next.label}
+                </Text>
               </View>
             </View>
           ) : null}
 
           {/* ── Progress header (marginBottom 14) ───────────────────────────── */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18 }}>Timeline</Text>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: EX.color.primary }}>{pct}% complete</Text>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 14,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: EX.color.ink,
+                letterSpacing: -0.18,
+              }}
+            >
+              Timeline
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '700',
+                color: EX.color.primary,
+              }}
+            >
+              {pct}% complete
+            </Text>
           </View>
 
           {/* ── Timeline card (radius 22, padding 20, border rgba(23,19,38,0.07)) ── */}
-          <View style={[{ backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(23,19,38,0.07)', borderRadius: 22, padding: 20 }, EXShadow.card]}>
+          <View
+            style={[
+              {
+                backgroundColor: '#fff',
+                borderWidth: 1,
+                borderColor: 'rgba(23,19,38,0.07)',
+                borderRadius: 22,
+                padding: 20,
+              },
+              EXShadow.card,
+            ]}
+          >
             <Timeline steps={steps} />
           </View>
 
           {/* ── Payment requests (only when the agent has raised one) ────────── */}
           {payReqs.length > 0 ? (
             <>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18, marginTop: 26, marginBottom: 12, marginHorizontal: 2 }}>Payment requests</Text>
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                  marginTop: 26,
+                  marginBottom: 12,
+                  marginHorizontal: 2,
+                }}
+              >
+                Payment requests
+              </Text>
               <View style={{ gap: 12 }}>
                 {payReqs.map((req) => (
                   <View
                     key={req.id}
                     style={[
-                      { backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line06, borderRadius: 20, padding: 16 },
+                      {
+                        backgroundColor: '#fff',
+                        borderWidth: 1,
+                        borderColor: EX.color.line06,
+                        borderRadius: 20,
+                        padding: 16,
+                      },
                       EXShadow.card,
                     ]}
                   >
                     {/* Header: coral chip + title, amount on the right */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <View style={{ width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: EX.color.primaryTint10 }}>
-                        <Ic.cards size={18} color={EX.color.primary} strokeWidth={1.8} />
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: 12,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: EX.color.primaryTint10,
+                        }}
+                      >
+                        <Ic.cards
+                          size={18}
+                          color={EX.color.primary}
+                          strokeWidth={1.8}
+                        />
                       </View>
-                      <Text style={{ flex: 1, fontSize: 15, fontWeight: '700', color: EX.color.ink }} numberOfLines={2}>{req.title}</Text>
-                      <Text style={{ fontSize: 16, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.16 }}>{NAIRA(req.amount)}</Text>
+                      <Text
+                        style={{
+                          flex: 1,
+                          fontSize: 15,
+                          fontWeight: '700',
+                          color: EX.color.ink,
+                        }}
+                        numberOfLines={2}
+                      >
+                        {req.title}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 16,
+                          fontWeight: '700',
+                          color: EX.color.ink,
+                          letterSpacing: -0.16,
+                        }}
+                      >
+                        {NAIRA(req.amount)}
+                      </Text>
                     </View>
 
                     {/* Attribution — this is an agent-raised request awaiting the client's approval */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12 }}>
-                      <Portrait seed={agentById(req.agentId)?.seed ?? 0} size={22} name={agentById(req.agentId)?.n ?? 'Agent'} />
-                      <Text style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500' }}>Requested by {agentById(req.agentId)?.n}</Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 7,
+                        marginTop: 12,
+                      }}
+                    >
+                      <Portrait
+                        seed={agentById(req.agentId)?.seed ?? 0}
+                        size={22}
+                        name={agentById(req.agentId)?.n ?? 'Agent'}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 12.5,
+                          color: EX.color.muted,
+                          fontWeight: '500',
+                        }}
+                      >
+                        Requested by {agentById(req.agentId)?.n}
+                      </Text>
                     </View>
 
                     {/* Note */}
-                    <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.muted, marginTop: 10 }}>{req.note}</Text>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        lineHeight: 19,
+                        color: EX.color.muted,
+                        marginTop: 10,
+                      }}
+                    >
+                      {req.note}
+                    </Text>
 
                     {/* Due + decision status badge */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Ic.clock size={13} color={EX.color.muted} strokeWidth={1.8} />
-                        <Text style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500' }}>{req.due}</Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: 10,
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <Ic.clock
+                          size={13}
+                          color={EX.color.muted}
+                          strokeWidth={1.8}
+                        />
+                        <Text
+                          style={{
+                            fontSize: 12.5,
+                            color: EX.color.muted,
+                            fontWeight: '500',
+                          }}
+                        >
+                          {req.due}
+                        </Text>
                       </View>
                       {(() => {
                         const st = reqOverride[req.id] ?? req.status;
-                        const b = st === 'approved'
-                          ? { label: 'Approved', fg: '#1E8E55', bg: '#D6F2E2' }
-                          : st === 'rejected'
-                            ? { label: 'Declined', fg: EX.color.muted, bg: 'rgba(23,19,38,0.06)' }
-                            : { label: 'Pending', fg: '#B26A14', bg: '#FCEAC8' };
-                        return <Pill label={b.label} fg={b.fg} bg={b.bg} small />;
+                        const b =
+                          st === 'approved'
+                            ? {
+                                label: 'Approved',
+                                fg: '#1E8E55',
+                                bg: '#D6F2E2',
+                              }
+                            : st === 'rejected'
+                              ? {
+                                  label: 'Declined',
+                                  fg: EX.color.muted,
+                                  bg: 'rgba(23,19,38,0.06)',
+                                }
+                              : {
+                                  label: 'Pending',
+                                  fg: '#B26A14',
+                                  bg: '#FCEAC8',
+                                };
+                        return (
+                          <Pill label={b.label} fg={b.fg} bg={b.bg} small />
+                        );
                       })()}
                     </View>
 
                     {/* Actions by decision state */}
                     {(() => {
                       const st = reqOverride[req.id] ?? req.status;
-                      const setSt = (v: 'pending' | 'approved' | 'rejected') => setReqOverride((s) => ({ ...s, [req.id]: v }));
-                      const toPay = () => router.push({
-                        pathname: '/(explorer)/pay',
-                        params: { type: 'application', agentId: req.agentId, dateIso: '', time: '', topic: req.title, mode: '', dur: '', fee: String(req.amount) },
-                      });
+                      const setSt = (v: 'pending' | 'approved' | 'rejected') =>
+                        setReqOverride((s) => ({ ...s, [req.id]: v }));
+                      const toPay = () =>
+                        router.push({
+                          pathname: '/(explorer)/pay',
+                          params: {
+                            type: 'application',
+                            agentId: req.agentId,
+                            dateIso: '',
+                            time: '',
+                            topic: req.title,
+                            mode: '',
+                            dur: '',
+                            fee: String(req.amount),
+                          },
+                        });
                       if (st === 'pending') {
                         return (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 }}>
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 10,
+                              marginTop: 14,
+                            }}
+                          >
                             {/* Approve — confirm, then move to the approved state */}
                             <Pressable
-                              onPress={() => Alert.alert('Approve request', `Approve ${NAIRA(req.amount)} for “${req.title}”?`, [
-                                { text: 'Cancel', style: 'cancel' },
-                                { text: 'Approve', onPress: () => setSt('approved') },
-                              ])}
-                              style={{ flex: 1, height: 46, borderRadius: 14, backgroundColor: EX.color.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, shadowColor: EX.color.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 8 }, elevation: 5 }}
+                              onPress={() =>
+                                Alert.alert(
+                                  'Approve request',
+                                  `Approve ${NAIRA(req.amount)} for “${req.title}”?`,
+                                  [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    {
+                                      text: 'Approve',
+                                      onPress: () => setSt('approved'),
+                                    },
+                                  ],
+                                )
+                              }
+                              style={{
+                                flex: 1,
+                                height: 46,
+                                borderRadius: 14,
+                                backgroundColor: EX.color.primary,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 7,
+                                shadowColor: EX.color.primary,
+                                shadowOpacity: 0.4,
+                                shadowRadius: 12,
+                                shadowOffset: { width: 0, height: 8 },
+                                elevation: 5,
+                              }}
                             >
-                              <Ic.check size={16} color="#fff" strokeWidth={2.2} />
-                              <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '700' }}>Approve</Text>
+                              <Ic.check
+                                size={16}
+                                color="#fff"
+                                strokeWidth={2.2}
+                              />
+                              <Text
+                                style={{
+                                  color: '#fff',
+                                  fontSize: 14.5,
+                                  fontWeight: '700',
+                                }}
+                              >
+                                Approve
+                              </Text>
                             </Pressable>
                             {/* Reject — confirm, then move to the declined state */}
                             <Pressable
-                              onPress={() => { setRejectId(req.id); setReasonSel(null); setReasonText(''); }}
-                              style={{ flex: 1, height: 46, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+                              onPress={() => {
+                                setRejectId(req.id);
+                                setReasonSel(null);
+                                setReasonText('');
+                              }}
+                              style={{
+                                flex: 1,
+                                height: 46,
+                                borderRadius: 14,
+                                backgroundColor: '#fff',
+                                borderWidth: 1,
+                                borderColor: EX.color.line12,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 7,
+                              }}
                             >
-                              <Ic.x size={16} color={EX.color.danger} strokeWidth={2} />
-                              <Text style={{ color: EX.color.danger, fontSize: 14.5, fontWeight: '700' }}>Reject</Text>
+                              <Ic.x
+                                size={16}
+                                color={EX.color.danger}
+                                strokeWidth={2}
+                              />
+                              <Text
+                                style={{
+                                  color: EX.color.danger,
+                                  fontSize: 14.5,
+                                  fontWeight: '700',
+                                }}
+                              >
+                                Reject
+                              </Text>
                             </Pressable>
                           </View>
                         );
@@ -357,20 +821,75 @@ export default function AppDetail() {
                       if (st === 'approved') {
                         return (
                           <>
-                            <Text style={{ fontSize: 12.5, color: EX.color.inkMuted, marginTop: 12 }}>You approved this request — complete payment to continue.</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                            <Text
+                              style={{
+                                fontSize: 12.5,
+                                color: EX.color.inkMuted,
+                                marginTop: 12,
+                              }}
+                            >
+                              You approved this request — complete payment to
+                              continue.
+                            </Text>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 10,
+                                marginTop: 12,
+                              }}
+                            >
                               <Pressable
                                 onPress={toPay}
-                                style={{ flex: 1, height: 46, borderRadius: 14, backgroundColor: EX.color.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, shadowColor: EX.color.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 8 }, elevation: 5 }}
+                                style={{
+                                  flex: 1,
+                                  height: 46,
+                                  borderRadius: 14,
+                                  backgroundColor: EX.color.primary,
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: 7,
+                                  shadowColor: EX.color.primary,
+                                  shadowOpacity: 0.4,
+                                  shadowRadius: 12,
+                                  shadowOffset: { width: 0, height: 8 },
+                                  elevation: 5,
+                                }}
                               >
-                                <Text style={{ color: '#fff', fontSize: 14.5, fontWeight: '700' }}>Complete payment</Text>
-                                <Ic.arrow size={16} color="#fff" strokeWidth={1.8} />
+                                <Text
+                                  style={{
+                                    color: '#fff',
+                                    fontSize: 14.5,
+                                    fontWeight: '700',
+                                  }}
+                                >
+                                  Complete payment
+                                </Text>
+                                <Ic.arrow
+                                  size={16}
+                                  color="#fff"
+                                  strokeWidth={1.8}
+                                />
                               </Pressable>
                               <Pressable
                                 onPress={() => messageAgent(req.agentId)}
-                                style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line12, alignItems: 'center', justifyContent: 'center' }}
+                                style={{
+                                  width: 46,
+                                  height: 46,
+                                  borderRadius: 14,
+                                  backgroundColor: '#fff',
+                                  borderWidth: 1,
+                                  borderColor: EX.color.line12,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
                               >
-                                <Ic.msg size={17} color={EX.color.ink} strokeWidth={1.8} />
+                                <Ic.msg
+                                  size={17}
+                                  color={EX.color.ink}
+                                  strokeWidth={1.8}
+                                />
                               </Pressable>
                             </View>
                           </>
@@ -379,22 +898,79 @@ export default function AppDetail() {
                       // rejected
                       return (
                         <>
-                          <Text style={{ fontSize: 12.5, color: EX.color.inkMuted, marginTop: 12 }}>
-                            You declined this request{reqReason[req.id] ? ` — “${reqReason[req.id]}”` : ''}.
+                          <Text
+                            style={{
+                              fontSize: 12.5,
+                              color: EX.color.inkMuted,
+                              marginTop: 12,
+                            }}
+                          >
+                            You declined this request
+                            {reqReason[req.id]
+                              ? ` — “${reqReason[req.id]}”`
+                              : ''}
+                            .
                           </Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 10,
+                              marginTop: 12,
+                            }}
+                          >
                             <Pressable
                               onPress={() => setSt('pending')}
-                              style={{ flex: 1, height: 46, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line12, alignItems: 'center', justifyContent: 'center' }}
+                              style={{
+                                flex: 1,
+                                height: 46,
+                                borderRadius: 14,
+                                backgroundColor: '#fff',
+                                borderWidth: 1,
+                                borderColor: EX.color.line12,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
                             >
-                              <Text style={{ color: EX.color.ink, fontSize: 14.5, fontWeight: '700' }}>Undo</Text>
+                              <Text
+                                style={{
+                                  color: EX.color.ink,
+                                  fontSize: 14.5,
+                                  fontWeight: '700',
+                                }}
+                              >
+                                Undo
+                              </Text>
                             </Pressable>
                             <Pressable
                               onPress={() => messageAgent(req.agentId)}
-                              style={{ flex: 1, height: 46, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+                              style={{
+                                flex: 1,
+                                height: 46,
+                                borderRadius: 14,
+                                backgroundColor: '#fff',
+                                borderWidth: 1,
+                                borderColor: EX.color.line12,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 7,
+                              }}
                             >
-                              <Ic.msg size={16} color={EX.color.ink} strokeWidth={1.8} />
-                              <Text style={{ color: EX.color.ink, fontSize: 14.5, fontWeight: '700' }}>Message</Text>
+                              <Ic.msg
+                                size={16}
+                                color={EX.color.ink}
+                                strokeWidth={1.8}
+                              />
+                              <Text
+                                style={{
+                                  color: EX.color.ink,
+                                  fontSize: 14.5,
+                                  fontWeight: '700',
+                                }}
+                              >
+                                Message
+                              </Text>
                             </Pressable>
                           </View>
                         </>
@@ -407,19 +983,56 @@ export default function AppDetail() {
           ) : null}
 
           {/* ── Your agent ───────────────────────────────────────────────────── */}
-          <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18, marginTop: 26, marginBottom: 12, marginHorizontal: 2 }}>Your agent</Text>
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: '700',
+              color: EX.color.ink,
+              letterSpacing: -0.18,
+              marginTop: 26,
+              marginBottom: 12,
+              marginHorizontal: 2,
+            }}
+          >
+            Your agent
+          </Text>
           {agent ? (
             <Pressable
               onPress={() => router.push(`/(explorer)/agent/${agent.id}`)}
               style={[
-                { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line08, borderRadius: 20, padding: 14 },
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 13,
+                  backgroundColor: '#fff',
+                  borderWidth: 1,
+                  borderColor: EX.color.line08,
+                  borderRadius: 20,
+                  padding: 14,
+                },
                 EXShadow.card,
               ]}
             >
               <Portrait seed={agent.seed} size={48} name={agent.n} />
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }} numberOfLines={1}>{agent.n}</Text>
-                <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }} numberOfLines={1}>
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                  }}
+                  numberOfLines={1}
+                >
+                  {agent.n}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    color: EX.color.muted,
+                    marginTop: 2,
+                  }}
+                  numberOfLines={1}
+                >
                   {agent.spec} · responds in {agent.resp}
                 </Text>
               </View>
@@ -427,7 +1040,14 @@ export default function AppDetail() {
               <Pressable
                 onPress={openConvo}
                 hitSlop={8}
-                style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: EX.color.primaryTint10, alignItems: 'center', justifyContent: 'center' }}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: EX.color.primaryTint10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
                 <Ic.msg size={18} color={EX.color.primary} strokeWidth={1.8} />
               </Pressable>
@@ -440,25 +1060,97 @@ export default function AppDetail() {
       <BlurView
         intensity={30}
         tint="light"
-        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 15, paddingHorizontal: 22, paddingBottom: Math.max(insets.bottom, 16) + 8, backgroundColor: 'rgba(251,247,240,0.8)', borderTopWidth: 1, borderTopColor: EX.color.line06 }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingTop: 15,
+          paddingHorizontal: 22,
+          paddingBottom: Math.max(insets.bottom, 16) + 8,
+          backgroundColor: 'rgba(251,247,240,0.8)',
+          borderTopWidth: 1,
+          borderTopColor: EX.color.line06,
+        }}
       >
         <Pressable
           onPress={onNext}
-          style={{ height: 54, borderRadius: 16, backgroundColor: EX.color.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, shadowColor: EX.color.primary, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 12 }, elevation: 6 }}
+          style={{
+            height: 54,
+            borderRadius: 16,
+            backgroundColor: EX.color.primary,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            shadowColor: EX.color.primary,
+            shadowOpacity: 0.5,
+            shadowRadius: 12,
+            shadowOffset: { width: 0, height: 12 },
+            elevation: 6,
+          }}
         >
-          <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>{app.next.cta ?? 'Message your agent'}</Text>
+          <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+            {app.next.cta ?? 'Message your agent'}
+          </Text>
           <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
         </Pressable>
       </BlurView>
 
       {/* ── Reject-reason modal (agent request → client must give a reason) ───── */}
-      <Modal visible={!!rejectId} transparent animationType="fade" onRequestClose={closeReject}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
-          <Pressable onPress={closeReject} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(12,10,8,0.45)' }} />
-          <View style={{ backgroundColor: EX.color.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 10, paddingHorizontal: 22, paddingBottom: Math.max(insets.bottom, 16) + 12 }}>
-            <View style={{ width: 40, height: 4, borderRadius: 99, backgroundColor: EX.color.line16, alignSelf: 'center', marginBottom: 16 }} />
-            <Text style={[displayText(20, 'semibold'), { marginBottom: 4 }]}>Reason for declining</Text>
-            <Text style={{ fontSize: 13.5, color: EX.color.inkMuted, marginBottom: 16 }}>Your agent will see this so they can follow up.</Text>
+      <Modal
+        visible={!!rejectId}
+        transparent
+        animationType="fade"
+        onRequestClose={closeReject}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1, justifyContent: 'flex-end' }}
+        >
+          <Pressable
+            onPress={closeReject}
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(12,10,8,0.45)',
+            }}
+          />
+          <View
+            style={{
+              backgroundColor: EX.color.bg,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              paddingTop: 10,
+              paddingHorizontal: 22,
+              paddingBottom: Math.max(insets.bottom, 16) + 12,
+            }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 4,
+                borderRadius: 99,
+                backgroundColor: EX.color.line16,
+                alignSelf: 'center',
+                marginBottom: 16,
+              }}
+            />
+            <Text style={[displayText(20, 'semibold'), { marginBottom: 4 }]}>
+              Reason for declining
+            </Text>
+            <Text
+              style={{
+                fontSize: 13.5,
+                color: EX.color.inkMuted,
+                marginBottom: 16,
+              }}
+            >
+              Your agent will see this so they can follow up.
+            </Text>
 
             {REJECT_REASONS.map((r) => {
               const on = reasonSel === r;
@@ -466,12 +1158,51 @@ export default function AppDetail() {
                 <Pressable
                   key={r}
                   onPress={() => setReasonSel(r)}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 15, borderRadius: 14, marginBottom: 9, borderWidth: 1.5, borderColor: on ? EX.color.primary : EX.color.line12, backgroundColor: on ? EX.color.primaryTint07 : '#fff' }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    paddingVertical: 13,
+                    paddingHorizontal: 15,
+                    borderRadius: 14,
+                    marginBottom: 9,
+                    borderWidth: 1.5,
+                    borderColor: on ? EX.color.primary : EX.color.line12,
+                    backgroundColor: on ? EX.color.primaryTint07 : '#fff',
+                  }}
                 >
-                  <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: on ? EX.color.primary : 'rgba(23,19,38,0.2)', alignItems: 'center', justifyContent: 'center' }}>
-                    {on ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: EX.color.primary }} /> : null}
+                  <View
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      borderWidth: 2,
+                      borderColor: on ? EX.color.primary : 'rgba(23,19,38,0.2)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {on ? (
+                      <View
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 5,
+                          backgroundColor: EX.color.primary,
+                        }}
+                      />
+                    ) : null}
                   </View>
-                  <Text style={{ flex: 1, fontSize: 14.5, fontWeight: '600', color: EX.color.ink }}>{r}</Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 14.5,
+                      fontWeight: '600',
+                      color: EX.color.ink,
+                    }}
+                  >
+                    {r}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -484,19 +1215,69 @@ export default function AppDetail() {
                 placeholderTextColor={EX.color.muted}
                 multiline
                 maxLength={300}
-                style={{ minHeight: 72, borderWidth: 1, borderColor: EX.color.line12, borderRadius: 14, padding: 14, fontSize: 14.5, color: EX.color.ink, backgroundColor: '#fff', textAlignVertical: 'top', marginBottom: 4 }}
+                style={{
+                  minHeight: 72,
+                  borderWidth: 1,
+                  borderColor: EX.color.line12,
+                  borderRadius: 14,
+                  padding: 14,
+                  fontSize: 14.5,
+                  color: EX.color.ink,
+                  backgroundColor: '#fff',
+                  textAlignVertical: 'top',
+                  marginBottom: 4,
+                }}
               />
             ) : null}
 
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-              <Pressable onPress={closeReject} style={{ flex: 1, height: 52, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line12, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: EX.color.ink, fontSize: 15, fontWeight: '700' }}>Cancel</Text>
+              <Pressable
+                onPress={closeReject}
+                style={{
+                  flex: 1,
+                  height: 52,
+                  borderRadius: 16,
+                  backgroundColor: '#fff',
+                  borderWidth: 1,
+                  borderColor: EX.color.line12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text
+                  style={{
+                    color: EX.color.ink,
+                    fontSize: 15,
+                    fontWeight: '700',
+                  }}
+                >
+                  Cancel
+                </Text>
               </Pressable>
               {(() => {
-                const ok = !!reasonSel && (reasonSel !== 'Other' || reasonText.trim().length > 0);
+                const ok =
+                  !!reasonSel &&
+                  (reasonSel !== 'Other' || reasonText.trim().length > 0);
                 return (
-                  <Pressable onPress={confirmReject} disabled={!ok} style={{ flex: 1, height: 52, borderRadius: 16, backgroundColor: ok ? EX.color.danger : 'rgba(217,66,91,0.4)', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>Decline request</Text>
+                  <Pressable
+                    onPress={confirmReject}
+                    disabled={!ok}
+                    style={{
+                      flex: 1,
+                      height: 52,
+                      borderRadius: 16,
+                      backgroundColor: ok
+                        ? EX.color.danger
+                        : 'rgba(217,66,91,0.4)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}
+                    >
+                      Decline request
+                    </Text>
                   </Pressable>
                 );
               })()}

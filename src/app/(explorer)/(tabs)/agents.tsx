@@ -37,7 +37,10 @@ function AgencyCard({ id }: { id: string }) {
   const a = agencyById(id);
   if (!a) return null;
   return (
-    <Pressable onPress={() => router.push(`/(explorer)/agency/${a.id}`)} style={{ width: 248 }}>
+    <Pressable
+      onPress={() => router.push(`/(explorer)/agency/${a.id}`)}
+      style={{ width: 248 }}
+    >
       <View
         style={{
           width: 248,
@@ -61,7 +64,11 @@ function AgencyCard({ id }: { id: string }) {
         />
         {/* Bottom scrim: .82 → .2 @55% → .1 (bottom → top) */}
         <LinearGradient
-          colors={['rgba(12,10,8,0.82)', 'rgba(12,10,8,0.2)', 'rgba(12,10,8,0.1)']}
+          colors={[
+            'rgba(12,10,8,0.82)',
+            'rgba(12,10,8,0.2)',
+            'rgba(12,10,8,0.1)',
+          ]}
           locations={[0, 0.55, 1]}
           start={{ x: 0.5, y: 1 }}
           end={{ x: 0.5, y: 0 }}
@@ -70,23 +77,82 @@ function AgencyCard({ id }: { id: string }) {
 
         {/* Bottom overlay: name + verified, then rating · agents · city */}
         <View style={{ position: 'absolute', left: 14, right: 14, bottom: 13 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              marginBottom: 4,
+            }}
+          >
             {/* Source: system font, fontSize 16 / weight 700 (NOT the display font). */}
-            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }} numberOfLines={1}>
+            <Text
+              style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}
+              numberOfLines={1}
+            >
               {a.name}
             </Text>
             {a.verified ? <Verified size={15} /> : null}
           </View>
           {/* Meta row: gap 10, fontSize 12 / weight 600, color rgba(255,255,255,.9). */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Ic.star size={12} color={EX.color.gold} fill={EX.color.gold} strokeWidth={0} />
-              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '600' }}>{a.r}</Text>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
+              <Ic.star
+                size={12}
+                color={EX.color.gold}
+                fill={EX.color.gold}
+                strokeWidth={0}
+              />
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.9)',
+                  fontSize: 12,
+                  fontWeight: '600',
+                }}
+              >
+                {a.r}
+              </Text>
             </View>
-            <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '600', opacity: 0.5 }}>·</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '600' }}>{a.agents} agents</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '600', opacity: 0.5 }}>·</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '600' }}>{a.city}</Text>
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.9)',
+                fontSize: 12,
+                fontWeight: '600',
+                opacity: 0.5,
+              }}
+            >
+              ·
+            </Text>
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.9)',
+                fontSize: 12,
+                fontWeight: '600',
+              }}
+            >
+              {a.agents} agents
+            </Text>
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.9)',
+                fontSize: 12,
+                fontWeight: '600',
+                opacity: 0.5,
+              }}
+            >
+              ·
+            </Text>
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.9)',
+                fontSize: 12,
+                fontWeight: '600',
+              }}
+            >
+              {a.city}
+            </Text>
           </View>
         </View>
       </View>
@@ -144,24 +210,63 @@ export function AgentRow({ a }: { a: Agent }) {
       {/* Info column */}
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Text style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }} numberOfLines={1}>
+          <Text
+            style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}
+            numberOfLines={1}
+          >
             {a.n}
           </Text>
           <Verified size={14} />
         </View>
-        <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 1 }} numberOfLines={1}>
+        <Text
+          style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 1 }}
+          numberOfLines={1}
+        >
           {a.spec}
           {agency ? ` · ${agency.name}` : ''}
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 7 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 9,
+            marginTop: 7,
+          }}
+        >
           {/* Single gold star + numeric rating, 12.5/700 (NOT the 5-star Stars row). */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ic.star size={13} color={EX.color.gold} fill={EX.color.gold} strokeWidth={0} />
-            <Text style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.ink }}>{a.r}</Text>
+            <Ic.star
+              size={13}
+              color={EX.color.gold}
+              fill={EX.color.gold}
+              strokeWidth={0}
+            />
+            <Text
+              style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.ink }}
+            >
+              {a.r}
+            </Text>
           </View>
-          <Text style={{ fontSize: 11.5, color: EX.color.muted }}>({a.rev.toLocaleString()})</Text>
-          <View style={{ backgroundColor: '#D6F2E2', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: EX.color.success }}>{a.succ}% success</Text>
+          <Text style={{ fontSize: 11.5, color: EX.color.muted }}>
+            ({a.rev.toLocaleString()})
+          </Text>
+          <View
+            style={{
+              backgroundColor: '#D6F2E2',
+              borderRadius: 999,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '700',
+                color: EX.color.success,
+              }}
+            >
+              {a.succ}% success
+            </Text>
           </View>
         </View>
       </View>

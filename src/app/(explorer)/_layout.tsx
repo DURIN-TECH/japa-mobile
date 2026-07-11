@@ -25,7 +25,8 @@ export default function ExplorerLayout() {
   });
 
   // Hold the warm background while the display font loads so headings don't flash.
-  if (!loaded) return <View style={{ flex: 1, backgroundColor: EX.color.bg }} />;
+  if (!loaded)
+    return <View style={{ flex: 1, backgroundColor: EX.color.bg }} />;
 
   return (
     <Stack
@@ -51,11 +52,17 @@ export default function ExplorerLayout() {
       <Stack.Screen name="consultations" />
       <Stack.Screen name="notifications" />
       <Stack.Screen name="self-service/[id]" />
-      <Stack.Screen name="subscription" options={{ animation: 'slide_from_bottom' }} />
+      <Stack.Screen
+        name="subscription"
+        options={{ animation: 'slide_from_bottom' }}
+      />
       {/* Consultation booking flow + detail + settings */}
       <Stack.Screen name="book/[agentId]" />
       <Stack.Screen name="pay" />
-      <Stack.Screen name="confirmation" options={{ animation: 'slide_from_bottom', gestureEnabled: false }} />
+      <Stack.Screen
+        name="confirmation"
+        options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
+      />
       <Stack.Screen name="consultation/[id]" />
       <Stack.Screen name="settings" />
       {/* Profile secondary destinations + full visa breakdown */}

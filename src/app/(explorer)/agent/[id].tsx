@@ -12,7 +12,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -42,11 +48,35 @@ import type { Review } from '@/components/explorer/data';
 // #171326; label 11.5/500 #5B5468 marginTop 2. NO accent colours.
 function GlassStat({ value, label }: { value: string; label: string }) {
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 15, paddingHorizontal: 8 }}>
-      <Text style={{ fontSize: 19, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.19 }} numberOfLines={1}>
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 15,
+        paddingHorizontal: 8,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 19,
+          fontWeight: '700',
+          color: EX.color.ink,
+          letterSpacing: -0.19,
+        }}
+        numberOfLines={1}
+      >
         {value}
       </Text>
-      <Text style={{ fontSize: 11.5, color: EX.color.inkMuted, fontWeight: '500', marginTop: 2 }} numberOfLines={1}>
+      <Text
+        style={{
+          fontSize: 11.5,
+          color: EX.color.inkMuted,
+          fontWeight: '500',
+          marginTop: 2,
+        }}
+        numberOfLines={1}
+      >
         {label}
       </Text>
     </View>
@@ -55,7 +85,15 @@ function GlassStat({ value, label }: { value: string; label: string }) {
 
 // Vertical hairline between glass stats (source Div: width 1, rgba(23,19,38,.1)).
 function GlassDiv() {
-  return <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: EX.color.line10 }} />;
+  return (
+    <View
+      style={{
+        width: 1,
+        alignSelf: 'stretch',
+        backgroundColor: EX.color.line10,
+      }}
+    />
+  );
 }
 
 // ── FactCard — small white card: bare coral icon + value + label ──────────────
@@ -66,7 +104,11 @@ function FactCard({
   label,
   value,
 }: {
-  icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+  icon: React.ComponentType<{
+    size?: number;
+    color?: string;
+    strokeWidth?: number;
+  }>;
   label: string;
   value: string;
 }) {
@@ -87,10 +129,21 @@ function FactCard({
       }}
     >
       <Icon size={18} color={EX.color.primary} strokeWidth={1.8} />
-      <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink, marginTop: 9, lineHeight: 17 }} numberOfLines={2}>
+      <Text
+        style={{
+          fontSize: 14,
+          fontWeight: '700',
+          color: EX.color.ink,
+          marginTop: 9,
+          lineHeight: 17,
+        }}
+        numberOfLines={2}
+      >
         {value}
       </Text>
-      <Text style={{ fontSize: 11.5, color: EX.color.muted, marginTop: 2 }}>{label}</Text>
+      <Text style={{ fontSize: 11.5, color: EX.color.muted, marginTop: 2 }}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -114,17 +167,33 @@ function ReviewCard({ rev }: { rev: Review }) {
         elevation: 1,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 9 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 9,
+        }}
+      >
         <Portrait seed={rev.seed} size={36} name={rev.n} />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 13.5, fontWeight: '700', color: EX.color.ink }} numberOfLines={1}>
+          <Text
+            style={{ fontSize: 13.5, fontWeight: '700', color: EX.color.ink }}
+            numberOfLines={1}
+          >
             {rev.n}
           </Text>
-          <Text style={{ fontSize: 11.5, color: EX.color.muted }}>{rev.ago}</Text>
+          <Text style={{ fontSize: 11.5, color: EX.color.muted }}>
+            {rev.ago}
+          </Text>
         </View>
         <Stars r={rev.r} size={13} />
       </View>
-      <Text style={{ fontSize: 13.5, lineHeight: 20, color: EX.color.inkMuted }}>{rev.t}</Text>
+      <Text
+        style={{ fontSize: 13.5, lineHeight: 20, color: EX.color.inkMuted }}
+      >
+        {rev.t}
+      </Text>
     </View>
   );
 }
@@ -141,7 +210,14 @@ export default function AgentDetail() {
 
   if (!demo && liveQ.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <ActivityIndicator color={EX.color.primary} />
       </View>
     );
@@ -149,7 +225,14 @@ export default function AgentDetail() {
 
   if (!a) {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <Text style={{ color: EX.color.muted }}>Agent not found.</Text>
       </View>
     );
@@ -237,13 +320,34 @@ export default function AgentDetail() {
               />
             ) : null}
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 14 }}>
-            <Text style={{ color: '#fff', fontFamily: EX.font.display.semibold, fontSize: 25, letterSpacing: -0.25 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 7,
+              marginTop: 14,
+            }}
+          >
+            <Text
+              style={{
+                color: '#fff',
+                fontFamily: EX.font.display.semibold,
+                fontSize: 25,
+                letterSpacing: -0.25,
+              }}
+            >
               {a.n}
             </Text>
             <Verified size={18} />
           </View>
-          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13.5, fontWeight: '600', marginTop: 4 }}>
+          <Text
+            style={{
+              color: 'rgba(255,255,255,0.8)',
+              fontSize: 13.5,
+              fontWeight: '600',
+              marginTop: 4,
+            }}
+          >
             {a.spec} · {a.years} yrs experience
           </Text>
         </LinearGradient>
@@ -279,28 +383,58 @@ export default function AgentDetail() {
         {/* ── Body (source padding '22px 22px 130px') ───────────────────────── */}
         <View style={{ paddingHorizontal: EX.space.screenX, paddingTop: 22 }}>
           {/* Bio — 14.5/1.6 #5B5468 */}
-          <Text style={{ fontSize: 14.5, lineHeight: 23, color: EX.color.inkMuted }}>{a.bio}</Text>
+          <Text
+            style={{ fontSize: 14.5, lineHeight: 23, color: EX.color.inkMuted }}
+          >
+            {a.bio}
+          </Text>
 
           {/* Specialises in */}
-          <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18, marginTop: 24, marginBottom: 12 }}>
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: '700',
+              color: EX.color.ink,
+              letterSpacing: -0.18,
+              marginTop: 24,
+              marginBottom: 12,
+            }}
+          >
             Specialises in
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {a.specs.map((s) => (
-              <Chip key={s} label={s} textStyle={{ color: EX.color.inkMuted }} />
+              <Chip
+                key={s}
+                label={s}
+                textStyle={{ color: EX.color.inkMuted }}
+              />
             ))}
           </View>
 
           {/* Response time + languages fact cards (source join(' · ')). */}
           <View style={{ flexDirection: 'row', gap: 11, marginTop: 18 }}>
             <FactCard icon={Ic.clock} label="Response time" value={a.resp} />
-            <FactCard icon={Ic.lang} label="Languages" value={a.langs.join(' · ')} />
+            <FactCard
+              icon={Ic.lang}
+              label="Languages"
+              value={a.langs.join(' · ')}
+            />
           </View>
 
           {/* Works at (agency row) */}
           {agency ? (
             <>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18, marginTop: 26, marginBottom: 12 }}>
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                  marginTop: 26,
+                  marginBottom: 12,
+                }}
+              >
                 Works at
               </Text>
               <Pressable
@@ -324,21 +458,50 @@ export default function AgentDetail() {
                 {/* 50px cover thumb, radius 14 */}
                 <Image
                   source={{ uri: agency.cover }}
-                  style={{ width: 50, height: 50, borderRadius: 14, backgroundColor: agency.tone }}
+                  style={{
+                    width: 50,
+                    height: 50,
+                    borderRadius: 14,
+                    backgroundColor: agency.tone,
+                  }}
                   contentFit="cover"
                 />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }} numberOfLines={1}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: '700',
+                        color: EX.color.ink,
+                      }}
+                      numberOfLines={1}
+                    >
                       {agency.name}
                     </Text>
                     {agency.verified ? <Verified size={14} /> : null}
                   </View>
-                  <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 1 }} numberOfLines={1}>
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      color: EX.color.muted,
+                      marginTop: 1,
+                    }}
+                    numberOfLines={1}
+                  >
                     {a.role} · {agency.city}
                   </Text>
                 </View>
-                <Ic.chevR size={19} color="rgba(23,19,38,0.4)" strokeWidth={1.8} />
+                <Ic.chevR
+                  size={19}
+                  color="rgba(23,19,38,0.4)"
+                  strokeWidth={1.8}
+                />
               </Pressable>
             </>
           ) : null}
@@ -346,9 +509,34 @@ export default function AgentDetail() {
           {/* Recent reviews (action = "{n} reviews") */}
           {reviews.length ? (
             <>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 26, marginBottom: 12 }}>
-                <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18 }}>Recent reviews</Text>
-                <Text style={{ color: EX.color.primary, fontSize: 13.5, fontWeight: '600' }}>{reviews.length} reviews</Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  marginTop: 26,
+                  marginBottom: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 18,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                    letterSpacing: -0.18,
+                  }}
+                >
+                  Recent reviews
+                </Text>
+                <Text
+                  style={{
+                    color: EX.color.primary,
+                    fontSize: 13.5,
+                    fontWeight: '600',
+                  }}
+                >
+                  {reviews.length} reviews
+                </Text>
               </View>
               <View style={{ gap: 11 }}>
                 {reviews.map((r) => (
@@ -374,7 +562,10 @@ export default function AgentDetail() {
         }}
       >
         <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
-        <GlassButton icon={Ic.msg} onPress={() => router.push('/(explorer)/messages')} />
+        <GlassButton
+          icon={Ic.msg}
+          onPress={() => router.push('/(explorer)/messages')}
+        />
       </View>
 
       {/* ── Sticky glass CTA (source padding '15px 22px 24px') ───────────────── */}
@@ -414,8 +605,24 @@ export default function AgentDetail() {
 
           {/* Consultation fee (natural width) */}
           <View>
-            <Text style={{ fontSize: 11.5, color: EX.color.muted, fontWeight: '500' }}>Consultation</Text>
-            <Text style={{ fontSize: 20, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.2, lineHeight: 20 }}>
+            <Text
+              style={{
+                fontSize: 11.5,
+                color: EX.color.muted,
+                fontWeight: '500',
+              }}
+            >
+              Consultation
+            </Text>
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: '700',
+                color: EX.color.ink,
+                letterSpacing: -0.2,
+                lineHeight: 20,
+              }}
+            >
               {NAIRA(a.fee)}
             </Text>
           </View>
@@ -439,7 +646,9 @@ export default function AgentDetail() {
               elevation: 6,
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>Book</Text>
+            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+              Book
+            </Text>
             <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
           </Pressable>
         </View>

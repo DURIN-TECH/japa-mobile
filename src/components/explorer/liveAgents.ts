@@ -7,11 +7,18 @@
 // stored in kobo/cents → divide by 100 for the ₦ display value.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { ApiAgent } from '@/hooks/useAgents';
 import { Agent } from './data';
+import { ApiAgent } from '@/hooks/useAgents';
 
 // Tonal header palette (dark) — chosen deterministically by seed.
-const TONES = ['#2A3A52', '#3A2E38', '#244A55', '#3A2733', '#2C3540', '#34303E'];
+const TONES = [
+  '#2A3A52',
+  '#3A2E38',
+  '#244A55',
+  '#3A2733',
+  '#2C3540',
+  '#34303E',
+];
 
 function hash(s: string): number {
   let h = 0;
@@ -21,7 +28,12 @@ function hash(s: string): number {
 
 export function mapAgent(a: ApiAgent): Agent {
   const seed = hash(a.id) % 6;
-  const role = a.agencyRole === 'owner' ? 'Founder' : a.agencyRole ? 'Agent' : 'Independent';
+  const role =
+    a.agencyRole === 'owner'
+      ? 'Founder'
+      : a.agencyRole
+        ? 'Agent'
+        : 'Independent';
   return {
     id: a.id,
     n: a.displayName,

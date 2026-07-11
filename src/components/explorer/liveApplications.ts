@@ -9,9 +9,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
-import { Application, ApplicationStatus, ApplicationTimeline } from '@/types/applications.type';
 import { App, AppStep, Dest } from './data';
 import { countryArt } from './liveExplore';
+import {
+  Application,
+  ApplicationStatus,
+  ApplicationTimeline,
+} from '@/types/applications.type';
 
 // Backend ApplicationStatus → one of the Explorer STATUS keys
 // ('documents' | 'review' | 'interview' | 'submitted' | 'approved').
@@ -69,12 +73,17 @@ export function mapApplication(app: Application, agentSeed?: number): App {
     progress: normalizeProgress(app.progress),
     step: 0,
     ref: app.id.slice(0, 8).toUpperCase(),
-    updated: formatDistanceToNow(parseISO(app.lastUpdated), { addSuffix: true }),
+    updated: formatDistanceToNow(parseISO(app.lastUpdated), {
+      addSuffix: true,
+    }),
     agentId: app.agentId ?? '',
     next: {
       label: app.nextStep ?? 'No action needed',
       // A CTA appears only when documents are still outstanding.
-      cta: app.documentsRequired > app.documentsUploaded ? 'Upload document' : null,
+      cta:
+        app.documentsRequired > app.documentsUploaded
+          ? 'Upload document'
+          : null,
     },
     steps: [], // list rows carry no steps; the detail screen fetches the timeline
     dest,
@@ -87,7 +96,17 @@ export function mapTimeline(events: ApplicationTimeline[]): AppStep[] {
     t: e.title,
     desc: e.description,
     d: format(parseISO(e.date), 'MMM d, yyyy'),
-    s: e.status === 'completed' ? 'done' : e.status === 'current' ? 'current' : 'next',
-    by: e.responsibility === 'user' ? 'you' : e.responsibility === 'agent' ? 'agent' : 'system',
+    s:
+      e.status === 'completed'
+        ? 'done'
+        : e.status === 'current'
+          ? 'current'
+          : 'next',
+    by:
+      e.responsibility === 'user'
+        ? 'you'
+        : e.responsibility === 'agent'
+          ? 'agent'
+          : 'system',
   }));
 }

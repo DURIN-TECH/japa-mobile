@@ -166,7 +166,14 @@ export default function BookConsultation() {
 
   if (!demo && liveQ.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <ActivityIndicator color={EX.color.primary} />
       </View>
     );
@@ -246,7 +253,9 @@ export default function BookConsultation() {
           </Pressable>
           <View>
             <Text style={displayText(24, 'semibold')}>Book consultation</Text>
-            <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}>
+            <Text
+              style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}
+            >
               with {a.n}
             </Text>
           </View>
@@ -294,7 +303,11 @@ export default function BookConsultation() {
                   <Verified size={14} />
                 </View>
                 <Text
-                  style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 1 }}
+                  style={{
+                    fontSize: 12.5,
+                    color: EX.color.muted,
+                    marginTop: 1,
+                  }}
                   numberOfLines={1}
                 >
                   {a.spec}
@@ -545,9 +558,7 @@ export default function BookConsultation() {
           borderTopColor: EX.color.line06,
         }}
       >
-        <View
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
-        >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           {/* Total (natural width) */}
           <View>
             <Text

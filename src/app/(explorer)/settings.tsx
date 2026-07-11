@@ -8,7 +8,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import {
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
@@ -68,17 +76,27 @@ function SettingsRow({
         <IconCmp size={19} color={iconColor} strokeWidth={1.8} />
       </View>
 
-      <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: labelColor }}>{label}</Text>
+      <Text
+        style={{ flex: 1, fontSize: 15, fontWeight: '600', color: labelColor }}
+      >
+        {label}
+      </Text>
 
       {/* Right slot: a custom control (Switch) wins; else a muted value string. */}
-      {right
-        ? right
-        : value
-          ? <Text style={{ fontSize: 13.5, color: EX.color.muted, fontWeight: '500' }}>{value}</Text>
-          : null}
+      {right ? (
+        right
+      ) : value ? (
+        <Text
+          style={{ fontSize: 13.5, color: EX.color.muted, fontWeight: '500' }}
+        >
+          {value}
+        </Text>
+      ) : null}
 
       {/* Chevron only when this row navigates / has an action AND no custom control. */}
-      {!right ? <Ic.chevR size={18} color="rgba(23,19,38,0.32)" strokeWidth={1.8} /> : null}
+      {!right ? (
+        <Ic.chevR size={18} color="rgba(23,19,38,0.32)" strokeWidth={1.8} />
+      ) : null}
     </Pressable>
   );
 }
@@ -136,7 +154,8 @@ export default function SettingsScreen() {
   const [emailOn, setEmailOn] = useState(true);
 
   // Subscription tier label from the shared plan catalogue.
-  const currentPlanName = PLANS.find((p) => p.id === CURRENT_PLAN)?.name ?? 'Free';
+  const currentPlanName =
+    PLANS.find((p) => p.id === CURRENT_PLAN)?.name ?? 'Free';
 
   // Coral track when a Switch is on; neutral hairline track when off.
   const switchTrack = { false: EX.color.line10, true: EX.color.primary };
@@ -175,7 +194,13 @@ export default function SettingsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
       {/* ── Back header (matches consultations.tsx detail pattern) ──────────── */}
-      <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 18, paddingBottom: 6 }}>
+      <View
+        style={{
+          paddingTop: insets.top + 8,
+          paddingHorizontal: 18,
+          paddingBottom: 6,
+        }}
+      >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <Pressable
             onPress={() => router.back()}
@@ -200,12 +225,21 @@ export default function SettingsScreen() {
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: EX.space.screenX, paddingTop: 16, paddingBottom: 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: EX.space.screenX,
+          paddingTop: 16,
+          paddingBottom: 40,
+        }}
       >
         {/* ── 1. Appearance ──────────────────────────────────────────────── */}
         <GroupLabel>Appearance</GroupLabel>
         <Card>
-          <SettingsRow icon={Ic.crown} label="Theme" value={theme} onPress={openThemeSheet} />
+          <SettingsRow
+            icon={Ic.crown}
+            label="Theme"
+            value={theme}
+            onPress={openThemeSheet}
+          />
         </Card>
 
         {/* ── 2. Notifications ───────────────────────────────────────────── */}
@@ -291,14 +325,29 @@ export default function SettingsScreen() {
         <View style={{ height: 22 }} />
         <GroupLabel>Account</GroupLabel>
         <Card>
-          <SettingsRow icon={Ic.shield} label="Sign out" danger onPress={confirmSignOut} />
+          <SettingsRow
+            icon={Ic.shield}
+            label="Sign out"
+            danger
+            onPress={confirmSignOut}
+          />
         </Card>
 
         {/* ── 7. Footer ──────────────────────────────────────────────────── */}
         <View style={{ alignItems: 'center', marginTop: 34, gap: 3 }}>
-          <Text style={[displayText(16, 'semibold'), { color: EX.color.muted }]}>Seli</Text>
-          <Text style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500' }}>Version 1.0.0</Text>
-          <Text style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500' }}>
+          <Text
+            style={[displayText(16, 'semibold'), { color: EX.color.muted }]}
+          >
+            Seli
+          </Text>
+          <Text
+            style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500' }}
+          >
+            Version 1.0.0
+          </Text>
+          <Text
+            style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500' }}
+          >
             Made with care by Durin Technologies
           </Text>
         </View>

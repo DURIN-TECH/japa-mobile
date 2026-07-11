@@ -24,8 +24,8 @@ export default function SavedView() {
   const insets = useSafeAreaInsets();
 
   // Resolve saved ids → destinations (drop any that no longer exist).
-  const saved = SAVED.map((id) => destById(id)).filter(
-    (d): d is Dest => Boolean(d),
+  const saved = SAVED.map((id) => destById(id)).filter((d): d is Dest =>
+    Boolean(d),
   );
   const open = (id: string) => router.push(`/(explorer)/destination/${id}`);
 
@@ -58,7 +58,9 @@ export default function SavedView() {
           </Pressable>
           <View>
             <Text style={displayText(24, 'semibold')}>Saved destinations</Text>
-            <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}>
+            <Text
+              style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}
+            >
               {saved.length} place{saved.length === 1 ? '' : 's'} you&rsquo;re
               watching
             </Text>

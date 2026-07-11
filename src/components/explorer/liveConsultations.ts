@@ -10,8 +10,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { format, parseISO } from 'date-fns';
-import { ApiConsultation } from '@/hooks/useConsultations';
 import { Consult } from './data';
+import { ApiConsultation } from '@/hooks/useConsultations';
 
 // Backend status (7 values) → the Explorer's 3-bucket display status.
 function mapStatus(s: ApiConsultation['status']): Consult['status'] {

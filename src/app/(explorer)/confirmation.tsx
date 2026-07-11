@@ -28,7 +28,13 @@ type IconType = React.ComponentType<{
 }>;
 
 // ── DetailRow — icon + label row inside the details card ──────────────────────
-function DetailRow({ icon: IconCmp, label }: { icon: IconType; label: string }) {
+function DetailRow({
+  icon: IconCmp,
+  label,
+}: {
+  icon: IconType;
+  label: string;
+}) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
       <IconCmp size={17} color={EX.color.primary} strokeWidth={1.8} />
@@ -137,7 +143,10 @@ export default function ConfirmationScreen() {
 
         {/* ── Headline + reassurance subtitle ────────────────────────────────── */}
         <Text
-          style={[displayText(26, 'bold'), { marginTop: 22, textAlign: 'center' }]}
+          style={[
+            displayText(26, 'bold'),
+            { marginTop: 22, textAlign: 'center' },
+          ]}
         >
           {isApp ? 'Payment complete!' : 'Consultation booked!'}
         </Text>
@@ -193,7 +202,13 @@ export default function ConfirmationScreen() {
         <View style={{ alignSelf: 'stretch', gap: 11, marginTop: 28 }}>
           {/* Primary — consultations, or applications for an app payment (coral, replace) */}
           <Pressable
-            onPress={() => router.replace(isApp ? '/(explorer)/(tabs)/tracker' : '/(explorer)/consultations')}
+            onPress={() =>
+              router.replace(
+                isApp
+                  ? '/(explorer)/(tabs)/tracker'
+                  : '/(explorer)/consultations',
+              )
+            }
             style={{
               height: 54,
               borderRadius: 16,

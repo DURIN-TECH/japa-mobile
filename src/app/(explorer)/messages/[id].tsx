@@ -147,11 +147,15 @@ export default function ChatView() {
     const t = draft.trim();
     if (!t) return;
     // Optimistically append locally for both demo and live conversations.
-    setSent((prev) => [...prev, { from: 'me', t, at: format(new Date(), 'h:mm a') }]);
+    setSent((prev) => [
+      ...prev,
+      { from: 'me', t, at: format(new Date(), 'h:mm a') },
+    ]);
     setDraft('');
     scrollToEnd();
     // For a live conversation, also persist the message to the backend.
-    if (isLive && convId) sendMessage.mutate({ conversationId: convId, content: t });
+    if (isLive && convId)
+      sendMessage.mutate({ conversationId: convId, content: t });
   };
 
   const hasText = draft.trim().length > 0;

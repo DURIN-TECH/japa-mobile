@@ -11,8 +11,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { FeatureKey } from '@durin-tech/authz';
-import { PlanDTO } from '@/hooks/useSubscription';
 import { type Plan } from './data';
+import { PlanDTO } from '@/hooks/useSubscription';
 
 // FeatureKey → human label shown on a plan's check-row. Mirrors the wording of
 // the demo PLAN_FEATURES map so live + demo plans read identically.
@@ -33,9 +33,7 @@ export const FEATURE_LABEL: Record<FeatureKey, string> = {
 // Title-case a raw feature key ("documents.upload" → "Documents Upload") as a
 // safe fallback for any key not present in FEATURE_LABEL.
 function titleCase(key: string): string {
-  return key
-    .replace(/[._]/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return key.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /**

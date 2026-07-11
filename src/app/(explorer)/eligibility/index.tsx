@@ -99,7 +99,12 @@ function OptRow({
         ) : null}
       </View>
       <Text
-        style={{ flex: 1, fontSize: 15, fontWeight: '600', color: EX.color.ink }}
+        style={{
+          flex: 1,
+          fontSize: 15,
+          fontWeight: '600',
+          color: EX.color.ink,
+        }}
       >
         {label}
       </Text>
@@ -279,7 +284,11 @@ export default function EligibilityView() {
               }}
             >
               <Text
-                style={{ fontSize: 12, fontWeight: '600', color: EX.color.muted }}
+                style={{
+                  fontSize: 12,
+                  fontWeight: '600',
+                  color: EX.color.muted,
+                }}
               >
                 Question {i + 1} of {N}
               </Text>

@@ -241,7 +241,11 @@ function PlanCard({
         {plan.features.map((key) => (
           // Demo plans carry catalog keys (→ PLAN_FEATURES); live plans already
           // carry human labels, so fall back to the value itself.
-          <FeatureRow key={key} label={PLAN_FEATURES[key] ?? key} dark={featured} />
+          <FeatureRow
+            key={key}
+            label={PLAN_FEATURES[key] ?? key}
+            dark={featured}
+          />
         ))}
       </View>
 

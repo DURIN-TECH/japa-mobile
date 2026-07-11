@@ -209,8 +209,8 @@ export default function PassportStep() {
             maxWidth: 300,
           }}
         >
-          It&apos;s the first thing you&apos;ll need — but you can start planning
-          either way.
+          It&apos;s the first thing you&apos;ll need — but you can start
+          planning either way.
         </Text>
 
         {/* ── Two selectable cards ───────────────────────────────────────────── */}
@@ -261,7 +261,9 @@ export default function PassportStep() {
             borderRadius: 16,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: choice ? EX.color.primary : 'rgba(244,81,108,0.35)',
+            backgroundColor: choice
+              ? EX.color.primary
+              : 'rgba(244,81,108,0.35)',
             shadowColor: EX.color.primary,
             shadowOpacity: choice ? 0.45 : 0,
             shadowRadius: 16,

@@ -44,17 +44,40 @@ function MiniStat({
   value,
   label,
 }: {
-  icon: React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+  icon: React.ComponentType<{
+    size?: number;
+    color?: string;
+    strokeWidth?: number;
+  }>;
   value: string;
   label: string;
 }) {
   return (
-    <View style={{ flex: 1, gap: 5, paddingVertical: 14, paddingHorizontal: 12, minWidth: 0 }}>
+    <View
+      style={{
+        flex: 1,
+        gap: 5,
+        paddingVertical: 14,
+        paddingHorizontal: 12,
+        minWidth: 0,
+      }}
+    >
       <Icon size={17} color={EX.color.primary} strokeWidth={1.8} />
-      <Text style={{ fontSize: 16, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.16 }} numberOfLines={1}>
+      <Text
+        style={{
+          fontSize: 16,
+          fontWeight: '700',
+          color: EX.color.ink,
+          letterSpacing: -0.16,
+        }}
+        numberOfLines={1}
+      >
         {value}
       </Text>
-      <Text style={{ fontSize: 11, color: EX.color.muted, fontWeight: '500' }} numberOfLines={1}>
+      <Text
+        style={{ fontSize: 11, color: EX.color.muted, fontWeight: '500' }}
+        numberOfLines={1}
+      >
         {label}
       </Text>
     </View>
@@ -63,7 +86,15 @@ function MiniStat({
 
 // Vertical hairline between mini-stats (source Div: width 1, rgba(23,19,38,.1)).
 function MiniDiv() {
-  return <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: EX.color.line10 }} />;
+  return (
+    <View
+      style={{
+        width: 1,
+        alignSelf: 'stretch',
+        backgroundColor: EX.color.line10,
+      }}
+    />
+  );
 }
 
 // ── AgentRow — white radius-22 card (local copy; mirrors agents.tsx) ──────────
@@ -112,23 +143,62 @@ function AgentRow({ a }: { a: Agent }) {
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Text style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }} numberOfLines={1}>
+          <Text
+            style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}
+            numberOfLines={1}
+          >
             {a.n}
           </Text>
           <Verified size={14} />
         </View>
-        <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 1 }} numberOfLines={1}>
+        <Text
+          style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 1 }}
+          numberOfLines={1}
+        >
           {a.spec}
           {agency ? ` · ${agency.name}` : ''}
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 7 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 9,
+            marginTop: 7,
+          }}
+        >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Ic.star size={13} color={EX.color.gold} fill={EX.color.gold} strokeWidth={0} />
-            <Text style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.ink }}>{a.r}</Text>
+            <Ic.star
+              size={13}
+              color={EX.color.gold}
+              fill={EX.color.gold}
+              strokeWidth={0}
+            />
+            <Text
+              style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.ink }}
+            >
+              {a.r}
+            </Text>
           </View>
-          <Text style={{ fontSize: 11.5, color: EX.color.muted }}>({a.rev.toLocaleString()})</Text>
-          <View style={{ backgroundColor: '#D6F2E2', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: EX.color.success }}>{a.succ}% success</Text>
+          <Text style={{ fontSize: 11.5, color: EX.color.muted }}>
+            ({a.rev.toLocaleString()})
+          </Text>
+          <View
+            style={{
+              backgroundColor: '#D6F2E2',
+              borderRadius: 999,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '700',
+                color: EX.color.success,
+              }}
+            >
+              {a.succ}% success
+            </Text>
           </View>
         </View>
       </View>
@@ -151,12 +221,28 @@ export default function AgencyDetail() {
     transform: [{ translateY: scrollY.value * -0.3 }],
   }));
   const imgStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: interpolate(scrollY.value, [0, 400], [1, 1.24], Extrapolation.CLAMP) }],
+    transform: [
+      {
+        scale: interpolate(
+          scrollY.value,
+          [0, 400],
+          [1, 1.24],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
   }));
 
   if (!a) {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <Text style={{ color: EX.color.muted }}>Agency not found.</Text>
       </View>
     );
@@ -169,23 +255,52 @@ export default function AgencyDetail() {
       {/* HERO — fixed behind, parallaxes as the sheet scrolls over it */}
       <Animated.View
         style={[
-          { position: 'absolute', top: 0, left: 0, right: 0, height: HERO, overflow: 'hidden', backgroundColor: a.tone },
+          {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: HERO,
+            overflow: 'hidden',
+            backgroundColor: a.tone,
+          },
           heroStyle,
         ]}
       >
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, imgStyle]}>
-          <Image source={{ uri: a.cover }} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={200} />
+        <Animated.View
+          style={[
+            { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
+            imgStyle,
+          ]}
+        >
+          <Image
+            source={{ uri: a.cover }}
+            style={{ width: '100%', height: '100%' }}
+            contentFit="cover"
+            transition={200}
+          />
         </Animated.View>
         {/* Scrim: .82 → .2 @52% → .34 (bottom → top) */}
         <LinearGradient
-          colors={['rgba(12,10,8,0.82)', 'rgba(12,10,8,0.2)', 'rgba(12,10,8,0.34)']}
+          colors={[
+            'rgba(12,10,8,0.82)',
+            'rgba(12,10,8,0.2)',
+            'rgba(12,10,8,0.34)',
+          ]}
           locations={[0, 0.52, 1]}
           start={{ x: 0.5, y: 1 }}
           end={{ x: 0.5, y: 0 }}
           style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
         />
         <View style={{ position: 'absolute', left: 22, right: 22, bottom: 50 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 6,
+            }}
+          >
             <Text
               style={{
                 color: '#fff',
@@ -204,12 +319,39 @@ export default function AgencyDetail() {
           </View>
           {/* Pin · "{city}, Nigeria" · "Since {est}" (gap 9, 13/600). */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+            >
               <Ic.pin size={14} color="#fff" strokeWidth={1.8} />
-              <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: '600' }}>{a.city}, Nigeria</Text>
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.92)',
+                  fontSize: 13,
+                  fontWeight: '600',
+                }}
+              >
+                {a.city}, Nigeria
+              </Text>
             </View>
-            <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: '600', opacity: 0.5 }}>·</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.92)', fontSize: 13, fontWeight: '600' }}>Since {a.est}</Text>
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.92)',
+                fontSize: 13,
+                fontWeight: '600',
+                opacity: 0.5,
+              }}
+            >
+              ·
+            </Text>
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.92)',
+                fontSize: 13,
+                fontWeight: '600',
+              }}
+            >
+              Since {a.est}
+            </Text>
           </View>
         </View>
       </Animated.View>
@@ -232,7 +374,11 @@ export default function AgencyDetail() {
       </View>
 
       {/* Scrolling content sheet */}
-      <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+      >
         {/* spacer revealing the hero (source HERO - 26) */}
         <View style={{ height: HERO - 26 }} pointerEvents="none" />
 
@@ -252,7 +398,16 @@ export default function AgencyDetail() {
           }}
         >
           {/* Grab handle */}
-          <View style={{ width: 40, height: 4, borderRadius: 99, backgroundColor: EX.color.line16, alignSelf: 'center', marginBottom: 16 }} />
+          <View
+            style={{
+              width: 40,
+              height: 4,
+              borderRadius: 99,
+              backgroundColor: EX.color.line16,
+              alignSelf: 'center',
+              marginBottom: 16,
+            }}
+          />
 
           {/* 4-column icon mini-stat strip (no container padding; cells own it). */}
           <View
@@ -275,16 +430,35 @@ export default function AgencyDetail() {
             <MiniDiv />
             <MiniStat icon={Ic.trend} value={`${a.succ}%`} label="Success" />
             <MiniDiv />
-            <MiniStat icon={Ic.msg} value={`${(a.rev / 1000).toFixed(1)}k`} label="Reviews" />
+            <MiniStat
+              icon={Ic.msg}
+              value={`${(a.rev / 1000).toFixed(1)}k`}
+              label="Reviews"
+            />
           </View>
 
           {/* Blurb — 14.5/1.6 #5B5468, margin '18px 2px 0' */}
-          <Text style={{ fontSize: 14.5, lineHeight: 23, color: EX.color.inkMuted, marginTop: 18, marginHorizontal: 2 }}>
+          <Text
+            style={{
+              fontSize: 14.5,
+              lineHeight: 23,
+              color: EX.color.inkMuted,
+              marginTop: 18,
+              marginHorizontal: 2,
+            }}
+          >
             {a.blurb}
           </Text>
 
           {/* Licence badge pills — shield 14, 12.5/600 #1E8E55 on #D6F2E2, padding 7/13 */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: 8,
+              marginTop: 14,
+            }}
+          >
             {a.badges.map((b) => (
               <View
                 key={b}
@@ -298,14 +472,36 @@ export default function AgencyDetail() {
                   paddingVertical: 7,
                 }}
               >
-                <Ic.shield size={14} color={EX.color.success} strokeWidth={1.8} />
-                <Text style={{ fontSize: 12.5, fontWeight: '600', color: EX.color.success }}>{b}</Text>
+                <Ic.shield
+                  size={14}
+                  color={EX.color.success}
+                  strokeWidth={1.8}
+                />
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: '600',
+                    color: EX.color.success,
+                  }}
+                >
+                  {b}
+                </Text>
               </View>
             ))}
           </View>
 
           {/* Agents here */}
-          <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18, marginTop: 26, marginBottom: 12, marginHorizontal: 2 }}>
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: '700',
+              color: EX.color.ink,
+              letterSpacing: -0.18,
+              marginTop: 26,
+              marginBottom: 12,
+              marginHorizontal: 2,
+            }}
+          >
             {agents.length} agents here
           </Text>
           <View style={{ gap: 12 }}>
@@ -351,7 +547,11 @@ export default function AgencyDetail() {
           }}
         >
           <Ic.msg size={18} color={EX.color.bg} strokeWidth={1.8} />
-          <Text style={{ color: EX.color.bg, fontSize: 15.5, fontWeight: '700' }}>Contact {a.name}</Text>
+          <Text
+            style={{ color: EX.color.bg, fontSize: 15.5, fontWeight: '700' }}
+          >
+            Contact {a.name}
+          </Text>
         </Pressable>
       </BlurView>
     </View>

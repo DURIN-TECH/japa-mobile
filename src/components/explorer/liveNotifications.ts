@@ -11,8 +11,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { ApiNotification } from '@/hooks/useNotifications';
 import { Notif } from './data';
+import { ApiNotification } from '@/hooks/useNotifications';
 
 // Backend `type` → Explorer visual `kind`.
 function toKind(type: ApiNotification['type']): Notif['kind'] {
@@ -52,7 +52,6 @@ export function mapNotif(n: ApiNotification): Notif {
     kind: toKind(n.type),
     // Only message notifications get a routing target; the id is the related
     // message entity id. Live ids won't match demo DESTS, so `destId` stays unset.
-    agentId:
-      n.relatedEntityType === 'message' ? n.relatedEntityId : undefined,
+    agentId: n.relatedEntityType === 'message' ? n.relatedEntityId : undefined,
   };
 }

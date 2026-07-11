@@ -83,7 +83,11 @@ export const EX = {
     verified: { label: 'Verified', fg: '#1E8E55', bg: '#D6F2E2' },
     uploaded: { label: 'In review', fg: '#2F62A0', bg: '#DCEBF7' },
     rejected: { label: 'Rejected', fg: '#C0453C', bg: '#FBE3E1' },
-    missing: { label: 'Not uploaded', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
+    missing: {
+      label: 'Not uploaded',
+      fg: '#8B8499',
+      bg: 'rgba(23,19,38,0.06)',
+    },
   } as Record<string, { label: string; fg: string; bg: string }>,
 
   // ── Typography ────────────────────────────────────────────────────────────
@@ -179,16 +183,28 @@ export const EXShadow: Record<string, ViewStyle> = {
 // Base color rgba(12,10,8,x). Return {colors, locations} tuples.
 export const EXScrim = {
   tile: {
-    colors: ['rgba(12,10,8,0.74)', 'rgba(12,10,8,0.12)', 'rgba(12,10,8,0.04)'] as const,
+    colors: [
+      'rgba(12,10,8,0.74)',
+      'rgba(12,10,8,0.12)',
+      'rgba(12,10,8,0.04)',
+    ] as const,
     locations: [0, 0.46, 1] as const,
   },
   detail: {
-    colors: ['rgba(12,10,8,0.78)', 'rgba(12,10,8,0.15)', 'rgba(12,10,8,0.28)'] as const,
+    colors: [
+      'rgba(12,10,8,0.78)',
+      'rgba(12,10,8,0.15)',
+      'rgba(12,10,8,0.28)',
+    ] as const,
     locations: [0, 0.42, 1] as const,
   },
   // Home hero is diagonal (120deg) — pass start/end when using.
   homeHero: {
-    colors: ['rgba(12,10,8,0.80)', 'rgba(12,10,8,0.34)', 'rgba(12,10,8,0.12)'] as const,
+    colors: [
+      'rgba(12,10,8,0.80)',
+      'rgba(12,10,8,0.34)',
+      'rgba(12,10,8,0.12)',
+    ] as const,
     locations: [0, 0.58, 1] as const,
   },
 };

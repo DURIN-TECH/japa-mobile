@@ -11,8 +11,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { formatDistanceToNow, format, parseISO } from 'date-fns';
-import { Conversation, Message } from '@/types/messaging.type';
 import { Convo, Msg } from './data';
+import { Conversation, Message } from '@/types/messaging.type';
 
 // ── Compact relative time ────────────────────────────────────────────────────
 // date-fns `formatDistanceToNow` yields verbose strings ("about 3 hours ago").

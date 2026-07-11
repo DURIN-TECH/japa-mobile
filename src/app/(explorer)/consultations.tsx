@@ -55,7 +55,9 @@ function InfoBit({ icon: IconCmp, label }: { icon: IconType; label: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
       <IconCmp size={14} color={EX.color.inkMuted} strokeWidth={1.8} />
-      <Text style={{ fontSize: 12.5, fontWeight: '600', color: EX.color.inkMuted }}>
+      <Text
+        style={{ fontSize: 12.5, fontWeight: '600', color: EX.color.inkMuted }}
+      >
         {label}
       </Text>
     </View>
@@ -381,7 +383,9 @@ export default function ConsultationsView() {
                           icon={Ic.video}
                           filled
                           grow
-                          onPress={() => router.push(`/(explorer)/consultation/${c.id}`)}
+                          onPress={() =>
+                            router.push(`/(explorer)/consultation/${c.id}`)
+                          }
                         />
                         <ActionBtn
                           label="Message"
@@ -399,7 +403,9 @@ export default function ConsultationsView() {
                         />
                         <ActionBtn
                           label="Rebook"
-                          onPress={() => router.push(`/(explorer)/book/${c.agentId}`)}
+                          onPress={() =>
+                            router.push(`/(explorer)/book/${c.agentId}`)
+                          }
                         />
                       </>
                     )}

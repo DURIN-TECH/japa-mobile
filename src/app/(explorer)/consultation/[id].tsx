@@ -160,7 +160,14 @@ function LabelCard({ label, body }: { label: string; body: string }) {
       >
         {label}
       </Text>
-      <Text style={{ fontSize: 15, fontWeight: '600', color: EX.color.ink, lineHeight: 21 }}>
+      <Text
+        style={{
+          fontSize: 15,
+          fontWeight: '600',
+          color: EX.color.ink,
+          lineHeight: 21,
+        }}
+      >
         {body}
       </Text>
     </View>
@@ -211,11 +218,7 @@ export default function ConsultationDetailView() {
           paddingHorizontal: 40,
         }}
       >
-        <Ic.cal
-          size={38}
-          color={EX.color.muted}
-          strokeWidth={1.8}
-        />
+        <Ic.cal size={38} color={EX.color.muted} strokeWidth={1.8} />
         <Text style={{ fontSize: 15, color: EX.color.muted, marginTop: 12 }}>
           Consultation not found.
         </Text>
@@ -336,12 +339,20 @@ export default function ConsultationDetailView() {
               gap: 14,
             }}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
+            >
               <Portrait seed={agentSeed} size={48} name={agentName} />
               <View style={{ flex: 1, minWidth: 0 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                >
                   <Text
-                    style={{ fontSize: 16, fontWeight: '700', color: EX.color.ink }}
+                    style={{
+                      fontSize: 16,
+                      fontWeight: '700',
+                      color: EX.color.ink,
+                    }}
                     numberOfLines={1}
                   >
                     {agentName}
@@ -349,7 +360,11 @@ export default function ConsultationDetailView() {
                   <Verified size={16} />
                 </View>
                 <Text
-                  style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}
+                  style={{
+                    fontSize: 12.5,
+                    color: EX.color.muted,
+                    marginTop: 2,
+                  }}
                   numberOfLines={1}
                 >
                   {a?.spec ?? 'Visa specialist'}
@@ -374,7 +389,13 @@ export default function ConsultationDetailView() {
               }}
             >
               <Ic.msg size={16} color={EX.color.ink} strokeWidth={1.8} />
-              <Text style={{ fontSize: 13.5, fontWeight: '700', color: EX.color.ink }}>
+              <Text
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                }}
+              >
                 Message
               </Text>
             </Pressable>
@@ -385,7 +406,13 @@ export default function ConsultationDetailView() {
         {c.status === 'upcoming' ? (
           <View style={{ gap: 10 }}>
             <View style={{ flexDirection: 'row', gap: 10 }}>
-              <ActionBtn label="Join call" icon={Ic.video} filled grow onPress={joinCall} />
+              <ActionBtn
+                label="Join call"
+                icon={Ic.video}
+                filled
+                grow
+                onPress={joinCall}
+              />
               <ActionBtn
                 label="Reschedule"
                 grow
@@ -398,14 +425,25 @@ export default function ConsultationDetailView() {
               hitSlop={6}
               style={{ alignItems: 'center', paddingVertical: 8 }}
             >
-              <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.danger }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '700',
+                  color: EX.color.danger,
+                }}
+              >
                 Cancel consultation
               </Text>
             </Pressable>
           </View>
         ) : c.status === 'completed' ? (
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <ActionBtn label="Message agent" icon={Ic.msg} grow onPress={openChat} />
+            <ActionBtn
+              label="Message agent"
+              icon={Ic.msg}
+              grow
+              onPress={openChat}
+            />
             <ActionBtn
               label="Rebook"
               grow
@@ -416,7 +454,9 @@ export default function ConsultationDetailView() {
 
         {/* 6 · Optional note / summary cards. */}
         {c.notes ? <LabelCard label="Your note" body={c.notes} /> : null}
-        {c.summary ? <LabelCard label="Session summary" body={c.summary} /> : null}
+        {c.summary ? (
+          <LabelCard label="Session summary" body={c.summary} />
+        ) : null}
       </ScrollView>
     </View>
   );
