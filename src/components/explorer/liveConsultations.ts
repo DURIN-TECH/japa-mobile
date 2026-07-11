@@ -9,7 +9,8 @@
 // agents that aren't in the demo AGENTS list still render a name.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
+import { fmtDate } from './liveDate';
 import { Consult } from './data';
 import { ApiConsultation } from '@/hooks/useConsultations';
 
@@ -56,7 +57,7 @@ export function mapConsult(c: ApiConsultation): Consult {
     agentId: c.agentId,
     agentName: c.agentName,
     status: mapStatus(c.status),
-    date: format(parseISO(c.scheduledDate), 'EEE, MMM d'),
+    date: fmtDate(c.scheduledDate, 'EEE, MMM d'),
     time: formatTime(c.scheduledTime),
     // Backend has no meeting-mode concept → default to Video call.
     mode: 'Video call',

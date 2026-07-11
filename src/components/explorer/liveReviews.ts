@@ -9,7 +9,7 @@
 // relative time with date-fns.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { formatDistanceToNow, parseISO } from 'date-fns';
+import { agoFrom } from './liveDate';
 import { Review } from './data';
 import { ApiReview } from '@/hooks/useAgents';
 
@@ -38,7 +38,7 @@ export function mapReview(r: ApiReview): Review {
     n: r.userName ?? r.reviewerName ?? 'Applicant',
     seed: hash(r.id) % 6,
     r: r.rating,
-    ago: formatDistanceToNow(parseISO(r.createdAt), { addSuffix: true }),
+    ago: agoFrom(r.createdAt, { addSuffix: true }),
     t: r.comment,
   };
 }
