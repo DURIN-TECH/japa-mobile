@@ -329,7 +329,7 @@ export default function SubscriptionView() {
             <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
           </View>
 
-          {/* "Japa Premium" glass badge */}
+          {/* "Seli Premium" glass badge */}
           <BlurView
             intensity={18}
             tint="light"
@@ -357,7 +357,7 @@ export default function SubscriptionView() {
                 letterSpacing: 0.3,
               }}
             >
-              Japa Premium
+              Seli Premium
             </Text>
           </BlurView>
 

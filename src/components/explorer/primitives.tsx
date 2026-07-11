@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Japa / Seli Destination Explorer — shared primitives
+// Seli Destination Explorer — shared primitives
 //
 // Native re-implementations of the prototype's kit.jsx / shell.jsx components,
 // plus a few widgets used across multiple screens (StatusPill, Progress, Tile).

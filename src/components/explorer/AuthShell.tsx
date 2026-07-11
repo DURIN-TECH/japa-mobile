@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Japa / Seli Destination Explorer — immersive AUTH shell + form primitives
+// Seli Destination Explorer — immersive AUTH shell + form primitives
 //
 // Faithful RN port of the prototype's `auth.jsx` shared pieces:
 //   • AuthShell   — full-bleed photo background + dark scrim + glass back button

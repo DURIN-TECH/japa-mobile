@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Japa / Seli Destination Explorer — design tokens
+// Seli Destination Explorer — design tokens
 //
 // Ported from the "Seli Design System" Claude Design project (explorer/kit.jsx +
 // shell.jsx). This is a self-contained visual language for the Explorer feature:

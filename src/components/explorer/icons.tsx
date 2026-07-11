@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Japa / Seli Destination Explorer — icon map
+// Seli Destination Explorer — icon map
 //
 // The prototype (kit.jsx) defined a custom `I` set of stroke icons. We map each
 // name to its lucide-react-native equivalent (the app's standard icon library,

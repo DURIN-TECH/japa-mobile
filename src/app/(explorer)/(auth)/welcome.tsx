@@ -25,6 +25,7 @@ import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import { ONBOARD } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { PINK } from '@/components/explorer/AuthShell';
+import { SeliMark } from '@/components/explorer/SeliMark';
 
 const ADVANCE_MS = 4200; // slide dwell time (source setInterval 4200ms)
 
@@ -142,7 +143,7 @@ export default function AuthWelcome() {
         <Slide key={s.id} img={s.img} active={idx === i} />
       ))}
 
-      {/* Brand mark — top-center: coral globe chip + "Japa" wordmark. */}
+      {/* Brand mark — top-center: Seli logo mark + wordmark. */}
       <View
         style={{
           position: 'absolute',
@@ -155,20 +156,8 @@ export default function AuthWelcome() {
           gap: 9,
         }}
       >
-        <View
-          style={[
-            {
-              width: 30,
-              height: 30,
-              borderRadius: 9,
-              backgroundColor: EX.color.primary,
-              alignItems: 'center',
-              justifyContent: 'center',
-            },
-            EXShadow.primaryBtn,
-          ]}
-        >
-          <Ic.globe size={18} color="#fff" strokeWidth={1.8} />
+        <View style={EXShadow.primaryBtn}>
+          <SeliMark size={30} />
         </View>
         <Text
           style={{
@@ -178,7 +167,7 @@ export default function AuthWelcome() {
             color: '#fff',
           }}
         >
-          Japa
+          Seli
         </Text>
       </View>
 

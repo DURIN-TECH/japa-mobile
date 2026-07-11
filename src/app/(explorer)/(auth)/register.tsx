@@ -113,7 +113,7 @@ export default function AuthRegister() {
               color: 'rgba(255,255,255,0.7)',
             }}
           >
-            I agree to Japa&rsquo;s{' '}
+            I agree to Seli&rsquo;s{' '}
             <Text style={{ color: '#fff', fontWeight: '600' }}>Terms</Text> &{' '}
             <Text style={{ color: '#fff', fontWeight: '600' }}>
               Privacy Policy

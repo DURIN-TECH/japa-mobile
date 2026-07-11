@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Japa / Seli Destination Explorer — demo data
+// Seli Destination Explorer — demo data
 //
 // Faithful TypeScript port of the prototype's explorer/data.jsx. The Explorer is
 // a self-contained showcase experience, so it ships with this static demo data
@@ -321,8 +321,8 @@ export const PLAN_FEATURES: Record<string, string> = {
 export type Plan = { id: string; name: string; price: number; interval: string | null; tag: string | null; features: string[]; blurb: string };
 export const PLANS: Plan[] = [
   { id: 'free', name: 'Free', price: 0, interval: null, tag: null, features: ['create', 'alerts'], blurb: 'Explore visas and start one application.' },
-  { id: 'plus', name: 'Japa Plus', price: 4500, interval: 'mo', tag: 'Most popular', features: ['create', 'messaging', 'docs', 'self', 'alerts'], blurb: 'Everything you need to self-manage your move.' },
-  { id: 'pro', name: 'Japa Pro', price: 12000, interval: 'mo', tag: null, features: ['create', 'messaging', 'consults', 'docs', 'self', 'priority', 'alerts'], blurb: 'Unlimited access plus priority agent support.' },
+  { id: 'plus', name: 'Seli Plus', price: 4500, interval: 'mo', tag: 'Most popular', features: ['create', 'messaging', 'docs', 'self', 'alerts'], blurb: 'Everything you need to self-manage your move.' },
+  { id: 'pro', name: 'Seli Pro', price: 12000, interval: 'mo', tag: null, features: ['create', 'messaging', 'consults', 'docs', 'self', 'priority', 'alerts'], blurb: 'Unlimited access plus priority agent support.' },
 ];
 export const CURRENT_PLAN = 'free';
 

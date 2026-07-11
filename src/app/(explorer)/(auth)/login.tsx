@@ -3,7 +3,7 @@
 //
 // AuthShell ("Welcome back") with Email + Password glass fields, a "Forgot
 // password?" link, coral "Log in" CTA, an "or continue with" divider, Google /
-// Apple providers and a "New to Japa? Create account" footer.
+// Apple providers and a "New to Seli? Create account" footer.
 //
 // AuthShell already wraps its body in a KeyboardAvoidingView, so the inputs here
 // stay clear of the keyboard.
@@ -135,7 +135,7 @@ export default function AuthLogin() {
           }}
         >
           <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>
-            New to Japa?{' '}
+            New to Seli?{' '}
           </Text>
           <Pressable
             onPress={() => router.push('/(explorer)/(auth)/register')}

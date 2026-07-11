@@ -4,13 +4,15 @@
 // and a 2-column grid of uniform destination tiles.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { CATS, DESTS } from '@/components/explorer/data';
+import { DESTS } from '@/components/explorer/data';
+import { mapVisasToDests } from '@/components/explorer/liveExplore';
+import { useCountriesWithVisas, useVisaTypes } from '@/hooks/useVisaTypes';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait } from '@/components/explorer/primitives';
 import { Tile } from '@/components/explorer/Tile';
@@ -20,7 +22,21 @@ export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const [cat, setCat] = useState('All');
 
-  const list = DESTS.filter((d) => cat === 'All' || d.cat === cat);
+  // ── Live data (GET /visas + /countries) with a demo fallback ──────────────
+  const visaQuery = useVisaTypes({ limit: 60 });
+  const { data: countries } = useCountriesWithVisas();
+  const liveDests = useMemo(() => {
+    const visas = visaQuery.data?.visaTypes ?? [];
+    return visas.length ? mapVisasToDests(visas, countries ?? []) : [];
+  }, [visaQuery.data, countries]);
+  const usingLive = liveDests.length > 0;
+  const source = usingLive ? liveDests : DESTS;
+  const initialLoading = visaQuery.isLoading && !usingLive;
+
+  // Category chips derive from whatever data is showing.
+  const cats = useMemo(() => ['All', ...Array.from(new Set(source.map((d) => d.cat)))], [source]);
+
+  const list = source.filter((d) => cat === 'All' || d.cat === cat);
   const featured = list.find((d) => d.featured) ?? list[0];
   const rest = list.filter((d) => d !== featured);
   const open = (id: string) => router.push(`/(explorer)/destination/${id}`);
@@ -31,6 +47,13 @@ export default function ExploreScreen() {
         stickyHeaderIndices={[0]}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: EX.space.tabClear }}
+        refreshControl={
+          <RefreshControl
+            refreshing={visaQuery.isFetching && usingLive}
+            onRefresh={() => visaQuery.refetch()}
+            tintColor={EX.color.primary}
+          />
+        }
       >
         {/* ── Sticky glass header ─────────────────────────────────────────── */}
         <BlurView
@@ -72,7 +95,7 @@ export default function ExploreScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 8, paddingHorizontal: 20, paddingBottom: 14 }}
           >
-            {CATS.map((c) => {
+            {cats.map((c) => {
               const on = cat === c;
               return (
                 <Pressable
@@ -93,20 +116,38 @@ export default function ExploreScreen() {
 
         {/* ── Body ────────────────────────────────────────────────────────── */}
         <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
-          {featured ? (
-            <View style={{ marginBottom: 14 }}>
-              <Tile d={featured} big onPress={() => open(featured.id)} />
+          {initialLoading ? (
+            <View style={{ paddingTop: 60, alignItems: 'center' }}>
+              <ActivityIndicator color={EX.color.primary} />
+              <Text style={{ marginTop: 12, color: EX.color.muted, fontSize: 13.5 }}>Loading visas…</Text>
             </View>
-          ) : null}
+          ) : (
+            <>
+              {/* Fallback notice when the backend returned nothing (offline / empty). */}
+              {!usingLive ? (
+                <View style={{ marginBottom: 12, backgroundColor: EX.color.cream, borderRadius: 12, paddingVertical: 9, paddingHorizontal: 13 }}>
+                  <Text style={{ fontSize: 12.5, color: EX.color.amber, fontWeight: '600' }}>
+                    Showing sample destinations · pull to refresh for live visas
+                  </Text>
+                </View>
+              ) : null}
 
-          {/* 2-column grid */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 13 }}>
-            {rest.map((d) => (
-              <View key={d.id} style={{ width: '48.4%' }}>
-                <Tile d={d} onPress={() => open(d.id)} />
+              {featured ? (
+                <View style={{ marginBottom: 14 }}>
+                  <Tile d={featured} big onPress={() => open(featured.id)} />
+                </View>
+              ) : null}
+
+              {/* 2-column grid */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 13 }}>
+                {rest.map((d) => (
+                  <View key={d.id} style={{ width: '48.4%' }}>
+                    <Tile d={d} onPress={() => open(d.id)} />
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            </>
+          )}
         </View>
       </ScrollView>
     </View>

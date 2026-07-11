@@ -91,7 +91,7 @@ export default function ProfileScreen() {
               <Ic.crown size={23} color="#fff" strokeWidth={1.8} />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ fontSize: 15.5, fontWeight: '700', color: '#fff' }}>Upgrade to Japa Plus</Text>
+              <Text style={{ fontSize: 15.5, fontWeight: '700', color: '#fff' }}>Upgrade to Seli Plus</Text>
               <Text style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>Agent chat, uploads &amp; priority support</Text>
             </View>
             <Ic.chevR size={20} color="#fff" strokeWidth={1.8} />
