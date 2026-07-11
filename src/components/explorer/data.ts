@@ -172,7 +172,13 @@ export const STATUS: Record<string, { label: string; fg: string; bg: string }> =
   approved: { label: 'Approved', fg: '#1E8E55', bg: '#D6F2E2' },
 };
 
-export type AppStep = { t: string; d: string; s: 'done' | 'current' | 'next' };
+export type AppStep = {
+  t: string; // title
+  d: string; // date / status label
+  s: 'done' | 'current' | 'next';
+  desc?: string; // what happened (timeline detail)
+  by?: 'you' | 'agent' | 'system'; // who performed the step (drives the dot colour)
+};
 export type App = {
   id: string; destId: string; status: string; step: number; progress: number;
   ref: string; updated: string; agentId: string;
@@ -185,12 +191,13 @@ export const APPS: App[] = [
     ref: 'JP-4821', updated: '2 days ago', agentId: 'a1',
     next: { label: 'Awaiting embassy slot — no action needed', cta: null },
     steps: [
-      { t: 'Application started', d: 'Mar 2', s: 'done' },
-      { t: 'Documents submitted', d: 'Mar 14', s: 'done' },
-      { t: 'Payment confirmed', d: 'Mar 16', s: 'done' },
-      { t: 'Under review', d: 'In progress', s: 'current' },
-      { t: 'Submitted to embassy', d: 'Est. Apr', s: 'next' },
-      { t: 'Decision', d: 'Est. May', s: 'next' },
+      { t: 'Application started', d: 'Mar 2, 2026', s: 'done', by: 'you', desc: 'You created your H-1B application and chose Sarah Johnson as your agent.' },
+      { t: 'Documents submitted', d: 'Mar 14, 2026', s: 'done', by: 'you', desc: 'Passport, degree certificate and your last 3 payslips uploaded for review.' },
+      { t: 'Payment confirmed', d: 'Mar 16, 2026', s: 'done', by: 'you', desc: 'Service fee of ₦50,000 paid via Paystack.' },
+      { t: 'Document review complete', d: 'Mar 20, 2026', s: 'done', by: 'agent', desc: 'Agent reviewed all submitted documents for completeness and accuracy.' },
+      { t: 'Petition under review', d: 'In progress', s: 'current', by: 'agent', desc: 'Your H-1B petition is being prepared and checked before filing with USCIS.' },
+      { t: 'Submitted to USCIS', d: 'Est. Apr 2026', s: 'next', by: 'system', desc: 'Your completed petition package will be filed with USCIS.' },
+      { t: 'Decision', d: 'Est. May 2026', s: 'next', by: 'system', desc: 'Final decision on your H-1B petition.' },
     ],
   },
   {
@@ -198,11 +205,11 @@ export const APPS: App[] = [
     ref: 'JP-4790', updated: '5 hrs ago', agentId: 'a3',
     next: { label: 'Upload proof of funds', cta: 'Upload document' },
     steps: [
-      { t: 'Application started', d: 'Mar 20', s: 'done' },
-      { t: 'Documents required', d: '1 of 4 left', s: 'current' },
-      { t: 'Payment', d: 'Pending', s: 'next' },
-      { t: 'Under review', d: '—', s: 'next' },
-      { t: 'Decision', d: '—', s: 'next' },
+      { t: 'Application started', d: 'Mar 20, 2026', s: 'done', by: 'you', desc: 'You created your Express Entry PR application with Amara Eze.' },
+      { t: 'Documents in progress', d: '1 of 4 remaining', s: 'current', by: 'agent', desc: 'Upload your 6-month bank statement to continue — 3 of 4 documents received.' },
+      { t: 'Payment', d: 'Pending', s: 'next', by: 'system', desc: 'Your service fee falls due once documents pass review.' },
+      { t: 'Under review', d: 'Not started', s: 'next', by: 'agent', desc: 'Agent will review all documents for completeness and accuracy.' },
+      { t: 'Decision', d: 'Not started', s: 'next', by: 'system', desc: 'Final decision on your PR application.' },
     ],
   },
   {
@@ -210,12 +217,12 @@ export const APPS: App[] = [
     ref: 'JP-4655', updated: '1 day ago', agentId: 'a2',
     next: { label: 'Interview · Apr 18, 10:00 — Tokyo Embassy', cta: 'View details' },
     steps: [
-      { t: 'Application started', d: 'Feb 8', s: 'done' },
-      { t: 'Documents submitted', d: 'Feb 19', s: 'done' },
-      { t: 'Payment confirmed', d: 'Feb 21', s: 'done' },
-      { t: 'Submitted to embassy', d: 'Mar 9', s: 'done' },
-      { t: 'Interview scheduled', d: 'Apr 18', s: 'current' },
-      { t: 'Decision', d: 'Est. Apr', s: 'next' },
+      { t: 'Application started', d: 'Feb 8, 2026', s: 'done', by: 'you', desc: 'You created your Engineer / Specialist application with Michael Okafor.' },
+      { t: 'Documents submitted', d: 'Feb 19, 2026', s: 'done', by: 'you', desc: 'All required documents uploaded and verified by your agent.' },
+      { t: 'Payment confirmed', d: 'Feb 21, 2026', s: 'done', by: 'you', desc: 'Service fee paid in full.' },
+      { t: 'Submitted to embassy', d: 'Mar 9, 2026', s: 'done', by: 'agent', desc: 'Application package submitted to the Tokyo embassy via VFS Global.' },
+      { t: 'Interview scheduled', d: 'Apr 18, 2026', s: 'current', by: 'system', desc: 'Interview at the Tokyo embassy on Apr 18, 10:00. Bring originals of all documents.' },
+      { t: 'Decision', d: 'Est. Apr 2026', s: 'next', by: 'system', desc: 'Final decision following your interview.' },
     ],
   },
 ];
