@@ -124,6 +124,8 @@ function RootLayoutContent() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboard)" />
         <Stack.Screen name="(tabs)" />
+        {/* Destination Explorer — self-contained coral/cream showcase experience */}
+        <Stack.Screen name="(explorer)" />
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style={isDark ? 'light' : 'dark'} />

@@ -16,6 +16,11 @@ module.exports = function (api) {
           },
         };
       },
+      // react-native-worklets plugin — REQUIRED for react-native-reanimated v4
+      // (drives useAnimatedStyle / useAnimatedScrollHandler worklets). Without it
+      // animated styles silently never update — e.g. the Explorer parallax heroes.
+      // Must be the LAST plugin in the list.
+      'react-native-worklets/plugin',
     ],
   };
 };

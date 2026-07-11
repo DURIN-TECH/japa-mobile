@@ -179,6 +179,50 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Destination Explorer entry — opens the coral/cream showcase experience */}
+        <View className="px-4 pt-3">
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => router.push('/(explorer)/(auth)/welcome')}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              backgroundColor: '#F4516C',
+              borderRadius: 18,
+              paddingVertical: 14,
+              paddingHorizontal: 16,
+              shadowColor: '#F4516C',
+              shadowOpacity: 0.35,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 10 },
+              elevation: 6,
+            }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                backgroundColor: 'rgba(255,255,255,0.18)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Globe color="#fff" size={22} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+                Destination Explorer
+              </Text>
+              <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12.5, marginTop: 1 }}>
+                Browse visas, agents & track your journey
+              </Text>
+            </View>
+            <ArrowRight color="#fff" size={20} />
+          </TouchableOpacity>
+        </View>
+
         {/* Active Application Card — shows real data instead of hardcoded "US Tourist Visa" */}
         {activeApplication ? (
           <Section>
