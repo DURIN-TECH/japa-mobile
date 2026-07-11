@@ -21,10 +21,15 @@ import {
 import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { format, parseISO } from 'date-fns';
+import { format, parse, parseISO } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
 import { NAIRA } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
+import {
+  useCreateConsultation,
+  type CreateConsultationInput,
+  type ApiConsultation,
+} from '@/hooks/useConsultations';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -55,6 +60,51 @@ const METHODS: { key: string; label: string; icon: IconType; hint: string }[] =
       hint: 'Fast, secure checkout',
     },
   ];
+
+// ── Booking → backend consultation mapping helpers ────────────────────────────
+//
+// The Explorer booking UI collects a free-text `topic`, a 12-hour `time`, and a
+// "30 min"-style `dur`. The backend `POST /consultations` endpoint expects a
+// categorized `type`, a 24-hour `scheduledTime` ("HH:mm"), an integer
+// `durationMinutes`, and an IANA `timezone`. These helpers translate between the
+// two so we can create a real consultation from the booking params.
+
+/**
+ * Map the booking `topic` string to a backend consultation `type`.
+ * Falls back to 'general' for anything we can't classify.
+ */
+function mapTopicToConsultationType(
+  topic: string | undefined,
+): ApiConsultation['type'] {
+  const t = (topic ?? '').toLowerCase();
+  if (t.includes('eligibility') || t.includes('application')) return 'initial';
+  if (t.includes('document')) return 'document_review';
+  if (t.includes('interview')) return 'interview_prep';
+  return 'general';
+}
+
+/**
+ * Convert a 12-hour time label ("10:00 AM") into a 24-hour "HH:mm" string.
+ * Uses date-fns `parse` with the `h:mm a` mask; if parsing fails (e.g. missing
+ * or malformed input), we fall back to the raw value so the request still sends.
+ */
+function to24HourTime(time: string | undefined): string {
+  if (!time) return '00:00';
+  const parsed = parse(time, 'h:mm a', new Date());
+  return isNaN(parsed.getTime()) ? time : format(parsed, 'HH:mm');
+}
+
+/**
+ * Best-effort IANA timezone for the device, defaulting to 'Africa/Lagos' when
+ * the Intl API is unavailable or throws (older RN JS engines).
+ */
+function resolveTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos';
+  } catch {
+    return 'Africa/Lagos';
+  }
+}
 
 // ── SummaryRow — icon + label row inside the booking summary card ─────────────
 function SummaryRow({
@@ -103,6 +153,11 @@ export default function PayScreen() {
   const [method, setMethod] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
 
+  // Mutation used by the consultation (booking) path to create a real
+  // consultation on the backend so it shows up in the Consultations list.
+  // Declared here (top of component) — never inside the onPay handler.
+  const createConsultation = useCreateConsultation();
+
   // `application` = paying an agent-raised payment request (no date/time/mode);
   // `consultation` (default) = the booking flow with a scheduled slot.
   const isApp = type === 'application';
@@ -112,27 +167,64 @@ export default function PayScreen() {
     ? format(parseISO(dateIso), 'EEEE, MMMM d, yyyy')
     : '';
 
-  const onPay = () => {
+  // Advance to the confirmation screen with the full param contract + chosen
+  // method. Shared by both the application and consultation paths so the
+  // mock/demo flow always completes regardless of backend outcome.
+  const goToConfirmation = () => {
+    router.push({
+      pathname: '/(explorer)/confirmation',
+      params: {
+        type: type ?? 'consultation',
+        agentId,
+        dateIso,
+        time,
+        topic,
+        mode,
+        dur,
+        fee,
+        method,
+      },
+    });
+  };
+
+  const onPay = async () => {
     if (!method || processing) return;
-    // Brief simulated processing state before advancing to confirmation.
     setProcessing(true);
-    setTimeout(() => {
+
+    // `application` = paying an agent-raised payment request. Leave this path
+    // exactly as it was: a brief simulated delay, then confirmation. We do NOT
+    // create a consultation for it.
+    if (isApp) {
+      setTimeout(() => {
+        setProcessing(false);
+        goToConfirmation();
+      }, 700);
+      return;
+    }
+
+    // ── Consultation (booking) path — create a REAL consultation ─────────────
+    // Build the CreateConsultationInput from the booking params, converting
+    // units the backend expects (24-hour time, integer minutes, kobo fee).
+    const input: CreateConsultationInput = {
+      agentId,
+      type: mapTopicToConsultationType(topic),
+      scheduledDate: dateIso, // already 'yyyy-MM-dd'
+      scheduledTime: to24HourTime(time), // "10:00 AM" → "10:00"
+      durationMinutes: parseInt(dur, 10) || 30, // "30 min" → 30
+      timezone: resolveTimezone(),
+      fee: feeNum * 100, // naira → kobo/cents
+    };
+
+    try {
+      // Keep the spinner visible for the duration of the network call.
+      await createConsultation.mutateAsync(input);
+    } catch (err) {
+      // Never break the demo flow: log and still advance to confirmation.
+      console.warn('Failed to create consultation:', err);
+    } finally {
       setProcessing(false);
-      router.push({
-        pathname: '/(explorer)/confirmation',
-        params: {
-          type: type ?? 'consultation',
-          agentId,
-          dateIso,
-          time,
-          topic,
-          mode,
-          dur,
-          fee,
-          method,
-        },
-      });
-    }, 700);
+      goToConfirmation();
+    }
   };
 
   return (

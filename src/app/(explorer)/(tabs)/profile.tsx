@@ -15,6 +15,14 @@ import { Ic } from '@/components/explorer/icons';
 import { Portrait, Verified } from '@/components/explorer/primitives';
 // Real Firebase sign-out — clears auth state, then returns to the auth entry.
 import { authService } from '@/services/auth.service';
+// ── Live data sources ────────────────────────────────────────────────────────
+// Signed-in user profile (name/location) + React Query hooks for the live
+// counts shown in the floating stats and menu rows. All fall back to the
+// original demo values when a field/query is unavailable.
+import { useAuthStore } from '@/stores/auth.store';
+import { useApplications } from '@/hooks/useApplications';
+import { useConsultations } from '@/hooks/useConsultations';
+import { useConversations } from '@/hooks/useMessaging';
 
 // ── One settings/menu row ────────────────────────────────────────────────────
 function ProfileRow({
@@ -81,6 +89,51 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  // ── Live data (hooks called unconditionally, before any early return) ───────
+  // Signed-in user profile from the auth store, and the three list queries that
+  // back the live counts. List hooks always return a bare array (never
+  // undefined) once loaded; we guard with `?? demo` so an empty/pending fetch
+  // preserves the original demo values.
+  const profile = useAuthStore((s) => s.profile);
+  const applications = useApplications().data;
+  const consultations = useConsultations().data;
+  const conversations = useConversations().data;
+
+  // Header — real full name; fall back to the demo name when unavailable.
+  const fullName =
+    [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
+    'Alex Kayode';
+  // Location line — backend has no city string, so use the residential country
+  // (nearest available field); else keep the demo "Lagos, Nigeria".
+  const location = profile?.residentialCountry || 'Lagos, Nigeria';
+
+  // Floating stats ───────────────────────────────────────────────────────────
+  // Active = number of applications; Saved = demo (no saved endpoint);
+  // Agents = distinct agents the user has consultations with.
+  const activeCount = applications?.length ?? 3;
+  const savedCount = 7; // demo — no saved-destinations endpoint
+  const agentsCount = consultations
+    ? new Set(consultations.map((c) => c.agentId)).size || 2
+    : 2;
+
+  // "My consultations" value — count of upcoming (not-yet-happened) bookings.
+  const upcomingConsults = consultations
+    ? consultations.filter((c) =>
+        ['scheduled', 'confirmed', 'pending_payment', 'in_progress'].includes(
+          c.status,
+        ),
+      ).length
+    : null;
+  const consultsValue =
+    upcomingConsults != null ? `${upcomingConsults} upcoming` : '2 upcoming';
+
+  // "Messages" value — total unread messages for this user across conversations.
+  const unreadMessages = conversations
+    ? conversations.reduce((sum, c) => sum + (c.unreadCountUser ?? 0), 0)
+    : null;
+  const messagesValue =
+    unreadMessages != null ? `${unreadMessages} new` : '2 new';
+
   // ── Real sign-out: clear Firebase auth, then return to the auth entry ───────
   const onSignOut = async () => {
     try {
@@ -123,7 +176,7 @@ export default function ProfileScreen() {
           <Portrait
             seed={3}
             size={70}
-            name="Alex K"
+            name={fullName}
             style={{ borderWidth: 3, borderColor: 'rgba(255,255,255,0.18)' }}
           />
           <View>
@@ -131,7 +184,7 @@ export default function ProfileScreen() {
               style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
             >
               <Text style={[displayText(23, 'semibold'), { color: '#fff' }]}>
-                Alex Kayode
+                {fullName}
               </Text>
               <Verified size={17} />
             </View>
@@ -155,7 +208,7 @@ export default function ProfileScreen() {
                   color: 'rgba(255,255,255,0.8)',
                 }}
               >
-                Lagos, Nigeria
+                {location}
               </Text>
             </View>
           </View>
@@ -177,9 +230,9 @@ export default function ProfileScreen() {
           }}
         >
           {[
-            ['3', 'Active'],
-            ['7', 'Saved'],
-            ['2', 'Agents'],
+            [String(activeCount), 'Active'],
+            [String(savedCount), 'Saved'],
+            [String(agentsCount), 'Agents'],
           ].map(([v, l], i) => (
             <React.Fragment key={l}>
               {i > 0 ? (
@@ -301,13 +354,13 @@ export default function ProfileScreen() {
           <ProfileRow
             icon={Ic.cal}
             label="My consultations"
-            value="2 upcoming"
+            value={consultsValue}
             onPress={() => router.push('/(explorer)/consultations')}
           />
           <ProfileRow
             icon={Ic.msg}
             label="Messages"
-            value="2 new"
+            value={messagesValue}
             divider
             onPress={() => router.push('/(explorer)/messages')}
           />
