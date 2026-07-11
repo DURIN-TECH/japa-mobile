@@ -47,6 +47,53 @@ export interface ApiAgent {
 }
 
 /**
+ * Agent review type matching the backend `AgentReview` model
+ * (functions/src/types/index.ts → AgentReview).
+ *
+ * Confirmed backend fields: id, agentId, userId, applicationId?, rating,
+ * title?, comment, createdAt, updatedAt?, isVerifiedClient. The backend does
+ * NOT currently return a reviewer display name — `userName`/`reviewerName` are
+ * declared optional here for forward-compatibility (should the API start
+ * enriching reviews with the reviewer's name) and the mapper falls back to a
+ * generic label when they are absent. `createdAt` is serialized to an ISO
+ * string by the API.
+ */
+export interface ApiReview {
+  id: string;
+  agentId: string;
+  userId: string;
+  applicationId?: string;
+  rating: number; // 1-5
+  title?: string;
+  comment: string;
+  createdAt: string; // ISO string
+  updatedAt?: string; // ISO string
+  isVerifiedClient: boolean;
+  userName?: string; // not sent by backend today (forward-compat)
+  reviewerName?: string; // not sent by backend today (forward-compat)
+}
+
+/**
+ * Fetch reviews for a single agent (public endpoint).
+ * Used on: Explorer agent detail screen "Recent reviews" section.
+ *
+ * @param agentId - Agent document ID. Query is disabled until an id is present
+ *   (so the demo-agent path, which passes `undefined`, never fires a request).
+ */
+export function useAgentReviews(agentId: string | undefined) {
+  return useQuery({
+    queryKey: ['agents', agentId, 'reviews'],
+    queryFn: async () => {
+      const response = await apiService.get<ApiReview[]>(
+        `/agents/${agentId}/reviews`,
+      );
+      return response.data ?? [];
+    },
+    enabled: !!agentId,
+  });
+}
+
+/**
  * Derive initials from a display name.
  * e.g. "Chinedu Eze" → "CE", "Adaeze Okonkwo" → "AO"
  * Used for avatar placeholders when no profile photo exists.
