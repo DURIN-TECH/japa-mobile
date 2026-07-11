@@ -62,6 +62,11 @@ function useProtectedRoute() {
   useEffect(() => {
     if (!isInitialized) return;
 
+    // The Destination Explorer (slated to become the main shell) drives its own
+    // auth/onboarding navigation, so the global guard ignores it — a real sign-in
+    // or sign-out inside (explorer) must not bounce the user to the old app.
+    if (segments[0] === '(explorer)') return;
+
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboardGroup = segments[0] === '(onboard)';
     const inIntro = segments[0] === 'intro';

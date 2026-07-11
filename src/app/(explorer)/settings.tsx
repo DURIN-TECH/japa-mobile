@@ -23,6 +23,8 @@ import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 // Subscription tier label is derived from the shared demo plan catalogue.
 import { PLANS, CURRENT_PLAN } from '@/components/explorer/data';
+// Real Firebase sign-out (invoked after the confirm dialog).
+import { authService } from '@/services/auth.service';
 
 // ── One settings row ─────────────────────────────────────────────────────────
 // Mirrors profile.tsx `ProfileRow`: 36px cream icon chip, 15/600 label, optional
@@ -179,14 +181,20 @@ export default function SettingsScreen() {
     }
   };
 
-  // ── Sign out (mock): confirm, then bounce back to home ─────────────────────
+  // ── Sign out: confirm, then real Firebase logout + return to auth entry ─────
   const confirmSignOut = () => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign out',
         style: 'destructive',
-        onPress: () => router.replace('/(explorer)/(auth)/welcome'),
+        onPress: async () => {
+          try {
+            await authService.logout();
+          } finally {
+            router.replace('/(explorer)/(auth)/welcome');
+          }
+        },
       },
     ]);
   };

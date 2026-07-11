@@ -32,7 +32,8 @@ import {
   reviewsForAgent,
 } from '@/components/explorer/data';
 import { mapAgent } from '@/components/explorer/liveAgents';
-import { useAgent } from '@/hooks/useAgents';
+import { mapReview } from '@/components/explorer/liveReviews';
+import { useAgent, useAgentReviews } from '@/hooks/useAgents';
 import { Ic } from '@/components/explorer/icons';
 import {
   Chip,
@@ -208,6 +209,11 @@ export default function AgentDetail() {
   const liveQ = useAgent(demo ? undefined : id);
   const a = demo ?? (liveQ.data ? mapAgent(liveQ.data) : undefined);
 
+  // Reviews: demo agents use the static REVIEWS; live agents fetch from the
+  // backend (GET /agents/:id/reviews). Hook is called before any early return
+  // and disabled on the demo path (undefined agentId).
+  const reviewsQ = useAgentReviews(demo ? undefined : id);
+
   if (!demo && liveQ.isLoading) {
     return (
       <View
@@ -238,9 +244,13 @@ export default function AgentDetail() {
     );
   }
 
-  // Agency + reviews are demo-only for now; both sections self-hide when absent.
+  // Agency is demo-only for now; the section self-hides when absent.
   const agency = agencyById(a.agencyId);
-  const reviews = reviewsForAgent(a.id);
+  // Reviews: demo path uses static REVIEWS; live path maps backend reviews.
+  // The "Recent reviews" section already self-hides when the array is empty.
+  const reviews = demo
+    ? reviewsForAgent(a.id)
+    : (reviewsQ.data ?? []).map(mapReview);
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>

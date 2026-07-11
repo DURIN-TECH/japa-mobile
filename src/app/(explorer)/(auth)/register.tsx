@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   AuthShell,
@@ -18,6 +18,9 @@ import {
 } from '@/components/explorer/AuthShell';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
+// Real Firebase Auth — createUserWithEmailAndPassword also signs the user in, so
+// the root _layout's onAuthStateChanged listener picks them up automatically.
+import { authService } from '@/services/auth.service';
 
 export default function AuthRegister() {
   const router = useRouter();
@@ -27,6 +30,36 @@ export default function AuthRegister() {
   const [show, setShow] = useState(false);
   // Terms agreement (source rendered it pre-checked; kept toggleable here).
   const [agree, setAgree] = useState(true);
+  // Submit + inline error state for real auth.
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Create the account with Firebase email/password ────────────────────────
+  const onRegister = async () => {
+    // Required fields + terms agreement must be satisfied first.
+    if (!name || !email || !pw) {
+      setError('Please fill in your name, email, and password.');
+      return;
+    }
+    if (!agree) {
+      setError('Please agree to the Terms & Privacy Policy to continue.');
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      // Registration also signs the user in — no OTP step for email auth, so we
+      // go straight to onboarding (passport).
+      await authService.registerWithEmail(email.trim(), pw);
+      router.replace('/(explorer)/(onboard)/passport');
+    } catch (e) {
+      const msg = authService.getErrorMessage(e);
+      setError(msg);
+      Alert.alert('Sign up failed', msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <AuthShell
@@ -122,11 +155,46 @@ export default function AuthRegister() {
           </Text>
         </Pressable>
 
-        {/* Primary CTA → OTP verification. */}
-        <CoralButton
-          label="Create account"
-          onPress={() => router.push('/(explorer)/(auth)/otp')}
-        />
+        {/* Inline error (small danger text) shown above the CTA. */}
+        {error ? (
+          <Text
+            style={{
+              color: EX.color.danger,
+              fontSize: 13,
+              fontWeight: '600',
+              marginTop: -4,
+            }}
+          >
+            {error}
+          </Text>
+        ) : null}
+
+        {/* Primary CTA → real Firebase registration, then onboarding (passport).
+            Disabled + spinner overlay while the request is in flight. */}
+        <View>
+          <CoralButton
+            label={submitting ? '' : 'Create account'}
+            disabled={submitting}
+            withArrow={!submitting}
+            onPress={onRegister}
+          />
+          {submitting ? (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              pointerEvents="none"
+            >
+              <ActivityIndicator color="#fff" />
+            </View>
+          ) : null}
+        </View>
 
         {/* Social providers. */}
         <View style={{ flexDirection: 'row', gap: 11 }}>

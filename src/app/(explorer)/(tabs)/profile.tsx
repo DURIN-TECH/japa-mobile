@@ -13,6 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Verified } from '@/components/explorer/primitives';
+// Real Firebase sign-out — clears auth state, then returns to the auth entry.
+import { authService } from '@/services/auth.service';
 
 // ── One settings/menu row ────────────────────────────────────────────────────
 function ProfileRow({
@@ -78,6 +80,15 @@ function ProfileRow({
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // ── Real sign-out: clear Firebase auth, then return to the auth entry ───────
+  const onSignOut = async () => {
+    try {
+      await authService.logout();
+    } finally {
+      router.replace('/(explorer)/(auth)/welcome');
+    }
+  };
 
   return (
     <ScrollView
@@ -371,9 +382,9 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* Sign out — returns to the standalone auth entry */}
+        {/* Sign out — real Firebase logout, then back to the auth entry */}
         <Pressable
-          onPress={() => router.replace('/(explorer)/(auth)/welcome')}
+          onPress={onSignOut}
           style={{
             marginTop: 14,
             height: 52,

@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,6 +26,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import { agencyById, agentsForAgency } from '@/components/explorer/data';
+import { mapAgency } from '@/components/explorer/liveAgencies';
+import { mapAgent } from '@/components/explorer/liveAgents';
+import {
+  usePublicAgency,
+  usePublicAgencyAgents,
+} from '@/hooks/useAgencies';
 import { Ic } from '@/components/explorer/icons';
 import {
   GlassButton,
@@ -210,7 +216,14 @@ export default function AgencyDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const a = agencyById(id);
+
+  // Resolve demo-or-live. If the id matches a demo agency we render that and
+  // disable the network queries; otherwise we fetch the public agency (and its
+  // agents) from the backend. Both queries are disabled on the demo path.
+  const demo = agencyById(id);
+  const agQ = usePublicAgency(demo ? undefined : id);
+  const agentsQ = usePublicAgencyAgents(demo ? undefined : id);
+  const a = demo ?? (agQ.data ? mapAgency(agQ.data) : undefined);
 
   // Hero parallax driven by the sheet's scroll offset (source py * -0.3).
   const scrollY = useSharedValue(0);
@@ -233,6 +246,22 @@ export default function AgencyDetail() {
     ],
   }));
 
+  // Loading — only on the live path while the single-agency fetch is in flight.
+  if (!demo && agQ.isLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
+
   if (!a) {
     return (
       <View
@@ -248,7 +277,31 @@ export default function AgencyDetail() {
     );
   }
 
-  const agents = agentsForAgency(a.id);
+  // Agents list — demo lookup, or live agents mapped from the backend.
+  const agents = demo
+    ? agentsForAgency(a.id)
+    : (agentsQ.data ?? []).map(mapAgent);
+
+  // MiniStat strip stats. Live agencies carry no agency-level rating/reviews/
+  // success, so we COMPUTE them from the agency's agents: rating = avg (1dp),
+  // reviews = sum, success = avg (rounded). Fall back to the agency's own
+  // values when demo, or when a live agency has no agents yet.
+  const isLive = !demo;
+  const hasAgents = agents.length > 0;
+  const statR =
+    isLive && hasAgents
+      ? Number(
+          (agents.reduce((s, x) => s + x.r, 0) / agents.length).toFixed(1),
+        )
+      : a.r;
+  const statRev =
+    isLive && hasAgents
+      ? agents.reduce((s, x) => s + x.rev, 0)
+      : a.rev;
+  const statSucc =
+    isLive && hasAgents
+      ? Math.round(agents.reduce((s, x) => s + x.succ, 0) / agents.length)
+      : a.succ;
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -424,15 +477,15 @@ export default function AgencyDetail() {
               elevation: 1,
             }}
           >
-            <MiniStat icon={Ic.star} value={String(a.r)} label="Rating" />
+            <MiniStat icon={Ic.star} value={String(statR)} label="Rating" />
             <MiniDiv />
             <MiniStat icon={Ic.users} value={String(a.agents)} label="Agents" />
             <MiniDiv />
-            <MiniStat icon={Ic.trend} value={`${a.succ}%`} label="Success" />
+            <MiniStat icon={Ic.trend} value={`${statSucc}%`} label="Success" />
             <MiniDiv />
             <MiniStat
               icon={Ic.msg}
-              value={`${(a.rev / 1000).toFixed(1)}k`}
+              value={`${(statRev / 1000).toFixed(1)}k`}
               label="Reviews"
             />
           </View>

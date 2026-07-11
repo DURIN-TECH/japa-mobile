@@ -19,7 +19,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import { AGENCIES, AGENTS, agencyById } from '@/components/explorer/data';
 import { mapAgent } from '@/components/explorer/liveAgents';
+import { mapAgency } from '@/components/explorer/liveAgencies';
 import { useAgents } from '@/hooks/useAgents';
+import { useBrowseAgencies } from '@/hooks/useAgencies';
 import { Ic } from '@/components/explorer/icons';
 import {
   Portrait,
@@ -27,15 +29,15 @@ import {
   SectionTitle,
   Verified,
 } from '@/components/explorer/primitives';
-import type { Agent } from '@/components/explorer/data';
+import type { Agent, Agency } from '@/components/explorer/data';
 
 // ── AgencyCard — 248×158 cover media card with bottom-scrim overlay ───────────
 // Source: minWidth 248, height 158, radius 22, bg tone; scrim (to top)
 // rgba(12,10,8,.82) 0% → .2 55% → .1 100%.
-function AgencyCard({ id }: { id: string }) {
+// Accepts the mapped `Agency` object directly (not an id lookup) so live
+// agencies from the backend render without a demo `agencyById()` lookup.
+function AgencyCard({ a }: { a: Agency }) {
   const router = useRouter();
-  const a = agencyById(id);
-  if (!a) return null;
   return (
     <Pressable
       onPress={() => router.push(`/(explorer)/agency/${a.id}`)}
@@ -96,35 +98,46 @@ function AgencyCard({ id }: { id: string }) {
           </View>
           {/* Meta row: gap 10, fontSize 12 / weight 600, color rgba(255,255,255,.9). */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-            >
-              <Ic.star
-                size={12}
-                color={EX.color.gold}
-                fill={EX.color.gold}
-                strokeWidth={0}
-              />
-              <Text
-                style={{
-                  color: 'rgba(255,255,255,0.9)',
-                  fontSize: 12,
-                  fontWeight: '600',
-                }}
-              >
-                {a.r}
-              </Text>
-            </View>
-            <Text
-              style={{
-                color: 'rgba(255,255,255,0.9)',
-                fontSize: 12,
-                fontWeight: '600',
-                opacity: 0.5,
-              }}
-            >
-              ·
-            </Text>
+            {/* Star + rating group — hidden for live agencies (r === 0), which
+                carry no agency-level rating. Then only "{agents} agents · {city}"
+                is shown. */}
+            {a.r > 0 ? (
+              <>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Ic.star
+                    size={12}
+                    color={EX.color.gold}
+                    fill={EX.color.gold}
+                    strokeWidth={0}
+                  />
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.9)',
+                      fontSize: 12,
+                      fontWeight: '600',
+                    }}
+                  >
+                    {a.r}
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.9)',
+                    fontSize: 12,
+                    fontWeight: '600',
+                    opacity: 0.5,
+                  }}
+                >
+                  ·
+                </Text>
+              </>
+            ) : null}
             <Text
               style={{
                 color: 'rgba(255,255,255,0.9)',
@@ -277,11 +290,17 @@ export function AgentRow({ a }: { a: Agent }) {
 export default function AgentsScreen() {
   const insets = useSafeAreaInsets();
 
-  // Live agents (GET /agents, verified + available) with a demo fallback. The
-  // agencies carousel stays demo until an agencies endpoint is available.
+  // Live agents (GET /agents, verified + available) with a demo fallback.
   const agentsQ = useAgents();
   const liveAgents = (agentsQ.data ?? []).map(mapAgent);
   const agentList = liveAgents.length ? liveAgents : AGENTS;
+
+  // Live agencies (GET /agencies/browse) with a demo fallback. When the backend
+  // returns rows we render those; otherwise we keep the demo AGENCIES so the
+  // carousel is never empty.
+  const agenciesQ = useBrowseAgencies();
+  const liveAgencies = (agenciesQ.data ?? []).map(mapAgency);
+  const agencies = liveAgencies.length ? liveAgencies : AGENCIES;
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -310,8 +329,8 @@ export default function AgentsScreen() {
             paddingBottom: 4,
           }}
         >
-          {AGENCIES.map((ag) => (
-            <AgencyCard key={ag.id} id={ag.id} />
+          {agencies.map((ag) => (
+            <AgencyCard key={ag.id} a={ag} />
           ))}
         </ScrollView>
 

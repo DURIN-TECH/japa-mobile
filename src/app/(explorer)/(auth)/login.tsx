@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   AuthShell,
@@ -19,14 +19,44 @@ import {
   PINK,
   Provider,
 } from '@/components/explorer/AuthShell';
+import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
+// Real Firebase Auth — the root _layout listens to onAuthStateChanged and syncs
+// the auth store/profile, so this screen just calls the service and navigates.
+import { authService } from '@/services/auth.service';
 
 export default function AuthLogin() {
   const router = useRouter();
-  // Prefilled to mirror the prototype's demo state.
-  const [email, setEmail] = useState('alex@example.com');
-  const [pw, setPw] = useState('••••••••');
+  // Credentials start EMPTY (no demo prefill) so the user types real values.
+  const [email, setEmail] = useState('');
+  const [pw, setPw] = useState('');
   const [show, setShow] = useState(false);
+  // Submit + inline error state for real auth.
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Log in with Firebase email/password ────────────────────────────────────
+  const onLogin = async () => {
+    // Client-side required-field validation before hitting Firebase.
+    if (!email || !pw) {
+      setError('Please enter your email and password.');
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await authService.loginWithEmail(email.trim(), pw);
+      // Success → straight into the authenticated Explorer home.
+      router.replace('/(explorer)/(tabs)/home');
+    } catch (e) {
+      // Friendly, mapped message shown inline + as an alert.
+      const msg = authService.getErrorMessage(e);
+      setError(msg);
+      Alert.alert('Login failed', msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <AuthShell
@@ -80,11 +110,47 @@ export default function AuthLogin() {
           </Text>
         </Pressable>
 
-        {/* Primary CTA → straight into the authenticated Explorer home. */}
-        <CoralButton
-          label="Log in"
-          onPress={() => router.replace('/(explorer)/(tabs)/home')}
-        />
+        {/* Inline error (small pink/danger text) shown above the CTA. */}
+        {error ? (
+          <Text
+            style={{
+              color: EX.color.danger,
+              fontSize: 13,
+              fontWeight: '600',
+              marginTop: -4,
+            }}
+          >
+            {error}
+          </Text>
+        ) : null}
+
+        {/* Primary CTA → real Firebase login, then Explorer home.
+            Disabled + spinner overlay while the request is in flight. The CTA
+            keeps its coral styling; the ActivityIndicator sits centered on top. */}
+        <View>
+          <CoralButton
+            label={submitting ? '' : 'Log in'}
+            disabled={submitting}
+            withArrow={!submitting}
+            onPress={onLogin}
+          />
+          {submitting ? (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              pointerEvents="none"
+            >
+              <ActivityIndicator color="#fff" />
+            </View>
+          ) : null}
+        </View>
 
         {/* "or continue with" divider. */}
         <View

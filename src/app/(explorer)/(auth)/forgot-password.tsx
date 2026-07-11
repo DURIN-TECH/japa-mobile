@@ -9,16 +9,42 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { AuthShell, CoralButton, Field } from '@/components/explorer/AuthShell';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
+// Real Firebase Auth — sends an actual password-reset email.
+import { authService } from '@/services/auth.service';
 
 export default function AuthForgotPassword() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
+  // Submit + inline error state for the real reset request.
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── Send the Firebase password-reset email ─────────────────────────────────
+  const onSend = async () => {
+    if (!email) {
+      setError('Please enter your email address.');
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await authService.resetPassword(email.trim());
+      // Real email sent → show the existing success state.
+      setSent(true);
+    } catch (e) {
+      const msg = authService.getErrorMessage(e);
+      setError(msg);
+      Alert.alert('Reset failed', msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // ── Success state ──────────────────────────────────────────────────────────
   if (sent) {
@@ -85,7 +111,46 @@ export default function AuthForgotPassword() {
           keyboardType="email-address"
           autoComplete="email"
         />
-        <CoralButton label="Send reset link" onPress={() => setSent(true)} />
+        {/* Inline error (small danger text) shown above the CTA. */}
+        {error ? (
+          <Text
+            style={{
+              color: EX.color.danger,
+              fontSize: 13,
+              fontWeight: '600',
+              marginTop: -4,
+            }}
+          >
+            {error}
+          </Text>
+        ) : null}
+
+        {/* Primary CTA → sends a real reset email. Disabled + spinner overlay
+            while the request is in flight. */}
+        <View>
+          <CoralButton
+            label={submitting ? '' : 'Send reset link'}
+            disabled={submitting}
+            withArrow={!submitting}
+            onPress={onSend}
+          />
+          {submitting ? (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              pointerEvents="none"
+            >
+              <ActivityIndicator color="#fff" />
+            </View>
+          ) : null}
+        </View>
       </View>
     </AuthShell>
   );

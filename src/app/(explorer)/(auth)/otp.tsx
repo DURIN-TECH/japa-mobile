@@ -115,7 +115,10 @@ export default function AuthOtp() {
           </Pressable>
         </View>
 
-        {/* Primary CTA — disabled until all 4 digits are entered. */}
+        {/* Primary CTA — disabled until all 4 digits are entered.
+            COSMETIC ONLY: email registration has no real OTP, so this does NOT
+            verify anything — the register flow now goes straight to onboarding,
+            and this screen simply advances to passport if reached. */}
         <CoralButton
           label="Verify & continue"
           disabled={!full}
