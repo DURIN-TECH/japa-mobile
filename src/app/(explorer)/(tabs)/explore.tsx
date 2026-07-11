@@ -10,7 +10,7 @@ import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { DESTS } from '@/components/explorer/data';
+import { DESTS, Dest } from '@/components/explorer/data';
 import { mapVisasToDests } from '@/components/explorer/liveExplore';
 import { useCountriesWithVisas, useVisaTypes } from '@/hooks/useVisaTypes';
 import { Ic } from '@/components/explorer/icons';
@@ -39,7 +39,9 @@ export default function ExploreScreen() {
   const list = source.filter((d) => cat === 'All' || d.cat === cat);
   const featured = list.find((d) => d.featured) ?? list[0];
   const rest = list.filter((d) => d !== featured);
-  const open = (id: string) => router.push(`/(explorer)/destination/${id}`);
+  // Pass the country code so the detail screen can fetch live visa data by
+  // (countryCode, visaId). Demo tiles ignore it (resolved from static DESTS).
+  const open = (dd: Dest) => router.push({ pathname: '/(explorer)/destination/[id]', params: { id: dd.id, code: dd.flag } });
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -134,7 +136,7 @@ export default function ExploreScreen() {
 
               {featured ? (
                 <View style={{ marginBottom: 14 }}>
-                  <Tile d={featured} big onPress={() => open(featured.id)} />
+                  <Tile d={featured} big onPress={() => open(featured)} />
                 </View>
               ) : null}
 
@@ -142,7 +144,7 @@ export default function ExploreScreen() {
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 13 }}>
                 {rest.map((d) => (
                   <View key={d.id} style={{ width: '48.4%' }}>
-                    <Tile d={d} onPress={() => open(d.id)} />
+                    <Tile d={d} onPress={() => open(d)} />
                   </View>
                 ))}
               </View>

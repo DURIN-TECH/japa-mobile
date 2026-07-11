@@ -4,8 +4,8 @@
 // CTA. Reanimated drives the hero parallax/zoom from the sheet's scroll offset.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
-import { Pressable, Text, View, ScrollView } from 'react-native';
+import React, { useMemo } from 'react';
+import { ActivityIndicator, Pressable, Text, View, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -14,7 +14,9 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { AGENTS, REQS, destById } from '@/components/explorer/data';
+import { AGENTS, REQS, destById, type Dest, type Req } from '@/components/explorer/data';
+import { mapRequirements, visaTypeToDest } from '@/components/explorer/liveExplore';
+import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { Ic } from '@/components/explorer/icons';
 import { Flag, GlassButton, Portrait, Scrim } from '@/components/explorer/primitives';
 
@@ -65,8 +67,13 @@ function PathCard({
 export default function DestinationDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const d = destById(id);
+  const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
+
+  // Demo tiles resolve from static DESTS; live tiles (from the backend Explore
+  // grid) carry a country `code` and are fetched via (countryCode, visaId).
+  const demo = destById(id);
+  const liveQ = useVisaType(demo ? '' : (code ?? ''), demo ? '' : id);
+  const { data: countries } = useCountriesWithVisas();
 
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => { scrollY.value = e.contentOffset.y; });
@@ -76,6 +83,30 @@ export default function DestinationDetail() {
   const imgStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(scrollY.value, [0, 400], [1, 1.24], Extrapolation.CLAMP) }],
   }));
+
+  // Effective destination + requirements (demo or live-mapped).
+  const d: Dest | undefined = useMemo(() => {
+    if (demo) return demo;
+    const vt = liveQ.data?.visaType;
+    if (!vt) return undefined;
+    const name = countries?.find((c) => c.code.toLowerCase() === (code ?? '').toLowerCase())?.name;
+    return visaTypeToDest(vt, name);
+  }, [demo, liveQ.data, countries, code]);
+
+  const reqs: Req[] = useMemo(() => {
+    if (demo) return REQS;
+    const rq = liveQ.data?.requirements;
+    return rq && rq.length ? mapRequirements(rq) : REQS;
+  }, [demo, liveQ.data]);
+
+  // Live fetch still in flight.
+  if (!demo && liveQ.isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
 
   if (!d) {
     return (
@@ -165,8 +196,8 @@ export default function DestinationDetail() {
           {/* Requirements */}
           <Text style={{ fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18, marginTop: 26, marginBottom: 12, marginHorizontal: 2 }}>What you&apos;ll need</Text>
           <View style={{ backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line08, borderRadius: 20, overflow: 'hidden', shadowColor: '#171326', shadowOpacity: 0.04, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
-            {REQS.map((r, i) => (
-              <View key={r.t} style={{ flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 14, paddingHorizontal: 16, borderTopWidth: i ? 1 : 0, borderTopColor: EX.color.line06 }}>
+            {reqs.map((r, i) => (
+              <View key={`${r.t}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 14, paddingHorizontal: 16, borderTopWidth: i ? 1 : 0, borderTopColor: EX.color.line06 }}>
                 <View style={{ width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: EX.color.cream }}>
                   <Text style={{ fontSize: 12, fontWeight: '700', color: EX.color.muted }}>{i + 1}</Text>
                 </View>

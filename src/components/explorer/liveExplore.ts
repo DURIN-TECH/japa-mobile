@@ -8,8 +8,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Country } from '@/types/country.type';
-import { VisaType, VisaCategory } from '@/types/visas.type';
-import { Dest, IMG } from './data';
+import { VisaType, VisaCategory, VisaRequirement } from '@/types/visas.type';
+import { Dest, IMG, Req } from './data';
 
 // Per-country presentation metadata: display city, Unsplash hero id, tonal
 // fallback colour. Mirrors the demo DESTS art for known countries.
@@ -40,13 +40,13 @@ const CATEGORY_LABEL: Record<VisaCategory, string> = {
   other: 'Other',
 };
 
-function mapVisaToDest(v: VisaType, countryByCode: Map<string, Country>): Dest {
+// One backend visa → the Explorer's Dest (country name resolved by the caller).
+export function visaTypeToDest(v: VisaType, countryName?: string): Dest {
   const code = (v.countryCode ?? '').toLowerCase();
   const meta = COUNTRY_META[code];
-  const country = countryByCode.get(v.countryCode ?? '') ?? countryByCode.get(code);
   return {
     id: v.id,
-    country: country?.name ?? v.countryCode ?? '—',
+    country: countryName ?? v.countryCode ?? '—',
     city: meta?.city ?? '',
     flag: code,
     visa: v.name,
@@ -59,6 +59,19 @@ function mapVisaToDest(v: VisaType, countryByCode: Map<string, Country>): Dest {
     approval: v.successRate != null ? `${v.successRate}%` : '—',
     applied: v.totalApplications ?? 0,
   };
+}
+
+function mapVisaToDest(v: VisaType, countryByCode: Map<string, Country>): Dest {
+  const country = countryByCode.get(v.countryCode ?? '') ?? countryByCode.get((v.countryCode ?? '').toLowerCase());
+  return visaTypeToDest(v, country?.name);
+}
+
+// Backend visa requirements → the detail screen's numbered "What you'll need" list.
+export function mapRequirements(reqs: VisaRequirement[]): Req[] {
+  return reqs
+    .slice()
+    .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+    .map((r) => ({ t: r.title, d: r.description, e: r.estimatedTime || 'See details' }));
 }
 
 export function mapVisasToDests(visas: VisaType[], countries: Country[]): Dest[] {
