@@ -16,7 +16,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { Alert, Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
@@ -28,6 +36,9 @@ import {
 } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Pill, Verified } from '@/components/explorer/primitives';
+// Live data: fetch a real consultation when the id isn't a demo record.
+import { useConsultation } from '@/hooks/useConsultations';
+import { mapConsult } from '@/components/explorer/liveConsultations';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -161,8 +172,32 @@ export default function ConsultationDetailView() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const c = consultById(id);
+  // Resolve demo-first, then fall back to the backend. The live query is
+  // disabled (id undefined) when a demo record matched, so we only hit the
+  // network for real consultation ids.
+  const demo = consultById(id);
+  const liveQ = useConsultation(demo ? undefined : id);
+  const c = demo ?? (liveQ.data ? mapConsult(liveQ.data) : undefined);
   const a = c ? agentById(c.agentId) : undefined;
+  // Agent portrait/name fallback for live consultations (not in demo AGENTS).
+  const agentName = a?.n ?? c?.agentName ?? 'Agent';
+  const agentSeed = a?.seed ?? 0;
+
+  // ── Loading state — initial live fetch in flight, no demo match. ────────────
+  if (!demo && liveQ.isLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
 
   // ── Not-found state ─────────────────────────────────────────────────────────
   if (!c) {
@@ -289,7 +324,7 @@ export default function ConsultationDetailView() {
         <LabelCard label="Topic" body={c.topic} />
 
         {/* 4 · Agent card → agent profile; with a Message shortcut. */}
-        {a ? (
+        {a || c.agentName ? (
           <Pressable
             onPress={() => router.push(`/(explorer)/agent/${c.agentId}`)}
             style={{
@@ -302,14 +337,14 @@ export default function ConsultationDetailView() {
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Portrait seed={a.seed} size={48} name={a.n} />
+              <Portrait seed={agentSeed} size={48} name={agentName} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text
                     style={{ fontSize: 16, fontWeight: '700', color: EX.color.ink }}
                     numberOfLines={1}
                   >
-                    {a.n}
+                    {agentName}
                   </Text>
                   <Verified size={16} />
                 </View>
@@ -317,7 +352,7 @@ export default function ConsultationDetailView() {
                   style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}
                   numberOfLines={1}
                 >
-                  {a.spec}
+                  {a?.spec ?? 'Visa specialist'}
                 </Text>
               </View>
               <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />

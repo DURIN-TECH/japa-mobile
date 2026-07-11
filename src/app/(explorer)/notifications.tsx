@@ -7,7 +7,7 @@
 // or agent chat.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +15,13 @@ import { EX, displayText } from '@/components/explorer/theme';
 import { NOTIFS, APPS, CONVOS, type Notif } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { IconChip } from '@/components/explorer/primitives';
+// ── Live data (backend) — falls back to the demo NOTIFS when the query is empty.
+import {
+  useNotifications,
+  useMarkNotificationRead,
+  useMarkAllNotificationsRead,
+} from '@/hooks/useNotifications';
+import { mapNotif } from '@/components/explorer/liveNotifications';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -36,13 +43,25 @@ export default function NotificationsView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Local unread state (demo — not persisted). Seeded from the static data.
+  // ── Live notifications → Notif[]; fall back to demo when the query is empty.
+  const { data: apiNotifs = [] } = useNotifications();
+  const markRead = useMarkNotificationRead();
+  const markAll = useMarkAllNotificationsRead();
+  const live = useMemo(() => apiNotifs.map(mapNotif), [apiNotifs]);
+  // `isLive` tracks whether we're rendering backend rows (drives the mutation
+  // calls below — demo rows have no backend counterpart to persist against).
+  const isLive = live.length > 0;
+  const items0 = isLive ? live : NOTIFS;
+
+  // Local unread state (demo — not persisted). Seeded from the effective list.
   const [read, setRead] = useState<Record<string, boolean>>({});
   const isUnread = (n: Notif) => n.unread && !read[n.id];
 
   const markAllRead = () => {
+    // Persist for live data; the local map keeps the UI instant either way.
+    if (isLive) markAll.mutate();
     const all: Record<string, boolean> = {};
-    NOTIFS.forEach((n) => {
+    items0.forEach((n) => {
       all[n.id] = true;
     });
     setRead(all);
@@ -50,7 +69,23 @@ export default function NotificationsView() {
 
   // Mark read, then route by related entity.
   const openNotif = (n: Notif) => {
+    // Persist the read for live rows (local map still handles the instant UI).
+    if (isLive) markRead.mutate(n.id);
     setRead((prev) => ({ ...prev, [n.id]: true }));
+
+    if (isLive) {
+      // Live routing: message notifications open the messages list. Entity ids
+      // won't match the demo CONVOS/DESTS, so other kinds don't navigate.
+      if (n.agentId) {
+        const convo = CONVOS.find((c) => c.agentId === n.agentId);
+        router.push(
+          convo ? `/(explorer)/messages/${convo.id}` : '/(explorer)/messages',
+        );
+      }
+      return;
+    }
+
+    // Demo routing (unchanged).
     if (n.destId) {
       const app = APPS.find((a) => a.destId === n.destId);
       if (app) router.push(`/(explorer)/application/${app.id}`);
@@ -118,7 +153,7 @@ export default function NotificationsView() {
           gap: 4,
         }}
       >
-        {NOTIFS.map((n) => {
+        {items0.map((n) => {
           const k = KIND[n.kind];
           const unread = isUnread(n);
           return (

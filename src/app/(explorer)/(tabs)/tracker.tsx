@@ -13,7 +13,7 @@
 // 142 / radius 24 / 105° scrim.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,6 +21,8 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import { APPS, App, destById } from '@/components/explorer/data';
+import { mapApplication } from '@/components/explorer/liveApplications';
+import { useApplications } from '@/hooks/useApplications';
 import { Ic } from '@/components/explorer/icons';
 import { Flag, Progress, ScreenHeader, StatusPill } from '@/components/explorer/primitives';
 
@@ -32,7 +34,8 @@ import { Flag, Progress, ScreenHeader, StatusPill } from '@/components/explorer/
 //   • bottom (padding 0/13/13): "Step X of N" 11.5/600 · pct 11.5/700 #171326,
 //     6px Progress, then the next-step band.
 function AppCard({ app, onPress }: { app: App; onPress: () => void }) {
-  const d = destById(app.destId);
+  // Live rows carry a resolved `dest`; demo rows resolve from static DESTS.
+  const d = app.dest ?? destById(app.destId);
   if (!d) return null;
 
   const pct = Math.round(app.progress * 100);
@@ -84,11 +87,16 @@ function AppCard({ app, onPress }: { app: App; onPress: () => void }) {
 
       {/* Bottom section (padding: 0 13 13) */}
       <View style={{ paddingHorizontal: 13, paddingBottom: 13 }}>
-        {/* Step count + percent (marginBottom 6) */}
+        {/* Step count + percent (marginBottom 6). Live rows carry no steps in the
+            list, so we drop the "Step X of N" label and show just the percent. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-          <Text style={{ fontSize: 11.5, color: EX.color.muted, fontWeight: '600' }}>
-            Step {app.step} of {app.steps.length}
-          </Text>
+          {app.steps.length > 0 ? (
+            <Text style={{ fontSize: 11.5, color: EX.color.muted, fontWeight: '600' }}>
+              Step {app.step} of {app.steps.length}
+            </Text>
+          ) : (
+            <View />
+          )}
           <Text style={{ fontSize: 11.5, color: EX.color.ink, fontWeight: '700' }}>{pct}%</Text>
         </View>
 
@@ -128,14 +136,19 @@ export default function AppsView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Source uses APPS[0] as the lead (NOT sorted by progress).
-  const lead = APPS[0];
-  const leadDest = destById(lead?.destId);
+  // ── Live data (GET /applications) with a demo fallback ─────────────────────
+  const appsQuery = useApplications();
+  const live = useMemo(() => (appsQuery.data ?? []).map((a) => mapApplication(a)), [appsQuery.data]);
+  const apps = live.length ? live : APPS;
+
+  // Source uses the first application as the lead (NOT sorted by progress).
+  const lead = apps[0];
+  const leadDest = lead ? (lead.dest ?? destById(lead.destId)) : undefined;
   const leadPct = lead ? Math.round(lead.progress * 100) : 0;
 
   // ── Status filter chips ────────────────────────────────────────────────────
   const [filter, setFilter] = useState<'all' | 'progress' | 'action' | 'done'>('all');
-  const filtered = APPS.filter((a) =>
+  const filtered = apps.filter((a) =>
     filter === 'all'
       ? true
       : filter === 'action'
@@ -157,7 +170,7 @@ export default function AppsView() {
         {/* ── Header: count eyebrow · title · new-application button ─────────── */}
         <ScreenHeader
           topInset={insets.top}
-          eyebrow={`${APPS.length} active applications`}
+          eyebrow={`${apps.length} active applications`}
           title="Your journey"
           right={
             <Pressable

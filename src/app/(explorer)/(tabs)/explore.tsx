@@ -5,14 +5,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { DESTS, Dest } from '@/components/explorer/data';
-import { mapVisasToDests } from '@/components/explorer/liveExplore';
-import { useCountriesWithVisas, useVisaTypes } from '@/hooks/useVisaTypes';
+import { mapVisasToDests, visaTypeToDest } from '@/components/explorer/liveExplore';
+import { useCountriesWithVisas, useVisaSearch, useVisaTypes } from '@/hooks/useVisaTypes';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait } from '@/components/explorer/primitives';
 import { Tile } from '@/components/explorer/Tile';
@@ -32,6 +32,18 @@ export default function ExploreScreen() {
   const usingLive = liveDests.length > 0;
   const source = usingLive ? liveDests : DESTS;
   const initialLoading = visaQuery.isLoading && !usingLive;
+
+  // ── Search (GET /visas/search, active at ≥2 chars) — overrides browse view ──
+  const [query, setQuery] = useState('');
+  const searchQ = useVisaSearch(query.trim());
+  const searchResults = useMemo(() => {
+    const q = query.trim();
+    if (q.length < 2) return null;
+    return (searchQ.data ?? []).map((v) =>
+      visaTypeToDest(v, countries?.find((c) => c.code.toLowerCase() === (v.countryCode ?? '').toLowerCase())?.name),
+    );
+  }, [query, searchQ.data, countries]);
+  const searchMode = searchResults !== null;
 
   // Category chips derive from whatever data is showing.
   const cats = useMemo(() => ['All', ...Array.from(new Set(source.map((d) => d.cat)))], [source]);
@@ -83,15 +95,30 @@ export default function ExploreScreen() {
               </View>
             </View>
 
-            {/* Search (tappable — opens a real search later) */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line10, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 12 }}>
+            {/* Search — live GET /visas/search once ≥2 chars are typed */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: EX.color.line10, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 4 }}>
               <Ic.search size={18} color={EX.color.muted} strokeWidth={1.8} />
-              <Text style={{ fontSize: 14, color: EX.color.muted, flex: 1 }}>Search countries or visas</Text>
-              <Ic.sliders size={18} color={EX.color.ink} strokeWidth={1.8} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search countries or visas"
+                placeholderTextColor={EX.color.muted}
+                returnKeyType="search"
+                autoCorrect={false}
+                style={{ flex: 1, fontSize: 14, color: EX.color.ink, paddingVertical: 10 }}
+              />
+              {query.length ? (
+                <Pressable onPress={() => setQuery('')} hitSlop={8}>
+                  <Ic.x size={18} color={EX.color.muted} strokeWidth={1.8} />
+                </Pressable>
+              ) : (
+                <Ic.sliders size={18} color={EX.color.ink} strokeWidth={1.8} />
+              )}
             </View>
           </View>
 
-          {/* Category chips */}
+          {/* Category chips — hidden while searching */}
+          {!searchMode ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -114,11 +141,38 @@ export default function ExploreScreen() {
               );
             })}
           </ScrollView>
+          ) : null}
         </BlurView>
 
         {/* ── Body ────────────────────────────────────────────────────────── */}
         <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
-          {initialLoading ? (
+          {searchMode ? (
+            searchResults!.length ? (
+              <>
+                <Text style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '600', marginBottom: 12 }}>
+                  {searchResults!.length} result{searchResults!.length === 1 ? '' : 's'} for “{query.trim()}”
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 13 }}>
+                  {searchResults!.map((d) => (
+                    <View key={d.id} style={{ width: '48.4%' }}>
+                      <Tile d={d} onPress={() => open(d)} />
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <View style={{ paddingTop: 50, alignItems: 'center' }}>
+                {searchQ.isFetching ? (
+                  <ActivityIndicator color={EX.color.primary} />
+                ) : (
+                  <>
+                    <Ic.search size={34} color={EX.color.muted} strokeWidth={1.5} style={{ opacity: 0.5, marginBottom: 10 }} />
+                    <Text style={{ color: EX.color.muted, fontSize: 14 }}>No visas match “{query.trim()}”</Text>
+                  </>
+                )}
+              </View>
+            )
+          ) : initialLoading ? (
             <View style={{ paddingTop: 60, alignItems: 'center' }}>
               <ActivityIndicator color={EX.color.primary} />
               <Text style={{ marginTop: 12, color: EX.color.muted, fontSize: 13.5 }}>Loading visas…</Text>

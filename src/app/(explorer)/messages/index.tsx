@@ -6,7 +6,7 @@
 // count badge. Tapping a row opens the chat thread.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,8 @@ import { EX, displayText } from '@/components/explorer/theme';
 import { CONVOS, agentById } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait } from '@/components/explorer/primitives';
+import { useConversations } from '@/hooks/useMessaging';
+import { mapConvo } from '@/components/explorer/liveMessaging';
 
 // ── Portrait + teal presence dot ─────────────────────────────────────────────
 // The prototype overlays a small teal circle (white-ringed) on the avatar's
@@ -55,6 +57,14 @@ function AvatarWithDot({
 export default function ConversationsView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // ── Live conversations with demo fallback ────────────────────────────────
+  // Map backend conversations onto the demo Convo shape; render live rows when
+  // the query returns any, otherwise fall back to the demo CONVOS so the list
+  // is never empty when the backend is empty/unreachable.
+  const { data } = useConversations();
+  const live = useMemo(() => (data ?? []).map(mapConvo), [data]);
+  const convos = live.length ? live : CONVOS;
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -100,9 +110,13 @@ export default function ConversationsView() {
           gap: 4,
         }}
       >
-        {CONVOS.map((c) => {
+        {convos.map((c) => {
+          // Resolve the agent's name + portrait seed from the demo roster when
+          // available (richer art), else fall back to the backend-enriched
+          // agentName and a neutral seed for live conversations.
           const a = agentById(c.agentId);
-          if (!a) return null;
+          const name = a?.n ?? c.agentName ?? 'Agent';
+          const seed = a?.seed ?? 0;
           const unread = c.unread > 0;
           return (
             <Pressable
@@ -118,7 +132,7 @@ export default function ConversationsView() {
                 borderRadius: 16,
               }}
             >
-              <AvatarWithDot seed={a.seed} name={a.n} online={c.online} />
+              <AvatarWithDot seed={seed} name={name} online={c.online} />
 
               <View style={{ flex: 1, minWidth: 0 }}>
                 {/* name + time */}
@@ -138,7 +152,7 @@ export default function ConversationsView() {
                     }}
                     numberOfLines={1}
                   >
-                    {a.n}
+                    {name}
                   </Text>
                   <Text
                     style={{

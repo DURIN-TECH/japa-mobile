@@ -6,7 +6,7 @@
 // contextual action buttons. An empty state shows when a filter has no results.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +19,10 @@ import {
 } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Pill } from '@/components/explorer/primitives';
+// Live data: real consultations from the backend, mapped onto the demo `Consult`
+// shape. Falls back to the demo CONSULTS when the backend has none.
+import { useConsultations } from '@/hooks/useConsultations';
+import { mapConsult } from '@/components/explorer/liveConsultations';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -134,7 +138,17 @@ export default function ConsultationsView() {
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<Consult['status']>('upcoming');
 
-  const list = CONSULTS.filter((c) => c.status === filter);
+  // Fetch the current user's consultations (role=client) and map them onto the
+  // demo `Consult` shape. Live-with-demo-fallback: use live rows when present,
+  // otherwise the demo CONSULTS so the screen is never empty.
+  const consultsQ = useConsultations();
+  const live = useMemo(
+    () => (consultsQ.data ?? []).map(mapConsult),
+    [consultsQ.data],
+  );
+  const list0 = live.length ? live : CONSULTS;
+
+  const list = list0.filter((c) => c.status === filter);
 
   // Message action routes to the conversation with this agent (else agent page).
   const openChat = (agentId: string) => {
@@ -263,8 +277,12 @@ export default function ConsultationsView() {
           </View>
         ) : (
           list.map((c) => {
+            // Resolve the agent's portrait/name. Live consultations reference
+            // agents that aren't in the demo AGENTS list, so fall back to the
+            // denormalized `agentName` (and seed 0) the backend provides.
             const a = agentById(c.agentId);
-            if (!a) return null;
+            const agentName = a?.n ?? c.agentName ?? 'Agent';
+            const agentSeed = a?.seed ?? 0;
             const pill = STATUS_PILL[c.status];
             const isVideo = c.mode.toLowerCase().includes('video');
             return (
@@ -294,7 +312,7 @@ export default function ConsultationsView() {
                     gap: 12,
                   }}
                 >
-                  <Portrait seed={a.seed} size={46} name={a.n} />
+                  <Portrait seed={agentSeed} size={46} name={agentName} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text
                       style={{
@@ -304,7 +322,7 @@ export default function ConsultationsView() {
                       }}
                       numberOfLines={1}
                     >
-                      {a.n}
+                      {agentName}
                     </Text>
                     <Text
                       style={{
@@ -368,7 +386,7 @@ export default function ConsultationsView() {
                         <ActionBtn
                           label="Message"
                           icon={Ic.msg}
-                          onPress={() => openChat(a.id)}
+                          onPress={() => openChat(c.agentId)}
                         />
                       </>
                     ) : (
@@ -377,7 +395,7 @@ export default function ConsultationsView() {
                           label="Message agent"
                           icon={Ic.msg}
                           grow
-                          onPress={() => openChat(a.id)}
+                          onPress={() => openChat(c.agentId)}
                         />
                         <ActionBtn
                           label="Rebook"

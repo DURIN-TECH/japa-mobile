@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,6 +29,8 @@ import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import {
   AppStep, CONVOS, NAIRA, agentById, appById, convoForAgent, destById, paymentRequestsForApp,
 } from '@/components/explorer/data';
+import { mapApplication, mapTimeline } from '@/components/explorer/liveApplications';
+import { useApplication, useApplicationTimeline } from '@/hooks/useApplications';
 import { Ic } from '@/components/explorer/icons';
 import { Flag, GlassButton, Pill, Portrait, StatusPill } from '@/components/explorer/primitives';
 
@@ -108,8 +110,15 @@ export default function AppDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const app = appById(id);
-  const dest = destById(app?.destId);
+  // ── Resolve demo-first, else fetch live (GET /applications/:id) ─────────────
+  // The single-item hooks are disabled (empty id) on the demo path so we never
+  // hit the backend for a static application.
+  const demo = appById(id);
+  const liveQ = useApplication(demo ? '' : id);
+  const tl = useApplicationTimeline(demo ? '' : id);
+  const app = demo ?? (liveQ.data ? mapApplication(liveQ.data) : undefined);
+  // Live apps carry a resolved `dest`; demo apps resolve from static DESTS.
+  const dest = app?.dest ?? destById(app?.destId);
   const agent = agentById(app?.agentId);
   // Find the agent's conversation (matched by agentId) for the message actions.
   const convo = app ? CONVOS.find((c) => c.agentId === app.agentId) : undefined;
@@ -129,6 +138,15 @@ export default function AppDetail() {
   const [reasonSel, setReasonSel] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
 
+  // Spinner while the live application is still loading (demo path is instant).
+  if (!demo && liveQ.isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
+
   if (!app || !dest) {
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
@@ -136,6 +154,9 @@ export default function AppDetail() {
       </View>
     );
   }
+
+  // Timeline: live events (mapped) when present, else the demo app's own steps.
+  const steps: AppStep[] = !demo && tl.data?.length ? mapTimeline(tl.data) : app.steps;
 
   const pct = Math.round(app.progress * 100);
   const actionable = app.next.cta != null;
@@ -249,7 +270,7 @@ export default function AppDetail() {
 
           {/* ── Timeline card (radius 22, padding 20, border rgba(23,19,38,0.07)) ── */}
           <View style={[{ backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(23,19,38,0.07)', borderRadius: 22, padding: 20 }, EXShadow.card]}>
-            <Timeline steps={app.steps} />
+            <Timeline steps={steps} />
           </View>
 
           {/* ── Payment requests (only when the agent has raised one) ────────── */}

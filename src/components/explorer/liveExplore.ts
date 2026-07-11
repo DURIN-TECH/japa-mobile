@@ -74,6 +74,14 @@ export function mapRequirements(reqs: VisaRequirement[]): Req[] {
     .map((r) => ({ t: r.title, d: r.description, e: r.estimatedTime || 'See details' }));
 }
 
+// Per-country presentation (city + hero image + tone) for building a Dest from
+// records that aren't a VisaType (e.g. an Application row).
+export function countryArt(code: string): { city: string; img: string; tone: string } {
+  const c = (code ?? '').toLowerCase();
+  const meta = COUNTRY_META[c];
+  return { city: meta?.city ?? '', img: IMG(meta?.imgId ?? DEFAULT_IMG), tone: meta?.tone ?? DEFAULT_TONE };
+}
+
 export function mapVisasToDests(visas: VisaType[], countries: Country[]): Dest[] {
   const byCode = new Map<string, Country>();
   countries.forEach((c) => {

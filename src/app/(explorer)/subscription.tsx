@@ -12,8 +12,8 @@
 // from the static contract: `PLANS`, `PLAN_FEATURES` and `CURRENT_PLAN`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -28,6 +28,13 @@ import {
 } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { GlassButton } from '@/components/explorer/primitives';
+// ── Live backend wiring — plans, current subscription, checkout ──────────────
+import {
+  usePlans,
+  useMySubscription,
+  useStartCheckout,
+} from '@/hooks/useSubscription';
+import { mapPlan } from '@/components/explorer/liveSubscription';
 
 // ── FeatureRow — 20px check circle + label for one plan feature ──────────────
 // `dark` switches the palette so features read on the featured dark card.
@@ -65,9 +72,19 @@ function FeatureRow({ label, dark }: { label: string; dark?: boolean }) {
 }
 
 // ── PlanCard — one pricing tier ──────────────────────────────────────────────
-function PlanCard({ plan }: { plan: Plan }) {
+// `currentId` marks the active plan (live subscription, demo fallback); `onUpgrade`
+// launches Paystack checkout for a paid, non-current tier.
+function PlanCard({
+  plan,
+  currentId,
+  onUpgrade,
+}: {
+  plan: Plan;
+  currentId: string;
+  onUpgrade: (plan: Plan) => void;
+}) {
   const featured = plan.tag === 'Most popular';
-  const current = plan.id === CURRENT_PLAN;
+  const current = plan.id === currentId;
 
   // Card chrome: featured is a dark gradient; current gets a coral border; the
   // rest are plain white cards.
@@ -222,7 +239,9 @@ function PlanCard({ plan }: { plan: Plan }) {
       {/* Feature list */}
       <View style={{ marginTop: 16, gap: 10 }}>
         {plan.features.map((key) => (
-          <FeatureRow key={key} label={PLAN_FEATURES[key]} dark={featured} />
+          // Demo plans carry catalog keys (→ PLAN_FEATURES); live plans already
+          // carry human labels, so fall back to the value itself.
+          <FeatureRow key={key} label={PLAN_FEATURES[key] ?? key} dark={featured} />
         ))}
       </View>
 
@@ -247,6 +266,7 @@ function PlanCard({ plan }: { plan: Plan }) {
         </View>
       ) : (
         <Pressable
+          onPress={() => onUpgrade(plan)}
           style={{
             height: 48,
             borderRadius: 14,
@@ -277,6 +297,44 @@ function PlanCard({ plan }: { plan: Plan }) {
 export default function SubscriptionView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // ── Live plans (GET /plans?audience=client) with demo fallback ─────────────
+  // The Explorer's subscriber is an individual client → audience "client".
+  const plansQ = usePlans('client');
+  const plans = useMemo<Plan[]>(() => {
+    const dtos = plansQ.data ?? [];
+    // Backend doesn't flag a "Most popular" plan, so promote the middle-priced
+    // paid tier (mirrors the demo where "Seli Plus" sits between Free and Pro).
+    const paid = dtos
+      .filter((p) => p.priceKobo > 0)
+      .sort((a, b) => a.priceKobo - b.priceKobo);
+    const popularId = paid.length
+      ? paid[Math.floor((paid.length - 1) / 2)].id
+      : undefined;
+    const live = dtos.map((p) => mapPlan(p, popularId));
+    return live.length ? live : PLANS;
+  }, [plansQ.data]);
+
+  // ── Current plan (GET /subscriptions/me) with demo fallback ────────────────
+  const mine = useMySubscription();
+  const currentId = mine.data?.subscription?.planId ?? CURRENT_PLAN;
+
+  // ── Upgrade → Paystack checkout ────────────────────────────────────────────
+  // Free tier keeps the demo no-op; paid tiers open the hosted checkout returned
+  // by the backend. Any failure silently keeps the demo behavior (no crash).
+  const checkout = useStartCheckout();
+  const onUpgrade = useCallback(
+    async (plan: Plan) => {
+      if (plan.price === 0) return; // "Switch to Free" — demo no-op
+      try {
+        const url = await checkout.mutateAsync(plan.id);
+        if (url) await Linking.openURL(url);
+      } catch {
+        // No backend / checkout failed — preserve demo behavior.
+      }
+    },
+    [checkout],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -391,8 +449,13 @@ export default function SubscriptionView() {
 
         {/* ── Plan cards ───────────────────────────────────────────────────── */}
         <View style={{ paddingHorizontal: EX.space.screenX, paddingTop: 24 }}>
-          {PLANS.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} />
+          {plans.map((plan) => (
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              currentId={currentId}
+              onUpgrade={onUpgrade}
+            />
           ))}
 
           {/* Paystack footnote — centered, two lines */}

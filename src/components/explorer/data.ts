@@ -184,6 +184,7 @@ export type App = {
   ref: string; updated: string; agentId: string;
   next: { label: string; cta: string | null };
   steps: AppStep[];
+  dest?: Dest; // resolved destination for live (backend) applications
 };
 export const APPS: App[] = [
   {
@@ -245,7 +246,7 @@ export const ELIG_RESULT = {
   gaps: ['Proof of funds not yet uploaded', 'Medical certificate recommended'],
 };
 
-export type Convo = { id: string; agentId: string; last: string; ago: string; unread: number; online: boolean };
+export type Convo = { id: string; agentId: string; last: string; ago: string; unread: number; online: boolean; agentName?: string };
 export const CONVOS: Convo[] = [
   { id: 'c1', agentId: 'a1', last: 'Great — I’ve reviewed your petition draft. One small edit and we’re set.', ago: '2m', unread: 2, online: true },
   { id: 'c2', agentId: 'a3', last: 'Your I-20 looks good. Let’s book the interview prep for next week.', ago: '1h', unread: 0, online: false },
@@ -267,6 +268,7 @@ export type Consult = {
   date: string; time: string; mode: string; topic: string; dur: string;
   notes?: string; // agent-facing note the applicant left when booking
   summary?: string; // post-call recap (completed consultations)
+  agentName?: string; // display name for live agents not in demo AGENTS
 };
 export const CONSULTS: Consult[] = [
   { id: 'cs1', agentId: 'a1', status: 'upcoming', date: 'Tue, Apr 15', time: '10:00 AM', mode: 'Video call', topic: 'H-1B petition review', dur: '45 min', notes: 'Would like to focus on strengthening the specialty-occupation argument.' },

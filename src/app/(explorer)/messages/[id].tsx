@@ -7,8 +7,9 @@
 // so the composer lifts above the keyboard, and auto-scrolls on send.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,6 +19,7 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { format } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
@@ -29,6 +31,12 @@ import {
 } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Verified } from '@/components/explorer/primitives';
+import {
+  useConversations,
+  useMessages,
+  useSendMessage,
+} from '@/hooks/useMessaging';
+import { mapConvo, mapMessage } from '@/components/explorer/liveMessaging';
 
 // ── Single message row (bubble + timestamp) ──────────────────────────────────
 function Bubble({ m }: { m: Msg }) {
@@ -88,15 +96,45 @@ export default function ChatView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const convId = id ?? '';
 
-  const convo = convoById(id);
+  // ── Resolve the conversation (demo first, then live) ─────────────────────
+  // Prefer the demo roster (richer portrait art); otherwise resolve the row
+  // from the live conversations list by id. Hooks run unconditionally.
+  const demoConvo = convoById(convId);
+  const { data: liveConvos } = useConversations();
+  const liveConvo = useMemo(
+    () =>
+      demoConvo
+        ? undefined
+        : (liveConvos ?? []).map(mapConvo).find((c) => c.id === convId),
+    [demoConvo, liveConvos, convId],
+  );
+  const convo = demoConvo ?? liveConvo;
+
   const agent = agentById(convo?.agentId);
+  const agentName = agent?.n ?? convo?.agentName ?? 'Agent';
+  const agentSeed = agent?.seed ?? 0;
   const online = convo?.online ?? false;
 
-  // Local message state so sends append in-session (demo — not persisted).
-  const [msgs, setMsgs] = useState<Msg[]>(() => THREAD[id ?? ''] ?? []);
+  // ── Messages: demo THREAD fallback, else live from the backend ───────────
+  // When a demo thread exists we disable the live query (empty id); otherwise
+  // fetch messages for this conversation and map them onto the bubble shape.
+  const demoThread = THREAD[convId];
+  const isLive = !demoThread;
+  const liveMsgs = useMessages(isLive ? convId : '');
+  const base = useMemo<Msg[]>(
+    () => demoThread ?? (liveMsgs.data ?? []).map(mapMessage),
+    [demoThread, liveMsgs.data],
+  );
+
+  // Locally-appended optimistic sends (kept in-session on top of `base`).
+  const [sent, setSent] = useState<Msg[]>([]);
+  const msgs = useMemo<Msg[]>(() => [...base, ...sent], [base, sent]);
+
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
+  const sendMessage = useSendMessage();
 
   // Keep the newest message in view on mount, on new content, and after a send.
   const scrollToEnd = useCallback(() => {
@@ -108,12 +146,17 @@ export default function ChatView() {
   const send = () => {
     const t = draft.trim();
     if (!t) return;
-    setMsgs((prev) => [...prev, { from: 'me', t, at: '9:52' }]);
+    // Optimistically append locally for both demo and live conversations.
+    setSent((prev) => [...prev, { from: 'me', t, at: format(new Date(), 'h:mm a') }]);
     setDraft('');
     scrollToEnd();
+    // For a live conversation, also persist the message to the backend.
+    if (isLive && convId) sendMessage.mutate({ conversationId: convId, content: t });
   };
 
   const hasText = draft.trim().length > 0;
+  // Show a spinner only when a live thread is still loading its first page.
+  const showLoading = isLive && liveMsgs.isLoading && msgs.length === 0;
   const headerH = insets.top + 62; // approx header height for keyboard offset
 
   return (
@@ -150,7 +193,7 @@ export default function ChatView() {
 
         {/* Avatar + presence dot (source: 40px avatar, 11px dot bottom-right, 2px cream ring) */}
         <View style={{ width: 40, height: 40 }}>
-          <Portrait seed={agent?.seed ?? 0} size={40} name={agent?.n ?? 'A'} />
+          <Portrait seed={agentSeed} size={40} name={agentName} />
           {online ? (
             <View
               style={{
@@ -178,7 +221,7 @@ export default function ChatView() {
               style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }}
               numberOfLines={1}
             >
-              {agent?.n ?? 'Agent'}
+              {agentName}
             </Text>
             <Verified size={13} />
           </View>
@@ -248,6 +291,13 @@ export default function ChatView() {
               </Text>
             </View>
           </View>
+
+          {showLoading ? (
+            <ActivityIndicator
+              color={EX.color.primary}
+              style={{ marginTop: 24 }}
+            />
+          ) : null}
 
           {msgs.map((m, i) => (
             <Bubble key={i} m={m} />
