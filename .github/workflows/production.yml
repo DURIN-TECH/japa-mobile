@@ -41,7 +41,12 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install dependencies
+        # Authenticate to GitHub Packages so the private @durin-tech/authz
+        # dependency (see .npmrc → ${NODE_AUTH_TOKEN}) can be fetched;
+        # without this npm ci 401s on GET .../@durin-tech/authz.
         run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
       - name: Run linter
         run: npm run lint
