@@ -22,7 +22,7 @@ function ProfileRow({
   divider = false,
   onPress,
 }: {
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
   label: string;
   value?: string;
   divider?: boolean;

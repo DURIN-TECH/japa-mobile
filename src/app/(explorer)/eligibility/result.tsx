@@ -141,7 +141,7 @@ function CriteriaRow({
   textColor,
 }: {
   label: string;
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
   tint: string;
   chip: string;
   bg: string;

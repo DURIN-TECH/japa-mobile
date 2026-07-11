@@ -88,7 +88,7 @@ function PlanCard({
 
   // Card chrome: featured is a dark gradient; current gets a coral border; the
   // rest are plain white cards.
-  const Container: React.ComponentType<any> = featured ? LinearGradient : View;
+  const Container: React.ElementType = featured ? LinearGradient : View;
   const containerProps = featured
     ? {
         colors: [EX.color.dark1, EX.color.dark2] as const, // 158deg #241B33 → #14101F

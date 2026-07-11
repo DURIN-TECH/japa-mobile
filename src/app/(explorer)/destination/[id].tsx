@@ -94,7 +94,7 @@ function PathCard({
   dark = false,
   onPress,
 }: {
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
   title: string;
   sub: string;
   badge?: string;

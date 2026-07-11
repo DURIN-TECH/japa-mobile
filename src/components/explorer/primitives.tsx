@@ -284,7 +284,7 @@ export function GlassButton({
   onPress,
   style,
 }: {
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -498,7 +498,7 @@ export function IconChip({
   color = EX.color.primary,
   iconSize,
 }: {
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
   size?: number;
   radius?: number;
   bg?: string;

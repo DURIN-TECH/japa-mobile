@@ -38,7 +38,7 @@ function QuickAction({
   tone,
   onPress,
 }: {
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
   label: string;
   tone: { bg: string; fg: string };
   onPress: () => void;
@@ -432,7 +432,7 @@ function HeaderButton({
   icon: IconCmp,
   onPress,
 }: {
-  icon: React.ComponentType<any>;
+  icon: React.ElementType;
   onPress: () => void;
 }) {
   return (
