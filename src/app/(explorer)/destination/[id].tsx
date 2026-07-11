@@ -519,7 +519,7 @@ export default function DestinationDetail() {
             onPress={() =>
               router.push({
                 pathname: '/(explorer)/eligibility',
-                params: { dest: d.id },
+                params: { dest: d.id, code: d.flag },
               })
             }
             style={{

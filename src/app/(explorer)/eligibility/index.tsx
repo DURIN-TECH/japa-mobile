@@ -18,6 +18,7 @@
 
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -32,6 +33,58 @@ import { EX, displayText } from '@/components/explorer/theme';
 import { ELIG_Q, EligQ, destById } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { Progress } from '@/components/explorer/primitives';
+// ── Live backend wiring ───────────────────────────────────────────────────────
+// The Explorer wizard normally runs on the static demo questions (ELIG_Q). When a
+// *real* visa is opened (it carries a country `code` and isn't one of the demo
+// destinations), we instead fetch its eligibility questions from the backend and
+// submit the answers to score the check. Everything renders identically — only
+// the data source changes; the demo path stays as a fallback.
+import {
+  useEligibilityQuestions,
+  useSubmitEligibilityCheck,
+} from '@/hooks/useEligibility';
+import { EligibilityAnswer, EligibilityQuestion } from '@/types/eligibility.type';
+import { useAuthStore } from '@/stores/auth.store';
+
+// ── mapQuestion — backend EligibilityQuestion → wizard's EligQ shape ──────────
+// The wizard only knows how to render four input types (boolean / single /
+// multiple / number). We map the backend `type` onto the nearest one:
+//   • boolean / single / multiple / number → same
+//   • date / text (and anything unrecognised) can't render natively, so we fall
+//     back to a single-select when the question ships options, else a number
+//     field. This guarantees every question is renderable.
+function mapQuestion(bq: EligibilityQuestion): EligQ {
+  let type: EligQ['type'];
+  switch (bq.type) {
+    case 'boolean':
+      type = 'boolean';
+      break;
+    case 'multiple':
+      type = 'multiple';
+      break;
+    case 'number':
+      type = 'number';
+      break;
+    case 'single':
+      type = 'single';
+      break;
+    // 'date' | 'text' | anything else → single (if it has options) else number.
+    default:
+      type = bq.options?.length ? 'single' : 'number';
+      break;
+  }
+  return {
+    id: bq.id,
+    type,
+    q: bq.question,
+    // Prefer explicit help text; fall back to the longer description.
+    help: bq.helpText ?? bq.description,
+    opts: bq.options,
+    unit: bq.unit,
+    min: bq.minValue,
+    max: bq.maxValue,
+  };
+}
 
 // Answers keyed by question id; value type varies per question type.
 type Answer = string | number | string[] | boolean | undefined;
@@ -154,17 +207,43 @@ function BoolButton({
 export default function EligibilityView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { dest } = useLocalSearchParams<{ dest: string }>();
-  const d = destById(dest);
+  // A live visa carries a country `code`; demo destinations don't. When we have a
+  // code and `dest` isn't a demo destination, `dest` is the visaTypeId to score.
+  const { dest, code } = useLocalSearchParams<{ dest: string; code?: string }>();
+  const demoDest = destById(dest);
+  const wantLive = !demoDest && !!code;
+  const d = demoDest;
 
-  const N = ELIG_Q.length;
+  // User profile → nationality for the check payload (see below).
+  const profile = useAuthStore((s) => s.profile);
+
+  // Fetch backend questions only on the live path (empty visaTypeId disables it).
+  const questionsQ = useEligibilityQuestions(wantLive ? dest : '');
+  // Mutation that submits the answers and returns the scored EligibilityCheck.
+  const submitCheck = useSubmitEligibilityCheck();
+
+  // Effective question list: live backend questions when present, else the demo
+  // set. During the initial live fetch `questionsQ.data` is undefined, so we fall
+  // back to ELIG_Q here and gate rendering with the loading branch below.
+  const questions: EligQ[] =
+    wantLive && questionsQ.data?.length
+      ? questionsQ.data.map(mapQuestion)
+      : ELIG_Q;
+
+  const N = questions.length;
   const [i, setI] = useState(0); // current question index
   const [answers, setAnswers] = useState<Answers>({});
   const [showHelp, setShowHelp] = useState(false);
+  const [submitting, setSubmitting] = useState(false); // live submit in flight
 
-  const q = ELIG_Q[i];
+  // While the live questions are still loading (and nothing answered yet) show a
+  // spinner in the body instead of the (fallback) demo questions.
+  const showLoading =
+    wantLive && questionsQ.isLoading && Object.keys(answers).length === 0;
+
+  const q = questions[i];
   const pct = Math.round(((i + 1) / N) * 100);
-  const answered = isAnswered(q, answers);
+  const answered = q ? isAnswered(q, answers) : false;
   const last = i === N - 1;
 
   // Collapse the help panel whenever we move to a new question.
@@ -196,15 +275,52 @@ export default function EligibilityView() {
   };
 
   // ── Advance / finish ────────────────────────────────────────────────────────
-  const next = () => {
-    if (!answered) return;
-    if (last) {
+  const next = async () => {
+    if (!answered || submitting) return;
+    if (!last) {
+      setI((n) => n + 1);
+      return;
+    }
+
+    // Last question → finish. Build the answer payload from every question.
+    const answerPayload: EligibilityAnswer[] = questions.map((qq) => ({
+      questionId: qq.id,
+      answer: (answers[qq.id] ?? '') as EligibilityAnswer['answer'],
+    }));
+
+    if (wantLive) {
+      // Live: submit the check, then route to the result with the returned id so
+      // the result screen renders the real scored EligibilityCheck. On any error
+      // we fall back to the static result (no checkId) so the user never dead-ends.
+      setSubmitting(true);
+      try {
+        const check = await submitCheck.mutateAsync({
+          visaTypeId: dest,
+          countryCode: code as string,
+          // The profile has no dedicated `nationality`; residentialCountry is the
+          // closest, then passportCountry, then a sensible default.
+          nationality:
+            profile?.residentialCountry ?? profile?.passportCountry ?? 'NG',
+          answers: answerPayload,
+        });
+        router.push({
+          pathname: '/(explorer)/eligibility/result',
+          params: { checkId: check?.id ?? '', dest },
+        });
+      } catch {
+        router.push({
+          pathname: '/(explorer)/eligibility/result',
+          params: { dest },
+        });
+      } finally {
+        setSubmitting(false);
+      }
+    } else {
+      // Demo: no checkId → the result screen shows the static ELIG_RESULT.
       router.push({
         pathname: '/(explorer)/eligibility/result',
         params: { dest: dest ?? '' },
       });
-    } else {
-      setI((n) => n + 1);
     }
   };
   // Back circle steps through the wizard, then leaves the screen.
@@ -318,6 +434,19 @@ export default function EligibilityView() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
+          {showLoading ? (
+            /* Live questions still loading — centred spinner, keep the header. */
+            <View
+              style={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingTop: 80,
+              }}
+            >
+              <ActivityIndicator color={EX.color.primary} />
+            </View>
+          ) : (
+            <>
           {/* Question title (24 Space Grotesk 700) + optional coral help toggle */}
           <View
             style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}
@@ -458,6 +587,8 @@ export default function EligibilityView() {
               </View>
             ) : null}
           </View>
+            </>
+          )}
         </ScrollView>
 
         {/* ── Fixed footer CTA — source padding 14px 22px 26px, white bg ────── */}
@@ -473,7 +604,8 @@ export default function EligibilityView() {
         >
           <Pressable
             onPress={next}
-            disabled={!answered}
+            // Disable while unanswered OR while a live submit is in flight.
+            disabled={!answered || submitting}
             style={[
               {
                 height: 54,
@@ -496,27 +628,34 @@ export default function EligibilityView() {
                 : null,
             ]}
           >
-            <Text
-              style={{
-                fontSize: 15.5,
-                fontWeight: '700',
-                color: answered ? '#fff' : EX.color.muted,
-              }}
-            >
-              {last ? 'See my result' : 'Continue'}
-            </Text>
-            {last ? (
-              <Ic.spark
-                size={18}
-                color={answered ? '#fff' : EX.color.muted}
-                strokeWidth={1.8}
-              />
+            {submitting ? (
+              /* Live submit in flight — spinner in place of the label + icon. */
+              <ActivityIndicator color="#fff" />
             ) : (
-              <Ic.arrow
-                size={18}
-                color={answered ? '#fff' : EX.color.muted}
-                strokeWidth={1.8}
-              />
+              <>
+                <Text
+                  style={{
+                    fontSize: 15.5,
+                    fontWeight: '700',
+                    color: answered ? '#fff' : EX.color.muted,
+                  }}
+                >
+                  {last ? 'See my result' : 'Continue'}
+                </Text>
+                {last ? (
+                  <Ic.spark
+                    size={18}
+                    color={answered ? '#fff' : EX.color.muted}
+                    strokeWidth={1.8}
+                  />
+                ) : (
+                  <Ic.arrow
+                    size={18}
+                    color={answered ? '#fff' : EX.color.muted}
+                    strokeWidth={1.8}
+                  />
+                )}
+              </>
             )}
           </Pressable>
         </View>
