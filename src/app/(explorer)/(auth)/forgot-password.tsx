@@ -14,18 +14,20 @@ import { useRouter } from 'expo-router';
 import { AuthShell, CoralButton, Field } from '@/components/explorer/AuthShell';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
-// Real Firebase Auth — sends an actual password-reset email.
-import { authService } from '@/services/auth.service';
+// Whitelabeled reset — the store posts to the BACKEND (POST /auth/forgot-password),
+// which sends the Seli-branded Resend email, NOT Firebase's stock client-side email.
+import { useAuthStore } from '@/stores/auth.store';
 
 export default function AuthForgotPassword() {
   const router = useRouter();
+  const resetPassword = useAuthStore((s) => s.resetPassword);
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   // Submit + inline error state for the real reset request.
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Send the Firebase password-reset email ─────────────────────────────────
+  // ── Send the branded (backend) password-reset email ────────────────────────
   const onSend = async () => {
     if (!email) {
       setError('Please enter your email address.');
@@ -34,13 +36,17 @@ export default function AuthForgotPassword() {
     setError(null);
     setSubmitting(true);
     try {
-      await authService.resetPassword(email.trim());
-      // Real email sent → show the existing success state.
-      setSent(true);
-    } catch (e) {
-      const msg = authService.getErrorMessage(e);
-      setError(msg);
-      Alert.alert('Reset failed', msg);
+      const ok = await resetPassword(email.trim());
+      if (ok) {
+        // Backend accepted the request (enumeration-safe) → show success state.
+        setSent(true);
+      } else {
+        // Store surfaced a validation/network error on the store's `error`.
+        const msg =
+          useAuthStore.getState().error ?? 'Failed to send reset email.';
+        setError(msg);
+        Alert.alert('Reset failed', msg);
+      }
     } finally {
       setSubmitting(false);
     }

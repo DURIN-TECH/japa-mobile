@@ -18,12 +18,15 @@ import {
 } from '@/components/explorer/AuthShell';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
-// Real Firebase Auth — createUserWithEmailAndPassword also signs the user in, so
-// the root _layout's onAuthStateChanged listener picks them up automatically.
-import { authService } from '@/services/auth.service';
+// Real Firebase Auth via the store — registration signs the user in (the root
+// _layout's onAuthStateChanged picks them up) AND lets us fire the branded email
+// verification straight after.
+import { useAuthStore } from '@/stores/auth.store';
 
 export default function AuthRegister() {
   const router = useRouter();
+  const registerWithEmail = useAuthStore((s) => s.registerWithEmail);
+  const sendEmailVerification = useAuthStore((s) => s.sendEmailVerification);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
@@ -48,14 +51,19 @@ export default function AuthRegister() {
     setError(null);
     setSubmitting(true);
     try {
-      // Registration also signs the user in — no OTP step for email auth, so we
-      // go straight to onboarding (passport).
-      await authService.registerWithEmail(email.trim(), pw);
+      // Registration also signs the user in — no OTP step for email auth.
+      const ok = await registerWithEmail(email.trim(), pw);
+      if (!ok) {
+        const msg = useAuthStore.getState().error ?? 'Sign up failed.';
+        setError(msg);
+        Alert.alert('Sign up failed', msg);
+        return;
+      }
+      // Fire the branded "verify your email" message (best-effort — never blocks
+      // onboarding). Firebase sign-up sends no verification email on its own.
+      void sendEmailVerification(email.trim()).catch(() => undefined);
+      // Straight to onboarding (passport); email verification is non-blocking.
       router.replace('/(explorer)/(onboard)/passport');
-    } catch (e) {
-      const msg = authService.getErrorMessage(e);
-      setError(msg);
-      Alert.alert('Sign up failed', msg);
     } finally {
       setSubmitting(false);
     }

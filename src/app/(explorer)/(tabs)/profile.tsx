@@ -23,6 +23,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useApplications } from '@/hooks/useApplications';
 import { useConsultations } from '@/hooks/useConsultations';
 import { useConversations } from '@/hooks/useMessaging';
+import { useIdentityVerification } from '@/hooks/useVerification';
 
 // ── One settings/menu row ────────────────────────────────────────────────────
 function ProfileRow({
@@ -98,6 +99,9 @@ export default function ProfileScreen() {
   const applications = useApplications().data;
   const consultations = useConsultations().data;
   const conversations = useConversations().data;
+  // Live identity-verification (KYC) status — powers the short hint shown on the
+  // "Verify identity" row. Falls back to the profile's embedded field if present.
+  const idVerification = useIdentityVerification().data;
 
   // Header — real full name; fall back to the demo name when unavailable.
   const fullName =
@@ -133,6 +137,20 @@ export default function ProfileScreen() {
     : null;
   const messagesValue =
     unreadMessages != null ? `${unreadMessages} new` : '2 new';
+
+  // "Verify identity" value — a short status hint. Prefer the live verification
+  // query, falling back to the profile's embedded `identityVerification`.
+  // NOTE: ProfileRow renders `value` in a single muted tone (no per-row color
+  // prop), so the "Verified" hint can't be tinted teal without adding a prop —
+  // we render the plain text hint only.
+  const idStatus =
+    idVerification?.status ?? profile?.identityVerification?.status;
+  const identityValue =
+    idStatus === 'verified'
+      ? 'Verified'
+      : idStatus === 'pending' || idStatus === 'under_review'
+        ? 'In review'
+        : 'Not started';
 
   // ── Real sign-out: clear Firebase auth, then return to the auth entry ───────
   const onSignOut = async () => {
@@ -370,6 +388,13 @@ export default function ProfileScreen() {
             value="7 files"
             divider
             onPress={() => router.push('/(explorer)/documents')}
+          />
+          <ProfileRow
+            icon={Ic.shield}
+            label="Verify identity"
+            value={identityValue}
+            divider
+            onPress={() => router.push('/(explorer)/verify-identity')}
           />
           <ProfileRow
             icon={Ic.cards}

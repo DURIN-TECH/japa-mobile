@@ -27,6 +27,9 @@ interface AuthState {
   loginWithEmail: (email: string, password: string) => Promise<boolean>;
   registerWithEmail: (email: string, password: string) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
+  // Send (or re-send) the branded "verify your email" message via the backend.
+  // Defaults to the signed-in user's email when none is passed. Best-effort.
+  sendEmailVerification: (email?: string) => Promise<boolean>;
 
   // Actions - Phone auth (return true on success, false on error)
   sendOtp: (phoneNumber: string) => Promise<boolean>;
@@ -128,6 +131,34 @@ export const useAuthStore = create<AuthState>()(
           return false;
         } finally {
           set({ isLoading: false });
+        }
+      },
+
+      // Whitelabeled "verify your email".
+      // Calls the BACKEND (POST /auth/resend-verification) so the verification email
+      // is the Seli-branded Resend template. Sign-up itself is client-side Firebase,
+      // which sends no verification email by default — this fills that gap.
+      //
+      // Best-effort by design: we never block registration/onboarding on it. Returns
+      // false (and records `error`) on a hard failure, but callers typically ignore
+      // the result and just fire-and-forget after sign-up.
+      sendEmailVerification: async (email?: string) => {
+        const to = email ?? get().user?.email ?? undefined;
+        if (!to) {
+          set({ error: 'No email address to verify' });
+          return false;
+        }
+        try {
+          const response = await apiService.post('/auth/resend-verification', {
+            email: to,
+          });
+          return !!response.success;
+        } catch (error) {
+          const message =
+            (error as { message?: string })?.message ||
+            'Failed to send verification email';
+          set({ error: message });
+          return false;
         }
       },
 

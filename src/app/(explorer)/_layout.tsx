@@ -67,6 +67,7 @@ export default function ExplorerLayout() {
       <Stack.Screen name="settings" />
       {/* Profile secondary destinations + full visa breakdown */}
       <Stack.Screen name="documents" />
+      <Stack.Screen name="verify-identity" />
       <Stack.Screen name="payments" />
       <Stack.Screen name="saved" />
       <Stack.Screen name="visa/[id]" />
