@@ -20,7 +20,7 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { COUNTRIES } from '@/components/explorer/data';
@@ -83,6 +83,10 @@ function OnboardTopBar({
 export default function CountryStep() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // Onboarding values collected so far (passed from the passport step). We
+  // forward them unchanged so the final step can submit the full body.
+  const params = useLocalSearchParams<{ hasPassport?: string }>();
 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null); // ISO2 code
@@ -240,7 +244,18 @@ export default function CountryStep() {
         }}
       >
         <Pressable
-          onPress={() => router.push('/(explorer)/(onboard)/personal-info')}
+          // Forward prior params + the selected country. The backend stores
+          // residentialCountry as an UPPERCASE ISO2 code (e.g. "NG"), while the
+          // COUNTRIES data uses lowercase codes — so uppercase here.
+          onPress={() =>
+            router.push({
+              pathname: '/(explorer)/(onboard)/personal-info',
+              params: {
+                ...params,
+                country: (selected ?? '').toUpperCase(),
+              },
+            })
+          }
           disabled={!selected}
           style={{
             height: 54,

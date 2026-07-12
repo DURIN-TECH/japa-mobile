@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
@@ -140,6 +140,13 @@ export default function PersonalInfoStep() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  // Onboarding values collected so far (hasPassport + country). Forwarded
+  // unchanged to the final step, which performs the backend submit.
+  const params = useLocalSearchParams<{
+    hasPassport?: string;
+    country?: string;
+  }>();
+
   const [first, setFirst] = useState('');
   const [last, setLast] = useState('');
 
@@ -210,7 +217,18 @@ export default function PersonalInfoStep() {
         }}
       >
         <Pressable
-          onPress={() => router.push('/(explorer)/(onboard)/complete')}
+          // Add the entered names and carry all onboarding params to the final
+          // step, which submits them to POST /users/onboarding.
+          onPress={() =>
+            router.push({
+              pathname: '/(explorer)/(onboard)/complete',
+              params: {
+                ...params,
+                firstName: first.trim(),
+                lastName: last.trim(),
+              },
+            })
+          }
           disabled={!ready}
           style={{
             height: 54,

@@ -6,6 +6,65 @@ import {
   UploadUrlResponse,
   CreateDocumentInput,
 } from '@/types/documents.type';
+import { Application } from '@/types/applications.type';
+
+// A single document paired with the application it belongs to. The application
+// context supplies the human-readable label + destination country used by the
+// Explorer "My documents" screen's meta line.
+export type MyDocument = { doc: Document; app: Application };
+
+// How many applications to fan out over. The backend has no "all my documents"
+// endpoint, so `useMyDocuments` fetches documents per-application; capping the
+// count bounds the request fan-out for users with many applications.
+const MY_DOCUMENTS_APP_CAP = 10;
+
+/**
+ * Aggregate every document across the current user's applications.
+ *
+ * There is no single "all my documents" endpoint, so this:
+ *   1. fetches the user's applications (`GET /applications`),
+ *   2. fetches each application's documents in parallel (capped at the first
+ *      ~10 applications), and
+ *   3. flattens them into one list, annotating each document with its parent
+ *      application for the UI's label/meta line.
+ *
+ * Fully defensive: any failed sub-request yields an empty list rather than
+ * rejecting the whole query, so a single bad application can't blank the screen.
+ */
+export function useMyDocuments() {
+  return useQuery({
+    queryKey: ['documents', 'mine'],
+    queryFn: async (): Promise<MyDocument[]> => {
+      // 1. Fetch the user's applications (empty list on failure).
+      let apps: Application[] = [];
+      try {
+        const res = await apiService.get<Application[]>('/applications');
+        apps = res.data ?? [];
+      } catch {
+        return [];
+      }
+
+      // 2. Fetch each application's documents in parallel (capped fan-out).
+      const perApp = await Promise.all(
+        apps.slice(0, MY_DOCUMENTS_APP_CAP).map(async (app) => {
+          try {
+            const res = await apiService.get<Document[]>(
+              `/applications/${app.id}/documents`,
+            );
+            // 3. Pair each document with its application for downstream context.
+            return (res.data ?? []).map((doc) => ({ doc, app }));
+          } catch {
+            return [] as MyDocument[];
+          }
+        }),
+      );
+
+      // Flatten the per-application arrays into a single document list.
+      return perApp.flat();
+    },
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
 
 /**
  * Get all documents for an application
