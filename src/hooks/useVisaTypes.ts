@@ -39,7 +39,7 @@ export function useVisaTypes(options?: {
       const response = await apiService.get<GetAllVisasResponse>(endpoint);
       return response.data ?? { visaTypes: [], total: 0 };
     },
-    staleTime: 0, // TODO: Change back to 1000 * 60 * 5 (5 minutes) after debugging
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }
 
@@ -58,7 +58,7 @@ export function useVisaTypesByCountry(countryCode: string) {
       return response.data ?? [];
     },
     enabled: !!countryCode,
-    staleTime: 0, // TODO: Change back to 1000 * 60 * 5 (5 minutes) after debugging
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }
 
