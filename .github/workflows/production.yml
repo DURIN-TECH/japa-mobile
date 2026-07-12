@@ -61,13 +61,13 @@ jobs:
         run: npx tsc
 
       - name: Build Production
-        run: eas build --profile production --platform all --non-interactive
+        run: eas build --profile production --platform android --non-interactive
 
       # Submits the built artifacts to App Store Connect and Play Console.
       # Submission credentials are configured on the EAS project, not here.
       - name: Submit to Stores
         if: success()
-        run: eas submit --platform all
+        run: eas submit --platform android
 
       # Release tag uses the workflow run number for monotonic versioning,
       # independent of any semver in app.json. PR fields are populated

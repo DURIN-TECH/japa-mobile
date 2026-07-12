@@ -61,7 +61,7 @@ jobs:
         run: npx tsc
 
       - name: Build Development
-        run: eas build --profile development --platform all --non-interactive
+        run: eas build --profile development --platform android --non-interactive
 
       - name: Upload Development Build Artifacts
         uses: actions/upload-artifact@v4
