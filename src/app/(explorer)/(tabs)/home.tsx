@@ -19,9 +19,17 @@ import {
   STATUS,
   ME,
   agencyById,
-  appById,
   destById,
 } from '@/components/explorer/data';
+import type { App, Agency, Dest } from '@/components/explorer/data';
+// ── Live adapters + React Query hooks (live-with-demo-fallback) ──────────────
+import { mapApplication } from '@/components/explorer/liveApplications';
+import { mapVisasToDests } from '@/components/explorer/liveExplore';
+import { mapAgency } from '@/components/explorer/liveAgencies';
+import { useApplications } from '@/hooks/useApplications';
+import { useVisaTypes, useCountriesWithVisas } from '@/hooks/useVisaTypes';
+import { useBrowseAgencies } from '@/hooks/useAgencies';
+import { useUnreadNotificationCount } from '@/hooks/useNotifications';
 import { Ic } from '@/components/explorer/icons';
 import {
   Flag,
@@ -91,15 +99,18 @@ function QuickAction({
 }
 
 // ── Compact application row (active-applications list) ───────────────────────
+// Accepts the mapped `App` object directly (not an id lookup) so live
+// applications from the backend render without a demo `appById()` lookup. The
+// destination resolves from the app's own `dest` (live) or the demo `DESTS`.
 function MiniAppRow({
-  appId,
+  app,
   onPress,
 }: {
-  appId: string;
+  app: App;
   onPress: () => void;
 }) {
-  const app = appById(appId)!;
-  const d = destById(app.destId)!;
+  const d = app.dest ?? destById(app.destId);
+  if (!d) return null;
   return (
     <Pressable
       onPress={onPress}
@@ -160,14 +171,15 @@ function MiniAppRow({
 }
 
 // ── Recommended destination card (horizontal rail) ───────────────────────────
+// Accepts the resolved `Dest` directly so live destinations (mapped from
+// GET /visas) render without a demo `destById()` lookup.
 function RecoCard({
-  destId,
+  d,
   onPress,
 }: {
-  destId: string;
+  d: Dest;
   onPress: () => void;
 }) {
-  const d = destById(destId)!;
   return (
     <Pressable
       onPress={onPress}
@@ -258,15 +270,22 @@ function RecoCard({
 // ── Sponsored / promoted agency card ("Partners near you") ───────────────────
 // Paid placement: an agency `cover` photo, a glass "Sponsored / Featured partner"
 // label, the agency identity, an offer headline and a CTA pill. 1:1 with source.
+// Accepts a resolved `Agency` object plus its placement copy (label / headline /
+// cta) directly, so both live agencies (mapped from GET /agencies/browse) and the
+// demo PROMOS path can feed the same visual without an internal id lookup.
 function PartnerCard({
-  promo,
+  ag,
+  label,
+  headline,
+  cta,
   onPress,
 }: {
-  promo: (typeof PROMOS)[number];
+  ag: Agency;
+  label: string;
+  headline: string;
+  cta: string;
   onPress: () => void;
 }) {
-  const ag = agencyById(promo.id);
-  if (!ag) return null;
   return (
     <Pressable
       onPress={onPress}
@@ -328,7 +347,7 @@ function PartnerCard({
               textTransform: 'uppercase',
             }}
           >
-            {promo.label}
+            {label}
           </Text>
         </BlurView>
       </View>
@@ -401,7 +420,7 @@ function PartnerCard({
               textShadowRadius: 8,
             }}
           >
-            {promo.headline}
+            {headline}
           </Text>
           <View
             style={{
@@ -417,7 +436,7 @@ function PartnerCard({
             <Text
               style={{ color: EX.color.ink, fontSize: 12.5, fontWeight: '700' }}
             >
-              {promo.cta}
+              {cta}
             </Text>
             <Ic.arrow size={14} color={EX.color.ink} strokeWidth={1.8} />
           </View>
@@ -428,12 +447,16 @@ function PartnerCard({
 }
 
 // Small circular header button (message / bell) with unread dot.
+// `showDot` gates the coral unread indicator: the message button keeps it always
+// on (default true); the bell passes the live unread-notification count.
 function HeaderButton({
   icon: IconCmp,
   onPress,
+  showDot = true,
 }: {
   icon: React.ElementType;
   onPress: () => void;
+  showDot?: boolean;
 }) {
   return (
     <Pressable
@@ -450,19 +473,21 @@ function HeaderButton({
       }}
     >
       <IconCmp size={19} color={EX.color.ink} strokeWidth={1.8} />
-      <View
-        style={{
-          position: 'absolute',
-          top: 9,
-          right: 10,
-          width: 7,
-          height: 7,
-          borderRadius: 3.5,
-          backgroundColor: EX.color.primary,
-          borderWidth: 2,
-          borderColor: '#fff',
-        }}
-      />
+      {showDot ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 9,
+            right: 10,
+            width: 7,
+            height: 7,
+            borderRadius: 3.5,
+            backgroundColor: EX.color.primary,
+            borderWidth: 2,
+            borderColor: '#fff',
+          }}
+        />
+      ) : null}
     </Pressable>
   );
 }
@@ -471,14 +496,66 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const lead = APPS[0];
-  const dLead = destById(lead.destId)!;
-  const actionApp = APPS.find((a) => a.next.cta) ?? lead;
-  const dAction = destById(actionApp.destId)!;
-  const rec = DESTS.filter((d) => !APPS.some((a) => a.destId === d.id)).slice(
-    0,
-    4,
-  );
+  // ── Applications (GET /applications) with a demo fallback ──────────────────
+  // Live rows map through `mapApplication` (each carries a self-contained `dest`);
+  // when the backend is empty/unreachable we keep the demo APPS so Home is never
+  // blank. Powers the hero, the next-step nudge and the active-applications list.
+  const appsQ = useApplications();
+  const apps: App[] = appsQ.data?.length ? appsQ.data.map(mapApplication) : APPS;
+
+  // Hero = the first application; resolve its destination from the app's own
+  // `dest` (live) or the demo DESTS.
+  const lead = apps[0];
+  const dLead = lead.dest ?? destById(lead.destId) ?? DESTS[0];
+  // Next-step nudge = the first application with an outstanding CTA, else the lead.
+  const actionApp = apps.find((a) => a.next.cta) ?? lead;
+  const dAction = actionApp.dest ?? destById(actionApp.destId) ?? DESTS[0];
+
+  // ── Recommended (GET /visas + /countries) with a demo fallback ─────────────
+  // Live destinations map from visas; fall back to demo DESTS when empty. We then
+  // drop any destination the user already has an application for and keep a few.
+  const visaQ = useVisaTypes({ limit: 30 });
+  const { data: countries } = useCountriesWithVisas();
+  const liveDests = mapVisasToDests(visaQ.data?.visaTypes ?? [], countries ?? []);
+  const recSource = liveDests.length ? liveDests : DESTS;
+  const rec = recSource
+    .filter((d) => !apps.some((a) => a.destId === d.id))
+    .slice(0, 4);
+
+  // ── Partners near you (GET /agencies/browse) — sponsored placement ─────────
+  // Build partner cards from the first 2–3 live agencies (mapped via mapAgency);
+  // fall back to the demo PROMOS path when the backend returns none. First slot
+  // is labelled "Sponsored", the rest "Featured partner".
+  const agQ = useBrowseAgencies();
+  const livePartners = (agQ.data ?? []).slice(0, 3).map((a, i) => {
+    const ag = mapAgency(a);
+    return {
+      id: ag.id,
+      ag,
+      label: i === 0 ? 'Sponsored' : 'Featured partner',
+      headline: ag.blurb || 'Trusted migration partner',
+      cta: 'View profile',
+    };
+  });
+  const partners: {
+    id: string;
+    ag: Agency;
+    label: string;
+    headline: string;
+    cta: string;
+  }[] = livePartners.length
+    ? livePartners
+    : PROMOS.map((p) => ({
+        id: p.id,
+        ag: agencyById(p.id)!,
+        label: p.label,
+        headline: p.headline,
+        cta: p.cta,
+      })).filter((p) => p.ag);
+
+  // ── Unread notification count — gates the coral dot on the bell ────────────
+  const unread = useUnreadNotificationCount();
+  const hasUnread = (unread.data ?? 0) > 0;
 
   return (
     <ScrollView
@@ -515,6 +592,7 @@ export default function HomeScreen() {
           <HeaderButton
             icon={Ic.bell}
             onPress={() => router.push('/(explorer)/notifications')}
+            showDot={hasUnread}
           />
           <Pressable onPress={() => router.push('/(explorer)/(tabs)/profile')}>
             <Portrait seed={3} size={42} name="Alex K" />
@@ -833,7 +911,7 @@ export default function HomeScreen() {
             elevation: 1,
           }}
         >
-          {APPS.map((a, i) => (
+          {apps.map((a, i) => (
             <React.Fragment key={a.id}>
               {i > 0 ? (
                 <View
@@ -845,7 +923,7 @@ export default function HomeScreen() {
                 />
               ) : null}
               <MiniAppRow
-                appId={a.id}
+                app={a}
                 onPress={() => router.push(`/(explorer)/application/${a.id}`)}
               />
             </React.Fragment>
@@ -877,10 +955,13 @@ export default function HomeScreen() {
           paddingBottom: 4,
         }}
       >
-        {PROMOS.map((p) => (
+        {partners.map((p) => (
           <PartnerCard
             key={p.id}
-            promo={p}
+            ag={p.ag}
+            label={p.label}
+            headline={p.headline}
+            cta={p.cta}
             onPress={() => router.push(`/(explorer)/agency/${p.id}`)}
           />
         ))}
@@ -936,8 +1017,13 @@ export default function HomeScreen() {
         {rec.map((d) => (
           <RecoCard
             key={d.id}
-            destId={d.id}
-            onPress={() => router.push(`/(explorer)/destination/${d.id}`)}
+            d={d}
+            onPress={() =>
+              router.push({
+                pathname: '/(explorer)/destination/[id]',
+                params: { id: d.id, code: d.flag },
+              })
+            }
           />
         ))}
       </ScrollView>

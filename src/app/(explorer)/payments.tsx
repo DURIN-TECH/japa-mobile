@@ -25,6 +25,10 @@ import {
 } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { Pill } from '@/components/explorer/primitives';
+// Live data: GET /transactions → mapped onto the `Payment` row contract, with
+// the static `PAYMENTS` demo data as a fallback when the query is empty.
+import { useTransactions } from '@/hooks/useTransactions';
+import { mapTransaction } from '@/components/explorer/liveTransactions';
 
 // ── PaymentRow — one transaction ─────────────────────────────────────────────
 // 40px cream chip (coral card icon) + title/sub on the left; on the right a
@@ -107,11 +111,18 @@ export default function PaymentsView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // ── Total paid — sum of every `paid` transaction ──────────────────────────
-  const totalPaid = PAYMENTS.filter((p) => p.status === 'paid').reduce(
-    (sum, p) => sum + p.amount,
-    0,
-  );
+  // ── Live transactions (demo fallback) ─────────────────────────────────────
+  // Map live backend transactions onto the `Payment` contract; when the query
+  // is empty/unreachable, fall back to the static demo rows so the screen is
+  // never blank. `useMemo` keeps the mapping stable across re-renders.
+  const { data: txns } = useTransactions();
+  const live = React.useMemo(() => (txns ?? []).map(mapTransaction), [txns]);
+  const rows = live.length ? live : PAYMENTS;
+
+  // ── Total paid — sum of every `paid` transaction in the active rows ───────
+  const totalPaid = rows
+    .filter((p) => p.status === 'paid')
+    .reduce((sum, p) => sum + p.amount, 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -191,7 +202,7 @@ export default function PaymentsView() {
                 fontWeight: '500',
               }}
             >
-              {PAYMENTS.length} transactions
+              {rows.length} transactions
             </Text>
           </LinearGradient>
         </View>
@@ -204,7 +215,7 @@ export default function PaymentsView() {
             gap: 10,
           }}
         >
-          {PAYMENTS.map((p) => (
+          {rows.map((p) => (
             <PaymentRow key={p.id} p={p} />
           ))}
         </View>

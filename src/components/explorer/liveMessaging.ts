@@ -10,36 +10,14 @@
 // strings; message timestamps use a "h:mm a" clock format.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { formatDistanceToNow, format, parseISO } from 'date-fns';
+import { agoShort, fmtDate } from './liveDate';
 import { Convo, Msg } from './data';
 import { Conversation, Message } from '@/types/messaging.type';
 
-// ── Compact relative time ────────────────────────────────────────────────────
-// date-fns `formatDistanceToNow` yields verbose strings ("about 3 hours ago").
-// The demo `ago` field is terse ("3h", "2d"), so we compress the common units
-// to a single-letter suffix and fall back to the raw distance for anything else.
-export function formatDistanceToNowShort(iso: string): string {
-  if (!iso) return '';
-  let base: string;
-  try {
-    base = formatDistanceToNow(parseISO(iso)); // e.g. "about 3 hours", "2 days"
-  } catch {
-    return '';
-  }
-  const m = base.match(/(\d+)\s+(second|minute|hour|day|week|month|year)/);
-  if (!m) return base.includes('less than a minute') ? 'now' : base;
-  const n = m[1];
-  const unit = m[2];
-  const suffix: Record<string, string> = {
-    second: 's',
-    minute: 'm',
-    hour: 'h',
-    day: 'd',
-    week: 'w',
-    month: 'mo',
-    year: 'y',
-  };
-  return `${n}${suffix[unit] ?? ''}`;
+// Compact relative time ("3h", "2d"). Kept as a named export for compatibility;
+// delegates to the shared, Timestamp-safe `agoShort`.
+export function formatDistanceToNowShort(v: unknown): string {
+  return agoShort(v);
 }
 
 // One backend conversation → the Explorer's Convo row.
@@ -60,6 +38,6 @@ export function mapMessage(m: Message): Msg {
   return {
     from: m.senderType === 'user' ? 'me' : 'agent',
     t: m.content,
-    at: format(parseISO(m.createdAt), 'h:mm a'),
+    at: fmtDate(m.createdAt, 'h:mm a'),
   };
 }

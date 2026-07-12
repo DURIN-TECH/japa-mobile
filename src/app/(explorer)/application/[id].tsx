@@ -15,7 +15,7 @@
 // portrait; sticky coral CTA 54h radius 16.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -52,10 +52,21 @@ import {
   mapApplication,
   mapTimeline,
 } from '@/components/explorer/liveApplications';
+import { fmtDate } from '@/components/explorer/liveDate';
 import {
   useApplication,
   useApplicationTimeline,
 } from '@/hooks/useApplications';
+// Live payment-request read + approve/reject mutations (client side of the flow).
+import {
+  useApprovePaymentRequest,
+  usePaymentRequests,
+  useRejectPaymentRequest,
+} from '@/hooks/usePaymentRequests';
+import {
+  CATEGORY_LABELS,
+  PaymentRequestStatus,
+} from '@/types/payment-requests.type';
 import { Ic } from '@/components/explorer/icons';
 import {
   Flag,
@@ -75,6 +86,23 @@ const REJECT_REASONS = [
 ];
 
 const HERO = 240;
+
+// ── Unified payment-request row ──────────────────────────────────────────────
+// Demo fixtures and live backend requests are both mapped to this single shape so
+// the card renders identically. `live` tells the approve/reject handlers whether
+// to fire the real backend mutations (demo rows stay local-only). `amount` is the
+// display value in whole naira (live rows are pre-divided from kobo).
+type PayReqRow = {
+  id: string;
+  title: string;
+  amount: number;
+  agentId: string;
+  agentName?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  due: string;
+  note: string;
+  live: boolean;
+};
 
 // ── Timeline — detailed activity stepper ─────────────────────────────────────
 // Each event carries a title, a description, and a "date · actor" line. The dot
@@ -243,6 +271,63 @@ export default function AppDetail() {
   const [reasonSel, setReasonSel] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
 
+  // ── Payment requests (live-with-demo-fallback) ──────────────────────────────
+  // For a live application, fetch this client's requests scoped to the route id
+  // (GET /payment-requests?role=client&applicationId=…). Demo apps keep the static
+  // PAYMENT_REQUESTS fixtures. Mutation hooks are created here (top level, before
+  // any early return) so approve/reject can fire the real backend calls.
+  const payReqQ = usePaymentRequests(id);
+  const approveReq = useApprovePaymentRequest();
+  const rejectReq = useRejectPaymentRequest();
+
+  const payReqs = useMemo<PayReqRow[]>(() => {
+    // Backend PaymentRequestStatus → the card's 3-state badge/action model.
+    const toRowStatus = (
+      s: PaymentRequestStatus,
+    ): 'pending' | 'approved' | 'rejected' =>
+      s === 'approved' || s === 'paid'
+        ? 'approved'
+        : s === 'rejected' || s === 'cancelled' || s === 'expired'
+          ? 'rejected'
+          : 'pending';
+
+    // Live path: real requests for this application (defensively re-filtered by id).
+    if (!demo && app) {
+      return (payReqQ.data ?? [])
+        .filter((r) => r.applicationId === app.id)
+        .map<PayReqRow>((r) => ({
+          id: r.id,
+          title: CATEGORY_LABELS[r.category] ?? 'Payment request',
+          // Backend amount is in kobo → divide by 100 for the ₦ display value.
+          amount: Math.round(r.amount / 100),
+          agentId: r.agentId,
+          // Backend request carries no agent name; card falls back gracefully.
+          agentName: undefined,
+          status: toRowStatus(r.status),
+          due: r.expiresAt ? `Due ${fmtDate(r.expiresAt, 'MMM d')}` : '',
+          note: r.description,
+          live: true,
+        }));
+    }
+
+    // Demo path: static fixtures keep their existing display fields verbatim.
+    if (app) {
+      return paymentRequestsForApp(app.id).map<PayReqRow>((r) => ({
+        id: r.id,
+        title: r.title,
+        amount: r.amount,
+        agentId: r.agentId,
+        agentName: undefined,
+        // Demo status is 'pending' | 'paid' — both render as Pending (unchanged).
+        status: r.status === 'paid' ? 'pending' : r.status,
+        due: r.due,
+        note: r.note,
+        live: false,
+      }));
+    }
+    return [];
+  }, [demo, app, payReqQ.data]);
+
   // Spinner while the live application is still loading (demo path is instant).
   if (!demo && liveQ.isLoading) {
     return (
@@ -280,8 +365,6 @@ export default function AppDetail() {
 
   const pct = Math.round(app.progress * 100);
   const actionable = app.next.cta != null;
-  // Agent-raised payment requests on this application (empty → section hidden).
-  const payReqs = paymentRequestsForApp(app.id);
 
   // Open (or fall back to) an agent's conversation for a payment-request message.
   const messageAgent = (agentId: string) => {
@@ -300,6 +383,10 @@ export default function AppDetail() {
     if (!rejectId) return;
     const reason = reasonSel === 'Other' ? reasonText.trim() : reasonSel;
     if (!reason) return; // guarded by the disabled button, but keep it safe
+    // For a live request, reject on the backend (auto-creates a chat with the
+    // reason). Demo requests only update local state.
+    const target = payReqs.find((r) => r.id === rejectId);
+    if (target?.live) rejectReq.mutate({ requestId: rejectId, reason });
     setReqOverride((s) => ({ ...s, [rejectId]: 'rejected' }));
     setReqReason((r) => ({ ...r, [rejectId]: reason }));
     closeReject();
@@ -623,7 +710,7 @@ export default function AppDetail() {
                       <Portrait
                         seed={agentById(req.agentId)?.seed ?? 0}
                         size={22}
-                        name={agentById(req.agentId)?.n ?? 'Agent'}
+                        name={req.agentName ?? agentById(req.agentId)?.n ?? 'Agent'}
                       />
                       <Text
                         style={{
@@ -632,7 +719,8 @@ export default function AppDetail() {
                           fontWeight: '500',
                         }}
                       >
-                        Requested by {agentById(req.agentId)?.n}
+                        Requested by{' '}
+                        {req.agentName ?? agentById(req.agentId)?.n ?? 'your agent'}
                       </Text>
                     </View>
 
@@ -744,7 +832,12 @@ export default function AppDetail() {
                                     { text: 'Cancel', style: 'cancel' },
                                     {
                                       text: 'Approve',
-                                      onPress: () => setSt('approved'),
+                                      onPress: () => {
+                                        // Live request → approve on the backend
+                                        // (releases escrow); demo stays local.
+                                        if (req.live) approveReq.mutate(req.id);
+                                        setSt('approved');
+                                      },
                                     },
                                   ],
                                 )

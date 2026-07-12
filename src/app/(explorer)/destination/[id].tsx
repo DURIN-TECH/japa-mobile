@@ -519,7 +519,7 @@ export default function DestinationDetail() {
             onPress={() =>
               router.push({
                 pathname: '/(explorer)/eligibility',
-                params: { dest: d.id },
+                params: { dest: d.id, code: d.flag },
               })
             }
             style={{
@@ -672,7 +672,12 @@ export default function DestinationDetail() {
 
           {/* Full visa breakdown link */}
           <Pressable
-            onPress={() => router.push(`/(explorer)/visa/${d.id}`)}
+            onPress={() =>
+              router.push({
+                pathname: '/(explorer)/visa/[id]',
+                params: { id: d.id, code: code ?? d.flag },
+              })
+            }
             style={{
               flexDirection: 'row',
               alignItems: 'center',

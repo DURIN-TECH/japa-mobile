@@ -254,7 +254,14 @@ export default function PassportStep() {
         }}
       >
         <Pressable
-          onPress={() => router.push('/(explorer)/(onboard)/country')}
+          // Carry the passport choice forward as a router param so the final
+          // step can submit it to POST /users/onboarding (hasPassport).
+          onPress={() =>
+            router.push({
+              pathname: '/(explorer)/(onboard)/country',
+              params: { hasPassport: choice ?? '' },
+            })
+          }
           disabled={!choice}
           style={{
             height: 54,

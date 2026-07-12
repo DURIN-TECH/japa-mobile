@@ -10,7 +10,7 @@
 // undefined (see notifications.tsx for the live routing fallback).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { formatDistanceToNow, parseISO } from 'date-fns';
+import { agoFrom } from './liveDate';
 import { Notif } from './data';
 import { ApiNotification } from '@/hooks/useNotifications';
 
@@ -36,8 +36,8 @@ function toKind(type: ApiNotification['type']): Notif['kind'] {
 
 // Compact relative time — drop date-fns' verbose qualifiers so "about 2 hours"
 // reads closer to the demo's "2 hours". The screen appends its own " ago".
-function toAgo(iso: string): string {
-  return formatDistanceToNow(parseISO(iso))
+function toAgo(iso: unknown): string {
+  return agoFrom(iso)
     .replace(/^about /, '')
     .replace(/^less than /, '');
 }

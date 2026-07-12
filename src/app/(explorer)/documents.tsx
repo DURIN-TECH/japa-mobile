@@ -13,14 +13,22 @@
 // Data + colours come from the static contract: `DOCUMENTS` and `DOC_STATUS`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { DOCUMENTS, DOC_STATUS, type Doc } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { Pill } from '@/components/explorer/primitives';
+import { useMyDocuments } from '@/hooks/useDocuments';
+import { mapDocument } from '@/components/explorer/liveDocuments';
 
 // Filter keys map 1:1 to Doc.status, plus the "all" catch-all. Labels rename
 // `uploaded` → "In review" and `missing` → "Missing" for a friendlier UI.
@@ -161,13 +169,41 @@ export default function DocumentsView() {
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<FilterKey>('all');
 
+  // ── Live data (aggregated across the user's applications) ─────────────────
+  // Fetch every document across the user's applications, then map each onto the
+  // screen's `Doc` shape. Falls back to the demo library when the backend
+  // returns nothing, so the screen is never blank.
+  const { data: myDocs, isLoading } = useMyDocuments();
+  const live = useMemo<Doc[]>(
+    () => (myDocs ?? []).map(({ doc, app }) => mapDocument(doc, app)),
+    [myDocs],
+  );
+  const docs = live.length ? live : DOCUMENTS;
+
   // ── Live counts across the whole library ──────────────────────────────────
-  const verified = DOCUMENTS.filter((d) => d.status === 'verified').length;
-  const inReview = DOCUMENTS.filter((d) => d.status === 'uploaded').length;
-  const missing = DOCUMENTS.filter((d) => d.status === 'missing').length;
+  const verified = docs.filter((d) => d.status === 'verified').length;
+  const inReview = docs.filter((d) => d.status === 'uploaded').length;
+  const missing = docs.filter((d) => d.status === 'missing').length;
 
   // Filtered list for the active chip.
-  const list = DOCUMENTS.filter((d) => filter === 'all' || d.status === filter);
+  const list = docs.filter((d) => filter === 'all' || d.status === filter);
+
+  // While the aggregate query is still loading (and no live rows have arrived
+  // yet), show a centered spinner rather than flashing the demo fallback.
+  if (isLoading && !live.length) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -201,7 +237,7 @@ export default function DocumentsView() {
             <Text
               style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}
             >
-              {DOCUMENTS.length} documents across your applications
+              {docs.length} documents across your applications
             </Text>
           </View>
         </View>

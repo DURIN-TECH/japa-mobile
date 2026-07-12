@@ -12,8 +12,8 @@
 // Geometry mirrors the source: svg 130×130, r=52, strokeWidth 10, rotated -90°.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Circle } from 'react-native-svg';
@@ -33,6 +33,12 @@ import {
   Portrait,
   SectionTitle,
 } from '@/components/explorer/primitives';
+// ── Live backend wiring ───────────────────────────────────────────────────────
+// When the wizard submitted a real eligibility check it routes here with a
+// `checkId`. We fetch that scored EligibilityCheck and derive the display from
+// it; without a checkId we render the static demo result (ELIG_RESULT).
+import { useEligibilityCheck } from '@/hooks/useEligibility';
+import { EligibilityLevel } from '@/types/eligibility.type';
 
 // Animate the SVG circle's dash offset (the arc "unrolls" to the score).
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -186,11 +192,74 @@ function CriteriaRow({
 export default function EligibilityResult() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { dest } = useLocalSearchParams<{ dest: string }>();
+  const { dest, checkId } = useLocalSearchParams<{
+    dest?: string;
+    checkId?: string;
+  }>();
 
-  const { score, verdict, summary, matched, gaps } = ELIG_RESULT;
+  // Fetch the real scored check when a checkId was passed (enabled by the id).
+  const checkQ = useEligibilityCheck(checkId ?? '');
+
+  // Derive the display from the live EligibilityCheck when available, else fall
+  // back to the static demo result. Kept in a memo so it only recomputes when the
+  // fetched data changes.
+  const { score, verdict, summary, matched, gaps } = useMemo(() => {
+    const c = checkId ? checkQ.data : undefined;
+    if (!c) return ELIG_RESULT;
+
+    // eligibilityLevel → verdict pill copy.
+    const verdictMap: Record<EligibilityLevel, string> = {
+      high: 'Likely eligible',
+      medium: 'Possibly eligible',
+      low: 'Needs work',
+      not_applicable: 'No visa required',
+    };
+    // Generic one-liner used when the backend returned no recommendations.
+    const genericMap: Record<EligibilityLevel, string> = {
+      high: 'Based on your answers, you have a strong profile for this visa.',
+      medium:
+        'Based on your answers, you may be eligible with a few improvements.',
+      low: 'Based on your answers, your profile needs work — an expert can help.',
+      not_applicable:
+        'Based on your answers, you may not need a visa for this trip.',
+    };
+
+    const matchedItems = c.breakdown.filter((b) => b.passed).map((b) => b.question);
+    // Prefer explicit missing requirements; fall back to failed breakdown items.
+    const gapItems = c.missingRequirements?.length
+      ? c.missingRequirements
+      : c.breakdown.filter((b) => !b.passed).map((b) => b.question);
+
+    return {
+      score: c.score,
+      verdict: verdictMap[c.eligibilityLevel] ?? ELIG_RESULT.verdict,
+      summary:
+        c.recommendations?.[0] ??
+        genericMap[c.eligibilityLevel] ??
+        ELIG_RESULT.summary,
+      matched: matchedItems,
+      gaps: gapItems,
+    };
+  }, [checkId, checkQ.data]);
+
   const agent = agentById('a1'); // nudge agent — Sarah Johnson
   const firstName = agent?.n.split(' ')[0] ?? 'an expert';
+
+  // Spinner while the live check is loading (all hooks above already ran).
+  if (checkId && checkQ.isLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>

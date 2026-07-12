@@ -8,7 +8,7 @@
 // per-country `dest` via `countryArt()` (reused from the Explore adapter).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { format, formatDistanceToNow, parseISO } from 'date-fns';
+import { agoFrom, fmtDate } from './liveDate';
 import { App, AppStep, Dest } from './data';
 import { countryArt } from './liveExplore';
 import {
@@ -73,9 +73,7 @@ export function mapApplication(app: Application, agentSeed?: number): App {
     progress: normalizeProgress(app.progress),
     step: 0,
     ref: app.id.slice(0, 8).toUpperCase(),
-    updated: formatDistanceToNow(parseISO(app.lastUpdated), {
-      addSuffix: true,
-    }),
+    updated: agoFrom(app.lastUpdated, { addSuffix: true }),
     agentId: app.agentId ?? '',
     next: {
       label: app.nextStep ?? 'No action needed',
@@ -95,7 +93,7 @@ export function mapTimeline(events: ApplicationTimeline[]): AppStep[] {
   return events.map((e) => ({
     t: e.title,
     desc: e.description,
-    d: format(parseISO(e.date), 'MMM d, yyyy'),
+    d: fmtDate(e.date, 'MMM d, yyyy'),
     s:
       e.status === 'completed'
         ? 'done'

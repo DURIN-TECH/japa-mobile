@@ -9,14 +9,21 @@
 // re-entered by going back.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
+import { useAuthStore } from '@/stores/auth.store';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -119,6 +126,50 @@ function FeatureRow({
 export default function CompleteStep() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // All onboarding values collected across the previous three steps, arriving
+  // as string router params.
+  const params = useLocalSearchParams<{
+    hasPassport?: string;
+    country?: string;
+    firstName?: string;
+    lastName?: string;
+  }>();
+
+  // Auth-store action: POSTs to /users/onboarding and refreshes the profile.
+  const completeOnboarding = useAuthStore((s) => s.completeOnboarding);
+  const finalizeOnboarding = useAuthStore((s) => s.finalizeOnboarding);
+
+  // Drives the CTA spinner while the submit is in flight.
+  const [submitting, setSubmitting] = useState(false);
+
+  // ── Get started — submit onboarding, then enter the Explorer home ──────────
+  // We NEVER block the user on a backend failure: the submit is best-effort and
+  // we always land them on Home whether it succeeds or errors.
+  const handleGetStarted = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      // Map the collected router params to the backend's expected body shape.
+      // Backend requires firstName, lastName, residentialCountry; hasPassport
+      // is a boolean ('yes' from the passport step → true).
+      const ok = await completeOnboarding({
+        firstName: params.firstName ?? '',
+        lastName: params.lastName ?? '',
+        residentialCountry: params.country ?? '',
+        hasPassport: params.hasPassport === 'yes',
+      });
+      // On success, flip the local profile flag so the app's onboarding gate
+      // treats this user as onboarded.
+      if (ok) finalizeOnboarding();
+    } catch {
+      // Swallow — a failed onboarding submit must not trap the user here.
+    } finally {
+      // Always proceed into the Explorer, replacing the stack so the onboarding
+      // flow can't be re-entered with the back gesture.
+      router.replace('/(explorer)/(tabs)/home');
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -224,7 +275,8 @@ export default function CompleteStep() {
         }}
       >
         <Pressable
-          onPress={() => router.replace('/(explorer)/(tabs)/home')}
+          onPress={handleGetStarted}
+          disabled={submitting}
           style={{
             height: 54,
             borderRadius: 16,
@@ -238,9 +290,13 @@ export default function CompleteStep() {
             elevation: 6,
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-            Get started
-          </Text>
+          {submitting ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+              Get started
+            </Text>
+          )}
         </Pressable>
       </BlurView>
     </View>

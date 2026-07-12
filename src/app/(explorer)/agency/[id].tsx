@@ -386,25 +386,31 @@ export default function AgencyDetail() {
                 {a.city}, Nigeria
               </Text>
             </View>
-            <Text
-              style={{
-                color: 'rgba(255,255,255,0.92)',
-                fontSize: 13,
-                fontWeight: '600',
-                opacity: 0.5,
-              }}
-            >
-              ·
-            </Text>
-            <Text
-              style={{
-                color: 'rgba(255,255,255,0.92)',
-                fontSize: 13,
-                fontWeight: '600',
-              }}
-            >
-              Since {a.est}
-            </Text>
+            {/* "Since {year}" only when we actually have a founding year
+                (live agencies with no createdAt map to est 0 → hide it). */}
+            {a.est ? (
+              <>
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.92)',
+                    fontSize: 13,
+                    fontWeight: '600',
+                    opacity: 0.5,
+                  }}
+                >
+                  ·
+                </Text>
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.92)',
+                    fontSize: 13,
+                    fontWeight: '600',
+                  }}
+                >
+                  Since {a.est}
+                </Text>
+              </>
+            ) : null}
           </View>
         </View>
       </Animated.View>
