@@ -91,7 +91,7 @@ export const EX = {
   } as Record<string, { label: string; fg: string; bg: string }>,
 
   // ── Typography ────────────────────────────────────────────────────────────
-  // Display = Space Grotesk (loaded in (explorer)/_layout.tsx). Body/UI = system
+  // Display = Space Grotesk (loaded in _layout.tsx). Body/UI = system
   // font (the prototype used `inherit`, i.e. the platform default).
   font: {
     display: {

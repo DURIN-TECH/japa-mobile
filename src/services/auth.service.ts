@@ -10,6 +10,12 @@ import {
   signOut,
   onAuthStateChanged as firebaseOnAuthStateChanged,
   getIdToken as firebaseGetIdToken,
+  // Sensitive account-management ops. Firebase requires a *recent* sign-in for
+  // these, so callers must `reauthenticate()` immediately before them.
+  reauthenticateWithCredential,
+  updatePassword as fbUpdatePassword,
+  deleteUser as fbDeleteUser,
+  EmailAuthProvider,
   FirebaseAuthTypes,
 } from '@react-native-firebase/auth';
 
@@ -79,6 +85,61 @@ class AuthService {
     return result.user;
   }
 
+  // ── Account management (sensitive — require a recent login) ────────────────
+
+  // Re-verify the signed-in user with their current password. Firebase demands a
+  // recent credential before changing the password/email or deleting the account
+  // (auth/requires-recent-login otherwise). Only valid for email/password users —
+  // phone-only accounts have no password to reauthenticate with.
+  async reauthenticate(currentPassword: string): Promise<void> {
+    const user = this.auth.currentUser;
+    if (!user?.email) {
+      throw new Error('No email/password account is signed in.');
+    }
+    const credential = EmailAuthProvider.credential(
+      user.email,
+      currentPassword,
+    );
+    await reauthenticateWithCredential(user, credential);
+  }
+
+  // Change the signed-in user's password. Call `reauthenticate()` first.
+  async updatePassword(newPassword: string): Promise<void> {
+    const user = this.auth.currentUser;
+    if (!user) throw new Error('No signed-in user.');
+    await fbUpdatePassword(user, newPassword);
+  }
+
+  // Delete the Firebase Auth user client-side. The backend normally deletes it via
+  // the Admin SDK (DELETE /users/me); this is a fallback / completeness helper.
+  async deleteAccount(): Promise<void> {
+    const user = this.auth.currentUser;
+    if (!user) throw new Error('No signed-in user.');
+    await fbDeleteUser(user);
+  }
+
+  // Whether the current user signed in with email/password (vs phone-only). The
+  // password/email account-management flows only apply to password accounts, so
+  // screens use this to hide or disable those actions for phone users.
+  hasPasswordProvider(): boolean {
+    const user = this.auth.currentUser;
+    return !!user?.providerData?.some((p) => p.providerId === 'password');
+  }
+
+  // Current email-verified state from the cached user (may be stale until reload).
+  isEmailVerified(): boolean {
+    return !!this.auth.currentUser?.emailVerified;
+  }
+
+  // Force-refresh the user from Firebase so `emailVerified` reflects a link the
+  // user just clicked in their inbox. Returns the refreshed user (or null).
+  async reloadUser(): Promise<FirebaseUser | null> {
+    const user = this.auth.currentUser;
+    if (!user) return null;
+    await user.reload();
+    return this.auth.currentUser;
+  }
+
   // Common
   async logout(): Promise<void> {
     await signOut(this.auth);
@@ -117,6 +178,8 @@ class AuthService {
         return 'Invalid credentials. Please check your email and password.';
       case 'auth/too-many-requests':
         return 'Too many attempts. Please try again later.';
+      case 'auth/requires-recent-login':
+        return 'Please sign in again before making this change.';
       case 'auth/invalid-phone-number':
         return 'Please enter a valid phone number.';
       case 'auth/invalid-verification-code':

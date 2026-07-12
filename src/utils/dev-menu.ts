@@ -26,11 +26,10 @@ export function registerDevMenu() {
       },
     },
     {
-      name: 'Replay intro flow',
+      name: 'Go to Explorer welcome',
       shouldCollapse: true,
       callback: () => {
-        useSettingsStore.getState().setHasSeenIntro(false);
-        router.replace('/intro');
+        router.replace('/(auth)/welcome');
       },
     },
   ]);

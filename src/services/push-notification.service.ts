@@ -200,25 +200,25 @@ class PushNotificationService {
       case 'payment_request_rejected':
       case 'document_status':
         router.push({
-          pathname: '/me/applications/[id]',
+          pathname: '/application/[id]',
           params: { id: data.referenceId },
         });
         break;
       case 'consultation_reminder':
         router.push({
-          pathname: '/me/consultations/[id]',
+          pathname: '/consultation/[id]',
           params: { id: data.referenceId },
         });
         break;
       case 'message_received':
         router.push({
-          pathname: '/me/chat/[conversationId]',
-          params: { conversationId: data.referenceId },
+          pathname: '/messages/[id]',
+          params: { id: data.referenceId },
         });
         break;
       default:
         // For system notifications or unknown types, go to notifications list
-        router.push('/me/notifications');
+        router.push('/notifications');
         break;
     }
   }

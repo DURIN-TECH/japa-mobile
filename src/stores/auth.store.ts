@@ -8,7 +8,11 @@ import {
 } from '@/services/auth.service';
 import { apiService } from '@/services/api.service';
 import { pushNotificationService } from '@/services/push-notification.service';
-import { UserProfile, OnboardingData } from '@/types/user.type';
+import {
+  UserProfile,
+  OnboardingData,
+  NotificationPreferences,
+} from '@/types/user.type';
 
 interface AuthState {
   // State
@@ -27,6 +31,28 @@ interface AuthState {
   loginWithEmail: (email: string, password: string) => Promise<boolean>;
   registerWithEmail: (email: string, password: string) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
+  // Send (or re-send) the branded "verify your email" message via the backend.
+  // Defaults to the signed-in user's email when none is passed. Best-effort.
+  sendEmailVerification: (email?: string) => Promise<boolean>;
+
+  // Account management (email/password users only; each reauthenticates first).
+  // changePassword: reauth → Firebase updatePassword → branded "password changed"
+  //   security notice (backend, best-effort).
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<boolean>;
+  // changeEmail: reauth → backend starts the branded verify-and-change flow. The
+  //   change only completes after the user clicks the link in their NEW inbox.
+  changeEmail: (currentPassword: string, newEmail: string) => Promise<boolean>;
+  // deleteAccount: reauth → backend deletes the profile + Auth user and emails a
+  //   confirmation → local session cleared.
+  deleteAccount: (currentPassword: string) => Promise<boolean>;
+  // updateNotificationPreferences: toggle email/push channels for notifications.
+  //   Partial patch (one channel at a time); updates the cached profile on success.
+  updateNotificationPreferences: (
+    prefs: Partial<NotificationPreferences>,
+  ) => Promise<boolean>;
 
   // Actions - Phone auth (return true on success, false on error)
   sendOtp: (phoneNumber: string) => Promise<boolean>;
@@ -128,6 +154,141 @@ export const useAuthStore = create<AuthState>()(
           return false;
         } finally {
           set({ isLoading: false });
+        }
+      },
+
+      // Whitelabeled "verify your email".
+      // Calls the BACKEND (POST /auth/resend-verification) so the verification email
+      // is the Seli-branded Resend template. Sign-up itself is client-side Firebase,
+      // which sends no verification email by default — this fills that gap.
+      //
+      // Best-effort by design: we never block registration/onboarding on it. Returns
+      // false (and records `error`) on a hard failure, but callers typically ignore
+      // the result and just fire-and-forget after sign-up.
+      sendEmailVerification: async (email?: string) => {
+        const to = email ?? get().user?.email ?? undefined;
+        if (!to) {
+          set({ error: 'No email address to verify' });
+          return false;
+        }
+        try {
+          const response = await apiService.post('/auth/resend-verification', {
+            email: to,
+          });
+          return !!response.success;
+        } catch (error) {
+          const message =
+            (error as { message?: string })?.message ||
+            'Failed to send verification email';
+          set({ error: message });
+          return false;
+        }
+      },
+
+      // ── Account management ──────────────────────────────────────────────────
+      // Change the password. Firebase does the actual change client-side (after a
+      // fresh reauthentication); the backend call only fires the branded "your
+      // password was changed" security email (best-effort — never blocks success).
+      changePassword: async (currentPassword: string, newPassword: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          await authService.reauthenticate(currentPassword);
+          await authService.updatePassword(newPassword);
+          // Security heads-up email + in-app/push notice. Fire-and-forget: the
+          // password is already changed, so a delivery hiccup mustn't fail the UX.
+          apiService.post('/users/me/password-changed').catch(() => {});
+          return true;
+        } catch (error) {
+          set({ error: authService.getErrorMessage(error) });
+          return false;
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      // Start a verification-gated email change. We reauthenticate, then the backend
+      // mints a branded verify-and-change link to the NEW address (and warns the OLD
+      // one). The email only flips once the user confirms from the new inbox, so a
+      // `true` here means "confirmation email sent", NOT "email changed".
+      changeEmail: async (currentPassword: string, newEmail: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          await authService.reauthenticate(currentPassword);
+          const response = await apiService.post('/users/me/change-email', {
+            newEmail: newEmail.trim(),
+          });
+          if (!response.success) {
+            set({ error: response.message || 'Failed to start email change' });
+            return false;
+          }
+          return true;
+        } catch (error) {
+          // Firebase reauth errors carry a `code` (mapped by getErrorMessage);
+          // backend ApiErrors carry a human-readable `message` (also returned).
+          set({ error: authService.getErrorMessage(error) });
+          return false;
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      // Permanently delete the account. Reauthenticate, then let the backend send
+      // the confirmation email + delete the Firestore profile AND the Firebase Auth
+      // user. Finally clear the local session so the app returns to the auth entry.
+      deleteAccount: async (currentPassword: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          await authService.reauthenticate(currentPassword);
+          const response = await apiService.delete('/users/me');
+          if (!response.success) {
+            set({ error: response.message || 'Failed to delete account' });
+            return false;
+          }
+          // Stop push delivery, then sign out locally. The server-side Auth user is
+          // already gone, so this just tears down the client session/state.
+          await pushNotificationService.unregisterToken().catch(() => {});
+          await authService.logout().catch(() => {});
+          set({
+            user: null,
+            profile: null,
+            isAuthenticated: false,
+            confirmationResult: null,
+            phoneNumber: null,
+          });
+          return true;
+        } catch (error) {
+          set({ error: authService.getErrorMessage(error) });
+          return false;
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      // Update notification channel preferences (email/push). PATCHes a partial
+      // body and, on success, merges the server's authoritative prefs back into the
+      // cached profile so the toggles reflect persisted state. Returns false (and
+      // leaves the profile untouched) on failure so callers can revert the UI.
+      updateNotificationPreferences: async (
+        prefs: Partial<NotificationPreferences>,
+      ) => {
+        try {
+          const response = await apiService.patch<NotificationPreferences>(
+            '/users/me/notification-preferences',
+            prefs,
+          );
+          if (!response.success || !response.data) {
+            return false;
+          }
+          // Reflect the persisted prefs on the cached profile (if we have one).
+          const profile = get().profile;
+          if (profile) {
+            set({
+              profile: { ...profile, notificationPreferences: response.data },
+            });
+          }
+          return true;
+        } catch {
+          return false;
         }
       },
 
