@@ -11,14 +11,35 @@
 // so the two screens read as one system.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
-import { Pressable, Text, View, ScrollView } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  Text,
+  View,
+  ScrollView,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import { AGENTS, REQS, REJECTIONS, destById } from '@/components/explorer/data';
+import {
+  AGENTS,
+  REQS,
+  REJECTIONS,
+  destById,
+  Dest,
+  Req,
+} from '@/components/explorer/data';
+import {
+  mapRequirements,
+  visaTypeToDest,
+} from '@/components/explorer/liveExplore';
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
+import { useTopAgents } from '@/hooks/useAgents';
+import { useCreateApplication } from '@/hooks/useApplications';
 import { Ic } from '@/components/explorer/icons';
 import { Flag, GlassButton, Scrim } from '@/components/explorer/primitives';
 
@@ -63,11 +84,62 @@ function StatCell({
 export default function VisaBreakdown() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const d = destById(id);
+  const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
 
-  // Feature the top specialist in the "boost your chances" nudge.
-  const specialist = AGENTS[0];
+  // Demo tiles resolve from static DESTS; live tiles (reached from the backend
+  // Explore grid via destination/[id]) carry a country `code` and are fetched
+  // by (countryCode, visaId) — mirroring destination/[id].tsx exactly.
+  const demo = destById(id);
+  const liveQ = useVisaType(demo ? '' : (code ?? ''), demo ? '' : id);
+  const { data: countries } = useCountriesWithVisas();
+
+  // Effective destination (demo or live-mapped from the visa type).
+  const d: Dest | undefined = useMemo(() => {
+    if (demo) return demo;
+    const vt = liveQ.data?.visaType;
+    if (!vt) return undefined;
+    const name = countries?.find(
+      (c) => c.code.toLowerCase() === (code ?? '').toLowerCase(),
+    )?.name;
+    return visaTypeToDest(vt, name);
+  }, [demo, liveQ.data, countries, code]);
+
+  // Requirements checklist — live requirements when present, else the demo set.
+  const reqs: Req[] = useMemo(() => {
+    if (demo) return REQS;
+    const rq = liveQ.data?.requirements;
+    return rq && rq.length ? mapRequirements(rq) : REQS;
+  }, [demo, liveQ.data]);
+
+  // "Boost your chances" nudge — feature the real #1 top agent (GET /agents/top)
+  // with the demo specialist as fallback.
+  const topAgentsQ = useTopAgents(1);
+  const specialist = useMemo(() => {
+    const live = (topAgentsQ.data ?? []).map(mapAgent);
+    return live[0] ?? AGENTS[0];
+  }, [topAgentsQ.data]);
+
+  // Create-application (declared before any early return to keep hook order
+  // stable). For a live visa the "Start application" CTA mints a real
+  // Application, then opens self-service with that id; demo/failure fall back.
+  const createApp = useCreateApplication();
+  const [creating, setCreating] = useState(false);
+
+  // Live fetch still in flight.
+  if (!demo && liveQ.isLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator color={EX.color.primary} />
+      </View>
+    );
+  }
 
   if (!d) {
     return (
@@ -83,6 +155,30 @@ export default function VisaBreakdown() {
       </View>
     );
   }
+
+  // Start (or continue to) the self-service application. For a live visa this
+  // creates a real Application (mode 'self') and opens self-service with its id;
+  // demo dests and any failure fall back to the demo self-service view.
+  const startSelfService = async () => {
+    if (creating) return;
+    if (demo) {
+      router.push(`/(explorer)/self-service/${d.id}`);
+      return;
+    }
+    try {
+      setCreating(true);
+      const app = await createApp.mutateAsync({
+        visaTypeId: d.id,
+        countryCode: (code ?? d.flag).toUpperCase(),
+        mode: 'self',
+      });
+      router.push(`/(explorer)/self-service/${app?.id ?? d.id}`);
+    } catch {
+      router.push(`/(explorer)/self-service/${d.id}`);
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -271,7 +367,7 @@ export default function VisaBreakdown() {
               elevation: 1,
             }}
           >
-            {REQS.map((r, i) => (
+            {reqs.map((r, i) => (
               <View
                 key={r.t}
                 style={{
@@ -520,7 +616,8 @@ export default function VisaBreakdown() {
             </Text>
           </View>
           <Pressable
-            onPress={() => router.push(`/(explorer)/self-service/${d.id}`)}
+            onPress={startSelfService}
+            disabled={creating}
             style={{
               flex: 1,
               height: 54,
@@ -530,6 +627,7 @@ export default function VisaBreakdown() {
               alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
+              opacity: creating ? 0.7 : 1,
               shadowColor: EX.color.primary,
               shadowOpacity: 0.45,
               shadowRadius: 16,
@@ -537,10 +635,18 @@ export default function VisaBreakdown() {
               elevation: 6,
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-              Start application
-            </Text>
-            <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
+            {creating ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Text
+                  style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
+                >
+                  Start application
+                </Text>
+                <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
+              </>
+            )}
           </Pressable>
         </View>
       </BlurView>
