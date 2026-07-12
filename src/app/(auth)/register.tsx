@@ -1,195 +1,236 @@
-import { useState } from 'react';
+// ─────────────────────────────────────────────────────────────────────────────
+// Explorer AUTH — Create account (prototype auth.jsx → AuthRegister).
+//
+// AuthShell ("Create your account") with Full name + Email + Password glass
+// fields, an agree-to-terms row (coral check chip), a coral "Create account" CTA
+// that advances to OTP, Google / Apple providers and a "Log in" footer.
+// AuthShell supplies the KeyboardAvoidingView.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-} from 'react-native';
-import { router } from 'expo-router';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
-import {
-  Screen,
-  Input,
-  Button,
-  Typography,
-  Card,
-} from '@/components/ui/themed';
+  AuthShell,
+  CoralButton,
+  Field,
+  Provider,
+} from '@/components/explorer/AuthShell';
+import { EX } from '@/components/explorer/theme';
+import { Ic } from '@/components/explorer/icons';
+// Real Firebase Auth via the store — registration signs the user in (the root
+// _layout's onAuthStateChanged picks them up) AND lets us fire the branded email
+// verification straight after.
 import { useAuthStore } from '@/stores/auth.store';
-import { useTheme, cn } from '@/hooks/useTheme';
 
-export default function RegisterScreen() {
-  const { isDark, colors } = useTheme();
-  const { registerWithEmail, isLoading, error, clearError } = useAuthStore();
-
+export default function AuthRegister() {
+  const router = useRouter();
+  const registerWithEmail = useAuthStore((s) => s.registerWithEmail);
+  const sendEmailVerification = useAuthStore((s) => s.sendEmailVerification);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [pw, setPw] = useState('');
+  const [show, setShow] = useState(false);
+  // Terms agreement (source rendered it pre-checked; kept toggleable here).
+  const [agree, setAgree] = useState(true);
+  // Submit + inline error state for real auth.
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const validatePassword = (pwd: string): string | null => {
-    if (pwd.length < 6) return 'Password must be at least 6 characters';
-    return null;
+  // ── Create the account with Firebase email/password ────────────────────────
+  const onRegister = async () => {
+    // Required fields + terms agreement must be satisfied first.
+    if (!name || !email || !pw) {
+      setError('Please fill in your name, email, and password.');
+      return;
+    }
+    if (!agree) {
+      setError('Please agree to the Terms & Privacy Policy to continue.');
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      // Registration also signs the user in — no OTP step for email auth.
+      const ok = await registerWithEmail(email.trim(), pw);
+      if (!ok) {
+        const msg = useAuthStore.getState().error ?? 'Sign up failed.';
+        setError(msg);
+        Alert.alert('Sign up failed', msg);
+        return;
+      }
+      // Fire the branded "verify your email" message (best-effort — never blocks
+      // onboarding). Firebase sign-up sends no verification email on its own.
+      void sendEmailVerification(email.trim()).catch(() => undefined);
+      // Straight to onboarding (passport); email verification is non-blocking.
+      router.replace('/(onboard)/passport');
+    } finally {
+      setSubmitting(false);
+    }
   };
-
-  const handleRegister = async () => {
-    clearError();
-    setLocalError(null);
-
-    if (!email || !password || !confirmPassword) {
-      setLocalError('Please fill in all fields');
-      return;
-    }
-
-    const passwordError = validatePassword(password);
-    if (passwordError) {
-      setLocalError(passwordError);
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setLocalError('Passwords do not match');
-      return;
-    }
-
-    await registerWithEmail(email, password);
-    // Navigation handled by root layout based on auth state
-  };
-
-  const displayError = localError || error;
 
   return (
-    <Screen>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        <ScrollView
-          contentContainerClassName="flex-grow justify-center px-6 py-8"
-          keyboardShouldPersistTaps="handled"
+    <AuthShell
+      title="Create your account"
+      sub="Start your journey in under a minute."
+    >
+      <View style={{ gap: 15 }}>
+        {/* Full name. */}
+        <Field
+          icon={Ic.user}
+          label="Full name"
+          value={name}
+          onChangeText={setName}
+          placeholder="Alex Kayode"
+          autoCapitalize="words"
+          autoComplete="name"
+        />
+
+        {/* Email. */}
+        <Field
+          icon={Ic.msg}
+          label="Email"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="you@email.com"
+          keyboardType="email-address"
+          autoComplete="email"
+        />
+
+        {/* Password with Show/Hide. */}
+        <Field
+          icon={Ic.shield}
+          label="Password"
+          value={pw}
+          onChangeText={setPw}
+          placeholder="Create a password"
+          secureTextEntry={!show}
+          autoComplete="password-new"
+          right={
+            <Pressable onPress={() => setShow((s) => !s)} hitSlop={8}>
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.6)',
+                  fontSize: 12.5,
+                  fontWeight: '700',
+                }}
+              >
+                {show ? 'Hide' : 'Show'}
+              </Text>
+            </Pressable>
+          }
+        />
+
+        {/* Agree-to-terms row: 18px coral check chip + copy. */}
+        <Pressable
+          onPress={() => setAgree((a) => !a)}
+          style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9 }}
         >
-          {/* Header */}
-          <View className="mb-8">
-            <TouchableOpacity onPress={() => router.back()} className="mb-4">
-              <Typography color="primary">← Back to Login</Typography>
-            </TouchableOpacity>
-            <Text
-              className={cn(
-                'text-3xl font-bold',
-                isDark ? 'text-white' : 'text-gray-900',
-              )}
-            >
-              Create Account
+          <View
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 6,
+              marginTop: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              // Coral fill when agreed; a hollow glass chip otherwise.
+              backgroundColor: agree
+                ? EX.color.primary
+                : 'rgba(255,255,255,0.08)',
+              borderWidth: agree ? 0 : 1,
+              borderColor: 'rgba(255,255,255,0.3)',
+            }}
+          >
+            {agree ? (
+              <Ic.check size={11} color="#fff" strokeWidth={3.2} />
+            ) : null}
+          </View>
+          <Text
+            style={{
+              flex: 1,
+              fontSize: 12.5,
+              lineHeight: 18.75,
+              color: 'rgba(255,255,255,0.7)',
+            }}
+          >
+            I agree to Seli&rsquo;s{' '}
+            <Text style={{ color: '#fff', fontWeight: '600' }}>Terms</Text> &{' '}
+            <Text style={{ color: '#fff', fontWeight: '600' }}>
+              Privacy Policy
             </Text>
-            <Typography variant="body" color="muted" className="mt-2">
-              Start your visa journey with Seli
-            </Typography>
-          </View>
+            .
+          </Text>
+        </Pressable>
 
-          {/* Error Banner */}
-          {displayError && (
-            <Card className="mb-4 border-red-500/50 bg-red-500/10">
-              <Typography color="error">{displayError}</Typography>
-            </Card>
-          )}
-
-          {/* Registration Form */}
-          <View className="gap-4">
-            <View>
-              <Typography variant="label" color="muted" className="mb-2">
-                Email
-              </Typography>
-              <Input
-                placeholder="Enter your email"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-                icon={<Mail size={20} color={colors.iconMuted} />}
-              />
-            </View>
-
-            <View>
-              <Typography variant="label" color="muted" className="mb-2">
-                Password
-              </Typography>
-              <View className="relative">
-                <Input
-                  placeholder="Create a password"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  icon={<Lock size={20} color={colors.iconMuted} />}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
-                >
-                  {showPassword ? (
-                    <EyeOff size={20} color={colors.iconMuted} />
-                  ) : (
-                    <Eye size={20} color={colors.iconMuted} />
-                  )}
-                </TouchableOpacity>
-              </View>
-              <Typography variant="caption" color="muted" className="mt-1">
-                At least 6 characters
-              </Typography>
-            </View>
-
-            <View>
-              <Typography variant="label" color="muted" className="mb-2">
-                Confirm Password
-              </Typography>
-              <Input
-                placeholder="Confirm your password"
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                icon={<Lock size={20} color={colors.iconMuted} />}
-              />
-            </View>
-          </View>
-
-          {/* Register Button */}
-          <Button
-            onPress={handleRegister}
-            disabled={isLoading}
-            className="mt-6"
+        {/* Inline error (small danger text) shown above the CTA. */}
+        {error ? (
+          <Text
+            style={{
+              color: EX.color.danger,
+              fontSize: 13,
+              fontWeight: '600',
+              marginTop: -4,
+            }}
           >
-            {isLoading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text className="font-semibold text-white">Create Account</Text>
-            )}
-          </Button>
+            {error}
+          </Text>
+        ) : null}
 
-          {/* Terms */}
-          <Typography
-            variant="caption"
-            color="muted"
-            className="mt-4 text-center"
+        {/* Primary CTA → real Firebase registration, then onboarding (passport).
+            Disabled + spinner overlay while the request is in flight. */}
+        <View>
+          <CoralButton
+            label={submitting ? '' : 'Create account'}
+            disabled={submitting}
+            withArrow={!submitting}
+            onPress={onRegister}
+          />
+          {submitting ? (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              pointerEvents="none"
+            >
+              <ActivityIndicator color="#fff" />
+            </View>
+          ) : null}
+        </View>
+
+        {/* Social providers. */}
+        <View style={{ flexDirection: 'row', gap: 11 }}>
+          <Provider label="Google" glyph="google" />
+          <Provider label="Apple" glyph="apple" />
+        </View>
+
+        {/* Footer → login. */}
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            marginTop: 6,
+          }}
+        >
+          <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>
+            Already have an account?{' '}
+          </Text>
+          <Pressable
+            onPress={() => router.push('/(auth)/login')}
+            hitSlop={6}
           >
-            By creating an account, you agree to our{' '}
-            <Text className="text-blue-600">Terms of Service</Text> and{' '}
-            <Text className="text-blue-600">Privacy Policy</Text>
-          </Typography>
-
-          {/* Login Link */}
-          <View className="mt-6 flex-row justify-center">
-            <Typography color="muted">Already have an account? </Typography>
-            <TouchableOpacity onPress={() => router.back()}>
-              <Typography color="primary">Sign In</Typography>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </Screen>
+            <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>
+              Log in
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </AuthShell>
   );
 }

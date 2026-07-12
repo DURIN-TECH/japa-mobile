@@ -8,6 +8,12 @@ export interface Address {
   country: string;
 }
 
+// Per-user notification channel preferences (opt-out model). `false` = channel off.
+export interface NotificationPreferences {
+  email: boolean;
+  push: boolean;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -32,6 +38,10 @@ export interface UserProfile {
 
   // Client identity verification (KYC) — absent on unverified users.
   identityVerification?: IdentityVerification;
+
+  // Notification channel preferences (email/push on-off). Absent = both on
+  // (opt-out model); `in_app` is always delivered and not represented here.
+  notificationPreferences?: NotificationPreferences;
 
   // Metadata
   createdAt: string;

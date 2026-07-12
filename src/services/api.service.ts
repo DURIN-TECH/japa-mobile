@@ -76,8 +76,8 @@ api.interceptors.response.use(
         } catch (signOutError) {
           console.error('Error signing out:', signOutError);
         }
-        // Redirect to login
-        router.replace('/(auth)/login');
+        // Redirect to the Explorer auth flow
+        router.replace('/(auth)/welcome');
       }
 
       // Server responded with error status

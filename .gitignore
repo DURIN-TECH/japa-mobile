@@ -103,3 +103,10 @@ yarn-error.*
 .cursor/
 handoff/
 *.zip
+
+# Local agent / scratch cruft
+.claude/
+
+# Seli brand pack — design source assets, kept out of the repo and the build.
+# The only asset actually used (the mark) is inlined in SeliMark.tsx.
+seli-brand-pack/
