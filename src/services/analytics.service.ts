@@ -5,6 +5,8 @@
  * All analytics events go through this service so we have a single
  * source of truth for event names, parameters, and error handling.
  *
+ * Uses the modular Firebase API (not the deprecated namespaced API).
+ *
  * Usage:
  *   import { analyticsService } from '@/services/analytics.service';
  *   analyticsService.trackLogin('email');
@@ -14,9 +16,32 @@
  * crash the app. In __DEV__ mode, failures are logged as warnings.
  */
 
-import analytics from '@react-native-firebase/analytics';
+import { getApp } from '@react-native-firebase/app';
+import {
+  getAnalytics,
+  logEvent,
+  logScreenView,
+  logLogin,
+  logSignUp,
+  logSearch,
+  setUserId,
+  setUserProperty,
+} from '@react-native-firebase/analytics';
 
 class AnalyticsService {
+  // ─────────────────────────────────────────────
+  // Cached analytics instance — lazily initialised
+  // so we don't call getApp() at import time.
+  // ─────────────────────────────────────────────
+  private _analytics: ReturnType<typeof getAnalytics> | null = null;
+
+  private get analytics() {
+    if (!this._analytics) {
+      this._analytics = getAnalytics(getApp());
+    }
+    return this._analytics;
+  }
+
   // ─────────────────────────────────────────────
   // SCREEN TRACKING
   // Called when a user navigates to a new screen.
@@ -24,7 +49,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackScreenView(screenName: string, screenClass?: string) {
     try {
-      await analytics().logScreenView({
+      await logScreenView(this.analytics, {
         screen_name: screenName,
         screen_class: screenClass ?? screenName,
       });
@@ -40,7 +65,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackLogin(method: 'email' | 'phone' | 'google') {
     try {
-      await analytics().logLogin({ method });
+      await logLogin(this.analytics, { method });
     } catch (error) {
       if (__DEV__) console.warn('Analytics login error:', error);
     }
@@ -48,7 +73,7 @@ class AnalyticsService {
 
   async trackSignUp(method: 'email' | 'phone' | 'google') {
     try {
-      await analytics().logSignUp({ method });
+      await logSignUp(this.analytics, { method });
     } catch (error) {
       if (__DEV__) console.warn('Analytics signup error:', error);
     }
@@ -65,7 +90,7 @@ class AnalyticsService {
     mode: 'self' | 'agent'; // self-service vs agent-assisted
   }) {
     try {
-      await analytics().logEvent('application_created', params);
+      await logEvent(this.analytics, 'application_created', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics app created error:', error);
     }
@@ -76,7 +101,7 @@ class AnalyticsService {
     status: string;
   }) {
     try {
-      await analytics().logEvent('application_status_change', params);
+      await logEvent(this.analytics, 'application_status_change', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics status change error:', error);
     }
@@ -93,7 +118,7 @@ class AnalyticsService {
     fee: number; // consultation fee in base currency units
   }) {
     try {
-      await analytics().logEvent('consultation_booked', {
+      await logEvent(this.analytics, 'consultation_booked', {
         ...params,
         value: params.fee, // Firebase uses `value` for revenue
         currency: 'NGN', // Nigerian Naira — primary currency
@@ -112,7 +137,7 @@ class AnalyticsService {
     fileType: string;
   }) {
     try {
-      await analytics().logEvent('document_uploaded', params);
+      await logEvent(this.analytics, 'document_uploaded', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics doc upload error:', error);
     }
@@ -129,7 +154,7 @@ class AnalyticsService {
     score: number; // 0-100 eligibility score
   }) {
     try {
-      await analytics().logEvent('eligibility_check', params);
+      await logEvent(this.analytics, 'eligibility_check', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics eligibility error:', error);
     }
@@ -142,7 +167,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackAgentViewed(agentId: string) {
     try {
-      await analytics().logEvent('agent_viewed', { agent_id: agentId });
+      await logEvent(this.analytics, 'agent_viewed', { agent_id: agentId });
     } catch (error) {
       if (__DEV__) console.warn('Analytics agent view error:', error);
     }
@@ -150,7 +175,7 @@ class AnalyticsService {
 
   async trackVisaViewed(params: { visaTypeId: string; countryCode: string }) {
     try {
-      await analytics().logEvent('visa_viewed', params);
+      await logEvent(this.analytics, 'visa_viewed', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics visa view error:', error);
     }
@@ -163,7 +188,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackOnboardingStep(step: string) {
     try {
-      await analytics().logEvent('onboarding_step', { step });
+      await logEvent(this.analytics, 'onboarding_step', { step });
     } catch (error) {
       if (__DEV__) console.warn('Analytics onboarding error:', error);
     }
@@ -171,7 +196,7 @@ class AnalyticsService {
 
   async trackOnboardingCompleted() {
     try {
-      await analytics().logEvent('onboarding_completed');
+      await logEvent(this.analytics, 'onboarding_completed');
     } catch (error) {
       if (__DEV__) console.warn('Analytics onboarding complete error:', error);
     }
@@ -184,16 +209,51 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackSearch(query: string, category?: string) {
     try {
-      await analytics().logSearch({ search_term: query });
+      await logSearch(this.analytics, { search_term: query });
       // If a category filter was applied, log a separate detailed event
       if (category) {
-        await analytics().logEvent('search_with_category', {
+        await logEvent(this.analytics, 'search_with_category', {
           search_term: query,
           category,
         });
       }
     } catch (error) {
       if (__DEV__) console.warn('Analytics search error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // PAYMENT REQUEST EVENTS
+  // Track when clients approve or reject payment requests.
+  // Amount is tracked as `value` for revenue analysis.
+  // ─────────────────────────────────────────────
+  async trackPaymentRequestApproved(params: {
+    requestId: string;
+    amount: number; // In kobo/cents
+  }) {
+    try {
+      await logEvent(this.analytics, 'payment_request_approved', {
+        request_id: params.requestId,
+        value: params.amount,
+        currency: 'NGN',
+      });
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics payment approved error:', error);
+    }
+  }
+
+  async trackPaymentRequestRejected(params: {
+    requestId: string;
+    amount: number; // In kobo/cents
+  }) {
+    try {
+      await logEvent(this.analytics, 'payment_request_rejected', {
+        request_id: params.requestId,
+        value: params.amount,
+        currency: 'NGN',
+      });
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics payment rejected error:', error);
     }
   }
 
@@ -205,7 +265,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackError(errorMessage: string, context?: Record<string, string>) {
     try {
-      await analytics().logEvent('app_error', {
+      await logEvent(this.analytics, 'app_error', {
         error_message: errorMessage.substring(0, 100),
         ...context,
       });
@@ -231,19 +291,21 @@ class AnalyticsService {
   }) {
     try {
       if (params.userId) {
-        await analytics().setUserId(params.userId);
+        await setUserId(this.analytics, params.userId);
       }
       if (params.country) {
-        await analytics().setUserProperty('country', params.country);
+        await setUserProperty(this.analytics, 'country', params.country);
       }
       if (params.hasPassport !== undefined) {
-        await analytics().setUserProperty(
+        await setUserProperty(
+          this.analytics,
           'has_passport',
           String(params.hasPassport),
         );
       }
       if (params.onboardingCompleted !== undefined) {
-        await analytics().setUserProperty(
+        await setUserProperty(
+          this.analytics,
           'onboarding_completed',
           String(params.onboardingCompleted),
         );

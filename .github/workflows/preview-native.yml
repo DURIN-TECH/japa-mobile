@@ -1,0 +1,68 @@
+# Manually triggered native preview build from any branch.
+# Use for feature branches that touch native code (new modules, plugin
+# config edits) — OTA via preview.yml can't ship those because the
+# fingerprint runtime version diverges. Trigger from the Actions tab and
+# pick a platform.
+name: Preview Native Build
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - ios
+          - android
+
+jobs:
+  build:
+    name: Build preview from ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "EXPO_TOKEN is not set"
+            exit 1
+          fi
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: 'npm'
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        # Authenticate to GitHub Packages so the private @durin-tech/authz
+        # dependency (see .npmrc → ${NODE_AUTH_TOKEN}) can be fetched;
+        # without this npm ci 401s on GET .../@durin-tech/authz.
+        run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Run linter
+        run: npm run lint
+
+      # tsconfig.json includes .expo/types/**/*.ts (the typed-routes file).
+      # That file is gitignored, so CI must generate it before tsc runs or
+      # every new route shows up as a "not assignable" error.
+      - name: Generate Expo Router types
+        run: ./src/scripts/gen-router-types.sh
+
+      - name: Run TypeScript compiler
+        run: npx tsc
+
+      - name: Build Preview
+        run: eas build --profile preview --platform ${{ github.event.inputs.platform }} --non-interactive

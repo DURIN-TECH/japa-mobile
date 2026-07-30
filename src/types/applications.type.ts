@@ -14,7 +14,12 @@ export type ApplicationStatus =
 
 export type ApplicationMode = 'self' | 'agent';
 
-export type PaymentStatus = 'pending' | 'partial' | 'paid' | 'refunded' | 'failed';
+export type PaymentStatus =
+  | 'pending'
+  | 'partial'
+  | 'paid'
+  | 'refunded'
+  | 'failed';
 
 export interface Application {
   id: string;
@@ -49,6 +54,13 @@ export interface Application {
   totalCost: number;
   amountPaid: number;
   paymentStatus: PaymentStatus;
+
+  // Denormalized display fields (populated by backend)
+  visaTypeName?: string;
+  countryName?: string;
+  clientName?: string;
+  clientEmail?: string;
+  agentName?: string;
 
   // Notes
   userNotes?: string;

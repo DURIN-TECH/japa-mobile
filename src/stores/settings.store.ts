@@ -21,6 +21,10 @@ interface SettingsState {
   language: string;
   setLanguage: (language: string) => void;
 
+  // First-run intro
+  hasSeenIntro: boolean;
+  setHasSeenIntro: (seen: boolean) => void;
+
   // Computed
   getColorScheme: () => ColorScheme;
   isDark: () => boolean;
@@ -48,6 +52,10 @@ export const useSettingsStore = create<SettingsState>()(
       language: 'en',
       setLanguage: (language) => set({ language }),
 
+      // First-run intro
+      hasSeenIntro: false,
+      setHasSeenIntro: (seen) => set({ hasSeenIntro: seen }),
+
       // Computed
       getColorScheme: () => {
         const state = get();
@@ -69,6 +77,7 @@ export const useSettingsStore = create<SettingsState>()(
         themePreference: state.themePreference,
         notificationsEnabled: state.notificationsEnabled,
         language: state.language,
+        hasSeenIntro: state.hasSeenIntro,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

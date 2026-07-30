@@ -3,14 +3,21 @@ import axios, {
   AxiosError,
   InternalAxiosRequestConfig,
 } from 'axios';
+import { Platform } from 'react-native';
 import { getApp } from '@react-native-firebase/app';
 import { getAuth, getIdToken, signOut } from '@react-native-firebase/auth';
 import { router } from 'expo-router';
 
-// API Base URL - update this for production
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ||
-  'http://localhost:5001/japa-platform/us-central1/api';
+// Android emulators can't reach the host's "localhost" — that resolves to the
+// emulator itself. Rewrite "localhost" to 10.0.2.2 when running on Android.
+const rewriteForAndroid = (url: string | undefined) =>
+  Platform.OS === 'android' && url
+    ? url.replace(/\/\/(localhost|127\.0\.0\.1)(?=[:/])/g, '//10.0.2.2')
+    : url;
+
+const API_BASE_URL = __DEV__
+  ? rewriteForAndroid(process.env.EXPO_PUBLIC_DEV_API_URL)
+  : process.env.EXPO_PUBLIC_API_URL;
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -37,6 +44,7 @@ const api: AxiosInstance = axios.create({
 // Request interceptor - add auth token
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
+    console.log('API Request:', config.method?.toUpperCase(), config.url);
     const auth = getAuth(getApp());
     const currentUser = auth.currentUser;
     if (currentUser) {
@@ -68,8 +76,8 @@ api.interceptors.response.use(
         } catch (signOutError) {
           console.error('Error signing out:', signOutError);
         }
-        // Redirect to login
-        router.replace('/(auth)/login');
+        // Redirect to the Explorer auth flow
+        router.replace('/(auth)/welcome');
       }
 
       // Server responded with error status
@@ -121,8 +129,8 @@ export const apiService = {
     return response.data;
   },
 
-  async delete<T>(endpoint: string): Promise<ApiResponse<T>> {
-    const response = await api.delete<ApiResponse<T>>(endpoint);
+  async delete<T>(endpoint: string, data?: unknown): Promise<ApiResponse<T>> {
+    const response = await api.delete<ApiResponse<T>>(endpoint, { data });
     return response.data;
   },
 };

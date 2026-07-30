@@ -1,196 +1,218 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
-import { router } from 'expo-router';
-import { Mail, Lock, Phone, Eye, EyeOff } from 'lucide-react-native';
-import { Screen, Input, Button, Typography, Card } from '@/components/ui/themed';
-import { useAuthStore } from '@/stores/auth.store';
-import { useTheme, cn } from '@/hooks/useTheme';
+// ─────────────────────────────────────────────────────────────────────────────
+// Explorer AUTH — Log in (prototype auth.jsx → AuthLogin).
+//
+// AuthShell ("Welcome back") with Email + Password glass fields, a "Forgot
+// password?" link, coral "Log in" CTA, an "or continue with" divider, Google /
+// Apple providers and a "New to Seli? Create account" footer.
+//
+// AuthShell already wraps its body in a KeyboardAvoidingView, so the inputs here
+// stay clear of the keyboard.
+// ─────────────────────────────────────────────────────────────────────────────
 
-type LoginMethod = 'email' | 'phone';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import {
+  AuthShell,
+  CoralButton,
+  Field,
+  PINK,
+  Provider,
+} from '@/components/explorer/AuthShell';
+import { EX } from '@/components/explorer/theme';
+import { Ic } from '@/components/explorer/icons';
+// Real Firebase Auth — the root _layout listens to onAuthStateChanged and syncs
+// the auth store/profile, so this screen just calls the service and navigates.
+import { authService } from '@/services/auth.service';
 
-export default function LoginScreen() {
-  const { isDark, colors } = useTheme();
-  const { loginWithEmail, sendOtp, isLoading, error, clearError } = useAuthStore();
-
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>('email');
+export default function AuthLogin() {
+  const router = useRouter();
+  // Credentials start EMPTY (no demo prefill) so the user types real values.
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [pw, setPw] = useState('');
+  const [show, setShow] = useState(false);
+  // Submit + inline error state for real auth.
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = async () => {
-    clearError();
-
-    if (loginMethod === 'email') {
-      if (!email || !password) return;
-      await loginWithEmail(email, password);
-      // Navigation handled by root layout based on auth state
-    } else {
-      if (!phoneNumber) return;
-      const success = await sendOtp(phoneNumber);
-      if (success) {
-        router.push('/verify-otp');
-      }
+  // ── Log in with Firebase email/password ────────────────────────────────────
+  const onLogin = async () => {
+    // Client-side required-field validation before hitting Firebase.
+    if (!email || !pw) {
+      setError('Please enter your email and password.');
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      await authService.loginWithEmail(email.trim(), pw);
+      // Success → straight into the authenticated Explorer home.
+      router.replace('/(tabs)/home');
+    } catch (e) {
+      // Friendly, mapped message shown inline + as an alert.
+      const msg = authService.getErrorMessage(e);
+      setError(msg);
+      Alert.alert('Login failed', msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <Screen>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        <View className="flex-1 justify-center px-6">
-          {/* Logo/Header */}
-          <View className="mb-10 items-center">
-            <Text className={cn('text-4xl font-bold', isDark ? 'text-white' : 'text-gray-900')}>
-              Seli
-            </Text>
-            <Typography variant="body" color="muted" className="mt-2">
-              Your visa journey starts here
-            </Typography>
-          </View>
+    <AuthShell
+      title="Welcome back"
+      sub="Log in to pick up right where you left off."
+    >
+      <View style={{ gap: 15 }}>
+        {/* Email. */}
+        <Field
+          icon={Ic.user}
+          label="Email"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="you@email.com"
+          keyboardType="email-address"
+          autoComplete="email"
+        />
 
-          {/* Login Method Toggle */}
-          <View className={cn(
-            'mb-6 flex-row rounded-xl p-1',
-            isDark ? 'bg-gray-800' : 'bg-gray-100'
-          )}>
-            <TouchableOpacity
-              onPress={() => { setLoginMethod('email'); clearError(); }}
-              className={cn(
-                'flex-1 items-center rounded-lg py-3',
-                loginMethod === 'email' && (isDark ? 'bg-gray-700' : 'bg-white')
-              )}
-            >
-              <Text className={cn(
-                'font-medium',
-                loginMethod === 'email'
-                  ? isDark ? 'text-white' : 'text-gray-900'
-                  : isDark ? 'text-gray-400' : 'text-gray-500'
-              )}>
-                Email
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { setLoginMethod('phone'); clearError(); }}
-              className={cn(
-                'flex-1 items-center rounded-lg py-3',
-                loginMethod === 'phone' && (isDark ? 'bg-gray-700' : 'bg-white')
-              )}
-            >
-              <Text className={cn(
-                'font-medium',
-                loginMethod === 'phone'
-                  ? isDark ? 'text-white' : 'text-gray-900'
-                  : isDark ? 'text-gray-400' : 'text-gray-500'
-              )}>
-                Phone
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Error Banner */}
-          {error && (
-            <Card className="mb-4 border-red-500/50 bg-red-500/10">
-              <Typography color="error">{error}</Typography>
-            </Card>
-          )}
-
-          {/* Login Form */}
-          {loginMethod === 'email' ? (
-            <View className="gap-4">
-              <View>
-                <Typography variant="label" color="muted" className="mb-2">
-                  Email
-                </Typography>
-                <Input
-                  placeholder="Enter your email"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  icon={<Mail size={20} color={colors.iconMuted} />}
-                />
-              </View>
-
-              <View>
-                <Typography variant="label" color="muted" className="mb-2">
-                  Password
-                </Typography>
-                <View className="relative">
-                  <Input
-                    placeholder="Enter your password"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    icon={<Lock size={20} color={colors.iconMuted} />}
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2"
-                  >
-                    {showPassword ? (
-                      <EyeOff size={20} color={colors.iconMuted} />
-                    ) : (
-                      <Eye size={20} color={colors.iconMuted} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => router.push('/forgot-password')}
-                className="self-end"
+        {/* Password with Show/Hide toggle in the right slot. */}
+        <Field
+          icon={Ic.shield}
+          label="Password"
+          value={pw}
+          onChangeText={setPw}
+          placeholder="Your password"
+          secureTextEntry={!show}
+          autoComplete="password"
+          right={
+            <Pressable onPress={() => setShow((s) => !s)} hitSlop={8}>
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.6)',
+                  fontSize: 12.5,
+                  fontWeight: '700',
+                }}
               >
-                <Typography color="primary">Forgot password?</Typography>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View>
-              <Typography variant="label" color="muted" className="mb-2">
-                Phone Number
-              </Typography>
-              <Input
-                placeholder="+234 XXX XXX XXXX"
-                value={phoneNumber}
-                onChangeText={setPhoneNumber}
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                icon={<Phone size={20} color={colors.iconMuted} />}
-              />
-              <Typography variant="caption" color="muted" className="mt-2">
-                We&apos;ll send you a verification code
-              </Typography>
-            </View>
-          )}
-
-          {/* Login Button */}
-          <Button
-            onPress={handleLogin}
-            disabled={isLoading}
-            className="mt-6"
-          >
-            {isLoading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text className="font-semibold text-white">
-                {loginMethod === 'email' ? 'Sign In' : 'Send Code'}
+                {show ? 'Hide' : 'Show'}
               </Text>
-            )}
-          </Button>
+            </Pressable>
+          }
+        />
 
-          {/* Sign Up Link */}
-          <View className="mt-6 flex-row justify-center">
-            <Typography color="muted">Don&apos;t have an account? </Typography>
-            <TouchableOpacity onPress={() => router.push('/register')}>
-              <Typography color="primary">Sign Up</Typography>
-            </TouchableOpacity>
-          </View>
+        {/* Forgot password? (pink link, right-aligned). */}
+        <Pressable
+          onPress={() => router.push('/(auth)/forgot-password')}
+          hitSlop={8}
+          style={{ alignSelf: 'flex-end', marginTop: -4 }}
+        >
+          <Text style={{ color: PINK, fontSize: 13, fontWeight: '600' }}>
+            Forgot password?
+          </Text>
+        </Pressable>
+
+        {/* Inline error (small pink/danger text) shown above the CTA. */}
+        {error ? (
+          <Text
+            style={{
+              color: EX.color.danger,
+              fontSize: 13,
+              fontWeight: '600',
+              marginTop: -4,
+            }}
+          >
+            {error}
+          </Text>
+        ) : null}
+
+        {/* Primary CTA → real Firebase login, then Explorer home.
+            Disabled + spinner overlay while the request is in flight. The CTA
+            keeps its coral styling; the ActivityIndicator sits centered on top. */}
+        <View>
+          <CoralButton
+            label={submitting ? '' : 'Log in'}
+            disabled={submitting}
+            withArrow={!submitting}
+            onPress={onLogin}
+          />
+          {submitting ? (
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              pointerEvents="none"
+            >
+              <ActivityIndicator color="#fff" />
+            </View>
+          ) : null}
         </View>
-      </KeyboardAvoidingView>
-    </Screen>
+
+        {/* "or continue with" divider. */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            marginVertical: 4,
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              height: 1,
+              backgroundColor: 'rgba(255,255,255,0.16)',
+            }}
+          />
+          <Text
+            style={{
+              fontSize: 12,
+              color: 'rgba(255,255,255,0.5)',
+              fontWeight: '600',
+            }}
+          >
+            or continue with
+          </Text>
+          <View
+            style={{
+              flex: 1,
+              height: 1,
+              backgroundColor: 'rgba(255,255,255,0.16)',
+            }}
+          />
+        </View>
+
+        {/* Social providers. */}
+        <View style={{ flexDirection: 'row', gap: 11 }}>
+          <Provider label="Google" glyph="google" />
+          <Provider label="Apple" glyph="apple" />
+        </View>
+
+        {/* Footer → register. */}
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            marginTop: 6,
+          }}
+        >
+          <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>
+            New to Seli?{' '}
+          </Text>
+          <Pressable
+            onPress={() => router.push('/(auth)/register')}
+            hitSlop={6}
+          >
+            <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>
+              Create account
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </AuthShell>
   );
 }

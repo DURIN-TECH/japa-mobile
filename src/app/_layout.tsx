@@ -1,4 +1,9 @@
 import { useFonts } from 'expo-font';
+import {
+  SpaceGrotesk_500Medium,
+  SpaceGrotesk_600SemiBold,
+  SpaceGrotesk_700Bold,
+} from '@expo-google-fonts/space-grotesk';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -12,55 +17,32 @@ import { ThemeSync } from '@/providers/ThemeSync';
 // and shows a fallback UI instead of a white screen crash.
 // Must wrap the entire app tree to be effective.
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { EX } from '@/components/explorer/theme';
 import {
   useSettingsStore,
   useSettingsHydration,
 } from '@/stores/settings.store';
 import { useAuthStore, useAuthHydration } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
+import { pushNotificationService } from '@/services/push-notification.service';
+import { registerDevMenu } from '@/utils/dev-menu';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace ReactNavigation {
-    interface RootParamList {
-      '/(auth)/login': undefined;
-      '/(auth)/register': undefined;
-      '/(auth)/verify-otp': undefined;
-      '/(auth)/forgot-password': undefined;
-      '/(onboard)': undefined;
-      '/(tabs)': undefined;
-      '/apply/agents/[id]': { id: string };
-      '/apply/agents/[id]/book-consultation': { agentId: string };
-      '/apply/agents/[id]/payment': {
-        id: string;
-        type: 'consultation' | 'visa';
-        date: string;
-        time: string;
-      };
-      '/apply/agents/[id]/confirmation': {
-        id: string;
-        type: 'consultation' | 'visa';
-        date: string;
-        time: string;
-        paymentMethod: string;
-      };
-      '/apply/agents/[id]/visa-service/[type]': { id: string; type: string };
-      '/applications/[id]': { id: string };
-      '/consultations/[id]': { id: string };
-      '/apply/visa-details/[id]': { id: string };
-      '/apply/self-service/[id]': { id: string };
-    }
-  }
-}
-
 export const unstable_settings = {
-  initialRouteName: '(auth)',
+  // `/` resolves to the index redirect, which sends users into the app shell.
+  initialRouteName: 'index',
 };
 
-// Hook to handle auth-based navigation
+// Hook to handle auth-based navigation.
+//
+// The Explorer is the whole app now, so its screens live directly under app/.
+// The guard keeps users on the right side of the auth boundary:
+//   - signed out                       → /(auth)/welcome
+//   - signed in, but on auth / stranded → /(tabs)/home
+// Onboarding, the tabs, and all detail screens are left alone (those flows drive
+// their own forward navigation).
 function useProtectedRoute() {
   const segments = useSegments();
   const router = useRouter();
@@ -79,6 +61,8 @@ function useProtectedRoute() {
       setUser(user);
       if (user) {
         await fetchProfile();
+        // Initialize push notifications for returning authenticated users
+        pushNotificationService.initialize().catch(() => {});
       }
       setInitialized(true);
     });
@@ -90,25 +74,21 @@ function useProtectedRoute() {
   useEffect(() => {
     if (!isInitialized) return;
 
-    const inAuthGroup = segments[0] === '(auth)';
-    const inOnboardGroup = segments[0] === '(onboard)';
-    const isOnboarded = profile?.onboardingCompleted ?? false;
+    // Top-level segment names the route group: '(auth)' | '(onboard)' | '(tabs)'
+    // | a detail screen. undefined = the '/' index redirect; '+not-found' = a
+    // dead route — both count as "stranded" outside the app shell.
+    const first = segments[0];
+    const inAuthGroup = first === '(auth)';
+    const stranded = first === undefined || first === '+not-found';
 
     if (!isAuthenticated) {
-      // Not authenticated - redirect to login
+      // Signed out anywhere but the auth flow → back to the welcome carousel.
       if (!inAuthGroup) {
-        router.replace('/(auth)/login');
+        router.replace('/(auth)/welcome');
       }
-    } else if (!isOnboarded) {
-      // Authenticated but not onboarded - redirect to onboarding
-      if (!inOnboardGroup) {
-        router.replace('/(onboard)');
-      }
-    } else {
-      // Authenticated and onboarded - redirect to main app
-      if (inAuthGroup || inOnboardGroup) {
-        router.replace('/(tabs)');
-      }
+    } else if (inAuthGroup || stranded) {
+      // Signed in but on a login screen or stranded → into the app home.
+      router.replace('/(tabs)/home');
     }
   }, [isAuthenticated, isInitialized, profile, segments, router]);
 }
@@ -117,6 +97,10 @@ function RootLayoutContent() {
   const [loaded] = useFonts({
     // eslint-disable-next-line
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    // Space Grotesk — the Explorer display face used across headings.
+    SpaceGrotesk_500Medium,
+    SpaceGrotesk_600SemiBold,
+    SpaceGrotesk_700Bold,
   });
   const settingsHydrated = useSettingsHydration();
   const authHydrated = useAuthHydration();
@@ -125,6 +109,10 @@ function RootLayoutContent() {
 
   // Set up auth-based navigation
   useProtectedRoute();
+
+  useEffect(() => {
+    registerDevMenu();
+  }, []);
 
   useEffect(() => {
     if (loaded && settingsHydrated && authHydrated && isInitialized) {
@@ -138,10 +126,56 @@ function RootLayoutContent() {
 
   return (
     <OnboardingProvider>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: EX.color.bg },
+          // iOS-style horizontal push for all detail screens.
+          animation: 'slide_from_right',
+        }}
+      >
+        {/* Entry point at `/` — redirects into the app once auth resolves */}
+        <Stack.Screen name="index" />
+        {/* Shell: auth + onboarding entry flows, then the 5-tab home */}
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboard)" />
         <Stack.Screen name="(tabs)" />
+        {/* Pushed detail / flow screens */}
+        <Stack.Screen name="destination/[id]" />
+        <Stack.Screen name="application/[id]" />
+        <Stack.Screen name="agent/[id]" />
+        <Stack.Screen name="agency/[id]" />
+        <Stack.Screen name="eligibility/index" />
+        <Stack.Screen name="eligibility/result" />
+        <Stack.Screen name="messages/index" />
+        <Stack.Screen name="messages/[id]" />
+        <Stack.Screen name="consultations" />
+        <Stack.Screen name="notifications" />
+        <Stack.Screen name="self-service/[id]" />
+        <Stack.Screen
+          name="subscription"
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        {/* Consultation booking flow + detail + settings */}
+        <Stack.Screen name="book/[agentId]" />
+        <Stack.Screen name="pay" />
+        <Stack.Screen
+          name="confirmation"
+          options={{ animation: 'slide_from_bottom', gestureEnabled: false }}
+        />
+        <Stack.Screen name="consultation/[id]" />
+        <Stack.Screen name="settings" />
+        {/* Account security / self-service (reached from Settings) */}
+        <Stack.Screen name="verify-email" />
+        <Stack.Screen name="change-password" />
+        <Stack.Screen name="change-email" />
+        <Stack.Screen name="delete-account" />
+        {/* Profile secondary destinations + full visa breakdown */}
+        <Stack.Screen name="documents" />
+        <Stack.Screen name="verify-identity" />
+        <Stack.Screen name="payments" />
+        <Stack.Screen name="saved" />
+        <Stack.Screen name="visa/[id]" />
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style={isDark ? 'light' : 'dark'} />

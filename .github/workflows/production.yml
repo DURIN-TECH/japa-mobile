@@ -1,0 +1,94 @@
+# Production build, store submit, and GitHub release on PR merge into main.
+# Fires on `pull_request: closed` + a `merged == true` guard so the build
+# only runs on actual merges (not closed-without-merge), and so the PR
+# context (number, title) stays available for the release body — switching
+# to push: main would lose those fields.
+name: Production Build
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+jobs:
+  build:
+    name: Install and build
+    runs-on: ubuntu-latest
+    # Skip closed-but-not-merged PRs entirely.
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: Check EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "EXPO_TOKEN is not set"
+            exit 1
+          fi
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: 'npm'
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        # Authenticate to GitHub Packages so the private @durin-tech/authz
+        # dependency (see .npmrc → ${NODE_AUTH_TOKEN}) can be fetched;
+        # without this npm ci 401s on GET .../@durin-tech/authz.
+        run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Run linter
+        run: npm run lint
+
+      # tsconfig.json includes .expo/types/**/*.ts (the typed-routes file).
+      # That file is gitignored, so CI must generate it before tsc runs or
+      # every new route shows up as a "not assignable" error.
+      - name: Generate Expo Router types
+        run: ./src/scripts/gen-router-types.sh
+
+      - name: Run TypeScript compiler
+        run: npx tsc
+
+      - name: Build Production
+        run: eas build --profile production --platform android --non-interactive
+
+      # Submits the built artifacts to App Store Connect and Play Console.
+      # Submission credentials are configured on the EAS project, not here.
+      - name: Submit to Stores
+        if: success()
+        run: eas submit --platform android
+
+      # Release tag uses the workflow run number for monotonic versioning,
+      # independent of any semver in app.json. PR fields are populated
+      # because we trigger on pull_request, not push.
+      - name: Create Release
+        if: success()
+        uses: elgohr/Github-Release-Action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body: |
+            Production release from merged PR #${{ github.event.pull_request.number }}
+            ${{ github.event.pull_request.title }}
+          prerelease: false
+
+      - name: Upload Production Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-build
+          path: |
+            *.apk
+            *.ipa

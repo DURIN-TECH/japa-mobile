@@ -182,3 +182,13 @@ testing:
 
 Run `npm run seed:portal` in japa-backend to populate
 test data.
+
+## Authorization constants (ALWAYS use)
+
+- **Never hardcode role / feature / limit string literals** (`'client'`,
+  `'messaging'`, etc.). Always reference the named constants from
+  `@durin-tech/authz`: **`ROLES`**, **`FEATURES`**, **`LIMITS`**, and groups
+  like **`AGENT_SIDE_ROLES`**. Keeps these lists changeable in one place and
+  consistent with the backend + portal.
+- Gate features via `useAuthorization()` / `useFeature()` and
+  `<FeatureGate feature={FEATURES.X}>` — backend remains authoritative.

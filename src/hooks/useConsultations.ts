@@ -100,12 +100,16 @@ export interface CreateConsultationInput {
  * @param status - Optional filter (e.g. 'scheduled', 'completed')
  */
 export function useConsultations(status?: string) {
-  const queryParam = status ? `?status=${status}` : '';
+  // Must pass role=client so the backend queries by userId (client)
+  // instead of the default role=agent which queries by agentId
+  const params = new URLSearchParams({ role: 'client' });
+  if (status) params.set('status', status);
+
   return useQuery({
     queryKey: ['consultations', status],
     queryFn: async () => {
       const response = await apiService.get<ApiConsultation[]>(
-        `/consultations${queryParam}`,
+        `/consultations?${params.toString()}`,
       );
       return response.data ?? [];
     },
@@ -234,7 +238,20 @@ export function getConsultationTypeLabel(
 }
 
 /**
+ * Parse a date that may be a string, number, or serialized
+ * Firestore Timestamp ({ _seconds, _nanoseconds }).
+ */
+function parseDate(value: unknown): Date {
+  if (!value) return new Date();
+  if (typeof value === 'object' && value !== null && '_seconds' in value) {
+    return new Date((value as { _seconds: number })._seconds * 1000);
+  }
+  return new Date(value as string | number);
+}
+
+/**
  * Format a consultation's scheduled date and time for display.
+ * Handles both ISO date strings and serialized Firestore Timestamps.
  * e.g. "2024-03-15" + "10:30" → "Mar 15, 2024 at 10:30 AM"
  */
 export function formatConsultationDateTime(
@@ -242,9 +259,13 @@ export function formatConsultationDateTime(
   scheduledTime: string,
 ): string {
   try {
-    // Combine date and time into a full Date object
-    const dateTime = new Date(`${scheduledDate}T${scheduledTime}:00`);
-    return dateTime.toLocaleDateString('en-US', {
+    const date = parseDate(scheduledDate);
+    // If scheduledTime is provided, set the time on the parsed date
+    if (scheduledTime) {
+      const [hours, minutes] = scheduledTime.split(':').map(Number);
+      date.setHours(hours, minutes, 0, 0);
+    }
+    return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -253,7 +274,6 @@ export function formatConsultationDateTime(
       hour12: true,
     });
   } catch {
-    // Fallback if date parsing fails
     return `${scheduledDate} ${scheduledTime}`;
   }
 }

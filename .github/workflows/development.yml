@@ -1,0 +1,72 @@
+# Full EAS development build on every push to dev.
+# Produces a dev-client APK + IPA subscribed to the `development` EAS Update
+# channel (see eas.json). Install once; subsequent dev pushes can ship JS
+# OTA without a fresh native build (runtime fingerprint permitting).
+name: Development Build
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  build:
+    name: Install and build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # Fail fast if the EAS auth token isn't configured — otherwise the
+      # build step would fail later with a less obvious error.
+      - name: Check EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "EXPO_TOKEN is not set"
+            exit 1
+          fi
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: 'npm'
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        # Authenticate to GitHub Packages so the private @durin-tech/authz
+        # dependency (see .npmrc → ${NODE_AUTH_TOKEN}) can be fetched;
+        # without this npm ci 401s on GET .../@durin-tech/authz.
+        run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+      - name: Run linter
+        run: npm run lint
+
+      # tsconfig.json includes .expo/types/**/*.ts (the typed-routes file).
+      # That file is gitignored, so CI must generate it before tsc runs or
+      # every new route shows up as a "not assignable" error.
+      - name: Generate Expo Router types
+        run: ./src/scripts/gen-router-types.sh
+
+      - name: Run TypeScript compiler
+        run: npx tsc
+
+      - name: Build Development
+        run: eas build --profile development --platform android --non-interactive
+
+      - name: Upload Development Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: development-build
+          path: |
+            *.apk
+            *.ipa

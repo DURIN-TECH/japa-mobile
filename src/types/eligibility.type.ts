@@ -13,7 +13,13 @@ export type VisaRequirementType =
 // ELIGIBILITY QUESTIONS
 // ============================================
 
-export type QuestionType = 'boolean' | 'single' | 'multiple' | 'number' | 'date' | 'text';
+export type QuestionType =
+  | 'boolean'
+  | 'single'
+  | 'multiple'
+  | 'number'
+  | 'date'
+  | 'text';
 
 export interface EligibilityQuestion {
   id: string;
@@ -81,7 +87,11 @@ export interface EligibilityBreakdownItem {
 
 export type EligibilityLevel = 'high' | 'medium' | 'low' | 'not_applicable';
 
-export type SuggestedPath = 'self_service' | 'agent_assisted' | 'not_eligible' | 'visa_free';
+export type SuggestedPath =
+  | 'self_service'
+  | 'agent_assisted'
+  | 'not_eligible'
+  | 'visa_free';
 
 export interface EligibilityCheck {
   id: string;

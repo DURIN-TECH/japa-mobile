@@ -325,3 +325,17 @@ stateDiagram-v2
         Payment --> Confirmation
     }
 ```
+
+## Authorization & Entitlements
+
+Subscription-gated features via the shared **`@durin-tech/authz`** package:
+
+- `useAuthorization()` / `useFeature()` fetch `GET /users/me/authorization` (React Query) and rebuild the
+  CASL ability for UI gating — the backend remains authoritative.
+- `<FeatureGate feature="…">` shows a `Paywall` when a feature is locked. Subscriptions are bought on the
+  **web portal** (app-to-web purchase) to avoid App Store / Play IAP — the app just reads the resulting
+  entitlement. Gating is safe-rollout (nothing paywalls until the user has entitlements).
+
+`@durin-tech/authz` is a **private** GitHub Packages package: local installs use
+`NODE_AUTH_TOKEN="$(gh auth token)" npm install`; EAS builds need a `NODE_AUTH_TOKEN` secret. See
+[`todo.md`](./todo.md).

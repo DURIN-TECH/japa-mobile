@@ -109,7 +109,10 @@ export function ScrollContainer({
       className={cn('flex-1', isDark ? 'bg-gray-900' : 'bg-gray-50', className)}
       refreshControl={
         onRefresh ? (
-          <RefreshControl refreshing={refreshing ?? false} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing ?? false}
+            onRefresh={onRefresh}
+          />
         ) : undefined
       }
       {...props}
@@ -151,7 +154,11 @@ export function Card({
 
   if (onPress) {
     return (
-      <TouchableOpacity className={baseClass} onPress={onPress} {...props}>
+      <TouchableOpacity
+        className={baseClass}
+        onPress={onPress}
+        {...(props as TouchableOpacityProps)}
+      >
         {children}
       </TouchableOpacity>
     );
@@ -330,9 +337,7 @@ export function Badge({ children, variant = 'default' }: Readonly<BadgeProps>) {
       ? 'bg-yellow-900/50 text-yellow-300'
       : 'bg-yellow-100 text-yellow-800',
     error: isDark ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-800',
-    info: isDark
-      ? 'bg-blue-900/50 text-blue-300'
-      : 'bg-blue-100 text-blue-800',
+    info: isDark ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-100 text-blue-800',
   };
 
   return (
@@ -453,7 +458,10 @@ export function ListItem({
         </Text>
         {subtitle && (
           <Text
-            className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-500')}
+            className={cn(
+              'text-sm',
+              isDark ? 'text-gray-400' : 'text-gray-500',
+            )}
           >
             {subtitle}
           </Text>
@@ -502,7 +510,10 @@ export function StatsCard({ items }: Readonly<StatsCardProps>) {
             {item.value}
           </Text>
           <Text
-            className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}
+            className={cn(
+              'text-xs',
+              isDark ? 'text-gray-400' : 'text-gray-600',
+            )}
           >
             {item.label}
           </Text>
@@ -520,12 +531,7 @@ interface ChipProps extends TouchableOpacityProps {
   selected?: boolean;
 }
 
-export function Chip({
-  children,
-  selected,
-  className,
-  ...props
-}: ChipProps) {
+export function Chip({ children, selected, className, ...props }: ChipProps) {
   const { isDark } = useTheme();
 
   return (

@@ -14,7 +14,9 @@ export function useApplications(status?: ApplicationStatus) {
   return useQuery({
     queryKey: ['applications', status],
     queryFn: async () => {
-      const endpoint = status ? `/applications?status=${status}` : '/applications';
+      const endpoint = status
+        ? `/applications?status=${status}`
+        : '/applications';
       const response = await apiService.get<Application[]>(endpoint);
       return response.data ?? [];
     },
@@ -30,7 +32,7 @@ export function useApplication(applicationId: string) {
     queryKey: ['application', applicationId],
     queryFn: async () => {
       const response = await apiService.get<Application>(
-        `/applications/${applicationId}`
+        `/applications/${applicationId}`,
       );
       return response.data;
     },
@@ -47,7 +49,7 @@ export function useApplicationTimeline(applicationId: string) {
     queryKey: ['applicationTimeline', applicationId],
     queryFn: async () => {
       const response = await apiService.get<ApplicationTimeline[]>(
-        `/applications/${applicationId}/timeline`
+        `/applications/${applicationId}/timeline`,
       );
       return response.data ?? [];
     },
@@ -64,7 +66,10 @@ export function useCreateApplication() {
 
   return useMutation({
     mutationFn: async (input: CreateApplicationInput) => {
-      const response = await apiService.post<Application>('/applications', input);
+      const response = await apiService.post<Application>(
+        '/applications',
+        input,
+      );
       return response.data;
     },
     onSuccess: () => {
@@ -90,7 +95,7 @@ export function useUpdateApplication() {
     }) => {
       const response = await apiService.put<Application>(
         `/applications/${applicationId}`,
-        { userNotes }
+        { userNotes },
       );
       return response.data;
     },
@@ -129,7 +134,7 @@ export function useWithdrawApplication() {
     mutationFn: async (applicationId: string) => {
       const response = await apiService.put<Application>(
         `/applications/${applicationId}/status`,
-        { status: 'withdrawn' }
+        { status: 'withdrawn' },
       );
       return response.data;
     },
@@ -152,13 +157,16 @@ export function getApplicationStatusInfo(status: ApplicationStatus): {
   darkColor: string;
   darkBgColor: string;
 } {
-  const statusMap: Record<ApplicationStatus, {
-    label: string;
-    color: string;
-    bgColor: string;
-    darkColor: string;
-    darkBgColor: string;
-  }> = {
+  const statusMap: Record<
+    ApplicationStatus,
+    {
+      label: string;
+      color: string;
+      bgColor: string;
+      darkColor: string;
+      darkBgColor: string;
+    }
+  > = {
     draft: {
       label: 'Draft',
       color: 'text-gray-700',

@@ -25,6 +25,8 @@ import { apiService } from '@/services/api.service';
  * - document_status → navigates to document in application
  * - consultation_reminder → navigates to /me/consultations/:referenceId
  * - payment_received → shows payment confirmation
+ * - payment_request → navigates to /me/applications/:referenceId
+ * - payment_request_rejected → navigates to /me/applications/:referenceId
  * - system → general system announcement
  */
 export interface ApiNotification {
@@ -35,10 +37,25 @@ export interface ApiNotification {
     | 'document_status'
     | 'consultation_reminder'
     | 'payment_received'
+    | 'payment_request'
+    | 'payment_request_rejected'
+    | 'message_received'
     | 'system';
   title: string;
-  message: string;
-  /** ID of the related entity (applicationId, consultationId, etc.) */
+  /** Notification body text — matches backend field name */
+  body: string;
+  /** For backward compat if backend ever sends `message` instead of `body` */
+  message?: string;
+  /** Deep linking — type of the related entity */
+  relatedEntityType?:
+    | 'application'
+    | 'consultation'
+    | 'document'
+    | 'message'
+    | 'payment_request';
+  /** Deep linking — ID of the related entity */
+  relatedEntityId?: string;
+  /** @deprecated Use relatedEntityId instead */
   referenceId?: string;
   /** Whether the user has seen this notification */
   isRead: boolean;

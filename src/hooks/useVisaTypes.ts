@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiService } from '@/services/api.service';
-import { VisaType, VisaRequirement, VisaTypeWithRequirements, VisaCategory } from '@/types/visas.type';
+import {
+  VisaType,
+  VisaRequirement,
+  VisaTypeWithRequirements,
+  VisaCategory,
+} from '@/types/visas.type';
 import { Country } from '@/types/country.type';
 import { getCountryFlag } from '@/utils/countryFlags';
 
@@ -34,7 +39,7 @@ export function useVisaTypes(options?: {
       const response = await apiService.get<GetAllVisasResponse>(endpoint);
       return response.data ?? { visaTypes: [], total: 0 };
     },
-    staleTime: 0, // TODO: Change back to 1000 * 60 * 5 (5 minutes) after debugging
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }
 
@@ -47,13 +52,13 @@ export function useVisaTypesByCountry(countryCode: string) {
     queryFn: async () => {
       console.log('[useVisaTypesByCountry] Fetching visas for:', countryCode);
       const response = await apiService.get<VisaType[]>(
-        `/countries/${countryCode}/visas`
+        `/countries/${countryCode}/visas`,
       );
       console.log('[useVisaTypesByCountry] Response:', response.data);
       return response.data ?? [];
     },
     enabled: !!countryCode,
-    staleTime: 0, // TODO: Change back to 1000 * 60 * 5 (5 minutes) after debugging
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }
 
@@ -65,7 +70,7 @@ export function useVisaType(countryCode: string, visaTypeId: string) {
     queryKey: ['visaType', countryCode, visaTypeId],
     queryFn: async () => {
       const response = await apiService.get<VisaTypeWithRequirements>(
-        `/countries/${countryCode}/visas/${visaTypeId}/full`
+        `/countries/${countryCode}/visas/${visaTypeId}/full`,
       );
       return response.data;
     },
@@ -82,7 +87,7 @@ export function useVisaRequirements(countryCode: string, visaTypeId: string) {
     queryKey: ['visaRequirements', countryCode, visaTypeId],
     queryFn: async () => {
       const response = await apiService.get<VisaRequirement[]>(
-        `/countries/${countryCode}/visas/${visaTypeId}/requirements`
+        `/countries/${countryCode}/visas/${visaTypeId}/requirements`,
       );
       return response.data ?? [];
     },
@@ -99,7 +104,7 @@ export function useVisaSearch(query: string) {
     queryKey: ['visaSearch', query],
     queryFn: async () => {
       const response = await apiService.get<VisaType[]>(
-        `/visas/search?q=${encodeURIComponent(query)}`
+        `/visas/search?q=${encodeURIComponent(query)}`,
       );
       return response.data ?? [];
     },
@@ -116,7 +121,7 @@ export function usePopularVisaTypes(limit = 10) {
     queryKey: ['visaTypes', 'popular', limit],
     queryFn: async () => {
       const response = await apiService.get<VisaType[]>(
-        `/visas/popular?limit=${limit}`
+        `/visas/popular?limit=${limit}`,
       );
       return response.data ?? [];
     },
