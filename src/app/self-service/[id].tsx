@@ -66,7 +66,11 @@ import {
   useCreateDocument,
   uploadToStorage,
 } from '@/hooks/useDocuments';
-import { Document, DocumentStatus } from '@/types/documents.type';
+import {
+  Document,
+  DocumentStatus,
+  documentDisplayName,
+} from '@/types/documents.type';
 import { VisaRequirement } from '@/types/visas.type';
 
 // Hero height for this flow — shorter than the destination detail (376) so the
@@ -376,7 +380,7 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
             style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}
             numberOfLines={1}
           >
-            {doc.fileName}
+            {documentDisplayName(doc)}
           </Text>
           <Text
             style={{
@@ -389,6 +393,21 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
           >
             {s.label}
           </Text>
+          {/* Provenance — the client must be able to tell a document their
+              agency filed for them from one they submitted themselves. */}
+          {doc.uploadedOnBehalf ? (
+            <Text
+              style={{
+                fontSize: 11.5,
+                fontWeight: '600',
+                color: EX.color.muted,
+                marginTop: 2,
+              }}
+              numberOfLines={1}
+            >
+              Added by {doc.uploadedByName || 'your agency'}
+            </Text>
+          ) : null}
         </View>
 
         <Pill label={s.label} fg={s.fg} bg={s.bg} small />
@@ -423,6 +442,75 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
           </Text>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+// ── LiveOtherDocsCard — documents not tied to any listed requirement ──────────
+// Same card chrome as LiveRequirementCard, minus the upload button (there's no
+// requirement to upload against). Read-only by design: these documents were
+// either filed by the agency or already answered a specific ask.
+function LiveOtherDocsCard({ docs }: { docs: Document[] }) {
+  return (
+    <View
+      style={{
+        backgroundColor: '#fff',
+        borderRadius: EX.radius.card, // 20
+        borderWidth: 1,
+        borderColor: 'rgba(23,19,38,0.07)',
+        paddingHorizontal: 16,
+        paddingVertical: 15,
+        marginBottom: 13,
+        shadowColor: '#171326',
+        shadowOpacity: 0.04,
+        shadowRadius: 2,
+        shadowOffset: { width: 0, height: 1 },
+        elevation: 1,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(23,19,38,0.06)',
+          }}
+        >
+          <Ic.docs size={12} color={EX.color.muted} strokeWidth={2} />
+        </View>
+        <Text
+          style={{
+            flex: 1,
+            fontSize: 15.5,
+            fontWeight: '700',
+            color: EX.color.ink,
+          }}
+          numberOfLines={1}
+        >
+          Other documents
+        </Text>
+      </View>
+
+      <Text
+        style={{
+          fontSize: 13,
+          lineHeight: 19,
+          color: EX.color.inkMuted,
+          marginTop: 8,
+          marginBottom: 2,
+        }}
+      >
+        Also on file for this application.
+      </Text>
+
+      <View style={{ marginTop: 6 }}>
+        {docs.map((doc, i) => (
+          <LiveDocRow key={doc.id} doc={doc} first={i === 0} />
+        ))}
+      </View>
     </View>
   );
 }
@@ -688,6 +776,18 @@ export default function SelfServiceView() {
     const orderedReqs = [...requirements].sort(
       (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0),
     );
+
+    // Documents that belong to no listed requirement.
+    //
+    // WHY THIS EXISTS: the requirement cards below render
+    // `docs.filter(d => d.requirementId === req.id)`, so anything whose
+    // requirementId isn't a real requirement id was silently dropped from the
+    // screen — the client simply never saw it. That covers documents an agency
+    // filed on the client's behalf and uploads answering an ad-hoc agent ask
+    // (`docreq:<id>`). Collecting the leftovers guarantees every document on the
+    // application is visible somewhere.
+    const reqIds = new Set(orderedReqs.map((r) => r.id));
+    const otherDocs = docs.filter((d) => !reqIds.has(d.requirementId));
 
     // Official application URL → button host label (strip protocol + path).
     const officialUrl = visaType?.applicationUrl;
@@ -1044,6 +1144,13 @@ export default function SelfServiceView() {
                 onUpload={handleUpload}
               />
             ))}
+
+            {/* Documents on this application that map to no requirement —
+                typically ones the agency filed for the client, or uploads
+                answering an ad-hoc request. Without this they'd be invisible. */}
+            {otherDocs.length > 0 ? (
+              <LiveOtherDocsCard docs={otherDocs} />
+            ) : null}
           </View>
         </Animated.ScrollView>
 

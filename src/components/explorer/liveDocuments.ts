@@ -9,7 +9,11 @@
 
 import { Doc } from './data';
 import { fmtDate } from './liveDate';
-import { Document, DocumentStatus } from '@/types/documents.type';
+import {
+  Document,
+  DocumentStatus,
+  documentDisplayName,
+} from '@/types/documents.type';
 import { Application } from '@/types/applications.type';
 
 // Backend DocumentStatus → the four demo statuses the screen renders:
@@ -35,7 +39,9 @@ export function mapDocument(d: Document, appCtx?: Application): Doc {
 
   return {
     id: d.id,
-    name: d.fileName,
+    // Prefer the agency-supplied label over the raw file name — a document
+    // filed for the client would otherwise show as e.g. "scan_0043.pdf".
+    name: documentDisplayName(d),
     category,
     status: STATUS_MAP[d.status] ?? 'missing',
     file: d.fileName,
