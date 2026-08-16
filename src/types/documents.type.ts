@@ -9,10 +9,33 @@ export type DocumentStatus =
   | 'rejected'
   | 'resubmission_required';
 
+/** Who pushed the bytes. Mirrors the backend `DocumentUploaderRole`. */
+export type DocumentUploaderRole = 'client' | 'agent' | 'owner' | 'admin';
+
+/** How a document reached the agency. Mirrors the backend `DocumentUploadSource`. */
+export type DocumentUploadSource =
+  | 'email'
+  | 'whatsapp'
+  | 'in_person'
+  | 'postal'
+  | 'third_party'
+  | 'other';
+
 export interface Document {
   id: string;
   applicationId: string;
+  /**
+   * The visa requirement this document answers.
+   *
+   * NOT always a real requirement id: uploads that answer an ad-hoc agent ask
+   * carry `docreq:<requestId>`, and documents an agency filed on the client's
+   * behalf carry a synthetic key. Any UI that groups documents under
+   * requirements must therefore also render the leftovers — see the "Other
+   * documents" section on the self-service screen — or those documents become
+   * invisible to the client.
+   */
   requirementId: string;
+  /** The document's OWNER (the client), which is not necessarily its uploader. */
   userId: string;
 
   // File info
@@ -23,6 +46,20 @@ export interface Document {
 
   // Status
   status: DocumentStatus;
+
+  // Descriptive metadata (set when an agency files a document for a client)
+  documentType?: string;
+  displayName?: string;
+  description?: string;
+
+  // Upload provenance (audit trail). Absent on documents predating it.
+  uploadedByUserId?: string;
+  uploadedByName?: string;
+  uploadedByRole?: DocumentUploaderRole;
+  /** True when agency staff uploaded this for the client. */
+  uploadedOnBehalf?: boolean;
+  uploadReason?: string;
+  uploadSource?: DocumentUploadSource;
 
   // Review
   reviewedBy?: string;
@@ -35,6 +72,19 @@ export interface Document {
 
   uploadedAt: string;
   updatedAt: string;
+}
+
+/**
+ * The label to show for a document: the agency-supplied name if there is one,
+ * then its category, then the raw file name.
+ */
+export function documentDisplayName(doc: Document): string {
+  return (
+    doc.displayName?.trim() ||
+    doc.documentType?.trim() ||
+    doc.fileName ||
+    'Untitled document'
+  );
 }
 
 export interface DocumentRequirement {
