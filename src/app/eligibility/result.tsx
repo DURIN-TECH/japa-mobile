@@ -13,7 +13,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Circle } from 'react-native-svg';
@@ -224,7 +230,9 @@ export default function EligibilityResult() {
         'Based on your answers, you may not need a visa for this trip.',
     };
 
-    const matchedItems = c.breakdown.filter((b) => b.passed).map((b) => b.question);
+    const matchedItems = c.breakdown
+      .filter((b) => b.passed)
+      .map((b) => b.question);
     // Prefer explicit missing requirements; fall back to failed breakdown items.
     const gapItems = c.missingRequirements?.length
       ? c.missingRequirements

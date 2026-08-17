@@ -102,13 +102,7 @@ function QuickAction({
 // Accepts the mapped `App` object directly (not an id lookup) so live
 // applications from the backend render without a demo `appById()` lookup. The
 // destination resolves from the app's own `dest` (live) or the demo `DESTS`.
-function MiniAppRow({
-  app,
-  onPress,
-}: {
-  app: App;
-  onPress: () => void;
-}) {
+function MiniAppRow({ app, onPress }: { app: App; onPress: () => void }) {
   const d = app.dest ?? destById(app.destId);
   if (!d) return null;
   return (
@@ -173,13 +167,7 @@ function MiniAppRow({
 // ── Recommended destination card (horizontal rail) ───────────────────────────
 // Accepts the resolved `Dest` directly so live destinations (mapped from
 // GET /visas) render without a demo `destById()` lookup.
-function RecoCard({
-  d,
-  onPress,
-}: {
-  d: Dest;
-  onPress: () => void;
-}) {
+function RecoCard({ d, onPress }: { d: Dest; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
@@ -501,7 +489,9 @@ export default function HomeScreen() {
   // when the backend is empty/unreachable we keep the demo APPS so Home is never
   // blank. Powers the hero, the next-step nudge and the active-applications list.
   const appsQ = useApplications();
-  const apps: App[] = appsQ.data?.length ? appsQ.data.map(mapApplication) : APPS;
+  const apps: App[] = appsQ.data?.length
+    ? appsQ.data.map(mapApplication)
+    : APPS;
 
   // Hero = the first application; resolve its destination from the app's own
   // `dest` (live) or the demo DESTS.
@@ -516,7 +506,10 @@ export default function HomeScreen() {
   // drop any destination the user already has an application for and keep a few.
   const visaQ = useVisaTypes({ limit: 30 });
   const { data: countries } = useCountriesWithVisas();
-  const liveDests = mapVisasToDests(visaQ.data?.visaTypes ?? [], countries ?? []);
+  const liveDests = mapVisasToDests(
+    visaQ.data?.visaTypes ?? [],
+    countries ?? [],
+  );
   const recSource = liveDests.length ? liveDests : DESTS;
   const rec = recSource
     .filter((d) => !apps.some((a) => a.destId === d.id))
@@ -764,9 +757,7 @@ export default function HomeScreen() {
           style={{ paddingHorizontal: 22, paddingTop: 14, paddingBottom: 2 }}
         >
           <Pressable
-            onPress={() =>
-              router.push(`/application/${actionApp.id}`)
-            }
+            onPress={() => router.push(`/application/${actionApp.id}`)}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -882,10 +873,7 @@ export default function HomeScreen() {
           >
             Active applications
           </Text>
-          <Pressable
-            onPress={() => router.push('/(tabs)/tracker')}
-            hitSlop={8}
-          >
+          <Pressable onPress={() => router.push('/(tabs)/tracker')} hitSlop={8}>
             <Text
               style={{
                 color: EX.color.primary,
@@ -989,10 +977,7 @@ export default function HomeScreen() {
           >
             Recommended for you
           </Text>
-          <Pressable
-            onPress={() => router.push('/(tabs)/explore')}
-            hitSlop={8}
-          >
+          <Pressable onPress={() => router.push('/(tabs)/explore')} hitSlop={8}>
             <Text
               style={{
                 color: EX.color.primary,

@@ -43,7 +43,10 @@ import {
   useEligibilityQuestions,
   useSubmitEligibilityCheck,
 } from '@/hooks/useEligibility';
-import { EligibilityAnswer, EligibilityQuestion } from '@/types/eligibility.type';
+import {
+  EligibilityAnswer,
+  EligibilityQuestion,
+} from '@/types/eligibility.type';
 import { useAuthStore } from '@/stores/auth.store';
 
 // ── mapQuestion — backend EligibilityQuestion → wizard's EligQ shape ──────────
@@ -209,7 +212,10 @@ export default function EligibilityView() {
   const insets = useSafeAreaInsets();
   // A live visa carries a country `code`; demo destinations don't. When we have a
   // code and `dest` isn't a demo destination, `dest` is the visaTypeId to score.
-  const { dest, code } = useLocalSearchParams<{ dest: string; code?: string }>();
+  const { dest, code } = useLocalSearchParams<{
+    dest: string;
+    code?: string;
+  }>();
   const demoDest = destById(dest);
   const wantLive = !demoDest && !!code;
   const d = demoDest;
@@ -447,146 +453,154 @@ export default function EligibilityView() {
             </View>
           ) : (
             <>
-          {/* Question title (24 Space Grotesk 700) + optional coral help toggle */}
-          <View
-            style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}
-          >
-            <Text
-              style={[
-                displayText(24, 'bold'),
-                { flex: 1, lineHeight: 28.8, letterSpacing: -0.24 },
-              ]}
-            >
-              {q.q}
-            </Text>
-            {q.help ? (
-              <Pressable
-                onPress={() => setShowHelp((s) => !s)}
-                hitSlop={8}
-                style={{ marginTop: 2 }}
-              >
-                <Ic.help size={24} color={EX.color.primary} strokeWidth={1.8} />
-              </Pressable>
-            ) : null}
-          </View>
-
-          {/* Help panel — tinted coral, text only (no icon/border).
-              Source: marginTop 14, padding 14, radius 14, bg rgba(244,81,108,0.07),
-              fontSize 13.5, lineHeight 1.5, color #5B5468. */}
-          {q.help && showHelp ? (
-            <View
-              style={{
-                marginTop: 14,
-                padding: 14,
-                borderRadius: EX.radius.chip, // 14
-                backgroundColor: EX.color.primaryTint07,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 13.5,
-                  lineHeight: 20,
-                  color: EX.color.inkMuted,
-                }}
-              >
-                {q.help}
-              </Text>
-            </View>
-          ) : null}
-
-          {/* ── Inputs by question type — source marginTop 22, gap 11 ───────── */}
-          <View style={{ marginTop: 22, gap: 11 }}>
-            {/* boolean → two Yes/No tiles (row gap 12) */}
-            {q.type === 'boolean' ? (
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <BoolButton
-                  label="Yes"
-                  selected={answers[q.id] === true}
-                  onPress={() => setBool(true)}
-                />
-                <BoolButton
-                  label="No"
-                  selected={answers[q.id] === false}
-                  onPress={() => setBool(false)}
-                />
-              </View>
-            ) : null}
-
-            {/* single → radio rows */}
-            {q.type === 'single'
-              ? q.opts?.map((opt) => (
-                  <OptRow
-                    key={opt}
-                    label={opt}
-                    selected={answers[q.id] === opt}
-                    onPress={() => setSingle(opt)}
-                  />
-                ))
-              : null}
-
-            {/* multiple → checkbox rows */}
-            {q.type === 'multiple'
-              ? q.opts?.map((opt) => {
-                  const arr = Array.isArray(answers[q.id])
-                    ? (answers[q.id] as string[])
-                    : [];
-                  return (
-                    <OptRow
-                      key={opt}
-                      label={opt}
-                      multiple
-                      selected={arr.includes(opt)}
-                      onPress={() => toggleMulti(opt)}
-                    />
-                  );
-                })
-              : null}
-
-            {/* number → horizontal numeric field + unit, clamped min..max.
-                Source: row, gap 12, white, 1.5px line12 border, radius 16,
-                padding 4×16; input 22/700 ink; unit 15/600 #8B8499. */}
-            {q.type === 'number' ? (
+              {/* Question title (24 Space Grotesk 700) + optional coral help toggle */}
               <View
                 style={{
                   flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 12,
-                  backgroundColor: EX.color.cardWhite,
-                  borderWidth: 1.5,
-                  borderColor: EX.color.line12,
-                  borderRadius: EX.radius.button, // 16
-                  paddingVertical: 4,
-                  paddingHorizontal: 16,
+                  alignItems: 'flex-start',
+                  gap: 10,
                 }}
               >
-                <TextInput
-                  keyboardType="numeric"
-                  value={answers[q.id] != null ? String(answers[q.id]) : ''}
-                  onChangeText={setNumber}
-                  placeholder={`${q.min}–${q.max}`}
-                  placeholderTextColor={EX.color.muted}
-                  style={{
-                    flex: 1,
-                    fontSize: 22,
-                    fontWeight: '700',
-                    color: EX.color.ink,
-                    paddingVertical: 16,
-                  }}
-                />
-                {q.unit ? (
-                  <Text
-                    style={{
-                      fontSize: 15,
-                      fontWeight: '600',
-                      color: EX.color.muted,
-                    }}
+                <Text
+                  style={[
+                    displayText(24, 'bold'),
+                    { flex: 1, lineHeight: 28.8, letterSpacing: -0.24 },
+                  ]}
+                >
+                  {q.q}
+                </Text>
+                {q.help ? (
+                  <Pressable
+                    onPress={() => setShowHelp((s) => !s)}
+                    hitSlop={8}
+                    style={{ marginTop: 2 }}
                   >
-                    {q.unit}
-                  </Text>
+                    <Ic.help
+                      size={24}
+                      color={EX.color.primary}
+                      strokeWidth={1.8}
+                    />
+                  </Pressable>
                 ) : null}
               </View>
-            ) : null}
-          </View>
+
+              {/* Help panel — tinted coral, text only (no icon/border).
+              Source: marginTop 14, padding 14, radius 14, bg rgba(244,81,108,0.07),
+              fontSize 13.5, lineHeight 1.5, color #5B5468. */}
+              {q.help && showHelp ? (
+                <View
+                  style={{
+                    marginTop: 14,
+                    padding: 14,
+                    borderRadius: EX.radius.chip, // 14
+                    backgroundColor: EX.color.primaryTint07,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13.5,
+                      lineHeight: 20,
+                      color: EX.color.inkMuted,
+                    }}
+                  >
+                    {q.help}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* ── Inputs by question type — source marginTop 22, gap 11 ───────── */}
+              <View style={{ marginTop: 22, gap: 11 }}>
+                {/* boolean → two Yes/No tiles (row gap 12) */}
+                {q.type === 'boolean' ? (
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <BoolButton
+                      label="Yes"
+                      selected={answers[q.id] === true}
+                      onPress={() => setBool(true)}
+                    />
+                    <BoolButton
+                      label="No"
+                      selected={answers[q.id] === false}
+                      onPress={() => setBool(false)}
+                    />
+                  </View>
+                ) : null}
+
+                {/* single → radio rows */}
+                {q.type === 'single'
+                  ? q.opts?.map((opt) => (
+                      <OptRow
+                        key={opt}
+                        label={opt}
+                        selected={answers[q.id] === opt}
+                        onPress={() => setSingle(opt)}
+                      />
+                    ))
+                  : null}
+
+                {/* multiple → checkbox rows */}
+                {q.type === 'multiple'
+                  ? q.opts?.map((opt) => {
+                      const arr = Array.isArray(answers[q.id])
+                        ? (answers[q.id] as string[])
+                        : [];
+                      return (
+                        <OptRow
+                          key={opt}
+                          label={opt}
+                          multiple
+                          selected={arr.includes(opt)}
+                          onPress={() => toggleMulti(opt)}
+                        />
+                      );
+                    })
+                  : null}
+
+                {/* number → horizontal numeric field + unit, clamped min..max.
+                Source: row, gap 12, white, 1.5px line12 border, radius 16,
+                padding 4×16; input 22/700 ink; unit 15/600 #8B8499. */}
+                {q.type === 'number' ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                      backgroundColor: EX.color.cardWhite,
+                      borderWidth: 1.5,
+                      borderColor: EX.color.line12,
+                      borderRadius: EX.radius.button, // 16
+                      paddingVertical: 4,
+                      paddingHorizontal: 16,
+                    }}
+                  >
+                    <TextInput
+                      keyboardType="numeric"
+                      value={answers[q.id] != null ? String(answers[q.id]) : ''}
+                      onChangeText={setNumber}
+                      placeholder={`${q.min}–${q.max}`}
+                      placeholderTextColor={EX.color.muted}
+                      style={{
+                        flex: 1,
+                        fontSize: 22,
+                        fontWeight: '700',
+                        color: EX.color.ink,
+                        paddingVertical: 16,
+                      }}
+                    />
+                    {q.unit ? (
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: '600',
+                          color: EX.color.muted,
+                        }}
+                      >
+                        {q.unit}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
             </>
           )}
         </ScrollView>

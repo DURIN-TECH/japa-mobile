@@ -28,10 +28,7 @@ import { EX } from '@/components/explorer/theme';
 import { agencyById, agentsForAgency } from '@/components/explorer/data';
 import { mapAgency } from '@/components/explorer/liveAgencies';
 import { mapAgent } from '@/components/explorer/liveAgents';
-import {
-  usePublicAgency,
-  usePublicAgencyAgents,
-} from '@/hooks/useAgencies';
+import { usePublicAgency, usePublicAgencyAgents } from '@/hooks/useAgencies';
 import { Ic } from '@/components/explorer/icons';
 import {
   GlassButton,
@@ -290,14 +287,10 @@ export default function AgencyDetail() {
   const hasAgents = agents.length > 0;
   const statR =
     isLive && hasAgents
-      ? Number(
-          (agents.reduce((s, x) => s + x.r, 0) / agents.length).toFixed(1),
-        )
+      ? Number((agents.reduce((s, x) => s + x.r, 0) / agents.length).toFixed(1))
       : a.r;
   const statRev =
-    isLive && hasAgents
-      ? agents.reduce((s, x) => s + x.rev, 0)
-      : a.rev;
+    isLive && hasAgents ? agents.reduce((s, x) => s + x.rev, 0) : a.rev;
   const statSucc =
     isLive && hasAgents
       ? Math.round(agents.reduce((s, x) => s + x.succ, 0) / agents.length)

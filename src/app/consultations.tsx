@@ -383,9 +383,7 @@ export default function ConsultationsView() {
                           icon={Ic.video}
                           filled
                           grow
-                          onPress={() =>
-                            router.push(`/consultation/${c.id}`)
-                          }
+                          onPress={() => router.push(`/consultation/${c.id}`)}
                         />
                         <ActionBtn
                           label="Message"
@@ -403,9 +401,7 @@ export default function ConsultationsView() {
                         />
                         <ActionBtn
                           label="Rebook"
-                          onPress={() =>
-                            router.push(`/book/${c.agentId}`)
-                          }
+                          onPress={() => router.push(`/book/${c.agentId}`)}
                         />
                       </>
                     )}

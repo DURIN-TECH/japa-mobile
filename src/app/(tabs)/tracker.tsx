@@ -433,9 +433,7 @@ export default function AppsView() {
                 <AppCard
                   key={app.id}
                   app={app}
-                  onPress={() =>
-                    router.push(`/application/${app.id}`)
-                  }
+                  onPress={() => router.push(`/application/${app.id}`)}
                 />
               ))}
             </View>
