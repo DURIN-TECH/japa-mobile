@@ -3,21 +3,14 @@ import axios, {
   AxiosError,
   InternalAxiosRequestConfig,
 } from 'axios';
-import { Platform } from 'react-native';
 import { getApp } from '@react-native-firebase/app';
 import { getAuth, getIdToken, signOut } from '@react-native-firebase/auth';
 import { router } from 'expo-router';
+// Backend base URL is resolved centrally by environment (deployed dev/prod or the
+// local emulator) so it can never drift from the Firebase project Auth targets.
+import { API_URL } from '@/config/env';
 
-// Android emulators can't reach the host's "localhost" — that resolves to the
-// emulator itself. Rewrite "localhost" to 10.0.2.2 when running on Android.
-const rewriteForAndroid = (url: string | undefined) =>
-  Platform.OS === 'android' && url
-    ? url.replace(/\/\/(localhost|127\.0\.0\.1)(?=[:/])/g, '//10.0.2.2')
-    : url;
-
-const API_BASE_URL = __DEV__
-  ? rewriteForAndroid(process.env.EXPO_PUBLIC_DEV_API_URL)
-  : process.env.EXPO_PUBLIC_API_URL;
+const API_BASE_URL = API_URL;
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -67,17 +60,52 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError<ApiResponse<unknown>>) => {
     if (error.response) {
-      // Handle 401 Unauthorized - sign out and redirect to login
+      // Handle 401 Unauthorized.
+      //
+      // A 401 is NOT automatically a reason to nuke the session. It can also be a
+      // transient stale/expired token, or a stray authed request that fired before
+      // Firebase restored the user (cold start) / after logout — in which case
+      // there's no session to end at all. The old handler blanket-signed-out and
+      // redirected on every 401, which (a) yanked navigation to /welcome mid-flow
+      // and (b) logged "[auth/no-current-user]" when it tried to sign out a user
+      // that was already gone. Handle the cases distinctly instead:
       if (error.response.status === 401) {
-        console.log('Unauthorized - signing out and redirecting to login');
-        try {
-          const auth = getAuth(getApp());
-          await signOut(auth);
-        } catch (signOutError) {
-          console.error('Error signing out:', signOutError);
+        const auth = getAuth(getApp());
+        const user = auth.currentUser;
+        const original = error.config as
+          | (InternalAxiosRequestConfig & { _retry?: boolean })
+          | undefined;
+
+        // 1) We DO have a signed-in user and haven't retried yet → the token is
+        //    likely just stale. Force-refresh it once and replay the request
+        //    before deciding this is a real auth failure.
+        if (user && original && !original._retry) {
+          original._retry = true;
+          try {
+            const fresh = await getIdToken(user, /* forceRefresh */ true);
+            original.headers.Authorization = `Bearer ${fresh}`;
+            return api(original);
+          } catch (refreshError) {
+            console.error('Token refresh failed:', refreshError);
+            // Fall through to the sign-out path below.
+          }
         }
-        // Redirect to the Explorer auth flow
-        router.replace('/(auth)/welcome');
+
+        // 2) Genuine auth failure. Only tear down the session (and let the root
+        //    route guard send the user to the auth flow) when a user is actually
+        //    signed in. If currentUser is already null, this was a stray/expired
+        //    request — there's nothing to sign out of, and the _layout guard
+        //    already owns "not authenticated → /welcome", so we don't hijack
+        //    navigation here.
+        if (auth.currentUser) {
+          console.log('Unauthorized - signing out and redirecting to login');
+          try {
+            await signOut(auth);
+          } catch (signOutError) {
+            console.error('Error signing out:', signOutError);
+          }
+          router.replace('/(auth)/welcome');
+        }
       }
 
       // Server responded with error status

@@ -21,12 +21,20 @@ import {
 } from '@/components/explorer/AuthShell';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
-// Real Firebase Auth — the root _layout listens to onAuthStateChanged and syncs
-// the auth store/profile, so this screen just calls the service and navigates.
-import { authService } from '@/services/auth.service';
+// Real Firebase Auth — go through the auth STORE (not authService directly) so the
+// store's `isAuthenticated` flips synchronously as part of the login call, BEFORE we
+// navigate. Calling authService directly left `isAuthenticated` false until the
+// async onAuthStateChanged listener in _layout caught up, and the route guard —
+// seeing a "signed-out" store on the (tabs) route — bounced the user straight back
+// to /(auth)/welcome. This mirrors how register.tsx already logs users in.
+import { useAuthStore } from '@/stores/auth.store';
 
 export default function AuthLogin() {
   const router = useRouter();
+  // Store action performs the Firebase sign-in AND sets user/isAuthenticated
+  // synchronously (then fetches the profile + inits push) — so by the time this
+  // resolves, the route guard already sees an authenticated store.
+  const loginWithEmail = useAuthStore((s) => s.loginWithEmail);
   // Credentials start EMPTY (no demo prefill) so the user types real values.
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
@@ -44,18 +52,19 @@ export default function AuthLogin() {
     }
     setError(null);
     setSubmitting(true);
-    try {
-      await authService.loginWithEmail(email.trim(), pw);
-      // Success → straight into the authenticated Explorer home.
+    // loginWithEmail returns true on success (store already updated) / false on
+    // error, recording the friendly message on the store's `error` field.
+    const ok = await loginWithEmail(email.trim(), pw);
+    if (ok) {
+      // Success → straight into the authenticated Explorer home. The store is
+      // already authenticated, so the route guard won't bounce us back.
       router.replace('/(tabs)/home');
-    } catch (e) {
-      // Friendly, mapped message shown inline + as an alert.
-      const msg = authService.getErrorMessage(e);
+    } else {
+      const msg = useAuthStore.getState().error ?? 'Login failed.';
       setError(msg);
       Alert.alert('Login failed', msg);
-    } finally {
-      setSubmitting(false);
     }
+    setSubmitting(false);
   };
 
   return (
