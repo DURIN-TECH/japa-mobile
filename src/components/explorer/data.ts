@@ -669,7 +669,14 @@ export const CONVOS: Convo[] = [
     online: true,
   },
 ];
-export type Msg = { from: 'agent' | 'me'; t: string; at: string };
+// A chat bubble. `files` carries any documents shared on the message — the demo
+// threads have none, so it's optional and absent everywhere below.
+export type Msg = {
+  from: 'agent' | 'me';
+  t: string;
+  at: string;
+  files?: { url: string; name: string }[];
+};
 export const THREAD: Record<string, Msg[]> = {
   c1: [
     {
