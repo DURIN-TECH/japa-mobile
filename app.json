@@ -16,7 +16,6 @@
     },
     "ios": {
       "supportsTablet": true,
-      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -27,8 +26,7 @@
         "foregroundImage": "./src/assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.durintech.japamobile",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.durintech.japamobile"
     },
     "web": {
       "bundler": "metro",
