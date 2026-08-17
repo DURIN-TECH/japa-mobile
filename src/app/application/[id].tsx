@@ -710,7 +710,9 @@ export default function AppDetail() {
                       <Portrait
                         seed={agentById(req.agentId)?.seed ?? 0}
                         size={22}
-                        name={req.agentName ?? agentById(req.agentId)?.n ?? 'Agent'}
+                        name={
+                          req.agentName ?? agentById(req.agentId)?.n ?? 'Agent'
+                        }
                       />
                       <Text
                         style={{
@@ -720,7 +722,9 @@ export default function AppDetail() {
                         }}
                       >
                         Requested by{' '}
-                        {req.agentName ?? agentById(req.agentId)?.n ?? 'your agent'}
+                        {req.agentName ??
+                          agentById(req.agentId)?.n ??
+                          'your agent'}
                       </Text>
                     </View>
 

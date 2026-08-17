@@ -572,10 +572,7 @@ export default function AgentDetail() {
         }}
       >
         <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
-        <GlassButton
-          icon={Ic.msg}
-          onPress={() => router.push('/messages')}
-        />
+        <GlassButton icon={Ic.msg} onPress={() => router.push('/messages')} />
       </View>
 
       {/* ── Sticky glass CTA (source padding '15px 22px 24px') ───────────────── */}

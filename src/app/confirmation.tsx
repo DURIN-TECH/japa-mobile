@@ -203,11 +203,7 @@ export default function ConfirmationScreen() {
           {/* Primary — consultations, or applications for an app payment (coral, replace) */}
           <Pressable
             onPress={() =>
-              router.replace(
-                isApp
-                  ? '/(tabs)/tracker'
-                  : '/consultations',
-              )
+              router.replace(isApp ? '/(tabs)/tracker' : '/consultations')
             }
             style={{
               height: 54,

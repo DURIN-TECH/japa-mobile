@@ -154,3 +154,39 @@ export interface ScheduleItem {
     status: 'pending' | 'uploaded' | 'verified' | 'rejected';
   }[];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED DOCUMENTS (agency-authored, shared with the client)
+//
+// Distinct from `Document` above, which is an uploaded FILE. A `DocumentInstance`
+// is a rich-text document an agent wrote from a template — a cover letter, a
+// statement of purpose — which they can choose to share with their client. The
+// body is ProseMirror JSON (the portal's editor format); the app renders it
+// read-only via `components/explorer/ProseMirrorText`.
+//
+// Mirrors the backend type, with `string` dates instead of Firestore Timestamps.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** ProseMirror JSON document — opaque structured content produced by the portal editor. */
+export type ProseMirrorDoc = { type: 'doc'; content?: unknown[] } & Record<
+  string,
+  unknown
+>;
+
+/** Whether the client can see the instance. Only `shared` is ever returned to the app. */
+export type DocumentShareStatus = 'private' | 'shared';
+
+/** A rich-text document an agency shared with this client. */
+export interface SharedDocument {
+  id: string;
+  title: string;
+  applicationId: string | null;
+  shareStatus: DocumentShareStatus;
+  /** Omitted in list responses; present when fetched by id. */
+  content?: ProseMirrorDoc;
+  /** Authoring agent's display name, denormalized by the backend. */
+  createdByName?: string;
+  updatedByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}

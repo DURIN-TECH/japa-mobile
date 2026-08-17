@@ -5,6 +5,7 @@ import {
   DocumentStatus,
   UploadUrlResponse,
   CreateDocumentInput,
+  SharedDocument,
 } from '@/types/documents.type';
 import { Application } from '@/types/applications.type';
 
@@ -198,6 +199,61 @@ export function useGetDownloadUrl() {
       );
       return response.data?.downloadUrl;
     },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED DOCUMENTS (agency-authored rich text, shared with this client)
+//
+// Backed by the client-facing `/document-instances/shared` routes. The rest of
+// the `/document-instances` surface is agent-only and 403s for a client, so
+// these two hooks are the app's only way in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Documents the client's agencies have shared with them.
+ *
+ * With no `applicationId` the backend spans every application the client owns,
+ * which is what the flat "My documents" library wants. Only documents an agent
+ * has explicitly shared are ever returned — drafts stay invisible.
+ */
+export function useSharedDocuments(applicationId?: string) {
+  return useQuery({
+    queryKey: ['documents', 'shared', applicationId ?? 'all'],
+    queryFn: async (): Promise<SharedDocument[]> => {
+      const endpoint = applicationId
+        ? `/document-instances/shared?applicationId=${encodeURIComponent(applicationId)}`
+        : '/document-instances/shared';
+      try {
+        const response = await apiService.get<SharedDocument[]>(endpoint);
+        return response.data ?? [];
+      } catch {
+        // Defensive, matching `useMyDocuments`: a failure here should hide the
+        // section, not blank the documents screen.
+        return [];
+      }
+    },
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
+
+/**
+ * One shared document WITH its body — list responses omit `content`.
+ *
+ * Re-checked server-side on every call, so a document the agency un-shares
+ * stops resolving (404) even if the client still has the row on screen.
+ */
+export function useSharedDocument(documentId: string) {
+  return useQuery({
+    queryKey: ['document', 'shared', documentId],
+    queryFn: async () => {
+      const response = await apiService.get<SharedDocument>(
+        `/document-instances/shared/${documentId}`,
+      );
+      return response.data ?? null;
+    },
+    enabled: !!documentId,
+    staleTime: 1000 * 60 * 2,
   });
 }
 

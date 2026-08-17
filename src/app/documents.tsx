@@ -16,6 +16,8 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -27,7 +29,12 @@ import { EX, displayText } from '@/components/explorer/theme';
 import { DOCUMENTS, DOC_STATUS, type Doc } from '@/components/explorer/data';
 import { Ic } from '@/components/explorer/icons';
 import { Pill } from '@/components/explorer/primitives';
-import { useMyDocuments } from '@/hooks/useDocuments';
+import { fmtDate } from '@/components/explorer/liveDate';
+import {
+  useMyDocuments,
+  useSharedDocuments,
+  useGetDownloadUrl,
+} from '@/hooks/useDocuments';
 import { mapDocument } from '@/components/explorer/liveDocuments';
 
 // Filter keys map 1:1 to Doc.status, plus the "all" catch-all. Labels rename
@@ -44,7 +51,20 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 // ── DocRow — one document in the library ─────────────────────────────────────
 // 38px status icon chip (tinted from DOC_STATUS) + name (15/600) + meta line,
 // then a status Pill on the right — or a coral Upload button when missing.
-function DocRow({ doc }: { doc: Doc }) {
+//
+// `onOpen` is supplied only for LIVE documents that actually have a file behind
+// them: tapping mints a signed URL and hands it to the system viewer. Demo rows
+// and `missing` rows have nothing to open, so they stay inert rather than
+// offering a tap that fails.
+function DocRow({
+  doc,
+  onOpen,
+  opening,
+}: {
+  doc: Doc;
+  onOpen?: () => void;
+  opening?: boolean;
+}) {
   const s = DOC_STATUS[doc.status];
   const missing = doc.status === 'missing';
   // Missing rows fade the chip icon to the faint tone (matches self-service).
@@ -53,15 +73,19 @@ function DocRow({ doc }: { doc: Doc }) {
   const meta = `${doc.category} · ${doc.size ?? '—'} · ${doc.date}`;
 
   return (
-    <View
-      style={{
+    <Pressable
+      onPress={onOpen}
+      disabled={!onOpen || opening}
+      style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
         backgroundColor: '#fff',
         borderRadius: 18,
         borderWidth: 1,
-        borderColor: EX.color.line06,
+        // Press feedback only where there is something to open.
+        borderColor: onOpen && pressed ? EX.color.line12 : EX.color.line06,
+        opacity: opening ? 0.6 : 1,
         paddingHorizontal: 13,
         paddingVertical: 13,
         shadowColor: '#171326',
@@ -69,7 +93,7 @@ function DocRow({ doc }: { doc: Doc }) {
         shadowRadius: 2,
         shadowOffset: { width: 0, height: 1 },
         elevation: 1,
-      }}
+      })}
     >
       {/* 38px status icon chip — bg from DOC_STATUS (missing → 0.05 ink tint) */}
       <View
@@ -127,9 +151,84 @@ function DocRow({ doc }: { doc: Doc }) {
           </Text>
         </Pressable>
       ) : (
-        <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+          {/* Affordance that the row opens the file — a list of names alone
+              never let a client actually SEE what was filed for them. */}
+          {onOpen ? (
+            <Ic.chevR size={17} color={EX.color.faint} strokeWidth={1.8} />
+          ) : null}
+        </View>
       )}
-    </View>
+    </Pressable>
+  );
+}
+
+// ── SharedDocRow — one agency-authored document shared with the client ───────
+// Visually a sibling of DocRow but semantically different: there is no review
+// status to show (the client isn't submitting it), so the right side is just a
+// chevron into the reader.
+function SharedDocRow({
+  title,
+  by,
+  at,
+  onPress,
+}: {
+  title: string;
+  by: string;
+  at: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        backgroundColor: '#fff',
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: pressed ? EX.color.line12 : EX.color.line06,
+        paddingHorizontal: 13,
+        paddingVertical: 13,
+        shadowColor: '#171326',
+        shadowOpacity: 0.04,
+        shadowRadius: 2,
+        shadowOffset: { width: 0, height: 1 },
+        elevation: 1,
+      })}
+    >
+      <View
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 11,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: EX.color.primaryTint10,
+        }}
+      >
+        <Ic.docs size={17} color={EX.color.primary} strokeWidth={1.8} />
+      </View>
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          style={{ fontSize: 15, fontWeight: '600', color: EX.color.ink }}
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+        <Text
+          style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 2 }}
+          numberOfLines={1}
+        >
+          {`Shared by ${by} · ${at}`}
+        </Text>
+      </View>
+
+      <Ic.chevR size={17} color={EX.color.faint} strokeWidth={1.8} />
+    </Pressable>
   );
 }
 
@@ -179,6 +278,40 @@ export default function DocumentsView() {
     [myDocs],
   );
   const docs = live.length ? live : DOCUMENTS;
+
+  // Ids backed by a real backend document. Only these can be opened — the demo
+  // fallback rows have no file behind them, and asking the API for one would
+  // 404. Recomputed with the live list so it can never drift from it.
+  const liveIds = useMemo(() => new Set(live.map((d) => d.id)), [live]);
+
+  // ── Documents the agency shared with this client ──────────────────────────
+  // Rich-text documents an agent wrote and shared (cover letters, SOPs), as
+  // opposed to the uploaded files above. Fetched across every application.
+  const { data: sharedDocs } = useSharedDocuments();
+  const shared = sharedDocs ?? [];
+
+  // ── Opening an uploaded file ──────────────────────────────────────────────
+  // The signed URL is minted per tap rather than up front: these expire quickly,
+  // so one fetched at screen load would usually be dead by the time it's used.
+  const getDownloadUrl = useGetDownloadUrl();
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  async function openDocument(documentId: string) {
+    if (openingId) return;
+    setOpeningId(documentId);
+    try {
+      const url = await getDownloadUrl.mutateAsync(documentId);
+      if (!url) throw new Error('No download URL');
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(
+        "Couldn't open document",
+        'Please check your connection and try again.',
+      );
+    } finally {
+      setOpeningId(null);
+    }
+  }
 
   // ── Live counts across the whole library ──────────────────────────────────
   const verified = docs.filter((d) => d.status === 'verified').length;
@@ -350,9 +483,49 @@ export default function DocumentsView() {
               </Text>
             </View>
           ) : (
-            list.map((doc) => <DocRow key={doc.id} doc={doc} />)
+            list.map((doc) => (
+              <DocRow
+                key={doc.id}
+                doc={doc}
+                // Openable only when there's a real file: a live document that
+                // isn't still awaiting upload.
+                onOpen={
+                  liveIds.has(doc.id) && doc.status !== 'missing'
+                    ? () => void openDocument(doc.id)
+                    : undefined
+                }
+                opening={openingId === doc.id}
+              />
+            ))
           )}
         </View>
+
+        {/* ── Shared with you ───────────────────────────────────────────────
+            Documents the agency prepared and shared. Hidden entirely when
+            there are none, so the screen is unchanged for clients whose
+            agency doesn't use the feature. */}
+        {shared.length > 0 ? (
+          <View style={{ paddingHorizontal: 22, paddingTop: 26, gap: 10 }}>
+            <View style={{ gap: 2 }}>
+              <Text style={displayText(18, 'semibold')}>Shared with you</Text>
+              <Text style={{ fontSize: 12.5, color: EX.color.muted }}>
+                {shared.length === 1
+                  ? '1 document from your agency'
+                  : `${shared.length} documents from your agency`}
+              </Text>
+            </View>
+
+            {shared.map((doc) => (
+              <SharedDocRow
+                key={doc.id}
+                title={doc.title}
+                by={doc.createdByName ?? 'your agent'}
+                at={fmtDate(doc.updatedAt, 'MMM d', '—')}
+                onPress={() => router.push(`/shared-document/${doc.id}`)}
+              />
+            ))}
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );

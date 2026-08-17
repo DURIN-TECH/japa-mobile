@@ -11,6 +11,8 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -77,6 +79,49 @@ function Bubble({ m }: { m: Msg }) {
         >
           {m.t}
         </Text>
+
+        {/* Documents shared on this message. Rendered inline as well as in the
+            thread's Files sheet, so a file keeps the context it arrived in. */}
+        {m.files?.length ? (
+          <View style={{ marginTop: 8, gap: 6 }}>
+            {m.files.map((f) => (
+              <Pressable
+                key={f.url}
+                onPress={() => void Linking.openURL(f.url)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  borderRadius: 10,
+                  paddingHorizontal: 9,
+                  paddingVertical: 7,
+                  // Tinted panel inside the bubble: translucent white on the
+                  // coral own-bubble, faint ink on the white agent bubble.
+                  backgroundColor: mine
+                    ? 'rgba(255,255,255,0.18)'
+                    : 'rgba(23,19,38,0.04)',
+                }}
+              >
+                <Ic.docs
+                  size={14}
+                  color={mine ? '#fff' : EX.color.primary}
+                  strokeWidth={1.8}
+                />
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 12.5,
+                    fontWeight: '600',
+                    color: mine ? '#fff' : EX.color.ink,
+                  }}
+                  numberOfLines={1}
+                >
+                  {f.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
       </View>
       <Text
         style={{
@@ -135,6 +180,21 @@ export default function ChatView() {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const sendMessage = useSendMessage();
+
+  // ── Files shared in this thread ───────────────────────────────────────────
+  // Flattened out of the messages (newest first) so a client can find a document
+  // without scrolling back through the whole conversation. Costs no extra
+  // request — the messages are already loaded.
+  const [filesOpen, setFilesOpen] = useState(false);
+  const files = useMemo(
+    () =>
+      msgs
+        .flatMap((m) =>
+          (m.files ?? []).map((f) => ({ ...f, mine: m.from === 'me' })),
+        )
+        .reverse(),
+    [msgs],
+  );
 
   // Keep the newest message in view on mount, on new content, and after a send.
   const scrollToEnd = useCallback(() => {
@@ -241,6 +301,36 @@ export default function ChatView() {
           </Text>
         </Pressable>
 
+        {/* Files button — same 38px chip as the call button, shown only when
+            documents have actually been shared in this thread. */}
+        {files.length > 0 ? (
+          <Pressable
+            onPress={() => setFilesOpen(true)}
+            hitSlop={6}
+            accessibilityLabel={`${files.length} shared files`}
+            style={{
+              height: 38,
+              paddingHorizontal: 11,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+              borderRadius: 19,
+              backgroundColor: EX.color.primaryTint10,
+            }}
+          >
+            <Ic.docs size={17} color={EX.color.primary} strokeWidth={1.8} />
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '700',
+                color: EX.color.primary,
+              }}
+            >
+              {files.length}
+            </Text>
+          </Pressable>
+        ) : null}
+
         {/* Phone / call button — source: 38px coral-tint chip (no border) */}
         <Pressable
           hitSlop={6}
@@ -256,6 +346,120 @@ export default function ChatView() {
           <Ic.phone size={18} color={EX.color.primary} strokeWidth={1.8} />
         </Pressable>
       </BlurView>
+
+      {/* ── Shared files sheet ────────────────────────────────────────────── */}
+      <Modal
+        visible={filesOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setFilesOpen(false)}
+      >
+        <Pressable
+          onPress={() => setFilesOpen(false)}
+          style={{
+            flex: 1,
+            justifyContent: 'flex-end',
+            backgroundColor: 'rgba(23,19,38,0.35)',
+          }}
+        >
+          {/* Stop taps inside the sheet from closing it. */}
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: EX.color.bg,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              paddingTop: 16,
+              paddingHorizontal: 22,
+              paddingBottom: Math.max(insets.bottom, 22),
+              maxHeight: '70%',
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 14,
+              }}
+            >
+              <Text
+                style={{ fontSize: 17, fontWeight: '700', color: EX.color.ink }}
+              >
+                Shared files ({files.length})
+              </Text>
+              <Pressable onPress={() => setFilesOpen(false)} hitSlop={8}>
+                <Ic.x size={20} color={EX.color.muted} strokeWidth={1.8} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 8 }}>
+                {files.map((f, i) => (
+                  <Pressable
+                    key={`${f.url}-${i}`}
+                    onPress={() => void Linking.openURL(f.url)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 11,
+                      backgroundColor: '#fff',
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: EX.color.line06,
+                      paddingHorizontal: 13,
+                      paddingVertical: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 10,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: EX.color.primaryTint10,
+                      }}
+                    >
+                      <Ic.docs
+                        size={16}
+                        color={EX.color.primary}
+                        strokeWidth={1.8}
+                      />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: '600',
+                          color: EX.color.ink,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {f.name}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: EX.color.muted,
+                          marginTop: 2,
+                        }}
+                      >
+                        {f.mine ? 'Shared by you' : `Shared by ${agentName}`}
+                      </Text>
+                    </View>
+                    <Ic.chevR
+                      size={16}
+                      color={EX.color.faint}
+                      strokeWidth={1.8}
+                    />
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* ── Messages + composer (lifts above keyboard) ────────────────────── */}
       <KeyboardAvoidingView

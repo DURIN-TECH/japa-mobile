@@ -1,8 +1,10 @@
-# Japa - Visa Application Assistant
+# Seli — Visa Application Assistant
+
+> The app is branded **Seli**; the repo/dir names and legacy infra ids stay `japa`.
 
 ## Project Overview
 
-Japa is a mobile application designed to simplify the
+Seli is a mobile application designed to simplify the
 visa application process by providing guided assistance
 for both self-service applications and agent-assisted
 applications. The app helps users manage document requirements,
@@ -16,7 +18,10 @@ schedule consultations, and track application progress.
 - npm or yarn
 - Expo CLI (`npm install -g expo-cli`)
 - iOS Simulator (macOS) or Android Emulator
-- Expo Go app (for physical device testing)
+- A **development build** for on-device/simulator testing — **Expo Go will not
+  work**, because the app uses `@react-native-firebase/*` (native modules). Build a
+  dev client with EAS (`npm run build:dev`) or run a local prebuild (`npm run ios` /
+  `npm run android`).
 
 ### Installation
 
@@ -49,6 +54,54 @@ npx expo start --android
 npm run ios
 npm run android
 ```
+
+## Environment Configuration
+
+The app targets a different Firebase project + backend per environment, selected by
+the **`APP_ENV`** variable. There are no manual config-file swaps.
+
+| `APP_ENV`     | Firebase project  | Backend API                                          |
+| ------------- | ----------------- | ---------------------------------------------------- |
+| `development` | `durin-seli-dev`  | `https://us-central1-durin-seli-dev.cloudfunctions.net/api` |
+| `staging`     | `durin-seli-dev`  | (same as development)                                |
+| `production`  | `japa-platform`   | `https://us-central1-japa-platform.cloudfunctions.net/api`  |
+
+`APP_ENV` is set automatically by each EAS build profile (`eas.json`:
+development / preview→staging / production). For local runs it **defaults to
+`development`**, so a bare `npm start` talks to the deployed **durin-seli-dev** backend.
+
+### How it fits together
+
+- **`app.config.ts`** — reads `APP_ENV`, picks the native Firebase config file, and
+  bakes `apiUrl` / `firebaseProjectId` / `appEnv` / `useEmulator` into `expo.extra`.
+- **`src/config/env.ts`** — the single runtime source for `API_URL`,
+  `FIREBASE_PROJECT_ID`, `USE_EMULATOR`, etc. (reads `expo.extra`). `api.service.ts`
+  and `auth.service.ts` consume it — nothing at runtime reads `process.env` directly.
+- **`firebase/dev/`** and **`firebase/prod/`** — the per-project
+  `google-services.json` / `GoogleService-Info.plist`. Expo prebuild copies the
+  selected one into the native project at build time.
+
+> **Auth must match the backend.** Mobile Firebase Auth mints ID tokens for the
+> configured project; the backend it calls verifies them against the same project.
+> That's why the API URL and the Firebase config are always chosen together — a
+> mismatch 401s every authenticated request.
+
+> **A config change requires a fresh build.** The native Firebase config is baked in
+> at build time, so switching environments (or a first-time setup) needs a new dev
+> build — an already-installed client keeps its old project until rebuilt.
+
+### Local emulator suite (optional)
+
+To develop against a local `firebase emulators:start` instead of the deployed
+backend, opt in explicitly (it is **off by default**):
+
+```bash
+EXPO_PUBLIC_USE_EMULATOR=true npm start
+```
+
+This routes both the API and Firebase Auth at the local emulators for the current
+`APP_ENV`'s project id. (Android emulators reach the host via `10.0.2.2`, handled
+automatically.)
 
 ### Build Commands
 
@@ -102,19 +155,40 @@ npm run clean         # Remove all build artifacts and node_modules
   - 🚧 Direct messaging
   - ⏳ Video consultation integration
 
-### 2. Navigation Structure
+### 2. Account & Notifications
 
-```typescript
-/(tabs)
-├── index.tsx // Home screen
-├── apply/
-│ ├── index.tsx // Visa types listing
-│ ├── visa-details/[id] // Visa type details
-│ ├── agents/ // Agent listing
-│ │ ├── [id] // Agent profile
-│ │ ├── book-consultation
-│ │ └── visa-service/[type]
-│ └── self-service/[id] // Self-service application
+- **Account security (self-service):** verify email, change password, change email
+  (verification-gated), and delete account — reached from **Settings**. Each
+  triggers a branded transactional email from the backend (Resend). See
+  `src/app/{verify-email,change-password,change-email,delete-account}.tsx`.
+- **Notification preferences:** per-user email / push channel toggles in Settings,
+  persisted via `PATCH /users/me/notification-preferences`. Security-critical emails
+  (e.g. "password changed") ignore the opt-out.
+- **Push notifications:** FCM via `src/services/push-notification.service.ts` —
+  registered after login, cleaned up on logout.
+
+> Emails are **never sent from the client** — the app calls backend endpoints that
+> send them. No email-provider keys live in the app.
+
+### 3. Navigation Structure
+
+The coral/cream **Explorer** experience is now the whole app (it replaced the older
+blue `(tabs)/apply` shell). Its screens live directly under `src/app/`, with a
+5-tab shell and pushed detail/flow screens:
+
+```text
+src/app/
+├── index.tsx                 // entry redirect (auth-gated)
+├── (auth)/                   // welcome, login, register, forgot-password, otp
+├── (onboard)/                // passport, country, personal-info, complete
+├── (tabs)/                   // home · explore · agents · tracker · profile
+├── destination/[id]          // country / destination detail
+├── visa/[id]                 // visa breakdown
+├── agent/[id], agency/[id]   // agent + agency profiles
+├── book/[agentId], pay, confirmation   // consultation booking flow
+├── eligibility/, messages/, consultations, documents, payments, notifications
+├── settings.tsx              // → verify-email · change-password · change-email · delete-account
+└── verify-identity.tsx       // client KYC (NIN/BVN)
 ```
 
 ## Data Models
@@ -171,27 +245,27 @@ interface VisaApplication {
 
 1. Video consultation integration
 2. Document OCR verification
-3. Payment integration
-4. Push notifications
-5. Application status updates
-6. Multi-language support
+3. Multi-language support
 
 ## Design Guidelines
 
-- Use consistent spacing (px-4 py-4 for sections)
-- Maintain consistent card styling (rounded-xl with border-gray-200)
-- Use blue-600 (#2563eb) as primary color
-- Consistent typography scale
+The app uses the **Explorer** design language — a warm coral + cream palette with a
+Space Grotesk display face. Tokens live in `src/components/explorer/theme.ts` (`EX`).
+
+- Primary/accent: coral `#F4516C`; background: cream `#FFFBF5`; ink `#171326`
+- Reuse `EX` tokens (colors, spacing, shadows) rather than hardcoding values
+- Consistent card styling (rounded, hairline `EX.color.line*` borders, soft shadow)
 - Proper error handling and loading states
 
 ## Technical Stack
 
-- React Native with Expo
+- React Native 0.79 + Expo 53
 - TypeScript for type safety
-- TailwindCSS for styling
+- NativeWind (TailwindCSS) + the Explorer `EX` design tokens for styling
 - Expo Router for navigation
-- Lucide icons
-- React Native Safe Area Context
+- Zustand (client state) + React Query (server state)
+- Firebase via `@react-native-firebase/*` (Auth, Crashlytics, Analytics, Messaging)
+- Lucide icons · React Native Safe Area Context
 
 ## Known Issues
 

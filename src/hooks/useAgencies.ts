@@ -15,8 +15,8 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiService } from '@/services/api.service';
 import type { ApiAgent } from './useAgents';
+import { apiService } from '@/services/api.service';
 
 /**
  * Public agency type matching the backend `PublicAgency` model.

@@ -33,11 +33,33 @@ export function mapConvo(c: Conversation): Convo {
   };
 }
 
+/**
+ * Best-effort display name for an attachment.
+ *
+ * Attachments are stored as bare URLs, so the filename has to be recovered from
+ * the path: drop the query string (signed URLs carry a long one), take the last
+ * segment, and percent-decode it. Falls back to a generic label — showing the
+ * raw URL in a chat bubble would be unreadable.
+ */
+export function attachmentFileName(url: string): string {
+  try {
+    const last = url.split('?')[0].split('/').filter(Boolean).pop();
+    return last ? decodeURIComponent(last) : 'Attachment';
+  } catch {
+    return 'Attachment';
+  }
+}
+
 // One backend message → the Explorer's chat bubble Msg.
 export function mapMessage(m: Message): Msg {
   return {
     from: m.senderType === 'user' ? 'me' : 'agent',
     t: m.content,
     at: fmtDate(m.createdAt, 'h:mm a'),
+    // Documents shared on this message. Omitted entirely when there are none so
+    // the bubble renders exactly as before.
+    files: m.attachmentUrls?.length
+      ? m.attachmentUrls.map((url) => ({ url, name: attachmentFileName(url) }))
+      : undefined,
   };
 }

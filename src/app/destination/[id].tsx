@@ -502,9 +502,7 @@ export default function DestinationDetail() {
               title="Work with an agent"
               sub="Guided by 12 verified experts"
               badge="Popular"
-              onPress={() =>
-                router.push(`/agent/${topAgents[0].id}`)
-              }
+              onPress={() => router.push(`/agent/${topAgents[0].id}`)}
             />
             <PathCard
               icon={Ic.docs}
