@@ -306,11 +306,11 @@ against the emulator). All seed users share the password
 
 Client accounts for mobile testing:
 
-- `john.doe@example.com` — application under review
-- `jane.smith@example.com` — pending documents
-- `ahmed.ali@example.com` — approved
-- `tunde.bakare@example.com` — pending payment
+- `delivered+john.doe@resend.dev` — application under review
+- `delivered+jane.smith@resend.dev` — pending documents
+- `delivered+ahmed.ali@resend.dev` — approved
+- `delivered+tunde.bakare@resend.dev` — pending payment
 
-Agency-side accounts (portal): `owner@selitest.com`,
-`agent1@selitest.com`, `agent2@selitest.com`,
-`admin@selitest.com`.
+Agency-side accounts (portal): `delivered+owner@resend.dev`,
+`delivered+agent1@resend.dev`, `delivered+agent2@resend.dev`,
+`delivered+admin@resend.dev`.
