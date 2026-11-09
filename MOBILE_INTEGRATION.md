@@ -288,16 +288,16 @@ All passwords: `password123`
 
 | Email | Data |
 | ----- | ---- |
-| `john.doe@example.com` | 1 app (under_review), 1 consult, 3 notifs |
-| `jane.smith@example.com` | 1 app (pending_docs), 1 consult, 2 notifs |
-| `ahmed.ali@example.com` | 1 app (approved), 1 consult, 1 notif |
-| `tunde.bakare@example.com` | 1 app (pending_pay), 1 notif |
-| `kwame.asante@example.com` | 1 app (draft), 1 self-svc, 1 consult, 1 notif |
-| `sipho.ndlovu@example.com` | 1 app (interview), 1 self-svc, 1 consult, 2 ntf |
-| `lisa.wong@example.com` | 1 app (rejected), 1 no-show consult |
-| `wanjiku.mwangi@example.com` | 1 app (submitted), 1 self-svc, 1 consult |
-| `priya.sharma@example.com` | 1 app (withdrawn), 1 self-svc, 1 consult |
-| `miguel.santos@example.com` | 1 app (expired) |
+| `delivered+john.doe@resend.dev` | 1 app (under_review), 1 consult, 3 notifs |
+| `delivered+jane.smith@resend.dev` | 1 app (pending_docs), 1 consult, 2 notifs |
+| `delivered+ahmed.ali@resend.dev` | 1 app (approved), 1 consult, 1 notif |
+| `delivered+tunde.bakare@resend.dev` | 1 app (pending_pay), 1 notif |
+| `delivered+kwame.asante@resend.dev` | 1 app (draft), 1 self-svc, 1 consult, 1 notif |
+| `delivered+sipho.ndlovu@resend.dev` | 1 app (interview), 1 self-svc, 1 consult, 2 ntf |
+| `delivered+lisa.wong@resend.dev` | 1 app (rejected), 1 no-show consult |
+| `delivered+wanjiku.mwangi@resend.dev` | 1 app (submitted), 1 self-svc, 1 consult |
+| `delivered+priya.sharma@resend.dev` | 1 app (withdrawn), 1 self-svc, 1 consult |
+| `delivered+miguel.santos@resend.dev` | 1 app (expired) |
 
 Run `npm run seed:portal` in japa-backend to populate
 all test data.
