@@ -76,7 +76,13 @@ config-file swaps.
 EXPO_TOKEN=                     # EAS builds/submits (CI)
 # APP_ENV=development           # override for local runs
 # EXPO_PUBLIC_USE_EMULATOR=true # opt into the LOCAL emulator suite
+# EXPO_PUBLIC_EMULATOR_PROJECT_ID=japa-platform # emulator's project id (default)
 ```
+
+The emulator API URL uses the **emulator's** project id
+(`japa-platform`, the backend's `singleProjectMode` id), not
+the app's Firebase project — `/durin-seli-dev/...` 404s on the
+Functions emulator. `make mobile` (ENV=local) sets both vars.
 
 The Auth emulator is **opt-in via `EXPO_PUBLIC_USE_EMULATOR`,
 never gated on `__DEV__`**. A normal dev build talks to real
@@ -293,10 +299,11 @@ native-touching branches, `development.yml`, `production.yml`.
 route file in Node at build time.** Any module-scope Firebase
 call is therefore a build-time landmine — it throws
 `No Firebase App '[DEFAULT]' has been created` and fails the
-preview job. `auth.service.ts` still calls
-`getAuth(getApp())` at module scope; making it lazy is the
-durable fix. Bumping `expo` / `expo-router` has already
-triggered this once.
+preview job. All Firebase services (`auth`, `analytics`,
+`push-notification`) now initialise lazily in a cached
+getter — keep it that way for any new one. Check locally
+with `npx expo export --platform web` before pushing an
+`expo` / `expo-router` bump.
 
 ## Testing with Seed Data
 
@@ -314,3 +321,7 @@ Client accounts for mobile testing:
 Agency-side accounts (portal): `delivered+owner@resend.dev`,
 `delivered+agent1@resend.dev`, `delivered+agent2@resend.dev`,
 `delivered+admin@resend.dev`.
+
+New test users use the same pattern —
+`delivered+<name>@resend.dev` (Resend's test inbox), never
+`@example.com`, since the backend really sends email.
