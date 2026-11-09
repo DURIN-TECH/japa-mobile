@@ -299,10 +299,11 @@ native-touching branches, `development.yml`, `production.yml`.
 route file in Node at build time.** Any module-scope Firebase
 call is therefore a build-time landmine — it throws
 `No Firebase App '[DEFAULT]' has been created` and fails the
-preview job. `auth.service.ts` still calls
-`getAuth(getApp())` at module scope; making it lazy is the
-durable fix. Bumping `expo` / `expo-router` has already
-triggered this once.
+preview job. All Firebase services (`auth`, `analytics`,
+`push-notification`) now initialise lazily in a cached
+getter — keep it that way for any new one. Check locally
+with `npx expo export --platform web` before pushing an
+`expo` / `expo-router` bump.
 
 ## Testing with Seed Data
 
