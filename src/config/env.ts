@@ -26,6 +26,7 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   firebaseProjectId?: string;
   apiUrl?: string;
   useEmulator?: boolean;
+  emulatorProjectId?: string;
 };
 
 export const APP_ENV: AppEnv = extra.appEnv ?? 'development';
@@ -46,10 +47,17 @@ export const EMULATOR_HOST =
 // Firebase Auth emulator endpoint (used only when USE_EMULATOR is on).
 export const AUTH_EMULATOR_URL = `http://${EMULATOR_HOST}:9099`;
 
+// Project id the local emulator suite runs under (see app.config.ts). Deliberately
+// NOT FIREBASE_PROJECT_ID: the backend emulators run in singleProjectMode as
+// `japa-platform`, so a dev build (durin-seli-dev) using its own id here would hit
+// `/durin-seli-dev/...` and 404 on every call. The Auth emulator mints tokens for
+// this same id, so emulator auth + API stay consistent.
+export const EMULATOR_PROJECT_ID = extra.emulatorProjectId ?? 'japa-platform';
+
 // Base URL for the backend API. When emulating, point at the local Functions
-// emulator for THIS project id (the project id is part of the emulator URL path);
+// emulator under the EMULATOR's project id (it is part of the emulator URL path);
 // otherwise use the deployed URL baked in by app.config.ts.
 export const API_URL = USE_EMULATOR
-  ? `http://${EMULATOR_HOST}:5001/${FIREBASE_PROJECT_ID}/us-central1/api`
+  ? `http://${EMULATOR_HOST}:5001/${EMULATOR_PROJECT_ID}/us-central1/api`
   : (extra.apiUrl ??
     'https://us-central1-durin-seli-dev.cloudfunctions.net/api');

@@ -76,7 +76,13 @@ config-file swaps.
 EXPO_TOKEN=                     # EAS builds/submits (CI)
 # APP_ENV=development           # override for local runs
 # EXPO_PUBLIC_USE_EMULATOR=true # opt into the LOCAL emulator suite
+# EXPO_PUBLIC_EMULATOR_PROJECT_ID=japa-platform # emulator's project id (default)
 ```
+
+The emulator API URL uses the **emulator's** project id
+(`japa-platform`, the backend's `singleProjectMode` id), not
+the app's Firebase project — `/durin-seli-dev/...` 404s on the
+Functions emulator. `make mobile` (ENV=local) sets both vars.
 
 The Auth emulator is **opt-in via `EXPO_PUBLIC_USE_EMULATOR`,
 never gated on `__DEV__`**. A normal dev build talks to real
@@ -306,11 +312,15 @@ against the emulator). All seed users share the password
 
 Client accounts for mobile testing:
 
-- `john.doe@example.com` — application under review
-- `jane.smith@example.com` — pending documents
-- `ahmed.ali@example.com` — approved
-- `tunde.bakare@example.com` — pending payment
+- `delivered+john.doe@resend.dev` — application under review
+- `delivered+jane.smith@resend.dev` — pending documents
+- `delivered+ahmed.ali@resend.dev` — approved
+- `delivered+tunde.bakare@resend.dev` — pending payment
 
-Agency-side accounts (portal): `owner@selitest.com`,
-`agent1@selitest.com`, `agent2@selitest.com`,
-`admin@selitest.com`.
+Agency-side accounts (portal): `delivered+owner@resend.dev`,
+`delivered+agent1@resend.dev`, `delivered+agent2@resend.dev`,
+`delivered+admin@resend.dev`.
+
+New test users use the same pattern —
+`delivered+<name>@resend.dev` (Resend's test inbox), never
+`@example.com`, since the backend really sends email.
