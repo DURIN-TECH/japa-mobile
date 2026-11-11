@@ -152,6 +152,9 @@ function RootLayoutContent() {
         <Stack.Screen name="consultations" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="self-service/[id]" />
+        {/* Review flow (issue #43): both push from the right. */}
+        <Stack.Screen name="self-service/[id]/statement" />
+        <Stack.Screen name="self-service/[id]/review" />
         <Stack.Screen
           name="subscription"
           options={{ animation: 'slide_from_bottom' }}

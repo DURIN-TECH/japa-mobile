@@ -38,7 +38,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import {
@@ -72,6 +73,20 @@ import {
   documentDisplayName,
 } from '@/types/documents.type';
 import { VisaRequirement } from '@/types/visas.type';
+// Review (issue #43): statement + review cards and the wired submit CTA.
+import {
+  StatementCard,
+  ReviewCard,
+  deriveReviewState,
+  deriveReviewCta,
+} from '@/components/explorer/review/SelfServiceCards';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  assessmentKey,
+  useAssessment,
+  useStartReview,
+} from '@/hooks/useCaseOfficer';
+import { SUBMITTED_STATUSES, useStatement } from '@/hooks/useStatement';
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -673,6 +688,26 @@ export default function SelfServiceView() {
   const docsQ = useApplicationDocuments(wantLive && app ? app.id : '');
   const docs = docsQ.data ?? [];
 
+  // ── Review + statement (issue #43). Disabled on the demo path (empty id). ────
+  // The review query polls itself while a job is queued/running and refetches on
+  // app foreground, so a run survives backgrounding. The tier it carries comes
+  // from the server response.
+  const reviewId = wantLive && app ? app.id : '';
+  const reviewQ = useAssessment(reviewId);
+  const stmtQ = useStatement(reviewId);
+  const { start: startReview, isStarting } = useStartReview(reviewId);
+  // Inline error for the sticky bar when a start fails (offline / generic).
+  const [ctaError, setCtaError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // Returning to this screen (from the statement, the review or the plans screen)
+  // refetches the review: the inputs or the plan may have changed meanwhile.
+  useFocusEffect(
+    useCallback(() => {
+      if (reviewId)
+        queryClient.invalidateQueries({ queryKey: assessmentKey(reviewId) });
+    }, [queryClient, reviewId]),
+  );
+
   // Upload mutation hooks (createDoc invalidates the documents query → list refreshes).
   const getUploadUrl = useGetUploadUrl();
   const createDoc = useCreateDocument();
@@ -732,6 +767,9 @@ export default function SelfServiceView() {
           fileSizeMb: (f.size ?? 0) / 1e6,
           storagePath: up.storagePath,
         });
+        // A new document changes the review's inputs: refresh the review state
+        // so the card can show it as out of date.
+        queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
       } catch (e) {
         Alert.alert(
           'Upload failed',
@@ -741,11 +779,17 @@ export default function SelfServiceView() {
         setUploadingReqId(null);
       }
     },
-    [app, getUploadUrl, createDoc],
+    [app, getUploadUrl, createDoc, queryClient],
   );
 
   // ── Live loading — initial application fetch in flight ───────────────────────
-  if (wantLive && appQ.isLoading) {
+  // Also waits for the statement + review queries (once the application is known)
+  // so step cards don't pop in and shift the layout.
+  if (
+    wantLive &&
+    (appQ.isLoading ||
+      (!!app && (reviewQ.isLoading || stmtQ.isLoading)))
+  ) {
     return (
       <View
         style={{
@@ -788,6 +832,36 @@ export default function SelfServiceView() {
     // application is visible somewhere.
     const reqIds = new Set(orderedReqs.map((r) => r.id));
     const otherDocs = docs.filter((d) => !reqIds.has(d.requirementId));
+
+    // ── Review state (issue #43) ─────────────────────────────────────────────
+    const submitted = SUBMITTED_STATUSES.includes(app.status as string);
+    const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError);
+    const reviewCta = deriveReviewCta(reviewState, submitted);
+    // A refetch failed but a cached review is on screen → offline note.
+    const offlineCached = reviewQ.isError && !!reviewQ.data;
+    const openReview = () => router.push(`/self-service/${app.id}/review`);
+    const openStatement = () =>
+      router.push(`/self-service/${app.id}/statement`);
+
+    // Sticky CTA tap. Disabled while a start is in flight (no double jobs).
+    const onReviewCta = async () => {
+      if (!reviewCta || reviewCta.disabled || isStarting) return;
+      setCtaError(null);
+      if (reviewCta.action === 'open') return openReview();
+      if (reviewCta.action === 'upgrade') return router.push('/subscription');
+      const out = await startReview(
+        reviewCta.action === 'retry' ? 'retry' : 'cta',
+      );
+      if (out === 'started') return openReview();
+      if (out === 'offline')
+        setCtaError(
+          'You’re offline, so we couldn’t start your review. Reconnect and try again.',
+        );
+      else if (out === 'error')
+        setCtaError('We couldn’t start your review. Try again in a moment.');
+      // 'upgrade' (402) is not an error: the refetch shows the free out-of-date
+      // state. 'no_rubric': the refetch shows the no-rubric card.
+    };
 
     // Official application URL → button host label (strip protocol + path).
     const officialUrl = visaType?.applicationUrl;
@@ -1151,48 +1225,92 @@ export default function SelfServiceView() {
             {otherDocs.length > 0 ? (
               <LiveOtherDocsCard docs={otherDocs} />
             ) : null}
+
+            {/* ── Step 3 · Your statement (issue #43) ─────────────────────────── */}
+            <SectionTitle>Step 3 · Your statement</SectionTitle>
+            <StatementCard
+              statement={stmtQ.data}
+              loadFailed={stmtQ.isError}
+              readOnly={submitted}
+              onOpen={openStatement}
+              onRetry={() => stmtQ.refetch()}
+            />
+
+            {/* ── Step 4 · Your review (issue #43) ────────────────────────────── */}
+            <SectionTitle>Step 4 · Your review</SectionTitle>
+            <ReviewCard
+              state={reviewState}
+              result={reviewQ.data}
+              offlineCached={offlineCached}
+              onSeeLast={openReview}
+              onRetryLoad={() => reviewQ.refetch()}
+            />
           </View>
         </Animated.ScrollView>
 
         {/* ── Sticky dark CTA (prototype glass bar → BlurView) ─────────────────── */}
-        <BlurView
-          intensity={30}
-          tint="light"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            paddingTop: 15,
-            paddingHorizontal: 22,
-            paddingBottom: Math.max(insets.bottom, 16) + 6,
-            backgroundColor: EX.color.glassWarm,
-            borderTopWidth: 1,
-            borderTopColor: EX.color.line06,
-          }}
-        >
-          <Pressable
+        {/* Wired to the review (issue #43). It starts a review and sends nothing
+            to anyone. Not rendered when there is no action (no approved rubric,
+            or a submitted application that was never reviewed). */}
+        {reviewCta ? (
+          <BlurView
+            intensity={30}
+            tint="light"
             style={{
-              height: 54,
-              borderRadius: EX.radius.button, // 16
-              backgroundColor: EX.color.ink,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              shadowColor: '#171326',
-              shadowOpacity: 0.5,
-              shadowRadius: 24,
-              shadowOffset: { width: 0, height: 14 },
-              elevation: 8,
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              paddingTop: 15,
+              paddingHorizontal: 22,
+              paddingBottom: Math.max(insets.bottom, 16) + 6,
+              backgroundColor: EX.color.glassWarm,
+              borderTopWidth: 1,
+              borderTopColor: EX.color.line06,
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-              Submit application
-            </Text>
-            <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-          </Pressable>
-        </BlurView>
+            {ctaError ? (
+              <View style={{ marginBottom: 10 }}>
+                <InlineError message={ctaError} />
+              </View>
+            ) : null}
+            <Pressable
+              onPress={onReviewCta}
+              disabled={reviewCta.disabled || isStarting}
+              accessibilityRole="button"
+              accessibilityLabel={isStarting ? 'Starting' : reviewCta.label}
+              accessibilityState={{
+                disabled: !!reviewCta.disabled || isStarting,
+                busy: isStarting || !!reviewCta.disabled,
+              }}
+              style={({ pressed }) => ({
+                height: 54,
+                borderRadius: EX.radius.button, // 16
+                backgroundColor: EX.color.ink,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                opacity: reviewCta.disabled || isStarting ? 0.6 : pressed ? 0.85 : 1,
+                shadowColor: '#171326',
+                shadowOpacity: 0.5,
+                shadowRadius: 24,
+                shadowOffset: { width: 0, height: 14 },
+                elevation: 8,
+              })}
+            >
+              {isStarting || reviewCta.disabled ? (
+                <ActivityIndicator color="#fff" />
+              ) : null}
+              <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+                {isStarting ? 'Starting…' : reviewCta.label}
+              </Text>
+              {reviewCta.withArrow && !isStarting ? (
+                <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
+              ) : null}
+            </Pressable>
+          </BlurView>
+        ) : null}
       </View>
     );
   }
@@ -1558,7 +1676,22 @@ export default function SelfServiceView() {
           borderTopColor: EX.color.line06,
         }}
       >
+        {/* Demo mode (issue #43): the CTA is explicitly disabled with demo copy.
+            Same label as the live path so the two don't diverge silently. */}
+        <Text
+          style={{
+            fontSize: 12,
+            color: EX.color.inkMuted,
+            textAlign: 'center',
+            marginBottom: 10,
+          }}
+        >
+          This is a sample application. Start your own to get a review.
+        </Text>
         <Pressable
+          disabled
+          accessibilityRole="button"
+          accessibilityState={{ disabled: true }}
           style={{
             height: 54,
             borderRadius: EX.radius.button, // 16
@@ -1567,6 +1700,7 @@ export default function SelfServiceView() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 8,
+            opacity: 0.6,
             shadowColor: '#171326',
             shadowOpacity: 0.5,
             shadowRadius: 24,
@@ -1575,7 +1709,7 @@ export default function SelfServiceView() {
           }}
         >
           <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-            Submit application
+            Review my application
           </Text>
           <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
         </Pressable>

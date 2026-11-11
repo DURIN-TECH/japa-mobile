@@ -48,6 +48,7 @@ import {
   HelpCircle,
   Gauge,
   Crown,
+  CircleAlert,
 } from 'lucide-react-native';
 
 // Design-name → lucide component. Stroke width 1.8 matches the prototype default.
@@ -92,6 +93,8 @@ export const Ic = {
   help: HelpCircle,
   gauge: Gauge,
   crown: Crown,
+  // Blocking-rule / failed-review chip (issue #43).
+  alert: CircleAlert,
 } as const;
 
 export type IcName = keyof typeof Ic;
