@@ -26,8 +26,10 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { EX, EXScrim, displayText } from './theme';
-import { flagUrl, STATUS } from './data';
+import { STATUS } from './data';
+// Flag art comes from the reusable country assets module (japa#145).
 import { Ic } from './icons';
+import { countryFlag } from '@/assets/countries';
 
 // ── Flag — round flag image (flagcdn), matches native app ────────────────────
 export function Flag({
@@ -57,7 +59,7 @@ export function Flag({
       ]}
     >
       <Image
-        source={{ uri: flagUrl(code) }}
+        source={{ uri: countryFlag(code) }}
         style={{ width: '100%', height: '100%' }}
         contentFit="cover"
       />

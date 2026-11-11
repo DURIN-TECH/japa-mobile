@@ -8,16 +8,11 @@
 // intentionally mirror the prototype 1:1.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Unsplash CDN helper — image id → sized URL.
-export const IMG = (id: string, w = 900) =>
-  `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=${w}&q=80`;
+// Image helpers moved to the reusable assets module (japa#145).
+import { IMG } from '@/assets/countries';
 
 // Currency helper.
 export const NAIRA = (n: number) => '₦' + n.toLocaleString();
-
-// flagcdn helper — ISO2 code → round flag image URL.
-export const flagUrl = (code: string, w = 160) =>
-  `https://flagcdn.com/w${w}/${code.toLowerCase()}.png`;
 
 export type Dest = {
   id: string;

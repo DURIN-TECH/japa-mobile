@@ -11,6 +11,9 @@ import { BlurView } from 'expo-blur';
 import { EX } from './theme';
 import { Dest } from './data';
 import { Flag, Scrim } from './primitives';
+// Country art fallback (japa#145): a Dest built without art still gets the
+// country's photo / tone (or the default skyline) from the assets module.
+import { countryImage, countryTone } from '@/assets/countries';
 
 // Small translucent glass chip used for price / "Most popular" over imagery.
 function GlassChip({
@@ -63,7 +66,7 @@ export function Tile({
         height: big ? 248 : 214,
         borderRadius: EX.radius.hero,
         overflow: 'hidden',
-        backgroundColor: d.tone,
+        backgroundColor: d.tone || countryTone(d.flag),
         shadowColor: '#171326',
         shadowOpacity: 0.2,
         shadowRadius: 22,
@@ -73,7 +76,7 @@ export function Tile({
     >
       {!failed ? (
         <Image
-          source={{ uri: d.img }}
+          source={{ uri: d.img || countryImage(d.flag) }}
           style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
           contentFit="cover"
           transition={200}
