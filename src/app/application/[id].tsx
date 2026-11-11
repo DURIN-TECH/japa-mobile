@@ -7,6 +7,12 @@
 // header, a vertical Timeline stepper, and a "Your agent" row. The sticky CTA
 // performs the next step or messages the agent.
 //
+// japa#106: a case on an agency-only visa shows the visa's real name (the
+// backend's denormalised `visaTypeName`, else the visa detail, which the
+// applicant may read because they have a case on it) and a "Visa details"
+// link row. A 404 shows the not-found EmptyState; other load failures show
+// an InlineError with "Try again".
+//
 // Every measurement is quoted from AppDetail: HERO 240, scrim to-top
 // (.8 → .2@50% → .36), StatusPill full, country · Ref 13/600, visa 28 Space
 // Grotesk; sheet radius 28 / padding 20-22-130; dark next-step card radius 18;
@@ -57,6 +63,9 @@ import {
   useApplication,
   useApplicationTimeline,
 } from '@/hooks/useApplications';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import { useVisaType } from '@/hooks/useVisaTypes';
+import { InlineError } from '@/components/explorer/AccountForm';
 // Live payment-request read + approve/reject mutations (client side of the flow).
 import {
   useApprovePaymentRequest,
@@ -232,6 +241,131 @@ function Timeline({ steps }: { steps: AppStep[] }) {
   );
 }
 
+// ── Not-found / load-error state (japa#106) ──────────────────────────────────
+// EmptyState pattern (saved.tsx) centred on `bg`, with the back GlassButton
+// top-left so the user is never stuck. Used for the backend 404 (GET /applications/:id),
+// whose copy must not confirm the item exists, and, with `onRetry`, for a
+// network / server failure with no cached data.
+function CenteredState({
+  title,
+  body,
+  actionLabel,
+  onAction,
+  onRetry,
+  retrying,
+  errorMessage,
+}: {
+  title: string;
+  /** One line under the title; omitted when empty. */
+  body?: string;
+  /** Secondary button, e.g. "Back to explore". */
+  actionLabel: string;
+  onAction: () => void;
+  /** When set, a coral "Try again" link (load errors only). */
+  onRetry?: () => void;
+  retrying?: boolean;
+  /** InlineError above the retry link (load errors only). */
+  errorMessage?: string;
+}) {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: insets.top + 6,
+          left: 18,
+          zIndex: 50,
+        }}
+      >
+        <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
+      </View>
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 40,
+          gap: 12,
+        }}
+      >
+        <Ic.docs
+          size={40}
+          color={EX.color.muted}
+          strokeWidth={1.8}
+          style={{ opacity: 0.5 }}
+        />
+        <Text
+          style={{
+            fontSize: 15,
+            fontWeight: '600',
+            color: EX.color.ink,
+            textAlign: 'center',
+          }}
+        >
+          {title}
+        </Text>
+        {body ? (
+          <Text
+            style={{
+              fontSize: 13,
+              lineHeight: 19,
+              color: EX.color.inkMuted,
+              textAlign: 'center',
+            }}
+          >
+            {body}
+          </Text>
+        ) : null}
+        {errorMessage ? (
+          <View style={{ alignSelf: 'stretch' }}>
+            <InlineError message={errorMessage} />
+          </View>
+        ) : null}
+        {onRetry ? (
+          retrying ? (
+            <ActivityIndicator color={EX.color.primary} />
+          ) : (
+            <Pressable onPress={onRetry} accessibilityRole="button">
+              <Text
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: '600',
+                  color: EX.color.primary,
+                }}
+              >
+                Try again
+              </Text>
+            </Pressable>
+          )
+        ) : null}
+        {/* Secondary button: white, line08 border, ink label. */}
+        <Pressable
+          onPress={onAction}
+          accessibilityRole="button"
+          style={({ pressed }) => ({
+            marginTop: 6,
+            backgroundColor: EX.color.cardWhite,
+            borderWidth: 1,
+            borderColor: EX.color.line08,
+            borderRadius: EX.radius.button,
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <Text
+            style={{ color: EX.color.ink, fontSize: 14, fontWeight: '700' }}
+          >
+            {actionLabel}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export default function AppDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -243,7 +377,19 @@ export default function AppDetail() {
   const demo = appById(id);
   const liveQ = useApplication(demo ? '' : id);
   const tl = useApplicationTimeline(demo ? '' : id);
-  const app = demo ?? (liveQ.data ? mapApplication(liveQ.data) : undefined);
+  // japa#106: when the case has no denormalised visa name, fetch the visa
+  // detail for it (allowed: the user has a case on this visa, #102). The
+  // query stays disabled otherwise (empty ids).
+  const needsVisaName = !demo && !!liveQ.data && !liveQ.data.visaTypeName;
+  const visaNameQ = useVisaType(
+    needsVisaName ? (liveQ.data?.countryCode ?? '') : '',
+    needsVisaName ? (liveQ.data?.visaTypeId ?? '') : '',
+  );
+  const app =
+    demo ??
+    (liveQ.data
+      ? mapApplication(liveQ.data, undefined, visaNameQ.data?.visaType?.name)
+      : undefined);
   // Live apps carry a resolved `dest`; demo apps resolve from static DESTS.
   const dest = app?.dest ?? destById(app?.destId);
   const agent = agentById(app?.agentId);
@@ -344,18 +490,30 @@ export default function AppDetail() {
     );
   }
 
+  // Load failure that isn't a 404 (offline, server error) with nothing
+  // cached: say so and offer a retry instead of claiming it doesn't exist.
+  if (!demo && liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
+    return (
+      <CenteredState
+        title="We couldn’t load this application"
+        errorMessage="Check your connection and try again."
+        onRetry={() => liveQ.refetch()}
+        retrying={liveQ.isRefetching}
+        actionLabel="Back to your journey"
+        onAction={() => router.replace('/(tabs)/tracker')}
+      />
+    );
+  }
+
+  // Not found: the backend 404 (closed, or another account's), or no data.
   if (!app || !dest) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Application not found.</Text>
-      </View>
+      <CenteredState
+        title="We couldn’t find this application"
+        body="It may have been closed, or it belongs to another account."
+        actionLabel="Back to your journey"
+        onAction={() => router.replace('/(tabs)/tracker')}
+      />
     );
   }
 
@@ -572,6 +730,69 @@ export default function AppDetail() {
                 </Text>
               </View>
             </View>
+          ) : null}
+
+          {/* ── Visa details link (japa#106) ─────────────────────────────────
+              Reuses destination/[id].tsx's "Full visa breakdown" row. Opens
+              the visa breakdown, which works for an agency-only visa because
+              the user has a case on it (#102). Live cases only: demo apps
+              resolve their visa from the static fixtures instead. */}
+          {!demo ? (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/visa/[id]',
+                  params: { id: dest.id, code: dest.flag.toUpperCase() },
+                })
+              }
+              accessibilityRole="button"
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 13,
+                padding: 15,
+                borderRadius: 20,
+                marginBottom: 18,
+                backgroundColor: '#fff',
+                borderWidth: 1,
+                borderColor: EX.color.line08,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: EX.color.cream,
+                }}
+              >
+                <Ic.docs size={20} color={EX.color.primary} strokeWidth={1.8} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                  }}
+                >
+                  Visa details
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    color: EX.color.inkMuted,
+                    marginTop: 1,
+                  }}
+                >
+                  Requirements, processing time and fees
+                </Text>
+              </View>
+              <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />
+            </Pressable>
           ) : null}
 
           {/* ── Progress header (marginBottom 14) ───────────────────────────── */}

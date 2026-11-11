@@ -9,6 +9,11 @@
 //
 // Style, sizes, radii and colours are lifted directly from destination/[id].tsx
 // so the two screens read as one system.
+//
+// japa#106: an agency-only visa 404s for anyone without a case at its agency
+// (#102). The 404 shows the not-found EmptyState, with the same copy for an
+// unknown and a hidden visa (it must not confirm the visa exists). Other
+// load failures show an InlineError with "Try again".
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
@@ -41,6 +46,8 @@ import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { useTopAgents } from '@/hooks/useAgents';
 import { useCreateApplication } from '@/hooks/useApplications';
 import { Ic } from '@/components/explorer/icons';
+import { InlineError } from '@/components/explorer/AccountForm';
+import { isNotFoundError } from '@/hooks/queryErrors';
 import { Flag, GlassButton, Scrim } from '@/components/explorer/primitives';
 
 // Compact fixed header height (destination hero is 376; this breakdown uses ~200).
@@ -77,6 +84,131 @@ function StatCell({
       >
         {label}
       </Text>
+    </View>
+  );
+}
+
+// ── Not-found / load-error state (japa#106) ──────────────────────────────────
+// EmptyState pattern (saved.tsx) centred on `bg`, with the back GlassButton
+// top-left so the user is never stuck. Used for the backend 404 (GET /countries/:cc/visas/:id/full),
+// whose copy must not confirm the item exists, and, with `onRetry`, for a
+// network / server failure with no cached data.
+function CenteredState({
+  title,
+  body,
+  actionLabel,
+  onAction,
+  onRetry,
+  retrying,
+  errorMessage,
+}: {
+  title: string;
+  /** One line under the title; omitted when empty. */
+  body?: string;
+  /** Secondary button, e.g. "Back to explore". */
+  actionLabel: string;
+  onAction: () => void;
+  /** When set, a coral "Try again" link (load errors only). */
+  onRetry?: () => void;
+  retrying?: boolean;
+  /** InlineError above the retry link (load errors only). */
+  errorMessage?: string;
+}) {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: insets.top + 6,
+          left: 18,
+          zIndex: 50,
+        }}
+      >
+        <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
+      </View>
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 40,
+          gap: 12,
+        }}
+      >
+        <Ic.globe
+          size={40}
+          color={EX.color.muted}
+          strokeWidth={1.8}
+          style={{ opacity: 0.5 }}
+        />
+        <Text
+          style={{
+            fontSize: 15,
+            fontWeight: '600',
+            color: EX.color.ink,
+            textAlign: 'center',
+          }}
+        >
+          {title}
+        </Text>
+        {body ? (
+          <Text
+            style={{
+              fontSize: 13,
+              lineHeight: 19,
+              color: EX.color.inkMuted,
+              textAlign: 'center',
+            }}
+          >
+            {body}
+          </Text>
+        ) : null}
+        {errorMessage ? (
+          <View style={{ alignSelf: 'stretch' }}>
+            <InlineError message={errorMessage} />
+          </View>
+        ) : null}
+        {onRetry ? (
+          retrying ? (
+            <ActivityIndicator color={EX.color.primary} />
+          ) : (
+            <Pressable onPress={onRetry} accessibilityRole="button">
+              <Text
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: '600',
+                  color: EX.color.primary,
+                }}
+              >
+                Try again
+              </Text>
+            </Pressable>
+          )
+        ) : null}
+        {/* Secondary button: white, line08 border, ink label. */}
+        <Pressable
+          onPress={onAction}
+          accessibilityRole="button"
+          style={({ pressed }) => ({
+            marginTop: 6,
+            backgroundColor: EX.color.cardWhite,
+            borderWidth: 1,
+            borderColor: EX.color.line08,
+            borderRadius: EX.radius.button,
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <Text
+            style={{ color: EX.color.ink, fontSize: 14, fontWeight: '700' }}
+          >
+            {actionLabel}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -141,18 +273,29 @@ export default function VisaBreakdown() {
     );
   }
 
+  // Load failure that isn't a 404 (offline, server error), nothing cached.
+  if (!demo && liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
+    return (
+      <CenteredState
+        title="We couldn’t load this visa"
+        errorMessage="Check your connection and try again."
+        onRetry={() => liveQ.refetch()}
+        retrying={liveQ.isRefetching}
+        actionLabel="Back to explore"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
+    );
+  }
+
+  // Not found: unknown id, or an agency-only visa this user can't reach.
   if (!d) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Visa not found.</Text>
-      </View>
+      <CenteredState
+        title="We couldn’t find this visa"
+        body="It may have been removed, or it’s only offered through an agency you’re not working with."
+        actionLabel="Back to explore"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
     );
   }
 

@@ -4,8 +4,9 @@
 // Parallax photo hero (256 tall, translateY py*-0.3) with the same Reanimated
 // approach as destination/[id].tsx. A rounded content sheet rises over it and
 // carries a grab handle, a 4-column icon MiniStat strip, blurb, licence badge
-// pills, and the agency's agents (AgentRow list). A sticky dark CTA
-// ("Contact {name}") anchors the base.
+// pills, the visas the agency handles (japa#106, "Visas they handle"), and the
+// agency's agents (AgentRow list). A sticky dark CTA ("Contact {name}")
+// anchors the base.
 //
 // Every measurement is quoted 1:1 from the prototype source.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,13 +25,26 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { EX } from '@/components/explorer/theme';
+import { EX, EXShadow } from '@/components/explorer/theme';
 import { agencyById, agentsForAgency } from '@/components/explorer/data';
-import { mapAgency } from '@/components/explorer/liveAgencies';
-import { mapAgent } from '@/components/explorer/liveAgents';
-import { usePublicAgency, usePublicAgencyAgents } from '@/hooks/useAgencies';
-import { Ic } from '@/components/explorer/icons';
 import {
+  AGENCY_ONLY_CHIP,
+  mapAgency,
+  mapAgencyVisaRows,
+  type AgencyVisaRow,
+} from '@/components/explorer/liveAgencies';
+import { mapAgent } from '@/components/explorer/liveAgents';
+import {
+  useAgencyVisaPrices,
+  usePublicAgency,
+  usePublicAgencyAgents,
+} from '@/hooks/useAgencies';
+import { useCountriesWithVisas } from '@/hooks/useVisaTypes';
+import { Ic } from '@/components/explorer/icons';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  Chip,
+  Flag,
   GlassButton,
   Portrait,
   Verified,
@@ -206,6 +220,269 @@ function AgentRow({ a }: { a: Agent }) {
         </View>
       </View>
     </Pressable>
+  );
+}
+
+// ── Visas they handle (japa#106) ─────────────────────────────────────────────
+// The agency's `visaPrices[]`: its own approved visas plus the global visas it
+// priced, each with ITS service price in WHOLE NAIRA (never /100). Layout per
+// the #106 design spec: one white r20 group card, line06 dividers, rows of
+// Flag 28 · name + "{country} · {processing}" (+ "Only with this agency" chip)
+// · price + "Service fee". Agency-only rows aren't tappable (the visa detail
+// 404s for anyone without a case at this agency, #102); global rows push the
+// visa breakdown.
+
+/** Section title, same style as "{n} agents here". */
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <Text
+      style={{
+        fontSize: 18,
+        fontWeight: '700',
+        color: EX.color.ink,
+        letterSpacing: -0.18,
+        marginTop: 26,
+        marginBottom: 12,
+        marginHorizontal: 2,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+/** One visa row inside the group card. */
+function AgencyVisaRowView({
+  row,
+  divider,
+}: {
+  row: AgencyVisaRow;
+  /** Draw the line06 divider above this row (all but the first). */
+  divider: boolean;
+}) {
+  const router = useRouter();
+  const content = (
+    <>
+      <Flag code={row.flag} size={28} />
+      {/* Middle: name (2 lines max), sub line (1 line), optional chip */}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          style={{ fontSize: 15, fontWeight: '600', color: EX.color.ink }}
+          numberOfLines={2}
+        >
+          {row.name}
+        </Text>
+        <Text
+          style={{
+            fontSize: 12.5,
+            fontWeight: '500',
+            color: EX.color.inkMuted,
+            marginTop: 2,
+          }}
+          numberOfLines={1}
+        >
+          {row.subLine}
+        </Text>
+        {row.isAgencyOnly ? (
+          <View style={{ flexDirection: 'row', marginTop: 8 }}>
+            {/* Small Chip: padding 10×5 (spec), never wraps. */}
+            <Chip
+              label={AGENCY_ONLY_CHIP}
+              style={{ paddingHorizontal: 10, paddingVertical: 5 }}
+            />
+          </View>
+        ) : null}
+      </View>
+      {/* Right: price + caption, or "Contact for pricing" (wraps to 2 lines). */}
+      <View style={{ alignItems: 'flex-end', maxWidth: '40%' }}>
+        {row.priceCaption ? (
+          <>
+            <Text
+              style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }}
+              numberOfLines={1}
+            >
+              {row.priceLabel}
+            </Text>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '500',
+                color: EX.color.inkMuted,
+                marginTop: 2,
+              }}
+            >
+              {row.priceCaption}
+            </Text>
+          </>
+        ) : (
+          <Text
+            style={{
+              fontSize: 12.5,
+              fontWeight: '600',
+              color: EX.color.inkMuted,
+              textAlign: 'right',
+            }}
+            numberOfLines={2}
+          >
+            {row.priceLabel}
+          </Text>
+        )}
+      </View>
+      {row.tappable ? (
+        <Ic.chevR size={18} color={EX.color.muted} strokeWidth={1.8} />
+      ) : null}
+    </>
+  );
+
+  const rowStyle = {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 13,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderTopWidth: divider ? 1 : 0,
+    borderTopColor: EX.color.line06,
+  };
+
+  // Agency-only: a plain row (no press, no chevron).
+  if (!row.tappable) return <View style={rowStyle}>{content}</View>;
+
+  // Global: push the visa breakdown (from the right).
+  return (
+    <Pressable
+      onPress={() =>
+        router.push({
+          pathname: '/visa/[id]',
+          params: { id: row.visaTypeId, code: row.countryCode },
+        })
+      }
+      style={({ pressed }) => [rowStyle, { opacity: pressed ? 0.7 : 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`${row.name}, ${row.subLine}, ${row.priceLabel}`}
+    >
+      {content}
+    </Pressable>
+  );
+}
+
+/**
+ * The whole section: title + loading / error / empty / list.
+ * Data comes from `useAgencyVisaPrices` (the one swap point for the source).
+ */
+function AgencyVisasSection({
+  agencyId,
+  agencyName,
+}: {
+  agencyId: string;
+  agencyName: string;
+}) {
+  const visasQ = useAgencyVisaPrices(agencyId);
+  // Country names for the sub line (falls back to Intl / the code).
+  const { data: countries } = useCountriesWithVisas();
+  const rows = mapAgencyVisaRows(visasQ.data ?? [], countries);
+
+  // Coral spinner, used for the first load and while "Try again" refetches.
+  const spinner = (
+    <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+      <ActivityIndicator size="small" color={EX.color.primary} />
+    </View>
+  );
+
+  let body: React.ReactNode;
+  if (visasQ.isLoading) {
+    body = spinner;
+  } else if (visasQ.isError && !visasQ.data) {
+    // Error with no cached data (offline with a cold cache, server error).
+    body = (
+      <View>
+        <InlineError message="We couldn’t load this agency’s visas. Check your connection and try again." />
+        {visasQ.isRefetching ? (
+          spinner
+        ) : (
+          <Pressable
+            onPress={() => visasQ.refetch()}
+            style={{ marginTop: 10, alignSelf: 'flex-start' }}
+            accessibilityRole="button"
+          >
+            <Text
+              style={{
+                fontSize: 13.5,
+                fontWeight: '600',
+                color: EX.color.primary,
+              }}
+            >
+              Try again
+            </Text>
+          </Pressable>
+        )}
+      </View>
+    );
+  } else if (rows.length === 0) {
+    // Empty: compact EmptyState pattern (it sits mid-sheet). No button; the
+    // sticky "Contact {name}" CTA is the next step.
+    body = (
+      <View
+        style={{
+          alignItems: 'center',
+          paddingVertical: 28,
+          paddingHorizontal: 20,
+          gap: 10,
+        }}
+      >
+        <Ic.globe
+          size={38}
+          color={EX.color.muted}
+          strokeWidth={1.8}
+          style={{ opacity: 0.5 }}
+        />
+        <Text
+          style={{
+            fontSize: 15,
+            fontWeight: '600',
+            color: EX.color.ink,
+            textAlign: 'center',
+          }}
+        >
+          No visas listed yet
+        </Text>
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.inkMuted,
+            textAlign: 'center',
+          }}
+        >
+          Message {agencyName} to ask which visas they can help with.
+        </Text>
+      </View>
+    );
+  } else {
+    body = (
+      <View
+        style={[
+          {
+            backgroundColor: EX.color.cardWhite,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: EX.color.line08,
+            overflow: 'hidden',
+          },
+          EXShadow.card,
+        ]}
+      >
+        {rows.map((r, i) => (
+          <AgencyVisaRowView key={r.key} row={r} divider={i > 0} />
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <SectionTitle>Visas they handle</SectionTitle>
+      {body}
+    </>
   );
 }
 
@@ -541,6 +818,12 @@ export default function AgencyDetail() {
               </View>
             ))}
           </View>
+
+          {/* Visas they handle (japa#106) — live agencies only; the demo
+              fixtures carry no visas, so the section is skipped for them. */}
+          {!demo && id ? (
+            <AgencyVisasSection agencyId={id} agencyName={a.name} />
+          ) : null}
 
           {/* Agents here */}
           <Text
