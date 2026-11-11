@@ -27,7 +27,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { addDays, addMinutes, format, setHours, setMinutes } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
-import { NAIRA, CONSULT_TOPICS } from '@/components/explorer/data';
+import { NAIRA, CONSULT_TOPICS } from '@/components/explorer/content';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { isNotFoundError } from '@/hooks/queryErrors';
 import { loadErrorCopy } from '@/components/explorer/states';

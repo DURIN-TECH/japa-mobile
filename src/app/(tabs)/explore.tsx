@@ -31,7 +31,7 @@ import {
 import { Ic } from '@/components/explorer/icons';
 import { Portrait } from '@/components/explorer/primitives';
 import { Tile } from '@/components/explorer/Tile';
-// japa#145: shared loading / empty / error states (no demo fallback).
+// japa#145: shared loading / empty / error states (live only).
 import {
   StateEmpty,
   StateError,

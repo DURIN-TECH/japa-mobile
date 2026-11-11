@@ -44,7 +44,7 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
-import { NAIRA } from '@/components/explorer/data';
+import { NAIRA } from '@/components/explorer/content';
 import type { AppStep } from '@/types/explorer.type';
 // japa#145: the case's agent and their conversation come from the backend
 // (GET /agents/:id, GET /conversations), never the demo AGENTS / CONVOS.

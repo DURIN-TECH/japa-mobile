@@ -24,9 +24,9 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { STATUS } from '@/components/explorer/data';
+import { STATUS } from '@/components/explorer/content';
 import type { App, Dest } from '@/types/explorer.type';
-// ── Live adapters + React Query hooks (japa#145: no demo fallbacks) ──────────
+// ── Live adapters + React Query hooks (japa#145: live only) ──────────
 import { mapApplication } from '@/components/explorer/liveApplications';
 import { mapVisasToDests } from '@/components/explorer/liveExplore';
 import { useApplications } from '@/hooks/useApplications';

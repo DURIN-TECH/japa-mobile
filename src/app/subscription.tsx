@@ -26,7 +26,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import { PLAN_FEATURES, NAIRA } from '@/components/explorer/data';
+import { PLAN_FEATURES, NAIRA } from '@/components/explorer/content';
 import type { Plan } from '@/types/explorer.type';
 import { InlineError } from '@/components/explorer/AccountForm';
 import {

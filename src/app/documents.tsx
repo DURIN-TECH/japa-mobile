@@ -32,7 +32,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { DOC_STATUS } from '@/components/explorer/data';
+import { DOC_STATUS } from '@/components/explorer/content';
 import type { Doc } from '@/types/explorer.type';
 import { Ic } from '@/components/explorer/icons';
 import { Pill } from '@/components/explorer/primitives';

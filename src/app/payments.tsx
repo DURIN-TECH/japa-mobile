@@ -21,7 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
-import { PAY_STATUS, NAIRA } from '@/components/explorer/data';
+import { PAY_STATUS, NAIRA } from '@/components/explorer/content';
 import type { Payment } from '@/types/explorer.type';
 import { usePaymentRequests } from '@/hooks/usePaymentRequests';
 import { CATEGORY_LABELS } from '@/types/payment-requests.type';

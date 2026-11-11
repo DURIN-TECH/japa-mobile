@@ -4,7 +4,7 @@
 // Maps the backend's `Document` records (aggregated across the user's
 // applications by `useMyDocuments`) onto the Explorer's `Doc` shape so the
 // coral/cream "My documents" screen can render real data. Backend document
-// statuses collapse into the four demo statuses the UI knows how to draw.
+// statuses collapse into the four statuses the UI knows how to draw.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { fmtDate } from './liveDate';
@@ -16,7 +16,7 @@ import {
 } from '@/types/documents.type';
 import { Application } from '@/types/applications.type';
 
-// Backend DocumentStatus → the four demo statuses the screen renders:
+// Backend DocumentStatus → the four statuses the screen renders:
 //   verified                      → verified   (green check chip)
 //   uploaded | under_review       → uploaded   ("In review" blue chip)
 //   rejected | resubmission_required → rejected (red x chip)
@@ -50,9 +50,9 @@ export function mapDocument(d: Document, appCtx?: Application): Doc {
       typeof d.fileSizeMb === 'number'
         ? `${d.fileSizeMb.toFixed(1)} MB`
         : undefined,
-    // Upload date formatted like the demo ("Mar 14"); em-dash when unknown.
+    // Upload date formatted like the design ("Mar 14"); em-dash when unknown.
     date: fmtDate(d.uploadedAt, 'MMM d', '—'),
-    // Link the row to its destination country for consistency with the demo.
+    // Link the row to its destination country (country art key).
     destId: appCtx?.countryCode ? appCtx.countryCode.toLowerCase() : undefined,
   };
 }

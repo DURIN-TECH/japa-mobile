@@ -9,8 +9,8 @@ import { Pressable, StyleProp, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { EX } from './theme';
-import { Dest } from './data';
 import { Flag, Scrim } from './primitives';
+import type { Dest } from '@/types/explorer.type';
 // Country art fallback (japa#145): a Dest built without art still gets the
 // country's photo / tone (or the default skyline) from the assets module.
 import { countryImage, countryTone } from '@/assets/countries';

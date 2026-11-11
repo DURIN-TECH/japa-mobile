@@ -24,7 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import { NAIRA } from '@/components/explorer/data';
+import { NAIRA } from '@/components/explorer/content';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { mapAgency } from '@/components/explorer/liveAgencies';
 import { usePublicAgency } from '@/hooks/useAgencies';

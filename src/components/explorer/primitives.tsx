@@ -26,7 +26,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { EX, EXScrim, displayText } from './theme';
-import { STATUS } from './data';
+import { STATUS } from './content';
 // Flag art comes from the reusable country assets module (japa#145).
 import { Ic } from './icons';
 import { countryFlag } from '@/assets/countries';

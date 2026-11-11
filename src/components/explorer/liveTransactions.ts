@@ -4,7 +4,7 @@
 // The Payments screen (payments.tsx) renders the static `Payment` contract
 // (title/sub/amount/date/status/method). This maps a live `ApiTransaction`
 // (GET /transactions) onto that shape so the pixel-perfect UI can display real
-// data with the demo `PAYMENTS` as a fallback.
+// data.
 //
 // Key conversions:
 //   • amount: backend is in kobo/cents → divide by 100 for the ₦ value.

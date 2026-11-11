@@ -3,7 +3,7 @@
 //
 // Maps the backend's PlanDTO (GET /plans?audience=client) onto the Explorer's
 // static `Plan` shape so the coral/dark pricing screen can render real plans
-// while keeping the demo `PLANS` as a fallback.
+// (no static fallback plans, japa#145).
 //
 // The authz feature catalog (`FeatureKey`) is machine-readable
 // (e.g. "documents.upload"); this file turns each key into a human sentence for
@@ -15,7 +15,7 @@ import { type Plan } from '@/types/explorer.type';
 import { PlanDTO } from '@/hooks/useSubscription';
 
 // FeatureKey → human label shown on a plan's check-row. Mirrors the wording of
-// the demo PLAN_FEATURES map so live + demo plans read identically.
+// the static PLAN_FEATURES copy so every plan reads the same way.
 export const FEATURE_LABEL: Record<FeatureKey, string> = {
   'applications.create': 'Create applications',
   'applications.bulk': 'Bulk applications',
@@ -41,7 +41,7 @@ function titleCase(key: string): string {
  *
  * • price:    kobo → naira (÷100, rounded).
  * • interval: "none" is treated as no interval (null) so a free plan doesn't
- *             render "/none" under its price — preserves the demo's design where
+ *             render "/none" under its price — preserves the design where
  *             the Free tier shows a bare "Free" with no interval suffix.
  * • tag:      flagged "Most popular" when its id matches the caller-chosen
  *             `popularId` (the middle-priced paid plan; see subscription.tsx).

@@ -14,7 +14,7 @@
 // Consultation fees are in kobo/cents on the backend (not needed by `Agency`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { NAIRA } from './data';
+import { NAIRA } from './content';
 import type { Agency } from '@/types/explorer.type';
 import { agencyCover, agencyTone } from '@/assets/countries';
 import type { ApiAgency, PublicVisaPrice } from '@/hooks/useAgencies';

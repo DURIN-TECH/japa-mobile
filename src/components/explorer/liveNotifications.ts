@@ -5,9 +5,9 @@
 // backend `type` enum collapses into the Explorer's four visual `kind`s (which
 // drive the IconChip color). Timestamps are ISO strings → a compact relative
 // label (we strip date-fns' "about "/"less than " prefixes so it reads like the
-// demo's terse "2h"/"1d"). For routing we only surface `agentId` on message
-// notifications; live entity ids won't match the demo DESTS, so `destId` is left
-// undefined (see notifications.tsx for the live routing fallback).
+// design's terse "2h"/"1d"). For routing we only surface `agentId` on message
+// notifications; `destId` is left
+// undefined (notifications.tsx routes by the related entity type).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { agoFrom } from './liveDate';
@@ -35,7 +35,7 @@ function toKind(type: ApiNotification['type']): Notif['kind'] {
 }
 
 // Compact relative time — drop date-fns' verbose qualifiers so "about 2 hours"
-// reads closer to the demo's "2 hours". The screen appends its own " ago".
+// reads closer to the design's "2 hours". The screen appends its own " ago".
 function toAgo(iso: unknown): string {
   return agoFrom(iso)
     .replace(/^about /, '')
@@ -51,7 +51,7 @@ export function mapNotif(n: ApiNotification): Notif {
     body: n.body ?? n.message ?? '',
     kind: toKind(n.type),
     // Only message notifications get a routing target; the id is the related
-    // message entity id. Live ids won't match demo DESTS, so `destId` stays unset.
+    // message entity id; `destId` stays unset (the screen routes by entity type).
     agentId: n.relatedEntityType === 'message' ? n.relatedEntityId : undefined,
   };
 }

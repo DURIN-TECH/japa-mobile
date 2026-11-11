@@ -12,7 +12,7 @@
 // radius 14 (coral tint .07 + zap / cream #FFF6EC + clock), summary band height
 // 142 / radius 24 / 105° scrim.
 //
-// japa#145: live data only (GET /applications). No demo fallback: while the
+// japa#145: live data only (GET /applications). Live only: while the
 // first load runs the coral spinner shows; a failed load with nothing cached
 // shows InlineError + "Try again"; a new user with no applications sees the
 // first-run empty state ("No applications yet" + coral "Start exploring"),
@@ -28,7 +28,7 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import type { App } from '@/types/explorer.type';
-import { STATUS } from '@/components/explorer/data';
+import { STATUS } from '@/components/explorer/content';
 import { mapApplication } from '@/components/explorer/liveApplications';
 import { useApplications } from '@/hooks/useApplications';
 import { Ic } from '@/components/explorer/icons';

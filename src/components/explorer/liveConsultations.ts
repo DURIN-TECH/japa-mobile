@@ -6,7 +6,7 @@
 // cancelled), stores the date + time as separate ISO/HH:mm strings, and has no
 // "mode" concept (we default to Video call). Fees are in kobo but unused by the
 // Consult card. We also carry the denormalized `agentName` through so live
-// agents that aren't in the demo AGENTS list still render a name.
+// agents still render a name without an extra agent fetch.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { format } from 'date-fns';

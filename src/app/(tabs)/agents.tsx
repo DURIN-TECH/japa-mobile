@@ -302,7 +302,7 @@ export function AgentRow({ a, agencyName }: { a: Agent; agencyName?: string }) {
 export default function AgentsScreen() {
   const insets = useSafeAreaInsets();
 
-  // ── Live sources (japa#145: no demo fallback) ─────────────────────────────
+  // ── Live sources (japa#145: live only) ─────────────────────────────
   // Agents: GET /agents (verified + available). Agencies: GET /agencies/browse.
   const agentsQ = useAgents();
   const agenciesQ = useBrowseAgencies();
