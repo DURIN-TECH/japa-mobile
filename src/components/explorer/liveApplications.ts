@@ -46,7 +46,30 @@ function normalizeProgress(progress: number): number {
 // (via countryArt) so the row/detail can render without a static DESTS match.
 // `agentSeed` is accepted for call-site parity but the Explorer derives portrait
 // art from the demo agent set, so it is not consumed here.
-export function mapApplication(app: Application, agentSeed?: number): App {
+/**
+ * The case's visa title (japa#106). A case on an agency-only visa must show
+ * the visa's real name, never "Visa" / "unknown visa":
+ *   1. `visaTypeName`, denormalised on the case by the backend;
+ *   2. else the name fetched from the visa detail (`fetchedVisaName`; the
+ *      applicant may read it because they have a case on it, #102);
+ *   3. else, while that fetch runs, the country name (design spec).
+ */
+export function resolveVisaTitle(
+  app: Pick<Application, 'visaTypeName' | 'countryName' | 'countryCode'>,
+  fetchedVisaName?: string | null,
+): string {
+  const denorm = app.visaTypeName?.trim();
+  if (denorm) return denorm;
+  const fetched = fetchedVisaName?.trim();
+  if (fetched) return fetched;
+  return app.countryName ?? app.countryCode;
+}
+
+export function mapApplication(
+  app: Application,
+  agentSeed?: number,
+  fetchedVisaName?: string | null,
+): App {
   void agentSeed; // reserved; portrait seed is resolved from the demo agent set
 
   const art = countryArt(app.countryCode);
@@ -55,7 +78,8 @@ export function mapApplication(app: Application, agentSeed?: number): App {
     country: app.countryName ?? app.countryCode,
     city: art.city,
     flag: app.countryCode.toLowerCase(),
-    visa: app.visaTypeName ?? 'Visa',
+    // japa#106: real visa name (see resolveVisaTitle), never a bare "Visa".
+    visa: resolveVisaTitle(app, fetchedVisaName),
     cat: '',
     blurb: '',
     img: art.img,

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
 import {
   VisaType,
@@ -76,6 +77,10 @@ export function useVisaType(countryCode: string, visaTypeId: string) {
     },
     enabled: !!countryCode && !!visaTypeId,
     staleTime: 1000 * 60 * 5,
+    // japa#106: an agency-only visa 404s for anyone without a case at that
+    // agency (#102). That answer is final, so fail fast to the not-found
+    // state rather than retrying.
+    retry: retryUnlessNotFound,
   });
 }
 

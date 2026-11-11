@@ -490,7 +490,9 @@ export default function HomeScreen() {
   // blank. Powers the hero, the next-step nudge and the active-applications list.
   const appsQ = useApplications();
   const apps: App[] = appsQ.data?.length
-    ? appsQ.data.map(mapApplication)
+    ? // Wrapped so .map's (index, array) don't land in mapApplication's
+      // optional params (agentSeed, fetchedVisaName; japa#106).
+      appsQ.data.map((a) => mapApplication(a))
     : APPS;
 
   // Hero = the first application; resolve its destination from the app's own

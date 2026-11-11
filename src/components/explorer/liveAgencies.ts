@@ -14,8 +14,8 @@
 // Consultation fees are in kobo/cents on the backend (not needed by `Agency`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Agency, IMG } from './data';
-import type { ApiAgency } from '@/hooks/useAgencies';
+import { Agency, IMG, NAIRA } from './data';
+import type { ApiAgency, PublicVisaPrice } from '@/hooks/useAgencies';
 
 // Deterministic FNV-ish string hash → stable per-agency art selection.
 export function hash(s: string): number {
@@ -68,4 +68,133 @@ export function mapAgency(p: ApiAgency): Agency {
     blurb: p.description ?? '',
     badges: p.verified ? ['Compliance verified'] : [],
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agency visas — "Visas they handle" (japa#106).
+//
+// `visaPrices[]` (see `PublicVisaPrice` in useAgencies.ts) → display rows for
+// the agency screen. Rules from the #106 design spec:
+//   • price is WHOLE NAIRA: NAIRA(price), never /100; null → "Contact for
+//     pricing" with no caption;
+//   • sub line "{country name} · {processingTime}" (just the country when
+//     there's no processing time);
+//   • agency-only visas (visibility "agency") get the "Only with this
+//     agency" chip and are NOT tappable: the single-visa endpoints 404 for
+//     anyone without a case at that agency (#102). Global ones (including an
+//     agency's own visa made global) push /visa/[id].
+// Order is kept as the backend returns it (own visas first).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Chip copy on agency-only visas. */
+export const AGENCY_ONLY_CHIP = 'Only with this agency';
+
+/** One row of the agency screen's visas list. */
+export interface AgencyVisaRow {
+  key: string;
+  visaTypeId: string;
+  /** Upper-case ISO2 code (route param for /visa/[id]). */
+  countryCode: string;
+  /** Lower-case ISO2 for `Flag`. */
+  flag: string;
+  name: string;
+  /** "United Kingdom · 3 to 8 weeks" or "United Kingdom". */
+  subLine: string;
+  /** "₦12,500" or "Contact for pricing". */
+  priceLabel: string;
+  /** "Service fee" under a price; null when there's no price. */
+  priceCaption: string | null;
+  /** Shows the AGENCY_ONLY_CHIP. */
+  isAgencyOnly: boolean;
+  /** Global visas open the visa breakdown; agency-only rows don't. */
+  tappable: boolean;
+}
+
+/**
+ * Defensive read of `visaPrices`: a missing / non-array field is [], rows
+ * without a visa id or country are dropped, a non-number (or negative /
+ * non-finite) price is null, and an unknown visibility counts as global
+ * (the backend treats a missing visibility as global).
+ */
+export function normalizeVisaPrices(raw: unknown): PublicVisaPrice[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PublicVisaPrice[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.visaTypeId !== 'string' || !v.visaTypeId) continue;
+    if (typeof v.countryCode !== 'string' || !v.countryCode) continue;
+    const price =
+      typeof v.price === 'number' && Number.isFinite(v.price) && v.price >= 0
+        ? v.price
+        : null;
+    out.push({
+      ...(v as unknown as PublicVisaPrice),
+      visaName: typeof v.visaName === 'string' ? v.visaName : '',
+      category: typeof v.category === 'string' ? v.category : '',
+      price,
+      isAgencyVisa: v.isAgencyVisa === true,
+      visibility: v.visibility === 'agency' ? 'agency' : 'global',
+      processingTime:
+        typeof v.processingTime === 'string' ? v.processingTime : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Country name for an ISO2 code: the app's countries list first, then the
+ * runtime's `Intl.DisplayNames` (may be missing on Hermes), else the code.
+ */
+export function countryNameFor(
+  code: string,
+  countries?: { code: string; name: string }[] | null,
+): string {
+  const cc = code.toUpperCase();
+  const hit = countries?.find((c) => c.code.toUpperCase() === cc)?.name;
+  if (hit) return hit;
+  try {
+    const DisplayNames = (
+      Intl as unknown as {
+        DisplayNames?: new (
+          l: string[],
+          o: { type: string },
+        ) => { of: (c: string) => string | undefined };
+      }
+    ).DisplayNames;
+    if (DisplayNames) {
+      const name = new DisplayNames(['en'], { type: 'region' }).of(cc);
+      if (name && name !== cc) return name;
+    }
+  } catch {
+    // Unknown code or no Intl support: fall through to the code.
+  }
+  return cc;
+}
+
+/** `visaPrices[]` → the agency screen's rows (order kept). */
+export function mapAgencyVisaRows(
+  visaPrices: PublicVisaPrice[],
+  countries?: { code: string; name: string }[] | null,
+): AgencyVisaRow[] {
+  return visaPrices.map((v) => {
+    const cc = v.countryCode.toUpperCase();
+    const country = countryNameFor(cc, countries);
+    const processing = v.processingTime?.trim();
+    const hasPrice = typeof v.price === 'number';
+    const isAgencyOnly = v.visibility === 'agency';
+    return {
+      key: `${cc}__${v.visaTypeId}`,
+      visaTypeId: v.visaTypeId,
+      countryCode: cc,
+      flag: cc.toLowerCase(),
+      name: v.visaName,
+      subLine: processing ? `${country} · ${processing}` : country,
+      // Whole naira as-is: NAIRA(12500) → "₦12,500".
+      priceLabel: hasPrice ? NAIRA(v.price as number) : 'Contact for pricing',
+      priceCaption: hasPrice ? 'Service fee' : null,
+      isAgencyOnly,
+      tappable: !isAgencyOnly,
+    };
+  });
 }
