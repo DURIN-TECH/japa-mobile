@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Unit tests: the live mappers touched by japa#145 (no demo fallbacks).
+// Unit tests: the live mappers touched by japa#145 (live only).
 //   • liveProfile     — real name / city header, name only without a city
 //   • liveEligibility — backend questions + scored check, no static result
 //   • liveExplore     — visa → Dest art comes from the assets module
