@@ -1151,6 +1151,37 @@ export default function SelfServiceView() {
             {otherDocs.length > 0 ? (
               <LiveOtherDocsCard docs={otherDocs} />
             ) : null}
+
+            {/* ── Ask about your review (issue #45) ─────────────────────────────
+                A clearly separated entry to the ask-anywhere chat. Live path only,
+                so demo mode never reaches the chat (and makes no request). */}
+            <SectionTitle>Questions?</SectionTitle>
+            <Pressable
+              onPress={() => router.push(`/ai-chat/${app.id}`)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: '#fff',
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: EX.color.line06,
+                padding: 14,
+              }}
+            >
+              <Ic.msg size={20} color={EX.color.primary} strokeWidth={1.8} />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}
+                >
+                  Ask about your review
+                </Text>
+                <Text style={{ fontSize: 12.5, color: EX.color.muted }}>
+                  Get answers from your saved review.
+                </Text>
+              </View>
+              <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
+            </Pressable>
           </View>
         </Animated.ScrollView>
 
