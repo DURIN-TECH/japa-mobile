@@ -7,6 +7,11 @@
 // until a method is chosen; on press it shows a brief processing spinner (~700ms)
 // then pushes → /confirmation with the full param contract + method.
 //
+// japa#145: missing or invalid params → CenteredState "We couldn’t find this
+// payment". A failed booking (POST /consultations) no longer advances to the
+// confirmation anyway: it shows an InlineError above the CTA (the CTA is the
+// retry), so the app never confirms a booking the backend doesn't have.
+//
 // Design system: coral/cream Explorer tokens (EX), Space Grotesk display font.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -24,6 +29,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, parse, parseISO } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
 import { NAIRA } from '@/components/explorer/data';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { InlineError } from '@/components/explorer/AccountForm';
 import { Ic } from '@/components/explorer/icons';
 import {
   useCreateConsultation,
@@ -152,6 +159,7 @@ export default function PayScreen() {
 
   const [method, setMethod] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
 
   // Mutation used by the consultation (booking) path to create a real
   // consultation on the backend so it shows up in the Consultations list.
@@ -167,9 +175,16 @@ export default function PayScreen() {
     ? format(parseISO(dateIso), 'EEEE, MMMM d, yyyy')
     : '';
 
+  // Params are valid when the flow has what it needs: an agent and an amount,
+  // plus (for a booking) the chosen slot. Anything else is a broken link.
+  const validParams =
+    !!agentId &&
+    Number.isFinite(Number(fee)) &&
+    Number(fee) >= 0 &&
+    (isApp ? !!topic : !!dateIso && !!time && !!dur);
+
   // Advance to the confirmation screen with the full param contract + chosen
-  // method. Shared by both the application and consultation paths so the
-  // mock/demo flow always completes regardless of backend outcome.
+  // method. Shared by both the application and consultation paths.
   const goToConfirmation = () => {
     router.push({
       pathname: '/confirmation',
@@ -189,6 +204,7 @@ export default function PayScreen() {
 
   const onPay = async () => {
     if (!method || processing) return;
+    setPayError(null);
     setProcessing(true);
 
     // `application` = paying an agent-raised payment request. Leave this path
@@ -218,14 +234,28 @@ export default function PayScreen() {
     try {
       // Keep the spinner visible for the duration of the network call.
       await createConsultation.mutateAsync(input);
-    } catch (err) {
-      // Never break the demo flow: log and still advance to confirmation.
-      console.warn('Failed to create consultation:', err);
-    } finally {
       setProcessing(false);
       goToConfirmation();
+    } catch {
+      // Stay here; the CTA is the retry.
+      setProcessing(false);
+      setPayError(
+        'Your payment didn’t go through. Nothing was charged. Try again.',
+      );
     }
   };
+
+  // Broken link (missing / invalid params): not-found, never a ₦0 checkout.
+  if (!validParams) {
+    return (
+      <CenteredState
+        icon={Ic.cards}
+        title="We couldn’t find this payment"
+        actionLabel="Back"
+        onAction={() => router.back()}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -498,6 +528,12 @@ export default function PayScreen() {
           borderTopColor: EX.color.line06,
         }}
       >
+        {/* Payment failure above the CTA (the CTA is the retry). */}
+        {payError ? (
+          <View style={{ marginBottom: 12 }}>
+            <InlineError message={payError} />
+          </View>
+        ) : null}
         <Pressable
           onPress={onPay}
           disabled={!method || processing}
