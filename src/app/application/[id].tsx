@@ -26,6 +26,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -63,7 +64,14 @@ import {
 import { isNotFoundError } from '@/hooks/queryErrors';
 import { useVisaType } from '@/hooks/useVisaTypes';
 import { CenteredState } from '@/components/explorer/CenteredState';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  PAYMENT_ERROR_MESSAGE,
+  getAuthorizationUrl,
+  getPaystackReference,
+} from '@/hooks/paymentRequestFlow';
 // Live payment-request read + approve/reject mutations (client side of the flow).
+// Approve starts a Paystack charge; the pay screen verifies it (japa#145).
 import {
   useApprovePaymentRequest,
   usePaymentRequests,
@@ -93,6 +101,13 @@ const REJECT_REASONS = [
 
 const HERO = 240;
 
+// Copy of a keyed record without one key (rollback of per-request state).
+function omitKey<T>(rec: Record<string, T>, key: string): Record<string, T> {
+  const next = { ...rec };
+  delete next[key];
+  return next;
+}
+
 // ── Unified payment-request row ──────────────────────────────────────────────
 // Backend payment requests (GET /payment-requests) mapped to the card's shape.
 // `amount` is the display value in whole naira (pre-divided from kobo).
@@ -103,6 +118,10 @@ type PayReqRow = {
   agentId: string;
   agentName?: string;
   status: 'pending' | 'approved' | 'rejected';
+  // Backend status is 'paid' (settled): show it as paid, no checkout button.
+  paid: boolean;
+  // Paystack reference minted at approve time; needed to verify the charge.
+  reference?: string;
   due: string;
   note: string;
 };
@@ -275,13 +294,19 @@ export default function AppDetail() {
     transform: [{ translateY: scrollY.value * -0.3 }],
   }));
 
-  // Optimistic approve / reject decision per request (keyed by id; the
-  // backend mutation fires too, and the list refetches on success).
+  // Optimistic approve / reject decision per request (keyed by id). The backend
+  // mutation fires too; on FAILURE the entry is rolled back (see rollbackReq)
+  // and an InlineError is shown, so the card never states a decision the
+  // server doesn't have. The list refetches on success.
   const [reqOverride, setReqOverride] = useState<
     Record<string, 'pending' | 'approved' | 'rejected'>
   >({});
   // Reason captured when the client declines a request (id → reason).
   const [reqReason, setReqReason] = useState<Record<string, string>>({});
+  // Failure copy per request (shown as an InlineError under the card actions).
+  const [reqError, setReqError] = useState<Record<string, string>>({});
+  // Request currently being approved (disables a second tap mid-flight).
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   // Reject-reason modal: which request is being declined, + the picked reason.
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [reasonSel, setReasonSel] = useState<string | null>(null);
@@ -318,6 +343,8 @@ export default function AppDetail() {
           // Backend request carries no agent name; card falls back gracefully.
           agentName: undefined,
           status: toRowStatus(r.status),
+          paid: r.status === 'paid',
+          reference: r.paystackReference,
           due: r.expiresAt ? `Due ${fmtDate(r.expiresAt, 'MMM d')}` : '',
           note: r.description,
         }));
@@ -389,16 +416,106 @@ export default function AppDetail() {
     setReasonSel(null);
     setReasonText('');
   };
-  const confirmReject = () => {
+  // Undo an optimistic decision for one request after a failed write.
+  const rollbackReq = (reqId: string, message: string) => {
+    setReqOverride((s) => {
+      return omitKey(s, reqId);
+    });
+    setReqReason((r) => {
+      return omitKey(r, reqId);
+    });
+    setReqError((e) => ({ ...e, [reqId]: message }));
+  };
+  const clearReqError = (reqId: string) =>
+    setReqError((e) => {
+      return omitKey(e, reqId);
+    });
+
+  const confirmReject = async () => {
     if (!rejectId) return;
+    const reqId = rejectId;
     const reason = reasonSel === 'Other' ? reasonText.trim() : reasonSel;
     if (!reason) return; // guarded by the disabled button, but keep it safe
-    // Reject on the backend (auto-creates a chat with the reason).
-    rejectReq.mutate({ requestId: rejectId, reason });
-    setReqOverride((s) => ({ ...s, [rejectId]: 'rejected' }));
-    setReqReason((r) => ({ ...r, [rejectId]: reason }));
+    clearReqError(reqId);
+    // Optimistic: show Declined at once, roll back if the backend refuses.
+    setReqOverride((s) => ({ ...s, [reqId]: 'rejected' }));
+    setReqReason((r) => ({ ...r, [reqId]: reason }));
     closeReject();
+    try {
+      // Reject on the backend (auto-creates a chat with the reason).
+      await rejectReq.mutateAsync({ requestId: reqId, reason });
+    } catch {
+      rollbackReq(
+        reqId,
+        'We couldn’t decline this request. Nothing changed. Try again.',
+      );
+    }
   };
+
+  // Approve = client consent. The backend marks the request approved and
+  // returns a Paystack `authorizationUrl` + `paystackReference`; NO money has
+  // moved yet. We open the checkout and hand off to /pay, which verifies the
+  // charge (POST /payment-requests/:id/verify) before it shows a confirmation.
+  const approveRequest = async (req: PayReqRow) => {
+    if (approvingId) return;
+    clearReqError(req.id);
+    setApprovingId(req.id);
+    // Optimistic: show Approved at once, roll back if the backend refuses.
+    setReqOverride((s) => ({ ...s, [req.id]: 'approved' }));
+    let result: Awaited<ReturnType<typeof approveReq.mutateAsync>>;
+    try {
+      result = await approveReq.mutateAsync(req.id);
+    } catch {
+      setApprovingId(null);
+      rollbackReq(
+        req.id,
+        'We couldn’t approve this request. Nothing changed. Try again.',
+      );
+      return;
+    }
+    setApprovingId(null);
+    const url = getAuthorizationUrl(result);
+    const reference = getPaystackReference(result);
+    // The server DID approve, so the row stays Approved. Without a checkout
+    // URL / reference the payment can't start; say so (never fake success).
+    if (!url || !reference) {
+      setReqError((e) => ({ ...e, [req.id]: PAYMENT_ERROR_MESSAGE }));
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setReqError((e) => ({
+        ...e,
+        [req.id]: 'We couldn’t open checkout. Tap Complete payment to retry.',
+      }));
+    }
+    toPay(req, reference, url);
+  };
+
+  // Open the pay screen for an approved request: it verifies the Paystack
+  // charge by `reference`, and can reopen checkout via `authorizationUrl`.
+  const toPay = (
+    req: PayReqRow,
+    reference?: string,
+    authorizationUrl?: string,
+  ) =>
+    router.push({
+      pathname: '/pay',
+      params: {
+        type: 'application',
+        requestId: req.id,
+        reference: reference ?? req.reference ?? '',
+        authorizationUrl: authorizationUrl ?? '',
+        agentId: req.agentId,
+        dateIso: '',
+        time: '',
+        topic: req.title,
+        mode: '',
+        dur: '',
+        fee: String(req.amount),
+      },
+    });
 
   // Sticky / nudge action: perform the next step (self-service flow) when
   // actionable, otherwise open the agent conversation.
@@ -871,22 +988,6 @@ export default function AppDetail() {
                     {/* Actions by decision state */}
                     {(() => {
                       const st = reqOverride[req.id] ?? req.status;
-                      const setSt = (v: 'pending' | 'approved' | 'rejected') =>
-                        setReqOverride((s) => ({ ...s, [req.id]: v }));
-                      const toPay = () =>
-                        router.push({
-                          pathname: '/pay',
-                          params: {
-                            type: 'application',
-                            agentId: req.agentId,
-                            dateIso: '',
-                            time: '',
-                            topic: req.title,
-                            mode: '',
-                            dur: '',
-                            fee: String(req.amount),
-                          },
-                        });
                       if (st === 'pending') {
                         return (
                           <View
@@ -907,11 +1008,9 @@ export default function AppDetail() {
                                     { text: 'Cancel', style: 'cancel' },
                                     {
                                       text: 'Approve',
-                                      onPress: () => {
-                                        // Approve on the backend (releases escrow).
-                                        approveReq.mutate(req.id);
-                                        setSt('approved');
-                                      },
+                                      // Approve on the backend (consent only; the
+                                      // Paystack charge follows, see approveRequest).
+                                      onPress: () => void approveRequest(req),
                                     },
                                   ],
                                 )
@@ -995,8 +1094,9 @@ export default function AppDetail() {
                                 marginTop: 12,
                               }}
                             >
-                              You approved this request — complete payment to
-                              continue.
+                              {req.paid
+                                ? 'Paid — thank you.'
+                                : 'Approved, awaiting payment — complete payment to continue.'}
                             </Text>
                             <View
                               style={{
@@ -1006,39 +1106,41 @@ export default function AppDetail() {
                                 marginTop: 12,
                               }}
                             >
-                              <Pressable
-                                onPress={toPay}
-                                style={{
-                                  flex: 1,
-                                  height: 46,
-                                  borderRadius: 14,
-                                  backgroundColor: EX.color.primary,
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: 7,
-                                  shadowColor: EX.color.primary,
-                                  shadowOpacity: 0.4,
-                                  shadowRadius: 12,
-                                  shadowOffset: { width: 0, height: 8 },
-                                  elevation: 5,
-                                }}
-                              >
-                                <Text
+                              {req.paid ? null : (
+                                <Pressable
+                                  onPress={() => toPay(req)}
                                   style={{
-                                    color: '#fff',
-                                    fontSize: 14.5,
-                                    fontWeight: '700',
+                                    flex: 1,
+                                    height: 46,
+                                    borderRadius: 14,
+                                    backgroundColor: EX.color.primary,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 7,
+                                    shadowColor: EX.color.primary,
+                                    shadowOpacity: 0.4,
+                                    shadowRadius: 12,
+                                    shadowOffset: { width: 0, height: 8 },
+                                    elevation: 5,
                                   }}
                                 >
-                                  Complete payment
-                                </Text>
-                                <Ic.arrow
-                                  size={16}
-                                  color="#fff"
-                                  strokeWidth={1.8}
-                                />
-                              </Pressable>
+                                  <Text
+                                    style={{
+                                      color: '#fff',
+                                      fontSize: 14.5,
+                                      fontWeight: '700',
+                                    }}
+                                  >
+                                    Complete payment
+                                  </Text>
+                                  <Ic.arrow
+                                    size={16}
+                                    color="#fff"
+                                    strokeWidth={1.8}
+                                  />
+                                </Pressable>
+                              )}
                               <Pressable
                                 onPress={() => messageAgent(req.agentId)}
                                 style={{
@@ -1087,29 +1189,6 @@ export default function AppDetail() {
                             }}
                           >
                             <Pressable
-                              onPress={() => setSt('pending')}
-                              style={{
-                                flex: 1,
-                                height: 46,
-                                borderRadius: 14,
-                                backgroundColor: '#fff',
-                                borderWidth: 1,
-                                borderColor: EX.color.line12,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: EX.color.ink,
-                                  fontSize: 14.5,
-                                  fontWeight: '700',
-                                }}
-                              >
-                                Undo
-                              </Text>
-                            </Pressable>
-                            <Pressable
                               onPress={() => messageAgent(req.agentId)}
                               style={{
                                 flex: 1,
@@ -1143,6 +1222,12 @@ export default function AppDetail() {
                         </>
                       );
                     })()}
+                    {/* Failed approve / reject / checkout (spec 1.3). */}
+                    {reqError[req.id] ? (
+                      <View style={{ marginTop: 12 }}>
+                        <InlineError message={reqError[req.id]} />
+                      </View>
+                    ) : null}
                   </View>
                 ))}
               </View>

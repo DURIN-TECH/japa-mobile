@@ -7,6 +7,14 @@
 // until a method is chosen; on press it shows a brief processing spinner (~700ms)
 // then pushes → /confirmation with the full param contract + method.
 //
+// japa#145: `type=application` pays an agent-raised payment request for REAL.
+// Approving it (application/[id]) already opened the Paystack checkout; this
+// screen then confirms the charge with POST /payment-requests/:id/verify and
+// pushes /confirmation ONLY when the backend says the request is paid. An
+// unpaid / cancelled checkout or a failed call shows an InlineError (never the
+// confirmation); "Open checkout" reopens Paystack from the `authorizationUrl`
+// param. Nothing here fakes a success.
+//
 // japa#145: missing or invalid params → CenteredState "We couldn’t find this
 // payment". A failed booking (POST /consultations) no longer advances to the
 // confirmation anyway: it shows an InlineError above the CTA (the CTA is the
@@ -18,6 +26,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -37,6 +46,12 @@ import {
   type CreateConsultationInput,
   type ApiConsultation,
 } from '@/hooks/useConsultations';
+import { useVerifyPaymentRequest } from '@/hooks/usePaymentRequests';
+import {
+  NOT_PAID_MESSAGE,
+  PAYMENT_ERROR_MESSAGE,
+  isPaidResult,
+} from '@/hooks/paymentRequestFlow';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -145,18 +160,34 @@ export default function PayScreen() {
   const insets = useSafeAreaInsets();
 
   // All nav params arrive as strings (Expo Router serialises them).
-  const { type, agentId, dateIso, time, topic, mode, dur, fee } =
-    useLocalSearchParams<{
-      type?: string;
-      agentId: string;
-      dateIso: string;
-      time: string;
-      topic: string;
-      mode: string;
-      dur: string;
-      fee: string;
-    }>();
+  const {
+    type,
+    requestId,
+    reference,
+    authorizationUrl,
+    agentId,
+    dateIso,
+    time,
+    topic,
+    mode,
+    dur,
+    fee,
+  } = useLocalSearchParams<{
+    type?: string;
+    requestId?: string;
+    reference?: string;
+    authorizationUrl?: string;
+    agentId: string;
+    dateIso: string;
+    time: string;
+    topic: string;
+    mode: string;
+    dur: string;
+    fee: string;
+  }>();
 
+  // A payment request is always paid through Paystack, so there is no method
+  // choice for it; a booking picks one below.
   const [method, setMethod] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
@@ -165,6 +196,8 @@ export default function PayScreen() {
   // consultation on the backend so it shows up in the Consultations list.
   // Declared here (top of component) — never inside the onPay handler.
   const createConsultation = useCreateConsultation();
+  // Verify a payment request's Paystack charge (application path).
+  const verifyRequest = useVerifyPaymentRequest();
 
   // `application` = paying an agent-raised payment request (no date/time/mode);
   // `consultation` (default) = the booking flow with a scheduled slot.
@@ -181,7 +214,10 @@ export default function PayScreen() {
     !!agentId &&
     Number.isFinite(Number(fee)) &&
     Number(fee) >= 0 &&
-    (isApp ? !!topic : !!dateIso && !!time && !!dur);
+    (isApp
+      ? // A payment request needs its id + Paystack reference to be verified.
+        !!topic && !!requestId && !!reference
+      : !!dateIso && !!time && !!dur);
 
   // Advance to the confirmation screen with the full param contract + chosen
   // method. Shared by both the application and consultation paths.
@@ -197,24 +233,46 @@ export default function PayScreen() {
         mode,
         dur,
         fee,
-        method,
+        method: isApp ? 'Paystack' : method,
       },
     });
   };
 
+  // Reopen the Paystack checkout (application path), e.g. after cancelling.
+  const onOpenCheckout = async () => {
+    if (!authorizationUrl) return;
+    setPayError(null);
+    try {
+      await Linking.openURL(authorizationUrl);
+    } catch {
+      setPayError('We couldn’t open checkout. Try again in a moment.');
+    }
+  };
+
   const onPay = async () => {
-    if (!method || processing) return;
+    // A booking needs a chosen method; a payment request doesn't.
+    if ((!isApp && !method) || processing) return;
     setPayError(null);
     setProcessing(true);
 
-    // `application` = paying an agent-raised payment request. Leave this path
-    // exactly as it was: a brief simulated delay, then confirmation. We do NOT
-    // create a consultation for it.
+    // ── Payment request path — verify the REAL Paystack charge ───────────────
+    // The checkout was opened on approve. Confirm it with the backend and show
+    // the confirmation only when it says `paid`. A cancelled/abandoned
+    // checkout comes back as a success response that is NOT paid, so we check
+    // the status, not just that the call worked.
     if (isApp) {
-      setTimeout(() => {
+      try {
+        const result = await verifyRequest.mutateAsync({
+          requestId: requestId!,
+          reference: reference!,
+        });
         setProcessing(false);
-        goToConfirmation();
-      }, 700);
+        if (isPaidResult(result)) goToConfirmation();
+        else setPayError(NOT_PAID_MESSAGE);
+      } catch {
+        setProcessing(false);
+        setPayError(PAYMENT_ERROR_MESSAGE);
+      }
       return;
     }
 
@@ -244,6 +302,9 @@ export default function PayScreen() {
       );
     }
   };
+
+  // CTA is live once a booking has a method; a payment request always is.
+  const ready = isApp || !!method;
 
   // Broken link (missing / invalid params): not-found, never a ₦0 checkout.
   if (!validParams) {
@@ -328,102 +389,110 @@ export default function PayScreen() {
           )}
         </View>
 
-        {/* ── Payment method ───────────────────────────────────────────────── */}
-        <Text
-          style={{
-            fontSize: 16.5,
-            fontWeight: '700',
-            color: EX.color.ink,
-            letterSpacing: -0.18,
-            marginTop: 26,
-            marginBottom: 12,
-          }}
-        >
-          Payment method
-        </Text>
-        <View style={{ gap: 10 }}>
-          {METHODS.map((m) => {
-            const on = method === m.key;
-            const Icon = m.icon;
-            return (
-              <Pressable
-                key={m.key}
-                onPress={() => setMethod(m.key)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 13,
-                  backgroundColor: on
-                    ? EX.color.primaryTint05
-                    : EX.color.cardWhite,
-                  borderRadius: 18,
-                  borderWidth: on ? 1.5 : 1,
-                  borderColor: on ? EX.color.primary : EX.color.line10,
-                  padding: 14,
-                }}
-              >
-                {/* Method icon in a cream square. */}
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 12,
-                    backgroundColor: EX.color.cream,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon size={19} color={EX.color.primary} strokeWidth={1.8} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text
+        {/* ── Payment method (bookings only) ───────────────────────────────── */}
+        {isApp ? null : (
+          <>
+            <Text
+              style={{
+                fontSize: 16.5,
+                fontWeight: '700',
+                color: EX.color.ink,
+                letterSpacing: -0.18,
+                marginTop: 26,
+                marginBottom: 12,
+              }}
+            >
+              Payment method
+            </Text>
+            <View style={{ gap: 10 }}>
+              {METHODS.map((m) => {
+                const on = method === m.key;
+                const Icon = m.icon;
+                return (
+                  <Pressable
+                    key={m.key}
+                    onPress={() => setMethod(m.key)}
                     style={{
-                      fontSize: 14.5,
-                      fontWeight: '700',
-                      color: EX.color.ink,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 13,
+                      backgroundColor: on
+                        ? EX.color.primaryTint05
+                        : EX.color.cardWhite,
+                      borderRadius: 18,
+                      borderWidth: on ? 1.5 : 1,
+                      borderColor: on ? EX.color.primary : EX.color.line10,
+                      padding: 14,
                     }}
-                    numberOfLines={1}
                   >
-                    {m.label}
-                  </Text>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      color: EX.color.muted,
-                      marginTop: 1,
-                    }}
-                    numberOfLines={1}
-                  >
-                    {m.hint}
-                  </Text>
-                </View>
-                {/* Radio — coral filled dot when selected. */}
-                <View
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 11,
-                    borderWidth: 2,
-                    borderColor: on ? EX.color.primary : EX.color.line16,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {on ? (
+                    {/* Method icon in a cream square. */}
                     <View
                       style={{
-                        width: 11,
-                        height: 11,
-                        borderRadius: 6,
-                        backgroundColor: EX.color.primary,
+                        width: 40,
+                        height: 40,
+                        borderRadius: 12,
+                        backgroundColor: EX.color.cream,
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
-                    />
-                  ) : null}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
+                    >
+                      <Icon
+                        size={19}
+                        color={EX.color.primary}
+                        strokeWidth={1.8}
+                      />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text
+                        style={{
+                          fontSize: 14.5,
+                          fontWeight: '700',
+                          color: EX.color.ink,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {m.label}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: EX.color.muted,
+                          marginTop: 1,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {m.hint}
+                      </Text>
+                    </View>
+                    {/* Radio — coral filled dot when selected. */}
+                    <View
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 11,
+                        borderWidth: 2,
+                        borderColor: on ? EX.color.primary : EX.color.line16,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {on ? (
+                        <View
+                          style={{
+                            width: 11,
+                            height: 11,
+                            borderRadius: 6,
+                            backgroundColor: EX.color.primary,
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        )}
 
         {/* ── Price summary card ───────────────────────────────────────────── */}
         <View
@@ -534,9 +603,31 @@ export default function PayScreen() {
             <InlineError message={payError} />
           </View>
         ) : null}
+        {/* Payment request: reopen Paystack (e.g. after cancelling). */}
+        {isApp && authorizationUrl ? (
+          <Pressable
+            onPress={onOpenCheckout}
+            style={{
+              height: 46,
+              borderRadius: 14,
+              marginBottom: 10,
+              borderWidth: 1,
+              borderColor: EX.color.line12,
+              backgroundColor: '#fff',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text
+              style={{ color: EX.color.ink, fontSize: 14.5, fontWeight: '700' }}
+            >
+              Open checkout
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={onPay}
-          disabled={!method || processing}
+          disabled={(!isApp && !method) || processing}
           style={{
             height: 54,
             borderRadius: 16,
@@ -544,21 +635,19 @@ export default function PayScreen() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 8,
-            backgroundColor: method
-              ? EX.color.primary
-              : 'rgba(244,81,108,0.35)',
+            backgroundColor: ready ? EX.color.primary : 'rgba(244,81,108,0.35)',
             shadowColor: EX.color.primary,
-            shadowOpacity: method ? 0.45 : 0,
+            shadowOpacity: ready ? 0.45 : 0,
             shadowRadius: 16,
             shadowOffset: { width: 0, height: 10 },
-            elevation: method ? 6 : 0,
+            elevation: ready ? 6 : 0,
           }}
         >
           {processing ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-              Pay {NAIRA(feeNum)}
+              {isApp ? 'I’ve paid — confirm' : `Pay ${NAIRA(feeNum)}`}
             </Text>
           )}
         </Pressable>
