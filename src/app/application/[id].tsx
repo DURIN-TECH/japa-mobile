@@ -44,16 +44,13 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
-import {
-  AppStep,
-  CONVOS,
-  NAIRA,
-  agentById,
-  appById,
-  convoForAgent,
-  destById,
-  paymentRequestsForApp,
-} from '@/components/explorer/data';
+import { NAIRA } from '@/components/explorer/data';
+import type { AppStep } from '@/types/explorer.type';
+// japa#145: the case's agent and their conversation come from the backend
+// (GET /agents/:id, GET /conversations), never the demo AGENTS / CONVOS.
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useAgent } from '@/hooks/useAgents';
+import { useConversations } from '@/hooks/useMessaging';
 import {
   mapApplication,
   mapTimeline,
@@ -97,10 +94,8 @@ const REJECT_REASONS = [
 const HERO = 240;
 
 // ── Unified payment-request row ──────────────────────────────────────────────
-// Demo fixtures and live backend requests are both mapped to this single shape so
-// the card renders identically. `live` tells the approve/reject handlers whether
-// to fire the real backend mutations (demo rows stay local-only). `amount` is the
-// display value in whole naira (live rows are pre-divided from kobo).
+// Backend payment requests (GET /payment-requests) mapped to the card's shape.
+// `amount` is the display value in whole naira (pre-divided from kobo).
 type PayReqRow = {
   id: string;
   title: string;
@@ -110,7 +105,6 @@ type PayReqRow = {
   status: 'pending' | 'approved' | 'rejected';
   due: string;
   note: string;
-  live: boolean;
 };
 
 // ── Timeline — detailed activity stepper ─────────────────────────────────────
@@ -246,30 +240,31 @@ export default function AppDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // ── Resolve demo-first, else fetch live (GET /applications/:id) ─────────────
-  // The single-item hooks are disabled (empty id) on the demo path so we never
-  // hit the backend for a static application.
-  const demo = appById(id);
-  const liveQ = useApplication(demo ? '' : id);
-  const tl = useApplicationTimeline(demo ? '' : id);
+  // ── The case (GET /applications/:id) and its timeline ─────────────────────
+  // japa#145: live only; an unknown id is the backend 404 → not-found.
+  const liveQ = useApplication(id ?? '');
+  const tl = useApplicationTimeline(id ?? '');
   // japa#106: when the case has no denormalised visa name, fetch the visa
   // detail for it (allowed: the user has a case on this visa, #102). The
   // query stays disabled otherwise (empty ids).
-  const needsVisaName = !demo && !!liveQ.data && !liveQ.data.visaTypeName;
+  const needsVisaName = !!liveQ.data && !liveQ.data.visaTypeName;
   const visaNameQ = useVisaType(
     needsVisaName ? (liveQ.data?.countryCode ?? '') : '',
     needsVisaName ? (liveQ.data?.visaTypeId ?? '') : '',
   );
-  const app =
-    demo ??
-    (liveQ.data
-      ? mapApplication(liveQ.data, undefined, visaNameQ.data?.visaType?.name)
-      : undefined);
-  // Live apps carry a resolved `dest`; demo apps resolve from static DESTS.
-  const dest = app?.dest ?? destById(app?.destId);
-  const agent = agentById(app?.agentId);
-  // Find the agent's conversation (matched by agentId) for the message actions.
-  const convo = app ? CONVOS.find((c) => c.agentId === app.agentId) : undefined;
+  const app = liveQ.data
+    ? mapApplication(liveQ.data, undefined, visaNameQ.data?.visaType?.name)
+    : undefined;
+  // Mapped cases carry a self-contained `dest` (assets-module art).
+  const dest = app?.dest;
+  // The assigned agent (none for a self-service case → the row's empty copy).
+  const agentQ = useAgent(app?.agentId || undefined);
+  const agent = agentQ.data ? mapAgent(agentQ.data) : undefined;
+  // The user's conversation with that agent, for the message actions.
+  const { data: conversations } = useConversations();
+  const convo = app?.agentId
+    ? conversations?.find((c) => c.agentId === app.agentId)
+    : undefined;
 
   // Parallax: hero translates up at py * -0.3 (source transform translateY).
   const scrollY = useSharedValue(0);
@@ -280,8 +275,8 @@ export default function AppDetail() {
     transform: [{ translateY: scrollY.value * -0.3 }],
   }));
 
-  // Local approve / reject decision per agent-raised payment request (demo state,
-  // keyed by request id; falls back to the request's own status).
+  // Optimistic approve / reject decision per request (keyed by id; the
+  // backend mutation fires too, and the list refetches on success).
   const [reqOverride, setReqOverride] = useState<
     Record<string, 'pending' | 'approved' | 'rejected'>
   >({});
@@ -292,11 +287,9 @@ export default function AppDetail() {
   const [reasonSel, setReasonSel] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
 
-  // ── Payment requests (live-with-demo-fallback) ──────────────────────────────
-  // For a live application, fetch this client's requests scoped to the route id
-  // (GET /payment-requests?role=client&applicationId=…). Demo apps keep the static
-  // PAYMENT_REQUESTS fixtures. Mutation hooks are created here (top level, before
-  // any early return) so approve/reject can fire the real backend calls.
+  // ── Payment requests (GET /payment-requests?role=client&applicationId=…) ────
+  // Mutation hooks are created here (top level, before any early return) so
+  // approve/reject fire the real backend calls. None → the block is hidden.
   const payReqQ = usePaymentRequests(id);
   const approveReq = useApprovePaymentRequest();
   const rejectReq = useRejectPaymentRequest();
@@ -312,8 +305,8 @@ export default function AppDetail() {
           ? 'rejected'
           : 'pending';
 
-    // Live path: real requests for this application (defensively re-filtered by id).
-    if (!demo && app) {
+    // Real requests for this application (defensively re-filtered by id).
+    if (app) {
       return (payReqQ.data ?? [])
         .filter((r) => r.applicationId === app.id)
         .map<PayReqRow>((r) => ({
@@ -327,30 +320,13 @@ export default function AppDetail() {
           status: toRowStatus(r.status),
           due: r.expiresAt ? `Due ${fmtDate(r.expiresAt, 'MMM d')}` : '',
           note: r.description,
-          live: true,
         }));
     }
-
-    // Demo path: static fixtures keep their existing display fields verbatim.
-    if (app) {
-      return paymentRequestsForApp(app.id).map<PayReqRow>((r) => ({
-        id: r.id,
-        title: r.title,
-        amount: r.amount,
-        agentId: r.agentId,
-        agentName: undefined,
-        // Demo status is 'pending' | 'paid' — both render as Pending (unchanged).
-        status: r.status === 'paid' ? 'pending' : r.status,
-        due: r.due,
-        note: r.note,
-        live: false,
-      }));
-    }
     return [];
-  }, [demo, app, payReqQ.data]);
+  }, [app, payReqQ.data]);
 
-  // Spinner while the live application is still loading (demo path is instant).
-  if (!demo && liveQ.isLoading) {
+  // Spinner while the case is loading with nothing cached.
+  if (liveQ.isLoading) {
     return (
       <View
         style={{
@@ -367,7 +343,7 @@ export default function AppDetail() {
 
   // Load failure that isn't a 404 (offline, server error) with nothing
   // cached: say so and offer a retry instead of claiming it doesn't exist.
-  if (!demo && liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
+  if (liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
     return (
       <CenteredState
         icon={Ic.docs}
@@ -394,16 +370,15 @@ export default function AppDetail() {
     );
   }
 
-  // Timeline: live events (mapped) when present, else the demo app's own steps.
-  const steps: AppStep[] =
-    !demo && tl.data?.length ? mapTimeline(tl.data) : app.steps;
+  // Timeline: the case's live events ([] while loading or when none).
+  const steps: AppStep[] = tl.data?.length ? mapTimeline(tl.data) : app.steps;
 
   const pct = Math.round(app.progress * 100);
   const actionable = app.next.cta != null;
 
-  // Open (or fall back to) an agent's conversation for a payment-request message.
+  // Open the agent's live conversation, else their profile.
   const messageAgent = (agentId: string) => {
-    const c = convoForAgent(agentId);
+    const c = conversations?.find((x) => x.agentId === agentId);
     if (c) router.push(`/messages/${c.id}`);
     else router.push(`/agent/${agentId}`);
   };
@@ -418,10 +393,8 @@ export default function AppDetail() {
     if (!rejectId) return;
     const reason = reasonSel === 'Other' ? reasonText.trim() : reasonSel;
     if (!reason) return; // guarded by the disabled button, but keep it safe
-    // For a live request, reject on the backend (auto-creates a chat with the
-    // reason). Demo requests only update local state.
-    const target = payReqs.find((r) => r.id === rejectId);
-    if (target?.live) rejectReq.mutate({ requestId: rejectId, reason });
+    // Reject on the backend (auto-creates a chat with the reason).
+    rejectReq.mutate({ requestId: rejectId, reason });
     setReqOverride((s) => ({ ...s, [rejectId]: 'rejected' }));
     setReqReason((r) => ({ ...r, [rejectId]: reason }));
     closeReject();
@@ -433,7 +406,8 @@ export default function AppDetail() {
     if (convo) router.push(`/messages/${convo.id}`);
   };
   const onNext = () => {
-    if (actionable) router.push(`/self-service/${dest.id}`);
+    // self-service/[id] takes the APPLICATION id (japa#145).
+    if (actionable) router.push(`/self-service/${app.id}`);
     else openConvo();
   };
 
@@ -612,9 +586,8 @@ export default function AppDetail() {
           {/* ── Visa details link (japa#106) ─────────────────────────────────
               Reuses destination/[id].tsx's "Full visa breakdown" row. Opens
               the visa breakdown, which works for an agency-only visa because
-              the user has a case on it (#102). Live cases only: demo apps
-              resolve their visa from the static fixtures instead. */}
-          {!demo ? (
+              the user has a case on it (#102). */}
+          {dest.id ? (
             <Pressable
               onPress={() =>
                 router.push({
@@ -806,10 +779,11 @@ export default function AppDetail() {
                       }}
                     >
                       <Portrait
-                        seed={agentById(req.agentId)?.seed ?? 0}
+                        seed={agent?.id === req.agentId ? agent.seed : 0}
                         size={22}
                         name={
-                          req.agentName ?? agentById(req.agentId)?.n ?? 'Agent'
+                          req.agentName ??
+                          (agent?.id === req.agentId ? agent.n : 'Agent')
                         }
                       />
                       <Text
@@ -821,8 +795,7 @@ export default function AppDetail() {
                       >
                         Requested by{' '}
                         {req.agentName ??
-                          agentById(req.agentId)?.n ??
-                          'your agent'}
+                          (agent?.id === req.agentId ? agent.n : 'your agent')}
                       </Text>
                     </View>
 
@@ -935,9 +908,8 @@ export default function AppDetail() {
                                     {
                                       text: 'Approve',
                                       onPress: () => {
-                                        // Live request → approve on the backend
-                                        // (releases escrow); demo stays local.
-                                        if (req.live) approveReq.mutate(req.id);
+                                        // Approve on the backend (releases escrow).
+                                        approveReq.mutate(req.id);
                                         setSt('approved');
                                       },
                                     },
@@ -1177,76 +1149,82 @@ export default function AppDetail() {
             </>
           ) : null}
 
-          {/* ── Your agent ───────────────────────────────────────────────────── */}
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            Your agent
-          </Text>
+          {/* japa#145: no assigned agent (self-service case) → no section. */}
           {agent ? (
-            <Pressable
-              onPress={() => router.push(`/agent/${agent.id}`)}
-              style={[
-                {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 13,
-                  backgroundColor: '#fff',
-                  borderWidth: 1,
-                  borderColor: EX.color.line08,
-                  borderRadius: 20,
-                  padding: 14,
-                },
-                EXShadow.card,
-              ]}
-            >
-              <Portrait seed={agent.seed} size={48} name={agent.n} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text
-                  style={{
-                    fontSize: 15,
-                    fontWeight: '700',
-                    color: EX.color.ink,
-                  }}
-                  numberOfLines={1}
-                >
-                  {agent.n}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 12.5,
-                    color: EX.color.muted,
-                    marginTop: 2,
-                  }}
-                  numberOfLines={1}
-                >
-                  {agent.spec} · responds in {agent.resp}
-                </Text>
-              </View>
-              {/* Message circle: 38, radius 19, coral tint .10 */}
-              <Pressable
-                onPress={openConvo}
-                hitSlop={8}
+            <>
+              <Text
                 style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 19,
-                  backgroundColor: EX.color.primaryTint10,
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                  marginTop: 26,
+                  marginBottom: 12,
+                  marginHorizontal: 2,
                 }}
               >
-                <Ic.msg size={18} color={EX.color.primary} strokeWidth={1.8} />
+                Your agent
+              </Text>
+              <Pressable
+                onPress={() => router.push(`/agent/${agent.id}`)}
+                style={[
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 13,
+                    backgroundColor: '#fff',
+                    borderWidth: 1,
+                    borderColor: EX.color.line08,
+                    borderRadius: 20,
+                    padding: 14,
+                  },
+                  EXShadow.card,
+                ]}
+              >
+                <Portrait seed={agent.seed} size={48} name={agent.n} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={{
+                      fontSize: 15,
+                      fontWeight: '700',
+                      color: EX.color.ink,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {agent.n}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      color: EX.color.muted,
+                      marginTop: 2,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {agent.spec} · responds in {agent.resp}
+                  </Text>
+                </View>
+                {/* Message circle: 38, radius 19, coral tint .10 */}
+                <Pressable
+                  onPress={openConvo}
+                  hitSlop={8}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: EX.color.primaryTint10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ic.msg
+                    size={18}
+                    color={EX.color.primary}
+                    strokeWidth={1.8}
+                  />
+                </Pressable>
               </Pressable>
-            </Pressable>
+            </>
           ) : null}
         </View>
       </Animated.ScrollView>
