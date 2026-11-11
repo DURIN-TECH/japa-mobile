@@ -47,6 +47,7 @@ import {
   Flag,
   GlassButton,
   Portrait,
+  SectionTitle,
   Verified,
 } from '@/components/explorer/primitives';
 import type { Agent } from '@/components/explorer/data';
@@ -231,25 +232,6 @@ function AgentRow({ a }: { a: Agent }) {
 // · price + "Service fee". Agency-only rows aren't tappable (the visa detail
 // 404s for anyone without a case at this agency, #102); global rows push the
 // visa breakdown.
-
-/** Section title, same style as "{n} agents here". */
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <Text
-      style={{
-        fontSize: 18,
-        fontWeight: '700',
-        color: EX.color.ink,
-        letterSpacing: -0.18,
-        marginTop: 26,
-        marginBottom: 12,
-        marginHorizontal: 2,
-      }}
-    >
-      {children}
-    </Text>
-  );
-}
 
 /** One visa row inside the group card. */
 function AgencyVisaRowView({
@@ -480,7 +462,10 @@ function AgencyVisasSection({
 
   return (
     <>
-      <SectionTitle>Visas they handle</SectionTitle>
+      {/* Shared SectionTitle (18/700 ink, marginTop 26); spec bottom gap 12. */}
+      <SectionTitle style={{ marginBottom: 12 }}>
+        Visas they handle
+      </SectionTitle>
       {body}
     </>
   );
