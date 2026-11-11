@@ -5,7 +5,13 @@
 // score (the score + "MATCH SCORE" label live inside the gauge), a verdict pill,
 // then the content: summary, "What you've got" (matched criteria), "To strengthen
 // your case" (gaps), and a dark agent-nudge card. A sticky coral CTA sends the
-// user into the self-service flow.
+// user to the visa breakdown, where "Start application" creates the case.
+//
+// japa#145: live only. The result is the scored check from
+// GET /eligibility/checks/:checkId (mapped by liveEligibility.mapCheckResult);
+// the static ELIG_RESULT and the hard-coded "Sarah" nudge are gone. A missing
+// or unknown checkId → CenteredState "We couldn’t find this result"; a failed
+// load → error + retry. The nudge features the real top agent, or is hidden.
 //
 // The gauge is real react-native-svg (Svg + Circle) driven by Reanimated: the
 // foreground arc's stroke-dashoffset animates from fully-hidden to score/100.
@@ -32,7 +38,12 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import { ELIG_RESULT, agentById } from '@/components/explorer/data';
+import { mapCheckResult } from '@/components/explorer/liveEligibility';
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useTopAgents } from '@/hooks/useAgents';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { loadErrorCopy } from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
 import {
   GlassButton,
@@ -40,11 +51,8 @@ import {
   SectionTitle,
 } from '@/components/explorer/primitives';
 // ── Live backend wiring ───────────────────────────────────────────────────────
-// When the wizard submitted a real eligibility check it routes here with a
-// `checkId`. We fetch that scored EligibilityCheck and derive the display from
-// it; without a checkId we render the static demo result (ELIG_RESULT).
+// The wizard routes here with the submitted check's `checkId`.
 import { useEligibilityCheck } from '@/hooks/useEligibility';
-import { EligibilityLevel } from '@/types/eligibility.type';
 
 // Animate the SVG circle's dash offset (the arc "unrolls" to the score).
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -206,55 +214,22 @@ export default function EligibilityResult() {
   // Fetch the real scored check when a checkId was passed (enabled by the id).
   const checkQ = useEligibilityCheck(checkId ?? '');
 
-  // Derive the display from the live EligibilityCheck when available, else fall
-  // back to the static demo result. Kept in a memo so it only recomputes when the
-  // fetched data changes.
-  const { score, verdict, summary, matched, gaps } = useMemo(() => {
-    const c = checkId ? checkQ.data : undefined;
-    if (!c) return ELIG_RESULT;
+  // The display, from the live check only (undefined until it loads).
+  const result = useMemo(
+    () => (checkQ.data ? mapCheckResult(checkQ.data) : undefined),
+    [checkQ.data],
+  );
 
-    // eligibilityLevel → verdict pill copy.
-    const verdictMap: Record<EligibilityLevel, string> = {
-      high: 'Likely eligible',
-      medium: 'Possibly eligible',
-      low: 'Needs work',
-      not_applicable: 'No visa required',
-    };
-    // Generic one-liner used when the backend returned no recommendations.
-    const genericMap: Record<EligibilityLevel, string> = {
-      high: 'Based on your answers, you have a strong profile for this visa.',
-      medium:
-        'Based on your answers, you may be eligible with a few improvements.',
-      low: 'Based on your answers, your profile needs work — an expert can help.',
-      not_applicable:
-        'Based on your answers, you may not need a visa for this trip.',
-    };
-
-    const matchedItems = c.breakdown
-      .filter((b) => b.passed)
-      .map((b) => b.question);
-    // Prefer explicit missing requirements; fall back to failed breakdown items.
-    const gapItems = c.missingRequirements?.length
-      ? c.missingRequirements
-      : c.breakdown.filter((b) => !b.passed).map((b) => b.question);
-
-    return {
-      score: c.score,
-      verdict: verdictMap[c.eligibilityLevel] ?? ELIG_RESULT.verdict,
-      summary:
-        c.recommendations?.[0] ??
-        genericMap[c.eligibilityLevel] ??
-        ELIG_RESULT.summary,
-      matched: matchedItems,
-      gaps: gapItems,
-    };
-  }, [checkId, checkQ.data]);
-
-  const agent = agentById('a1'); // nudge agent — Sarah Johnson
+  // Agent nudge: the real #1 top agent (GET /agents/top); none → hidden.
+  const topAgentsQ = useTopAgents(1);
+  const agent = useMemo(
+    () => (topAgentsQ.data ?? []).map(mapAgent)[0],
+    [topAgentsQ.data],
+  );
   const firstName = agent?.n.split(' ')[0] ?? 'an expert';
 
   // Spinner while the live check is loading (all hooks above already ran).
-  if (checkId && checkQ.isLoading) {
+  if (checkQ.isLoading) {
     return (
       <View
         style={{
@@ -268,6 +243,36 @@ export default function EligibilityResult() {
       </View>
     );
   }
+
+  // Load failed (not a 404) with nothing cached → error + retry.
+  if (checkQ.isError && !checkQ.data && !isNotFoundError(checkQ.error)) {
+    return (
+      <CenteredState
+        icon={Ic.gauge}
+        title="We couldn’t load your result"
+        errorMessage={loadErrorCopy('your result')}
+        onRetry={() => checkQ.refetch()}
+        retrying={checkQ.isRefetching}
+        actionLabel="Back to explore"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
+    );
+  }
+
+  // Missing / unknown checkId → not-found (never a static result).
+  if (!result || !checkQ.data) {
+    return (
+      <CenteredState
+        icon={Ic.gauge}
+        title="We couldn’t find this result"
+        actionLabel="Back to explore"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
+    );
+  }
+  const { score, verdict, summary, matched, gaps } = result;
+  const check = checkQ.data;
+  const visaCode = check.countryCode;
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -460,7 +465,14 @@ export default function EligibilityResult() {
         }}
       >
         <Pressable
-          onPress={() => router.push(`/self-service/${dest}`)}
+          // The visa breakdown's "Start application" creates the real case
+          // (self-service/[id] only takes an application id).
+          onPress={() =>
+            router.push({
+              pathname: '/visa/[id]',
+              params: { id: check.visaTypeId ?? dest, code: visaCode },
+            })
+          }
           style={{
             height: 54,
             borderRadius: EX.radius.button, // 16
