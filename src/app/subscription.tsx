@@ -5,11 +5,18 @@
 // _layout.tsx). A full-bleed coral gradient header with two decorative
 // circles sits above a stack of PlanCards:
 //   • featured plan (tag "Most popular")  → dark gradient card + crown + coral Upgrade
-//   • current plan  (id === CURRENT_PLAN) → coral border + "Current" pill + disabled CTA
+//   • current plan  (from GET /subscriptions/me) → coral border + "Current" pill + disabled CTA
 //   • other plans                          → white card + dark Upgrade (+ optional tag)
 //
-// Every measurement below is quoted from the prototype (flows.jsx). Data comes
-// from the static contract: `PLANS`, `PLAN_FEATURES` and `CURRENT_PLAN`.
+// Every measurement below is quoted from the prototype (flows.jsx).
+//
+// japa#145: live only. Plans (names, prices) from GET /plans; the current
+// plan from GET /subscriptions/me; feature copy from the static
+// `PLAN_FEATURES` / FEATURE_LABEL catalogue. No demo `PLANS`, and never an
+// assumed "free" plan: while the subscription is unknown or failed there is
+// no "Current plan" badge and the upgrade CTAs are disabled (60%); a failure
+// shows an InlineError + "Try again". Plans loading → coral spinner; plans
+// failed → error + retry; no plans → "No plans available right now".
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useMemo } from 'react';
@@ -19,13 +26,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
+import { PLAN_FEATURES, NAIRA } from '@/components/explorer/data';
+import type { Plan } from '@/types/explorer.type';
+import { InlineError } from '@/components/explorer/AccountForm';
 import {
-  PLANS,
-  PLAN_FEATURES,
-  CURRENT_PLAN,
-  NAIRA,
-  type Plan,
-} from '@/components/explorer/data';
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
 import { GlassButton } from '@/components/explorer/primitives';
 // ── Live backend wiring — plans, current subscription, checkout ──────────────
@@ -72,15 +82,18 @@ function FeatureRow({ label, dark }: { label: string; dark?: boolean }) {
 }
 
 // ── PlanCard — one pricing tier ──────────────────────────────────────────────
-// `currentId` marks the active plan (live subscription, demo fallback); `onUpgrade`
-// launches Paystack checkout for a paid, non-current tier.
+// `currentId` marks the active plan (null while unknown → no badge);
+// `disabled` greys the upgrade CTA (60%) while the subscription is unknown;
+// `onUpgrade` launches Paystack checkout for a paid, non-current tier.
 function PlanCard({
   plan,
   currentId,
+  disabled,
   onUpgrade,
 }: {
   plan: Plan;
-  currentId: string;
+  currentId: string | null;
+  disabled?: boolean;
   onUpgrade: (plan: Plan) => void;
 }) {
   const featured = plan.tag === 'Most popular';
@@ -239,8 +252,8 @@ function PlanCard({
       {/* Feature list */}
       <View style={{ marginTop: 16, gap: 10 }}>
         {plan.features.map((key) => (
-          // Demo plans carry catalog keys (→ PLAN_FEATURES); live plans already
-          // carry human labels, so fall back to the value itself.
+          // Catalogue keys map through PLAN_FEATURES; live plans already carry
+          // human labels (FEATURE_LABEL), so fall back to the value itself.
           <FeatureRow
             key={key}
             label={PLAN_FEATURES[key] ?? key}
@@ -271,7 +284,9 @@ function PlanCard({
       ) : (
         <Pressable
           onPress={() => onUpgrade(plan)}
+          disabled={disabled}
           style={{
+            opacity: disabled ? 0.6 : 1,
             height: 48,
             borderRadius: 14,
             marginTop: 18,
@@ -302,39 +317,52 @@ export default function SubscriptionView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // ── Live plans (GET /plans?audience=client) with demo fallback ─────────────
+  // ── Live plans (GET /plans?audience=client) ────────────────────────────────
   // The Explorer's subscriber is an individual client → audience "client".
   const plansQ = usePlans('client');
   const plans = useMemo<Plan[]>(() => {
     const dtos = plansQ.data ?? [];
     // Backend doesn't flag a "Most popular" plan, so promote the middle-priced
-    // paid tier (mirrors the demo where "Seli Plus" sits between Free and Pro).
+    // paid tier.
     const paid = dtos
       .filter((p) => p.priceKobo > 0)
       .sort((a, b) => a.priceKobo - b.priceKobo);
     const popularId = paid.length
       ? paid[Math.floor((paid.length - 1) / 2)].id
       : undefined;
-    const live = dtos.map((p) => mapPlan(p, popularId));
-    return live.length ? live : PLANS;
+    return dtos.map((p) => mapPlan(p, popularId));
   }, [plansQ.data]);
+  const plansState = queryState(plansQ);
 
-  // ── Current plan (GET /subscriptions/me) with demo fallback ────────────────
+  // ── Current plan (GET /subscriptions/me) ────────────────────────────────────
+  // Known only once the call answered. A loaded `subscription: null` means no
+  // paid subscription, so the zero-price plan is the current one (that is the
+  // backend's answer, not an assumption). Unknown / failed → null.
   const mine = useMySubscription();
-  const currentId = mine.data?.subscription?.planId ?? CURRENT_PLAN;
+  const subKnown = mine.data !== undefined;
+  const currentId: string | null = subKnown
+    ? (mine.data?.subscription?.planId ??
+      plans.find((p) => p.price === 0)?.id ??
+      null)
+    : null;
+  const subFailed = mine.isError && !subKnown;
 
   // ── Upgrade → Paystack checkout ────────────────────────────────────────────
-  // Free tier keeps the demo no-op; paid tiers open the hosted checkout returned
-  // by the backend. Any failure silently keeps the demo behavior (no crash).
+  // The zero-price tier has no checkout (downgrades aren't self-serve), so it
+  // is a no-op; paid tiers open the hosted checkout returned by the backend.
+  // A failure shows an InlineError (the button is the retry).
   const checkout = useStartCheckout();
+  const [checkoutError, setCheckoutError] = React.useState<string | null>(null);
   const onUpgrade = useCallback(
     async (plan: Plan) => {
-      if (plan.price === 0) return; // "Switch to Free" — demo no-op
+      if (plan.price === 0) return;
+      setCheckoutError(null);
       try {
         const url = await checkout.mutateAsync(plan.id);
-        if (url) await Linking.openURL(url);
+        if (!url) throw new Error('No checkout URL');
+        await Linking.openURL(url);
       } catch {
-        // No backend / checkout failed — preserve demo behavior.
+        setCheckoutError('We couldn’t open checkout. Try again in a moment.');
       }
     },
     [checkout],
@@ -453,11 +481,47 @@ export default function SubscriptionView() {
 
         {/* ── Plan cards ───────────────────────────────────────────────────── */}
         <View style={{ paddingHorizontal: EX.space.screenX, paddingTop: 24 }}>
+          {/* Current plan unknown because the call failed: say so + retry. */}
+          {subFailed && plansState === 'ready' && plans.length ? (
+            <StateError
+              section
+              style={{ marginBottom: 16 }}
+              message={loadErrorCopy('your current plan')}
+              onRetry={() => mine.refetch()}
+              retrying={mine.isRefetching}
+            />
+          ) : null}
+          {checkoutError ? (
+            <View style={{ marginBottom: 16 }}>
+              <InlineError message={checkoutError} />
+            </View>
+          ) : null}
+
+          {plansState === 'loading' ? <StateLoading section /> : null}
+          {plansState === 'error' ? (
+            <StateError
+              section
+              message={loadErrorCopy('plans')}
+              onRetry={() => plansQ.refetch()}
+              retrying={plansQ.isRefetching}
+            />
+          ) : null}
+          {plansState === 'ready' && plans.length === 0 ? (
+            <StateEmpty
+              section
+              icon={Ic.crown}
+              title="No plans available right now"
+              body="Check back soon."
+            />
+          ) : null}
+
           {plans.map((plan) => (
             <PlanCard
               key={plan.id}
               plan={plan}
               currentId={currentId}
+              // Unknown subscription → no upgrades until we know the plan.
+              disabled={!subKnown}
               onUpgrade={onUpgrade}
             />
           ))}

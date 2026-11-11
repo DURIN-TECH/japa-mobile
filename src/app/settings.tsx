@@ -10,6 +10,7 @@
 
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Pressable,
@@ -22,8 +23,12 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
-// Subscription tier label is derived from the shared demo plan catalogue.
-import { PLANS, CURRENT_PLAN } from '@/components/explorer/data';
+// japa#145: the Subscription row shows the LIVE plan name (GET /subscriptions/me
+// matched against GET /plans), never a default "Free". Loading → small coral
+// spinner; failed → InlineError + "Try again" under the row.
+import { usePlans, useMySubscription } from '@/hooks/useSubscription';
+import { InlineError } from '@/components/explorer/AccountForm';
+import { OutlineButton, RETRY_LABEL } from '@/components/explorer/states';
 // Real Firebase sign-out (invoked after the confirm dialog) + account state
 // (email-verified flag, whether this is a password account) used to gate the
 // account-security rows below.
@@ -196,9 +201,26 @@ export default function SettingsScreen() {
     }
   };
 
-  // Subscription tier label from the shared plan catalogue.
-  const currentPlanName =
-    PLANS.find((p) => p.id === CURRENT_PLAN)?.name ?? 'Free';
+  // Subscription tier label from live data. A loaded `subscription: null`
+  // means no paid plan → the zero-price plan's real name from GET /plans.
+  const mine = useMySubscription();
+  const plansQ = usePlans('client');
+  const planLoading =
+    (mine.isLoading && !mine.data) || (plansQ.isLoading && !plansQ.data);
+  const planFailed =
+    (mine.isError && !mine.data) || (plansQ.isError && !plansQ.data);
+  const planId = mine.data?.subscription?.planId;
+  const currentPlanName = (() => {
+    if (!mine.data || !plansQ.data) return undefined;
+    const plan = planId
+      ? plansQ.data.find((p) => p.id === planId)
+      : plansQ.data.find((p) => p.priceKobo === 0);
+    return plan?.name;
+  })();
+  const retryPlan = () => {
+    if (mine.isError) mine.refetch();
+    if (plansQ.isError) plansQ.refetch();
+  };
 
   // ── Account-security state ──────────────────────────────────────────────────
   // Password/email changes only apply to email/password accounts (phone-only users
@@ -339,8 +361,30 @@ export default function SettingsScreen() {
             icon={Ic.cards}
             label="Subscription"
             value={currentPlanName}
+            right={
+              planLoading ? (
+                <ActivityIndicator size="small" color={EX.color.primary} />
+              ) : undefined
+            }
             onPress={() => router.push('/subscription')}
           />
+          {planFailed ? (
+            <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
+              <InlineError message="We couldn’t load your plan. Try again." />
+              {mine.isRefetching || plansQ.isRefetching ? (
+                <ActivityIndicator
+                  color={EX.color.primary}
+                  style={{ alignSelf: 'flex-start' }}
+                />
+              ) : (
+                <OutlineButton
+                  label={RETRY_LABEL}
+                  onPress={retryPlan}
+                  style={{ alignSelf: 'flex-start' }}
+                />
+              )}
+            </View>
+          ) : null}
         </Card>
 
         {/* ── 4. Legal ───────────────────────────────────────────────────── */}
