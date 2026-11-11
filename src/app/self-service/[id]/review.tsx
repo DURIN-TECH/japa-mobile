@@ -47,6 +47,7 @@ import {
 import {
   BlockingRuleCard,
   Caption,
+  CountryContextCard,
   CheckRow,
   FindingCard,
   NumberedRow,
@@ -462,7 +463,8 @@ export default function ReviewScreen() {
                   </Text>
                 ) : null}
                 {disclaimer}
-                {/* Slot A: country context card (#116). Renders nothing until it ships. */}
+                {/* Slot A: country context card (#116). Full tier only (the free payload never carries it); nothing when unavailable. */}
+                <CountryContextCard context={full?.countryContext} />
               </>
             )}
 
