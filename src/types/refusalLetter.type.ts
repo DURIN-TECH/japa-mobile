@@ -64,7 +64,10 @@ export interface RefusalDisclosureNotice {
 export interface RefusalData {
   outcome: RefusalOutcome;
   stateMessage: string | null;
-  extracted: { decisionDate: string | null; visaTypeNamed: string | null } | null;
+  extracted: {
+    decisionDate: string | null;
+    visaTypeNamed: string | null;
+  } | null;
   noRubricMessage: string | null;
   reasons: RefusalReasonView[];
   checklist: {
@@ -73,7 +76,8 @@ export interface RefusalData {
     items: RefusalChecklistItemView[];
   };
   warnings: { code: 'name_mismatch' | 'dob_mismatch'; message: string }[];
-  disclosureNotice: RefusalDisclosureNotice;
+  // Null when the destination has no published notice: render nothing.
+  disclosureNotice: RefusalDisclosureNotice | null;
 }
 
 export interface RefusalEnvelope {

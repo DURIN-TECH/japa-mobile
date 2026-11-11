@@ -77,10 +77,17 @@ function SourceLink({ url }: { url: string }) {
     <Pressable
       onPress={() => openUrl(url)}
       hitSlop={8}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 }}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        marginTop: 8,
+      }}
     >
       <Ic.arrowUR size={14} color={EX.color.primary} strokeWidth={2} />
-      <Text style={{ color: EX.color.primary, fontSize: 13, fontWeight: '700' }}>
+      <Text
+        style={{ color: EX.color.primary, fontSize: 13, fontWeight: '700' }}
+      >
         Read the source
       </Text>
     </Pressable>
@@ -207,7 +214,9 @@ function ReasonCard({ reason }: { reason: RefusalReasonView }) {
       ) : (
         <>
           <Label>Not matched to our guidance</Label>
-          <Text style={{ color: EX.color.inkMuted, fontSize: 13.5, lineHeight: 19 }}>
+          <Text
+            style={{ color: EX.color.inkMuted, fontSize: 13.5, lineHeight: 19 }}
+          >
             We could not match this reason to a published rule we hold, so we
             have not guessed. The words above are your letter’s own.
           </Text>
@@ -226,7 +235,14 @@ function ReasonCard({ reason }: { reason: RefusalReasonView }) {
           }}
         >
           <Ic.users size={16} color={EX.color.primary} strokeWidth={2} />
-          <Text style={{ flex: 1, color: EX.color.ink2, fontSize: 13.5, lineHeight: 19 }}>
+          <Text
+            style={{
+              flex: 1,
+              color: EX.color.ink2,
+              fontSize: 13.5,
+              lineHeight: 19,
+            }}
+          >
             {reason.adviserNote}
           </Text>
         </View>
@@ -258,7 +274,14 @@ function Results({ data }: { data: RefusalData }) {
           }}
         >
           <Ic.help size={16} color={EX.color.primary} strokeWidth={2} />
-          <Text style={{ flex: 1, color: EX.color.ink2, fontSize: 13.5, lineHeight: 19 }}>
+          <Text
+            style={{
+              flex: 1,
+              color: EX.color.ink2,
+              fontSize: 13.5,
+              lineHeight: 19,
+            }}
+          >
             {w.message}
           </Text>
         </View>
@@ -270,12 +293,20 @@ function Results({ data }: { data: RefusalData }) {
           (data.extracted.decisionDate || data.extracted.visaTypeNamed) ? (
             <Card style={{ marginBottom: 12 }}>
               {data.extracted.visaTypeNamed ? (
-                <Text style={{ color: EX.color.ink, fontSize: 14.5, fontWeight: '700' }}>
+                <Text
+                  style={{
+                    color: EX.color.ink,
+                    fontSize: 14.5,
+                    fontWeight: '700',
+                  }}
+                >
                   {data.extracted.visaTypeNamed}
                 </Text>
               ) : null}
               {data.extracted.decisionDate ? (
-                <Text style={{ color: EX.color.muted, fontSize: 13, marginTop: 2 }}>
+                <Text
+                  style={{ color: EX.color.muted, fontSize: 13, marginTop: 2 }}
+                >
                   Decision dated {data.extracted.decisionDate}
                 </Text>
               ) : null}
@@ -307,16 +338,37 @@ function Results({ data }: { data: RefusalData }) {
             <>
               <SectionTitle>What to gather before you reapply</SectionTitle>
               {data.checklist.items.length === 0 ? (
-                <Text style={{ color: EX.color.inkMuted, fontSize: 13.5, lineHeight: 19, marginBottom: 12 }}>
-                  {data.checklist.emptyReason ?? 'Nothing is listed for these points.'}
+                <Text
+                  style={{
+                    color: EX.color.inkMuted,
+                    fontSize: 13.5,
+                    lineHeight: 19,
+                    marginBottom: 12,
+                  }}
+                >
+                  {data.checklist.emptyReason ??
+                    'Nothing is listed for these points.'}
                 </Text>
               ) : (
                 data.checklist.items.map((item) => (
                   <Card key={item.checklistItemId} style={{ marginBottom: 10 }}>
-                    <Text style={{ color: EX.color.ink, fontSize: 14.5, fontWeight: '700' }}>
+                    <Text
+                      style={{
+                        color: EX.color.ink,
+                        fontSize: 14.5,
+                        fontWeight: '700',
+                      }}
+                    >
                       {item.title}
                     </Text>
-                    <Text style={{ color: EX.color.inkMuted, fontSize: 13.5, lineHeight: 19, marginTop: 4 }}>
+                    <Text
+                      style={{
+                        color: EX.color.inkMuted,
+                        fontSize: 13.5,
+                        lineHeight: 19,
+                        marginTop: 4,
+                      }}
+                    >
                       {item.reason}
                     </Text>
                     <Quote text={item.citation.quote} />
@@ -324,34 +376,61 @@ function Results({ data }: { data: RefusalData }) {
                   </Card>
                 ))
               )}
-              <Text style={{ color: EX.color.muted, fontSize: 12.5, marginBottom: 12 }}>
+              <Text
+                style={{
+                  color: EX.color.muted,
+                  fontSize: 12.5,
+                  marginBottom: 12,
+                }}
+              >
                 Nothing is added to your to-do list until you say so.
               </Text>
             </>
           ) : null}
         </>
       ) : (
-        <EmptyState message={data.stateMessage ?? 'We could not read this letter.'} />
+        <EmptyState
+          message={data.stateMessage ?? 'We could not read this letter.'}
+        />
       )}
 
-      {/* The disclosure notice is always shown, even when nothing could be matched. */}
-      <Card style={{ marginTop: 4 }}>
-        <Text style={{ color: EX.color.ink, fontSize: 15, fontWeight: '700' }}>
-          {notice.title}
-        </Text>
-        <Text style={{ color: EX.color.ink2, fontSize: 14, lineHeight: 20, marginTop: 6 }}>
-          {notice.body}
-        </Text>
-        <Label>The published rule · {notice.rule.ruleRef}</Label>
-        <Quote text={notice.rule.quote} />
-        <Text style={{ color: EX.color.muted, fontSize: 12.5, marginTop: 6 }}>
-          {notice.rule.context}
-        </Text>
-        <SourceLink url={notice.rule.url} />
-        <Text style={{ color: EX.color.inkMuted, fontSize: 13.5, lineHeight: 19, marginTop: 10 }}>
-          {notice.help}
-        </Text>
-      </Card>
+      {/* The disclosure notice is shown even when nothing could be matched, but
+          only when the destination has one: no notice, nothing rendered. */}
+      {notice ? (
+        <Card style={{ marginTop: 4 }}>
+          <Text
+            style={{ color: EX.color.ink, fontSize: 15, fontWeight: '700' }}
+          >
+            {notice.title}
+          </Text>
+          <Text
+            style={{
+              color: EX.color.ink2,
+              fontSize: 14,
+              lineHeight: 20,
+              marginTop: 6,
+            }}
+          >
+            {notice.body}
+          </Text>
+          <Label>The published rule · {notice.rule.ruleRef}</Label>
+          <Quote text={notice.rule.quote} />
+          <Text style={{ color: EX.color.muted, fontSize: 12.5, marginTop: 6 }}>
+            {notice.rule.context}
+          </Text>
+          <SourceLink url={notice.rule.url} />
+          <Text
+            style={{
+              color: EX.color.inkMuted,
+              fontSize: 13.5,
+              lineHeight: 19,
+              marginTop: 10,
+            }}
+          >
+            {notice.help}
+          </Text>
+        </Card>
+      ) : null}
     </View>
   );
 }
@@ -457,7 +536,8 @@ export default function RefusalLetterScreen() {
 
   /** Message for a plain error. */
   const errorMessage = (e: unknown): string => {
-    if (isNetworkFailure(e)) return 'No connection. Check your network and try again.';
+    if (isNetworkFailure(e))
+      return 'No connection. Check your network and try again.';
     const m = (e as { message?: string } | null)?.message;
     return m || 'Something went wrong. Please try again.';
   };
@@ -519,7 +599,9 @@ export default function RefusalLetterScreen() {
           // Pending: the job runs on the server, so leaving is safe.
           <View style={{ alignItems: 'center', paddingVertical: 40, gap: 12 }}>
             <ActivityIndicator color={EX.color.primary} />
-            <Text style={{ color: EX.color.ink, fontSize: 15.5, fontWeight: '700' }}>
+            <Text
+              style={{ color: EX.color.ink, fontSize: 15.5, fontWeight: '700' }}
+            >
               Reading your letter…
             </Text>
             <Text
@@ -548,8 +630,18 @@ export default function RefusalLetterScreen() {
           <View>
             <Results data={envelope.data} />
             <View style={{ marginTop: 16 }}>
-              <Pressable onPress={reset} hitSlop={8} style={{ alignSelf: 'center' }}>
-                <Text style={{ color: EX.color.primary, fontSize: 14, fontWeight: '700' }}>
+              <Pressable
+                onPress={reset}
+                hitSlop={8}
+                style={{ alignSelf: 'center' }}
+              >
+                <Text
+                  style={{
+                    color: EX.color.primary,
+                    fontSize: 14,
+                    fontWeight: '700',
+                  }}
+                >
                   Upload a different letter
                 </Text>
               </Pressable>
@@ -559,7 +651,9 @@ export default function RefusalLetterScreen() {
           // Idle: nothing uploaded yet.
           <View>
             <Card>
-              <Text style={{ color: EX.color.ink, fontSize: 16, fontWeight: '700' }}>
+              <Text
+                style={{ color: EX.color.ink, fontSize: 16, fontWeight: '700' }}
+              >
                 Been refused before?
               </Text>
               <Text

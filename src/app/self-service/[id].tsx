@@ -1177,10 +1177,23 @@ export default function SelfServiceView() {
             >
               <Ic.docs size={22} color={EX.color.primary} strokeWidth={1.8} />
               <View style={{ flex: 1 }}>
-                <Text style={{ color: EX.color.ink, fontSize: 15, fontWeight: '700' }}>
+                <Text
+                  style={{
+                    color: EX.color.ink,
+                    fontSize: 15,
+                    fontWeight: '700',
+                  }}
+                >
                   Refusal letter
                 </Text>
-                <Text style={{ color: EX.color.inkMuted, fontSize: 13, lineHeight: 18, marginTop: 2 }}>
+                <Text
+                  style={{
+                    color: EX.color.inkMuted,
+                    fontSize: 13,
+                    lineHeight: 18,
+                    marginTop: 2,
+                  }}
+                >
                   See what it says next to the published rule.
                 </Text>
               </View>
