@@ -24,6 +24,22 @@ import { Pill, SectionTitle } from '@/components/explorer/primitives';
 import { InlineError } from '@/components/explorer/AccountForm';
 import { Checklist, ChecklistItem } from '@/types/checklist.type';
 import { Document } from '@/types/documents.type';
+// Per-upload document check (#115): shown on the item once a document is uploaded.
+import { DocumentCheckNotice } from '@/components/explorer/DocumentCheckNotice';
+import type { DocumentChecksResponse } from '@/types/documentCheck.type';
+
+/** The document-check data and actions the checklist threads down to each item (#115). */
+export interface ChecksProps {
+  /** Latest checks for the application (null/undefined until loaded). */
+  checks?: DocumentChecksResponse | null;
+  checksLoading: boolean;
+  checksError: boolean;
+  onReloadChecks: () => void;
+  /** Run the check again for a document id. */
+  onRetryCheck: (documentId: string) => void;
+  /** The document id whose retry is in flight, if any. */
+  retryingDocId: string | null;
+}
 
 /** The `requirementId` the backend gives an upload made against a request. */
 export const checklistRequirementId = (documentRequestId: string) =>
@@ -75,12 +91,14 @@ function ChecklistRow({
   first,
   uploading,
   onUpload,
+  checksProps,
 }: {
   item: ChecklistItem;
   docs: Document[];
   first: boolean;
   uploading: boolean;
   onUpload: (item: ChecklistItem) => void;
+  checksProps: ChecksProps;
 }) {
   const [open, setOpen] = useState(false);
   const state = itemState(item, docs);
@@ -89,6 +107,17 @@ function ChecklistRow({
   // not yet stored (no id) cannot be uploaded against.
   const canUpload =
     !!item.documentRequestId && (state === 'waiting' || state === 'needs_another');
+  // The latest document uploaded against this item (#115): the check is about it.
+  const latestDoc = item.documentRequestId
+    ? docs.find((d) => d.requirementId === checklistRequirementId(item.documentRequestId!))
+    : undefined;
+  // The check for THAT document; a check of an older file is not shown for it.
+  const itemCheck =
+    checksProps.checks?.tier === 'full' && latestDoc
+      ? checksProps.checks.checks.find(
+          (c) => c.checklistItemId === item.checklistItemId && c.documentId === latestDoc.id,
+        )
+      : undefined;
 
   return (
     <View style={{ borderTopWidth: first ? 0 : 1, borderTopColor: EX.color.line06, paddingVertical: 13 }}>
@@ -138,6 +167,19 @@ function ChecklistRow({
         </View>
       ) : null}
 
+      {/* Document check result (#115): only once a document is uploaded. */}
+      {latestDoc ? (
+        <DocumentCheckNotice
+          check={itemCheck}
+          loading={checksProps.checksLoading && !checksProps.checks}
+          error={checksProps.checksError && !checksProps.checks}
+          upgradeRequired={checksProps.checks?.tier === 'free'}
+          onReload={checksProps.onReloadChecks}
+          onRetryCheck={() => checksProps.onRetryCheck(latestDoc.id)}
+          retrying={checksProps.retryingDocId === latestDoc.id}
+        />
+      ) : null}
+
       {canUpload ? (
         <Pressable
           onPress={() => onUpload(item)}
@@ -181,6 +223,7 @@ function Group({
   docs: Document[];
   uploadingId: string | null;
   onUpload: (item: ChecklistItem) => void;
+  checksProps: ChecksProps;
 }) {
   // Hidden when empty (the sponsor group in particular).
   if (items.length === 0) return null;
@@ -209,6 +252,7 @@ function Group({
             first={i === 0}
             uploading={rest.uploadingId === item.documentRequestId}
             onUpload={rest.onUpload}
+            checksProps={rest.checksProps}
           />
         ))}
       </View>
@@ -239,6 +283,7 @@ export function DocumentChecklist({
   docs,
   uploadingId,
   onUpload,
+  checksProps,
 }: {
   checklist?: Checklist | null;
   loading: boolean;
@@ -247,6 +292,8 @@ export function DocumentChecklist({
   docs: Document[];
   uploadingId: string | null;
   onUpload: (item: ChecklistItem) => void;
+  /** Per-upload check data and actions (#115). */
+  checksProps: ChecksProps;
 }) {
   let body: React.ReactNode;
   if (loading) {
@@ -280,7 +327,7 @@ export function DocumentChecklist({
     const sponsors = checklist.items.filter((i) => i.holder === 'sponsor');
     body = (
       <>
-        <Group title="Yours" items={yours} docs={docs} uploadingId={uploadingId} onUpload={onUpload} />
+        <Group title="Yours" items={yours} docs={docs} uploadingId={uploadingId} onUpload={onUpload} checksProps={checksProps} />
         <Group
           title="Your sponsor's"
           note="Your sponsor has no account here. You upload their documents for them."
@@ -288,6 +335,7 @@ export function DocumentChecklist({
           docs={docs}
           uploadingId={uploadingId}
           onUpload={onUpload}
+          checksProps={checksProps}
         />
       </>
     );

@@ -79,6 +79,8 @@ import {
   isChecklistDocument,
 } from '@/components/explorer/DocumentChecklist';
 import type { ChecklistItem } from '@/types/checklist.type';
+// Per-upload document check (#115).
+import { useDocumentChecks, useRetryDocumentCheck } from '@/hooks/useDocumentChecks';
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -686,6 +688,12 @@ export default function SelfServiceView() {
     wantLive && !!app && app.mode === 'self',
   );
   const checklist = checklistQ.data;
+  // Per-upload document checks (#115): polled while one is running.
+  const checksQ = useDocumentChecks(
+    wantLive && app ? app.id : '',
+    wantLive && !!app && app.mode === 'self',
+  );
+  const retryCheck = useRetryDocumentCheck(app?.id ?? '');
   // documentRequestId currently uploading from a checklist item.
   const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
 
@@ -1178,6 +1186,14 @@ export default function SelfServiceView() {
                 onRetry={() => checklistQ.refetch()}
                 docs={docs}
                 uploadingId={uploadingItemId}
+                checksProps={{
+                  checks: checksQ.data,
+                  checksLoading: checksQ.isLoading,
+                  checksError: checksQ.isError,
+                  onReloadChecks: () => checksQ.refetch(),
+                  onRetryCheck: (documentId: string) => retryCheck.mutate(documentId),
+                  retryingDocId: retryCheck.isPending ? (retryCheck.variables ?? null) : null,
+                }}
                 onUpload={(item: ChecklistItem) =>
                   item.documentRequestId
                     ? handleUpload(null, item.documentRequestId)
