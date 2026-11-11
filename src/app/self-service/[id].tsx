@@ -72,6 +72,13 @@ import {
   documentDisplayName,
 } from '@/types/documents.type';
 import { VisaRequirement } from '@/types/visas.type';
+// Personal document checklist (#114): built server-side from the verified record.
+import { useChecklist } from '@/hooks/useChecklist';
+import {
+  DocumentChecklist,
+  isChecklistDocument,
+} from '@/components/explorer/DocumentChecklist';
+import type { ChecklistItem } from '@/types/checklist.type';
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -673,6 +680,15 @@ export default function SelfServiceView() {
   const docsQ = useApplicationDocuments(wantLive && app ? app.id : '');
   const docs = docsQ.data ?? [];
 
+  // Checklist (#114): self-service applications only; off on the demo path.
+  const checklistQ = useChecklist(
+    wantLive && app ? app.id : '',
+    wantLive && !!app && app.mode === 'self',
+  );
+  const checklist = checklistQ.data;
+  // documentRequestId currently uploading from a checklist item.
+  const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
+
   // Upload mutation hooks (createDoc invalidates the documents query → list refreshes).
   const getUploadUrl = useGetUploadUrl();
   const createDoc = useCreateDocument();
@@ -695,7 +711,7 @@ export default function SelfServiceView() {
   // internally and PUTs it — so we hand it the picked file descriptor, not a
   // pre-fetched blob (matching the helper's actual signature in useDocuments.ts).
   const handleUpload = useCallback(
-    async (requirementId: string) => {
+    async (requirementId: string | null, documentRequestId?: string) => {
       if (!app) return;
       try {
         const res = await DocumentPicker.getDocumentAsync({
@@ -706,7 +722,9 @@ export default function SelfServiceView() {
         const f = res.assets[0];
         const contentType = f.mimeType ?? 'application/octet-stream';
 
-        setUploadingReqId(requirementId);
+        // Checklist uploads track the request id; requirement uploads the req id.
+        if (documentRequestId) setUploadingItemId(documentRequestId);
+        else setUploadingReqId(requirementId);
 
         // 1) Signed upload URL for this file.
         const up = await getUploadUrl.mutateAsync({
@@ -726,7 +744,11 @@ export default function SelfServiceView() {
         // 3) Register the document — invalidates the documents query on success.
         await createDoc.mutateAsync({
           applicationId: app.id,
-          requirementId,
+          // A checklist upload carries `documentRequestId`: the backend fulfils
+          // the request and derives the requirement id (`docreq:<id>`).
+          ...(documentRequestId
+            ? { documentRequestId }
+            : { requirementId: requirementId ?? undefined }),
           fileName: f.name,
           fileType: contentType,
           fileSizeMb: (f.size ?? 0) / 1e6,
@@ -739,6 +761,7 @@ export default function SelfServiceView() {
         );
       } finally {
         setUploadingReqId(null);
+        setUploadingItemId(null);
       }
     },
     [app, getUploadUrl, createDoc],
@@ -787,7 +810,18 @@ export default function SelfServiceView() {
     // (`docreq:<id>`). Collecting the leftovers guarantees every document on the
     // application is visible somewhere.
     const reqIds = new Set(orderedReqs.map((r) => r.id));
-    const otherDocs = docs.filter((d) => !reqIds.has(d.requirementId));
+    // A document uploaded against a checklist item is shown in the checklist,
+    // so it is left out here: nothing is listed twice (#114).
+    const otherDocs = docs.filter(
+      (d) => !reqIds.has(d.requirementId) && !isChecklistDocument(d, checklist),
+    );
+    // With a checklist on screen, requirement cards that hold no document yet
+    // are hidden (the checklist already asks for the documents); cards with
+    // documents stay, so nothing already uploaded disappears.
+    const hasChecklist = !!checklist && checklist.items.length > 0;
+    const shownReqs = hasChecklist
+      ? orderedReqs.filter((r) => docs.some((d) => d.requirementId === r.id))
+      : orderedReqs;
 
     // Official application URL → button host label (strip protocol + path).
     const officialUrl = visaType?.applicationUrl;
@@ -1135,7 +1169,23 @@ export default function SelfServiceView() {
 
             {/* ── Step 2 · Upload documents ───────────────────────────────────── */}
             <SectionTitle>Step 2 · Upload documents</SectionTitle>
-            {orderedReqs.map((req) => (
+            {/* Personal checklist (#114): self-service applications only. */}
+            {app.mode === 'self' ? (
+              <DocumentChecklist
+                checklist={checklist}
+                loading={checklistQ.isLoading}
+                error={checklistQ.isError}
+                onRetry={() => checklistQ.refetch()}
+                docs={docs}
+                uploadingId={uploadingItemId}
+                onUpload={(item: ChecklistItem) =>
+                  item.documentRequestId
+                    ? handleUpload(null, item.documentRequestId)
+                    : undefined
+                }
+              />
+            ) : null}
+            {shownReqs.map((req) => (
               <LiveRequirementCard
                 key={req.id}
                 req={req}
