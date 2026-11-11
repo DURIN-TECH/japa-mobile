@@ -52,11 +52,13 @@ import {
 import {
   isNetworkFailure,
   isUpgradeRequired,
+  useConfirmRefusalChecklist,
   useRefusalAnalysis,
   useStartRefusalAnalysis,
   useStoredAnalysisId,
 } from '@/hooks/useRefusalLetter';
 import type {
+  RefusalChecklistItemView,
   RefusalData,
   RefusalReasonView,
 } from '@/types/refusalLetter.type';
@@ -253,7 +255,46 @@ function ReasonCard({ reason }: { reason: RefusalReasonView }) {
 
 // ── The finished analysis ────────────────────────────────────────────────────
 
-function Results({ data }: { data: RefusalData }) {
+function Results({
+  data,
+  analysisId,
+}: {
+  data: RefusalData;
+  analysisId: string;
+}) {
+  // Items the applicant has ticked. Nothing is added until the one button is pressed.
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const confirm = useConfirmRefusalChecklist(analysisId);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  // An item is "on your list" once a request exists for it that was not cancelled.
+  const onList = (i: RefusalChecklistItemView) =>
+    i.confirmed || (i.listStatus !== null && i.listStatus !== 'cancelled');
+  const toggle = (id: string) =>
+    setTicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const onAdd = async () => {
+    setConfirmError(null);
+    try {
+      await confirm.mutateAsync([...ticked]);
+      setTicked(new Set());
+      setDone(true);
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      setConfirmError(
+        err.code === 'NETWORK_ERROR'
+          ? 'No connection. Check your network and try again.'
+          : err.code === 'APPLICATION_LOCKED'
+            ? 'This application can no longer be changed.'
+            : err.message || 'Something went wrong. Please try again.',
+      );
+    }
+  };
   const notice = data.disclosureNotice;
   const analysed = data.outcome === 'analysed';
   return (
@@ -352,15 +393,62 @@ function Results({ data }: { data: RefusalData }) {
               ) : (
                 data.checklist.items.map((item) => (
                   <Card key={item.checklistItemId} style={{ marginBottom: 10 }}>
-                    <Text
+                    <Pressable
+                      onPress={() => toggle(item.checklistItemId)}
+                      disabled={onList(item) || confirm.isPending}
                       style={{
-                        color: EX.color.ink,
-                        fontSize: 14.5,
-                        fontWeight: '700',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 10,
                       }}
                     >
-                      {item.title}
-                    </Text>
+                      {/* Tick box, or a check once the item is on the list. */}
+                      <View
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 7,
+                          borderWidth: 1.5,
+                          borderColor:
+                            onList(item) || ticked.has(item.checklistItemId)
+                              ? EX.color.primary
+                              : EX.color.line10,
+                          backgroundColor:
+                            onList(item) || ticked.has(item.checklistItemId)
+                              ? EX.color.primary
+                              : '#fff',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          opacity: onList(item) ? 0.6 : 1,
+                        }}
+                      >
+                        {onList(item) || ticked.has(item.checklistItemId) ? (
+                          <Ic.check size={14} color="#fff" strokeWidth={2.6} />
+                        ) : null}
+                      </View>
+                      <Text
+                        style={{
+                          flex: 1,
+                          color: EX.color.ink,
+                          fontSize: 14.5,
+                          fontWeight: '700',
+                        }}
+                      >
+                        {item.title}
+                      </Text>
+                    </Pressable>
+                    {onList(item) ? (
+                      <Text
+                        style={{
+                          color: EX.color.success,
+                          fontSize: 12.5,
+                          fontWeight: '700',
+                          marginTop: 4,
+                        }}
+                      >
+                        Already on your document list
+                      </Text>
+                    ) : null}
                     <Text
                       style={{
                         color: EX.color.inkMuted,
@@ -376,15 +464,32 @@ function Results({ data }: { data: RefusalData }) {
                   </Card>
                 ))
               )}
-              <Text
-                style={{
-                  color: EX.color.muted,
-                  fontSize: 12.5,
-                  marginBottom: 12,
-                }}
-              >
-                Nothing is added to your to-do list until you say so.
-              </Text>
+              {data.checklist.items.some((i) => !onList(i)) ? (
+                <View style={{ gap: 10, marginBottom: 12 }}>
+                  <Text style={{ color: EX.color.muted, fontSize: 12.5 }}>
+                    Nothing is added to your document list until you tick items
+                    and press the button.
+                  </Text>
+                  <InlineError message={confirmError} />
+                  {done && !confirmError ? (
+                    <Text
+                      style={{
+                        color: EX.color.success,
+                        fontSize: 13.5,
+                        fontWeight: '700',
+                      }}
+                    >
+                      Added to your document list.
+                    </Text>
+                  ) : null}
+                  <CoralSubmit
+                    label="Add to my document list"
+                    onPress={onAdd}
+                    loading={confirm.isPending}
+                    disabled={ticked.size === 0}
+                  />
+                </View>
+              ) : null}
             </>
           ) : null}
         </>
@@ -628,7 +733,10 @@ export default function RefusalLetterScreen() {
           </View>
         ) : envelope?.data ? (
           <View>
-            <Results data={envelope.data} />
+            <Results
+              data={envelope.data}
+              analysisId={envelope.meta.analysisId}
+            />
             <View style={{ marginTop: 16 }}>
               <Pressable
                 onPress={reset}

@@ -52,6 +52,10 @@ export interface RefusalChecklistItemView {
   reason: string;
   citation: { quote: string; url: string; ruleRef: string | null };
   addressesCriterionIds: string[];
+  // Status of the applicant's own document request for this item; null = not on their list.
+  listStatus: 'pending' | 'fulfilled' | 'waived' | 'cancelled' | null;
+  // The applicant confirmed it from this screen.
+  confirmed: boolean;
 }
 
 export interface RefusalDisclosureNotice {
@@ -89,4 +93,10 @@ export interface RefusalEnvelope {
 export interface RefusalStarted {
   analysisId: string;
   status: RefusalJobStatus;
+}
+
+/** Body of a successful confirm. */
+export interface RefusalConfirmResult {
+  added: string[];
+  alreadyListed: string[];
 }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiService, ApiError } from '@/services/api.service';
 import type {
+  RefusalConfirmResult,
   RefusalEnvelope,
   RefusalStarted,
 } from '@/types/refusalLetter.type';
@@ -52,6 +53,31 @@ export function useStartRefusalAnalysis() {
       if (!body) throw new Error('No response from the server.');
       if ('meta' in body) return { analysisId: body.meta.analysisId };
       return { analysisId: body.analysisId };
+    },
+  });
+}
+
+/**
+ * Add the chosen checklist items to the applicant's document list. Sends ids
+ * only (the backend reads everything else from the stored analysis). Nothing is
+ * added until this is called. Re-reads the analysis and the document requests
+ * afterwards so the "on your list" marks update.
+ */
+export function useConfirmRefusalChecklist(analysisId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (checklistItemIds: string[]) => {
+      const response = await apiService.post<RefusalConfirmResult>(
+        `/ai/refusal-letters/${analysisId}/checklist/confirm`,
+        { checklistItemIds },
+      );
+      return response.data ?? { added: [], alreadyListed: [] };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['refusalAnalysis', analysisId],
+      });
+      queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
     },
   });
 }
