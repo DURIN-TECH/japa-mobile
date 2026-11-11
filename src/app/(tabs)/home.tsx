@@ -2,42 +2,53 @@
 // Home dashboard (prototype home.jsx HomeView) — default first tab.
 // Summary of the user's applications + fast entry points. Ported 1:1 from source
 // (heights, paddings, radii, scrim angles, font sizes/weights preserved).
+//
+// japa#145: live data only, no demo persona.
+//   • Greeting + portrait: the signed-in user from GET /users/me (no ME).
+//   • Applications: GET /applications — the hero, the next-step nudge and the
+//     active-applications card show only real rows, with one loading / error /
+//     first-run pattern for the whole group (design spec section 3).
+//   • "Partners near you" is REMOVED: its only sources were the demo PROMOS and
+//     live agencies labelled "Sponsored" / "Featured partner" without any
+//     sponsorship data — a trust claim that isn't true. Not replaced.
+//   • "Recommended for you": GET /visas (+ /countries), its own loading /
+//     error state; hidden entirely when nothing is left to recommend.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import {
-  APPS,
-  DESTS,
-  PROMOS,
-  STATUS,
-  ME,
-  agencyById,
-  destById,
-} from '@/components/explorer/data';
-import type { App, Agency, Dest } from '@/components/explorer/data';
-// ── Live adapters + React Query hooks (live-with-demo-fallback) ──────────────
+import { STATUS } from '@/components/explorer/data';
+import type { App, Dest } from '@/types/explorer.type';
+// ── Live adapters + React Query hooks (japa#145: no demo fallbacks) ──────────
 import { mapApplication } from '@/components/explorer/liveApplications';
 import { mapVisasToDests } from '@/components/explorer/liveExplore';
-import { mapAgency } from '@/components/explorer/liveAgencies';
 import { useApplications } from '@/hooks/useApplications';
 import { useVisaTypes, useCountriesWithVisas } from '@/hooks/useVisaTypes';
-import { useBrowseAgencies } from '@/hooks/useAgencies';
 import { useUnreadNotificationCount } from '@/hooks/useNotifications';
+import { useMe } from '@/hooks/useMe';
+import { profileName, profileSeed } from '@/components/explorer/liveProfile';
 import { Ic } from '@/components/explorer/icons';
 import {
+  Card,
   Flag,
   Portrait,
   Progress,
   StatusPill,
-  Verified,
 } from '@/components/explorer/primitives';
+import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 
 // ── Quick-action tile ────────────────────────────────────────────────────────
 function QuickAction({
@@ -99,11 +110,10 @@ function QuickAction({
 }
 
 // ── Compact application row (active-applications list) ───────────────────────
-// Accepts the mapped `App` object directly (not an id lookup) so live
-// applications from the backend render without a demo `appById()` lookup. The
-// destination resolves from the app's own `dest` (live) or the demo `DESTS`.
+// Accepts the mapped `App` object directly. Every live row carries a
+// self-contained `dest` (mapApplication builds it from the country assets).
 function MiniAppRow({ app, onPress }: { app: App; onPress: () => void }) {
-  const d = app.dest ?? destById(app.destId);
+  const d = app.dest;
   if (!d) return null;
   return (
     <Pressable
@@ -165,8 +175,7 @@ function MiniAppRow({ app, onPress }: { app: App; onPress: () => void }) {
 }
 
 // ── Recommended destination card (horizontal rail) ───────────────────────────
-// Accepts the resolved `Dest` directly so live destinations (mapped from
-// GET /visas) render without a demo `destById()` lookup.
+// Accepts the resolved `Dest` directly (mapped from GET /visas + /countries).
 function RecoCard({ d, onPress }: { d: Dest; onPress: () => void }) {
   return (
     <Pressable
@@ -255,185 +264,6 @@ function RecoCard({ d, onPress }: { d: Dest; onPress: () => void }) {
   );
 }
 
-// ── Sponsored / promoted agency card ("Partners near you") ───────────────────
-// Paid placement: an agency `cover` photo, a glass "Sponsored / Featured partner"
-// label, the agency identity, an offer headline and a CTA pill. 1:1 with source.
-// Accepts a resolved `Agency` object plus its placement copy (label / headline /
-// cta) directly, so both live agencies (mapped from GET /agencies/browse) and the
-// demo PROMOS path can feed the same visual without an internal id lookup.
-function PartnerCard({
-  ag,
-  label,
-  headline,
-  cta,
-  onPress,
-}: {
-  ag: Agency;
-  label: string;
-  headline: string;
-  cta: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        width: 300,
-        height: 158,
-        borderRadius: 22,
-        overflow: 'hidden',
-        backgroundColor: ag.tone,
-        shadowColor: '#171326',
-        shadowOpacity: 0.18,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 12 },
-        elevation: 5,
-      }}
-    >
-      <Image
-        source={{ uri: ag.cover }}
-        style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
-        contentFit="cover"
-        transition={150}
-      />
-      <LinearGradient
-        colors={[
-          'rgba(12,10,8,0.86)',
-          'rgba(12,10,8,0.4)',
-          'rgba(12,10,8,0.12)',
-        ]}
-        locations={[0, 0.58, 1]}
-        start={{ x: 0.15, y: 1 }}
-        end={{ x: 0.85, y: 0 }}
-        style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
-      />
-      {/* Honest "sponsored" label */}
-      <View style={{ position: 'absolute', top: 12, right: 12 }}>
-        <BlurView
-          intensity={12}
-          tint="light"
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 5,
-            overflow: 'hidden',
-            borderRadius: 999,
-            borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.24)',
-            backgroundColor: 'rgba(255,255,255,0.16)',
-            paddingHorizontal: 9,
-            paddingVertical: 4,
-          }}
-        >
-          <Ic.spark size={11} color="#fff" strokeWidth={1.8} />
-          <Text
-            style={{
-              color: '#fff',
-              fontSize: 10,
-              fontWeight: '700',
-              letterSpacing: 0.6,
-              textTransform: 'uppercase',
-            }}
-          >
-            {label}
-          </Text>
-        </BlurView>
-      </View>
-      <View style={{ position: 'absolute', left: 16, right: 16, bottom: 15 }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 7,
-            marginBottom: 7,
-          }}
-        >
-          <View
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 10,
-              overflow: 'hidden',
-              borderWidth: 1.5,
-              borderColor: 'rgba(255,255,255,0.5)',
-            }}
-          >
-            <Image
-              source={{ uri: ag.cover }}
-              style={{ width: '100%', height: '100%' }}
-              contentFit="cover"
-            />
-          </View>
-          <View style={{ minWidth: 0 }}>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
-            >
-              <Text
-                style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}
-                numberOfLines={1}
-              >
-                {ag.name}
-              </Text>
-              <Verified size={13} />
-            </View>
-            <Text
-              style={{
-                color: '#fff',
-                fontSize: 11,
-                opacity: 0.85,
-                fontWeight: '600',
-              }}
-            >
-              ★ {ag.r} · {ag.city}
-            </Text>
-          </View>
-        </View>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            gap: 10,
-          }}
-        >
-          <Text
-            style={{
-              color: '#fff',
-              fontSize: 14.5,
-              fontWeight: '700',
-              lineHeight: 17.4,
-              maxWidth: 176,
-              textShadowColor: 'rgba(0,0,0,0.4)',
-              textShadowOffset: { width: 0, height: 1 },
-              textShadowRadius: 8,
-            }}
-          >
-            {headline}
-          </Text>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 5,
-              backgroundColor: '#fff',
-              borderRadius: 999,
-              paddingHorizontal: 13,
-              paddingVertical: 8,
-            }}
-          >
-            <Text
-              style={{ color: EX.color.ink, fontSize: 12.5, fontWeight: '700' }}
-            >
-              {cta}
-            </Text>
-            <Ic.arrow size={14} color={EX.color.ink} strokeWidth={1.8} />
-          </View>
-        </View>
-      </View>
-    </Pressable>
-  );
-}
-
 // Small circular header button (message / bell) with unread dot.
 // `showDot` gates the coral unread indicator: the message button keeps it always
 // on (default true); the bell passes the live unread-notification count.
@@ -484,79 +314,69 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // ── Applications (GET /applications) with a demo fallback ──────────────────
-  // Live rows map through `mapApplication` (each carries a self-contained `dest`);
-  // when the backend is empty/unreachable we keep the demo APPS so Home is never
-  // blank. Powers the hero, the next-step nudge and the active-applications list.
+  // ── Applications (GET /applications) — japa#145: no demo APPS ──────────────
+  // Live rows map through `mapApplication` (each carries a self-contained
+  // `dest`). Powers the hero, the next-step nudge and the active-applications
+  // card. `state` follows the shared rule: spinner only on a first load with
+  // nothing cached, error only when nothing is cached.
   const appsQ = useApplications();
-  const apps: App[] = appsQ.data?.length
-    ? // Wrapped so .map's (index, array) don't land in mapApplication's
-      // optional params (agentSeed, fetchedVisaName; japa#106).
-      appsQ.data.map((a) => mapApplication(a))
-    : APPS;
+  const apps: App[] = useMemo(
+    () => (appsQ.data ?? []).map((a) => mapApplication(a)),
+    [appsQ.data],
+  );
+  const appsState = queryState(appsQ);
+  const appsReady = appsState === 'ready';
+  // First run: the source answered and the user has no applications at all.
+  const appsFirstRun = appsReady && apps.length === 0;
 
-  // Hero = the first application; resolve its destination from the app's own
-  // `dest` (live) or the demo DESTS.
+  // Hero = the first application; its destination comes from the case itself.
   const lead = apps[0];
-  const dLead = lead.dest ?? destById(lead.destId) ?? DESTS[0];
+  const dLead = lead?.dest;
   // Next-step nudge = the first application with an outstanding CTA, else the lead.
   const actionApp = apps.find((a) => a.next.cta) ?? lead;
-  const dAction = actionApp.dest ?? destById(actionApp.destId) ?? DESTS[0];
+  const dAction = actionApp?.dest;
 
-  // ── Recommended (GET /visas + /countries) with a demo fallback ─────────────
-  // Live destinations map from visas; fall back to demo DESTS when empty. We then
-  // drop any destination the user already has an application for and keep a few.
+  // ── Recommended (GET /visas + /countries) — japa#145: no demo DESTS ─────────
+  // Drop any destination the user already has an application for and keep a few.
+  // Its own loading / error / empty state, independent of the applications'.
   const visaQ = useVisaTypes({ limit: 30 });
   const { data: countries } = useCountriesWithVisas();
-  const liveDests = mapVisasToDests(
-    visaQ.data?.visaTypes ?? [],
-    countries ?? [],
-  );
-  const recSource = liveDests.length ? liveDests : DESTS;
-  const rec = recSource
-    .filter((d) => !apps.some((a) => a.destId === d.id))
-    .slice(0, 4);
+  const recState = queryState(visaQ);
+  const rec = useMemo<Dest[]>(() => {
+    const src = mapVisasToDests(visaQ.data?.visaTypes ?? [], countries ?? []);
+    return src.filter((d) => !apps.some((a) => a.destId === d.id)).slice(0, 4);
+  }, [visaQ.data, countries, apps]);
 
-  // ── Partners near you (GET /agencies/browse) — sponsored placement ─────────
-  // Build partner cards from the first 2–3 live agencies (mapped via mapAgency);
-  // fall back to the demo PROMOS path when the backend returns none. First slot
-  // is labelled "Sponsored", the rest "Featured partner".
-  const agQ = useBrowseAgencies();
-  const livePartners = (agQ.data ?? []).slice(0, 3).map((a, i) => {
-    const ag = mapAgency(a);
-    return {
-      id: ag.id,
-      ag,
-      label: i === 0 ? 'Sponsored' : 'Featured partner',
-      headline: ag.blurb || 'Trusted migration partner',
-      cta: 'View profile',
-    };
-  });
-  const partners: {
-    id: string;
-    ag: Agency;
-    label: string;
-    headline: string;
-    cta: string;
-  }[] = livePartners.length
-    ? livePartners
-    : PROMOS.map((p) => ({
-        id: p.id,
-        ag: agencyById(p.id)!,
-        label: p.label,
-        headline: p.headline,
-        cta: p.cta,
-      })).filter((p) => p.ag);
+  // ── Signed-in user (GET /users/me) for the greeting + portrait ─────────────
+  const { data: me } = useMe();
+  const myName = profileName(me);
 
   // ── Unread notification count — gates the coral dot on the bell ────────────
   const unread = useUnreadNotificationCount();
   const hasUnread = (unread.data ?? 0) > 0;
 
+  // "Check eligibility" needs a real visa: with an application it opens that
+  // application's visa; with none it goes to the Explore tab to pick one
+  // (the demo DESTS[0] default is gone). Tab hops use the selection haptic.
+  const checkEligibility = () => {
+    if (lead && dLead) {
+      router.push({
+        pathname: '/eligibility',
+        params: { dest: lead.destId, code: dLead.flag },
+      });
+      return;
+    }
+    Haptics.selectionAsync().catch(() => {});
+    router.push('/(tabs)/explore');
+  };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: EX.color.bg }}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: 0 }}
+      // tab-clear keeps the last section clear of the tab bar now that the
+      // Partners row is gone (design spec section 3).
+      contentContainerStyle={{ paddingBottom: EX.space.tabClear }}
     >
       {/* Greeting */}
       <View
@@ -569,15 +389,23 @@ export default function HomeScreen() {
           justifyContent: 'space-between',
         }}
       >
-        <View>
+        <View style={{ flex: 1, minWidth: 0, marginRight: 9 }}>
           <Text
             style={{ fontSize: 13, color: EX.color.muted, fontWeight: '600' }}
           >
             Good morning
           </Text>
-          <Text style={[displayText(27, 'semibold'), { marginTop: 2 }]}>
-            {ME.name}
-          </Text>
+          {/* Real name from GET /users/me; while it loads, the "Good
+              morning" line alone (never a persona). One line, ellipsised at
+              320pt. */}
+          {myName ? (
+            <Text
+              numberOfLines={1}
+              style={[displayText(27, 'semibold'), { marginTop: 2 }]}
+            >
+              {myName}
+            </Text>
+          ) : null}
         </View>
         <View style={{ flexDirection: 'row', gap: 9 }}>
           <HeaderButton
@@ -589,237 +417,269 @@ export default function HomeScreen() {
             onPress={() => router.push('/notifications')}
             showDot={hasUnread}
           />
-          <Pressable onPress={() => router.push('/(tabs)/profile')}>
-            <Portrait seed={3} size={42} name="Alex K" />
-          </Pressable>
+          {/* Portrait initials come from the real name once it has loaded. */}
+          {myName ? (
+            <Pressable onPress={() => router.push('/(tabs)/profile')}>
+              <Portrait seed={profileSeed(me)} size={42} name={myName} />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
-      {/* HERO — application closest to the finish line */}
-      <View style={{ paddingHorizontal: 22, paddingTop: 14, paddingBottom: 4 }}>
-        <Pressable
-          onPress={() => router.push(`/application/${lead.id}`)}
-          style={{
-            height: 210,
-            borderRadius: 26,
-            overflow: 'hidden',
-            backgroundColor: dLead.tone,
-            shadowColor: '#171326',
-            shadowOpacity: 0.22,
-            shadowRadius: 22,
-            shadowOffset: { width: 0, height: 16 },
-            elevation: 7,
-          }}
-        >
-          <Image
-            source={{ uri: dLead.img }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-            }}
-            contentFit="cover"
-            transition={200}
-          />
-          <LinearGradient
-            colors={[
-              'rgba(12,10,8,0.8)',
-              'rgba(12,10,8,0.34)',
-              'rgba(12,10,8,0.12)',
-            ]}
-            locations={[0, 0.58, 1]}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 0.9, y: 1 }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-            }}
-          />
-          <View
-            style={{ flex: 1, padding: 18, justifyContent: 'space-between' }}
-          >
+      {/* ── HERO + next-step nudge — only with real applications ────────────── */}
+      {appsReady && apps.length > 0 ? (
+        <>
+          {/* HERO — application closest to the finish line */}
+          {lead && dLead ? (
             <View
               style={{
-                flexDirection: 'row',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
+                paddingHorizontal: 22,
+                paddingTop: 14,
+                paddingBottom: 4,
               }}
             >
-              <BlurView
-                intensity={14}
-                tint="light"
+              <Pressable
+                onPress={() => router.push(`/application/${lead.id}`)}
                 style={{
+                  height: 210,
+                  borderRadius: 26,
                   overflow: 'hidden',
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.28)',
-                  backgroundColor: 'rgba(255,255,255,0.14)',
-                  paddingHorizontal: 11,
-                  paddingVertical: 6,
+                  backgroundColor: dLead.tone,
+                  shadowColor: '#171326',
+                  shadowOpacity: 0.22,
+                  shadowRadius: 22,
+                  shadowOffset: { width: 0, height: 16 },
+                  elevation: 7,
                 }}
               >
-                <Text
+                <Image
+                  source={{ uri: dLead.img }}
                   style={{
-                    color: '#fff',
-                    fontSize: 11,
-                    fontWeight: '700',
-                    letterSpacing: 0.44,
-                    textTransform: 'uppercase',
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
                   }}
-                >
-                  Closest to approval
-                </Text>
-              </BlurView>
-              <BlurView
-                intensity={14}
-                tint="dark"
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 17,
-                  overflow: 'hidden',
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.28)',
-                  backgroundColor: 'rgba(20,16,12,0.24)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Ic.arrowUR size={17} color="#fff" strokeWidth={1.8} />
-              </BlurView>
-            </View>
-            <View>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 7,
-                  marginBottom: 6,
-                }}
-              >
-                <Flag code={dLead.flag} size={18} radius={5} />
-                <Text
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: '600',
-                    color: 'rgba(255,255,255,0.92)',
-                  }}
-                >
-                  {dLead.country} · Ref {lead.ref}
-                </Text>
-              </View>
-              <Text
-                style={{
-                  color: '#fff',
-                  fontFamily: EX.font.display.semibold,
-                  fontSize: 24,
-                  letterSpacing: -0.24,
-                  textShadowColor: 'rgba(0,0,0,0.35)',
-                  textShadowOffset: { width: 0, height: 2 },
-                  textShadowRadius: 12,
-                }}
-              >
-                {dLead.visa}
-              </Text>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
-                  marginTop: 12,
-                }}
-              >
-                <Progress
-                  value={lead.progress}
-                  height={6}
-                  color="#fff"
-                  track="rgba(255,255,255,0.25)"
-                  style={{ flex: 1 }}
+                  contentFit="cover"
+                  transition={200}
                 />
-                <Text
-                  style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}
+                <LinearGradient
+                  colors={[
+                    'rgba(12,10,8,0.8)',
+                    'rgba(12,10,8,0.34)',
+                    'rgba(12,10,8,0.12)',
+                  ]}
+                  locations={[0, 0.58, 1]}
+                  start={{ x: 0.1, y: 0 }}
+                  end={{ x: 0.9, y: 1 }}
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                  }}
+                />
+                <View
+                  style={{
+                    flex: 1,
+                    padding: 18,
+                    justifyContent: 'space-between',
+                  }}
                 >
-                  {Math.round(lead.progress * 100)}% ·{' '}
-                  {STATUS[lead.status].label}
-                </Text>
-              </View>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <BlurView
+                      intensity={14}
+                      tint="light"
+                      style={{
+                        overflow: 'hidden',
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.28)',
+                        backgroundColor: 'rgba(255,255,255,0.14)',
+                        paddingHorizontal: 11,
+                        paddingVertical: 6,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: '#fff',
+                          fontSize: 11,
+                          fontWeight: '700',
+                          letterSpacing: 0.44,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        Closest to approval
+                      </Text>
+                    </BlurView>
+                    <BlurView
+                      intensity={14}
+                      tint="dark"
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        overflow: 'hidden',
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.28)',
+                        backgroundColor: 'rgba(20,16,12,0.24)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Ic.arrowUR size={17} color="#fff" strokeWidth={1.8} />
+                    </BlurView>
+                  </View>
+                  <View>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 7,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <Flag code={dLead.flag} size={18} radius={5} />
+                      <Text
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: '600',
+                          color: 'rgba(255,255,255,0.92)',
+                        }}
+                      >
+                        {dLead.country} · Ref {lead.ref}
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        color: '#fff',
+                        fontFamily: EX.font.display.semibold,
+                        fontSize: 24,
+                        letterSpacing: -0.24,
+                        textShadowColor: 'rgba(0,0,0,0.35)',
+                        textShadowOffset: { width: 0, height: 2 },
+                        textShadowRadius: 12,
+                      }}
+                    >
+                      {dLead.visa}
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 8,
+                        marginTop: 12,
+                      }}
+                    >
+                      <Progress
+                        value={lead.progress}
+                        height={6}
+                        color="#fff"
+                        track="rgba(255,255,255,0.25)"
+                        style={{ flex: 1 }}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: '700',
+                          color: '#fff',
+                        }}
+                      >
+                        {Math.round(lead.progress * 100)}% ·{' '}
+                        {STATUS[lead.status]?.label ?? ''}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </Pressable>
             </View>
-          </View>
-        </Pressable>
-      </View>
+          ) : null}
 
-      {/* Next-step nudge */}
-      {actionApp.next.cta ? (
-        <View
-          style={{ paddingHorizontal: 22, paddingTop: 14, paddingBottom: 2 }}
-        >
-          <Pressable
-            onPress={() => router.push(`/application/${actionApp.id}`)}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 13,
-              padding: 15,
-              borderRadius: 20,
-              backgroundColor: EX.color.ink,
-              shadowColor: '#171326',
-              shadowOpacity: 0.5,
-              shadowRadius: 24,
-              shadowOffset: { width: 0, height: 16 },
-              elevation: 8,
-            }}
-          >
+          {/* Next-step nudge — only when an application has an outstanding CTA */}
+          {actionApp && actionApp.next.cta && dAction ? (
             <View
               style={{
-                width: 42,
-                height: 42,
-                borderRadius: 12,
-                backgroundColor: 'rgba(255,255,255,0.12)',
-                alignItems: 'center',
-                justifyContent: 'center',
+                paddingHorizontal: 22,
+                paddingTop: 14,
+                paddingBottom: 2,
               }}
             >
-              <Ic.upload size={20} color="#fff" strokeWidth={1.8} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text
+              <Pressable
+                onPress={() => router.push(`/application/${actionApp.id}`)}
                 style={{
-                  fontSize: 11.5,
-                  color: 'rgba(255,255,255,0.6)',
-                  fontWeight: '600',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 13,
+                  padding: 15,
+                  borderRadius: 20,
+                  backgroundColor: EX.color.ink,
+                  shadowColor: '#171326',
+                  shadowOpacity: 0.5,
+                  shadowRadius: 24,
+                  shadowOffset: { width: 0, height: 16 },
+                  elevation: 8,
                 }}
               >
-                Action needed · {dAction.country}
-              </Text>
-              <Text
-                style={{ fontSize: 14.5, fontWeight: '700', color: '#fff' }}
-                numberOfLines={1}
-              >
-                {actionApp.next.label}
-              </Text>
+                <View
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(255,255,255,0.12)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ic.upload size={20} color="#fff" strokeWidth={1.8} />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={{
+                      fontSize: 11.5,
+                      color: 'rgba(255,255,255,0.6)',
+                      fontWeight: '600',
+                    }}
+                  >
+                    Action needed · {dAction.country}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 14.5,
+                      fontWeight: '700',
+                      color: '#fff',
+                    }}
+                    numberOfLines={1}
+                  >
+                    {actionApp.next.label}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: EX.color.primary,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ic.chevR size={18} color="#fff" strokeWidth={1.8} />
+                </View>
+              </Pressable>
             </View>
-            <View
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                backgroundColor: EX.color.primary,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Ic.chevR size={18} color="#fff" strokeWidth={1.8} />
-            </View>
-          </Pressable>
-        </View>
+          ) : null}
+        </>
       ) : null}
 
-      {/* Quick actions */}
+      {/* Quick actions — always shown */}
       <View
         style={{
           flexDirection: 'row',
@@ -838,12 +698,7 @@ export default function HomeScreen() {
           icon={Ic.shield}
           label="Check eligibility"
           tone={{ bg: EX.color.tealTint14, fg: EX.color.success }}
-          onPress={() =>
-            router.push({
-              pathname: '/eligibility',
-              params: { dest: DESTS[0].id },
-            })
-          }
+          onPress={checkEligibility}
         />
         <QuickAction
           icon={Ic.users}
@@ -853,167 +708,194 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Active applications */}
-      <View style={{ paddingHorizontal: 22 }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            marginTop: 26,
-            marginBottom: 13,
-            marginHorizontal: 2,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-            }}
-          >
-            Active applications
-          </Text>
-          <Pressable onPress={() => router.push('/(tabs)/tracker')} hitSlop={8}>
-            <Text
+      {/* ── Active applications / its loading · error · first-run states ──────
+          One group state for the whole block (design spec section 3). */}
+      {appsState === 'loading' ? (
+        // First load: one coral spinner in place of the hero, the nudge and
+        // this card together.
+        <StateLoading style={{ paddingVertical: 48 }} />
+      ) : appsState === 'error' ? (
+        // Load failed, nothing cached: InlineError + Outline "Try again".
+        // The hero and nudge stay hidden — no fabricated rows.
+        <StateError
+          message={loadErrorCopy('your applications')}
+          onRetry={() => appsQ.refetch()}
+          retrying={appsQ.isRefetching}
+        />
+      ) : appsFirstRun ? (
+        // First run: a section Card with the "No applications yet" empty
+        // state; the coral "Start exploring" is first-run Home's one coral
+        // action and opens the Explore tab.
+        <View style={{ paddingHorizontal: 22 }}>
+          <Card padded={false} style={{ marginTop: 26 }}>
+            <StateEmpty
+              icon={Ic.layers}
+              title="No applications yet"
+              body="Pick a destination and we’ll track every step from here."
+              action={{
+                label: 'Start exploring',
+                onPress: () => {
+                  Haptics.selectionAsync().catch(() => {});
+                  router.push('/(tabs)/explore');
+                },
+                variant: 'coral',
+              }}
+            />
+          </Card>
+        </View>
+      ) : (
+        <>
+          <View style={{ paddingHorizontal: 22 }}>
+            <View
               style={{
-                color: EX.color.primary,
-                fontSize: 13.5,
-                fontWeight: '600',
+                flexDirection: 'row',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                marginTop: 26,
+                marginBottom: 13,
+                marginHorizontal: 2,
               }}
             >
-              See all
-            </Text>
-          </Pressable>
-        </View>
-        <View
-          style={{
-            backgroundColor: '#fff',
-            borderWidth: 1,
-            borderColor: EX.color.line06,
-            borderRadius: 22,
-            padding: 5,
-            shadowColor: '#171326',
-            shadowOpacity: 0.04,
-            shadowRadius: 2,
-            shadowOffset: { width: 0, height: 1 },
-            elevation: 1,
-          }}
-        >
-          {apps.map((a, i) => (
-            <React.Fragment key={a.id}>
-              {i > 0 ? (
-                <View
-                  style={{
-                    height: 1,
-                    backgroundColor: EX.color.line06,
-                    marginHorizontal: 12,
-                  }}
-                />
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                }}
+              >
+                Active applications
+              </Text>
+              {apps.length ? (
+                <Pressable
+                  onPress={() => router.push('/(tabs)/tracker')}
+                  hitSlop={8}
+                >
+                  <Text
+                    style={{
+                      color: EX.color.primary,
+                      fontSize: 13.5,
+                      fontWeight: '600',
+                    }}
+                  >
+                    See all
+                  </Text>
+                </Pressable>
               ) : null}
-              <MiniAppRow
-                app={a}
-                onPress={() => router.push(`/application/${a.id}`)}
-              />
-            </React.Fragment>
-          ))}
-        </View>
-      </View>
-
-      {/* Partners near you — sponsored placement */}
-      <View style={{ paddingHorizontal: 22 }}>
-        <View style={{ marginTop: 26, marginBottom: 13, marginHorizontal: 2 }}>
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-            }}
-          >
-            Partners near you
-          </Text>
-        </View>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{
-          gap: 13,
-          paddingHorizontal: 22,
-          paddingBottom: 4,
-        }}
-      >
-        {partners.map((p) => (
-          <PartnerCard
-            key={p.id}
-            ag={p.ag}
-            label={p.label}
-            headline={p.headline}
-            cta={p.cta}
-            onPress={() => router.push(`/agency/${p.id}`)}
-          />
-        ))}
-      </ScrollView>
-
-      {/* Recommended */}
-      <View style={{ paddingHorizontal: 22 }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            marginTop: 26,
-            marginBottom: 13,
-            marginHorizontal: 2,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-            }}
-          >
-            Recommended for you
-          </Text>
-          <Pressable onPress={() => router.push('/(tabs)/explore')} hitSlop={8}>
-            <Text
+            </View>
+            <View
               style={{
-                color: EX.color.primary,
-                fontSize: 13.5,
-                fontWeight: '600',
+                backgroundColor: '#fff',
+                borderWidth: 1,
+                borderColor: EX.color.line06,
+                borderRadius: 22,
+                padding: 5,
+                shadowColor: '#171326',
+                shadowOpacity: 0.04,
+                shadowRadius: 2,
+                shadowOffset: { width: 0, height: 1 },
+                elevation: 1,
               }}
             >
-              Explore
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{
-          gap: 13,
-          paddingHorizontal: 22,
-          paddingBottom: EX.space.tabClear,
-        }}
-      >
-        {rec.map((d) => (
-          <RecoCard
-            key={d.id}
-            d={d}
-            onPress={() =>
-              router.push({
-                pathname: '/destination/[id]',
-                params: { id: d.id, code: d.flag },
-              })
-            }
-          />
-        ))}
-      </ScrollView>
+              {apps.map((a, i) => (
+                <React.Fragment key={a.id}>
+                  {i > 0 ? (
+                    <View
+                      style={{
+                        height: 1,
+                        backgroundColor: EX.color.line06,
+                        marginHorizontal: 12,
+                      }}
+                    />
+                  ) : null}
+                  <MiniAppRow
+                    app={a}
+                    onPress={() => router.push(`/application/${a.id}`)}
+                  />
+                </React.Fragment>
+              ))}
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* Recommended for you (GET /visas) — japa#145: its own loading / error
+          state, and hidden entirely when nothing is left to recommend (the
+          Explore quick action covers it). */}
+      {recState !== 'ready' || rec.length > 0 ? (
+        <>
+          <View style={{ paddingHorizontal: 22 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                marginTop: 26,
+                marginBottom: 13,
+                marginHorizontal: 2,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                }}
+              >
+                Recommended for you
+              </Text>
+              <Pressable
+                onPress={() => router.push('/(tabs)/explore')}
+                hitSlop={8}
+              >
+                <Text
+                  style={{
+                    color: EX.color.primary,
+                    fontSize: 13.5,
+                    fontWeight: '600',
+                  }}
+                >
+                  Explore
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+          {recState === 'loading' ? (
+            // First load: a section spinner in place of the rail.
+            <StateLoading />
+          ) : recState === 'error' ? (
+            <StateError
+              message={loadErrorCopy('destinations')}
+              onRetry={() => visaQ.refetch()}
+              retrying={visaQ.isRefetching}
+            />
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                gap: 13,
+                paddingHorizontal: 22,
+                paddingBottom: 4,
+              }}
+            >
+              {rec.map((d) => (
+                <RecoCard
+                  key={d.id}
+                  d={d}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/destination/[id]',
+                      params: { id: d.id, code: d.flag },
+                    })
+                  }
+                />
+              ))}
+            </ScrollView>
+          )}
+        </>
+      ) : null}
     </ScrollView>
   );
 }
