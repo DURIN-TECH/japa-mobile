@@ -13,7 +13,7 @@
 //   • status: collapse the 7 backend statuses into the 3 Payment states.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Payment } from '@/components/explorer/data';
+import type { Payment } from '@/types/explorer.type';
 import type { ApiTransaction } from '@/hooks/useTransactions';
 import { fmtDate } from '@/components/explorer/liveDate';
 

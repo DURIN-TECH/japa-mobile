@@ -7,8 +7,8 @@
 // statuses collapse into the four demo statuses the UI knows how to draw.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Doc } from './data';
 import { fmtDate } from './liveDate';
+import { Doc } from '@/types/explorer.type';
 import {
   Document,
   DocumentStatus,

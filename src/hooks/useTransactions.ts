@@ -71,7 +71,7 @@ export interface ApiTransaction {
 
 /**
  * Fetch the current user's transaction history. Returns a bare array (never
- * undefined) so callers can safely check `.length` for the demo fallback.
+ * undefined) so callers can safely check `.length` for the empty state.
  */
 export function useTransactions() {
   return useQuery({

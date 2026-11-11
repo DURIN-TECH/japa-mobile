@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { agoFrom } from './liveDate';
-import { Notif } from './data';
+import { Notif } from '@/types/explorer.type';
 import { ApiNotification } from '@/hooks/useNotifications';
 
 // Backend `type` → Explorer visual `kind`.

@@ -154,3 +154,25 @@ export function useMarkAllNotificationsRead() {
     },
   });
 }
+
+/**
+ * Delete one notification (japa#145).
+ * Backend: DELETE /notifications/:id (present on origin/dev).
+ *
+ * The screen keeps no local-only state: on success the list refetches; on
+ * failure the row stays as the server has it and the screen shows an
+ * InlineError ("We couldn’t update that notification. Try again.").
+ */
+export function useDeleteNotification() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (notificationId: string) => {
+      await apiService.delete(`/notifications/${notificationId}`);
+    },
+    onSettled: () => {
+      // Success or failure, re-read the server's truth.
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+  });
+}

@@ -8,13 +8,12 @@
 //   • for the backend 404, whose copy must not confirm the item exists
 //     (the same message for an unknown and a hidden visa);
 //   • with `onRetry` + `errorMessage`, for a network / server failure with
-//     nothing cached (InlineError + a coral "Try again" link).
+//     nothing cached (InlineError + an Outline "Try again" button, japa#145).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   Text,
   View,
   type StyleProp,
@@ -26,6 +25,7 @@ import { EX } from './theme';
 import { Ic } from './icons';
 import { GlassButton } from './primitives';
 import { InlineError } from './AccountForm';
+import { OutlineButton, RETRY_LABEL } from './states';
 
 export function CenteredState({
   icon: Icon,
@@ -50,10 +50,10 @@ export function CenteredState({
   /** Secondary button, e.g. "Back to explore". */
   actionLabel: string;
   onAction: () => void;
-  /** When set, a coral "Try again" link (load errors only). */
+  /** When set, an Outline "Try again" button (load errors only). */
   onRetry?: () => void;
   retrying?: boolean;
-  /** InlineError above the retry link (load errors only). */
+  /** InlineError above the retry button (load errors only). */
   errorMessage?: string;
 }) {
   const router = useRouter();
@@ -113,43 +113,20 @@ export function CenteredState({
           </View>
         ) : null}
         {onRetry ? (
+          // japa#145: one retry style app-wide, the Outline "Try again"
+          // button (the old coral text link was 3.26:1 on bg, failing AA).
           retrying ? (
             <ActivityIndicator color={EX.color.primary} />
           ) : (
-            <Pressable onPress={onRetry} accessibilityRole="button">
-              <Text
-                style={{
-                  fontSize: 13.5,
-                  fontWeight: '600',
-                  color: EX.color.primary,
-                }}
-              >
-                Try again
-              </Text>
-            </Pressable>
+            <OutlineButton label={RETRY_LABEL} onPress={onRetry} />
           )
         ) : null}
-        {/* Secondary button: white, line08 border, ink label. */}
-        <Pressable
+        {/* Secondary action (back to the parent list): Outline button. */}
+        <OutlineButton
+          label={actionLabel}
           onPress={onAction}
-          accessibilityRole="button"
-          style={({ pressed }) => ({
-            marginTop: 6,
-            backgroundColor: EX.color.cardWhite,
-            borderWidth: 1,
-            borderColor: EX.color.line08,
-            borderRadius: EX.radius.button,
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            opacity: pressed ? 0.7 : 1,
-          })}
-        >
-          <Text
-            style={{ color: EX.color.ink, fontSize: 14, fontWeight: '700' }}
-          >
-            {actionLabel}
-          </Text>
-        </Pressable>
+          style={{ marginTop: 6 }}
+        />
       </View>
     </View>
   );

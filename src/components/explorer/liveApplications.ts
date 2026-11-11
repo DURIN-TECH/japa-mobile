@@ -9,8 +9,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { agoFrom, fmtDate } from './liveDate';
-import { App, AppStep, Dest } from './data';
 import { countryArt } from './liveExplore';
+import { App, AppStep, Dest } from '@/types/explorer.type';
 import {
   Application,
   ApplicationStatus,
@@ -43,9 +43,8 @@ function normalizeProgress(progress: number): number {
 }
 
 // One backend Application → the Explorer's `App`. Builds a self-contained `dest`
-// (via countryArt) so the row/detail can render without a static DESTS match.
-// `agentSeed` is accepted for call-site parity but the Explorer derives portrait
-// art from the demo agent set, so it is not consumed here.
+// (via countryArt → the `@/assets/countries` module) so the row/detail renders
+// from the case alone. `agentSeed` is accepted for call-site parity only.
 /**
  * The case's visa title (japa#106). A case on an agency-only visa must show
  * the visa's real name, never "Visa" / "unknown visa":
@@ -70,7 +69,7 @@ export function mapApplication(
   agentSeed?: number,
   fetchedVisaName?: string | null,
 ): App {
-  void agentSeed; // reserved; portrait seed is resolved from the demo agent set
+  void agentSeed; // reserved for call-site parity; not used
 
   const art = countryArt(app.countryCode);
   const dest: Dest = {

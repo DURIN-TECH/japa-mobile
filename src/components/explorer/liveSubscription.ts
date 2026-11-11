@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { FeatureKey } from '@durin-tech/authz';
-import { type Plan } from './data';
+import { type Plan } from '@/types/explorer.type';
 import { PlanDTO } from '@/hooks/useSubscription';
 
 // FeatureKey → human label shown on a plan's check-row. Mirrors the wording of

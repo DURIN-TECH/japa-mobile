@@ -14,7 +14,8 @@
 // Consultation fees are in kobo/cents on the backend (not needed by `Agency`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Agency, NAIRA } from './data';
+import { NAIRA } from './data';
+import type { Agency } from '@/types/explorer.type';
 import { agencyCover, agencyTone } from '@/assets/countries';
 import type { ApiAgency, PublicVisaPrice } from '@/hooks/useAgencies';
 
@@ -52,6 +53,8 @@ export function mapAgency(p: ApiAgency): Agency {
     tone: agencyTone(p.id),
     blurb: p.description ?? '',
     badges: p.verified ? ['Compliance verified'] : [],
+    // #144: the public page slug, when the browse endpoint sends it.
+    slug: p.slug || undefined,
   };
 }
 

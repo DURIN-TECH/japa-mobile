@@ -7,7 +7,7 @@
 // tonal fallback come from the assets module `@/assets/countries`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Dest, Req } from './data';
+import { Dest, Req } from '@/types/explorer.type';
 import { countryCity, countryImage, countryTone } from '@/assets/countries';
 import { Country } from '@/types/country.type';
 import { VisaType, VisaCategory, VisaRequirement } from '@/types/visas.type';

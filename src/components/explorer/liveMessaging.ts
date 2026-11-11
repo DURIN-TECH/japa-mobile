@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { agoShort, fmtDate } from './liveDate';
-import { Convo, Msg } from './data';
+import { Convo, Msg } from '@/types/explorer.type';
 import { Conversation, Message } from '@/types/messaging.type';
 
 // Compact relative time ("3h", "2d"). Kept as a named export for compatibility;

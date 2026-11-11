@@ -10,26 +10,50 @@
 
 // Image helpers moved to the reusable assets module (japa#145).
 import { IMG } from '@/assets/countries';
+import type {
+  Req,
+  Dest,
+  Agency,
+  Agent,
+  Review,
+  AppStep,
+  App,
+  EligQ,
+  Convo,
+  Msg,
+  Consult,
+  Notif,
+  SSDoc,
+  SSReq,
+  Plan,
+  OnboardSlide,
+  Doc,
+  Payment,
+} from '@/types/explorer.type';
+// Re-exported while screens move off this file (japa#145).
+export type {
+  Req,
+  Dest,
+  Agency,
+  Agent,
+  Review,
+  AppStep,
+  App,
+  EligQ,
+  Convo,
+  Msg,
+  Consult,
+  Notif,
+  SSDoc,
+  SSReq,
+  Plan,
+  OnboardSlide,
+  Doc,
+  Payment,
+} from '@/types/explorer.type';
 
 // Currency helper.
 export const NAIRA = (n: number) => '₦' + n.toLocaleString();
-
-export type Dest = {
-  id: string;
-  country: string;
-  city: string;
-  flag: string;
-  visa: string;
-  cat: string;
-  blurb: string;
-  img: string;
-  tone: string;
-  processing: string;
-  price: number;
-  approval: string;
-  applied: number;
-  featured?: boolean;
-};
 
 export const DESTS: Dest[] = [
   {
@@ -165,7 +189,6 @@ export const DESTS: Dest[] = [
 
 export const CATS = ['All', 'Work', 'Study', 'PR', 'Family'];
 
-export type Req = { t: string; d: string; e: string };
 export const REQS: Req[] = [
   {
     t: 'Passport & identity',
@@ -185,22 +208,6 @@ export const REQS: Req[] = [
   { t: 'Financial proof', d: 'Bank statements, maintenance funds', e: '1 wk' },
 ];
 
-export type Agency = {
-  id: string;
-  name: string;
-  city: string;
-  flag: string;
-  est: number;
-  agents: number;
-  r: number;
-  rev: number;
-  succ: number;
-  verified: boolean;
-  cover: string;
-  tone: string;
-  blurb: string;
-  badges: string[];
-};
 export const AGENCIES: Agency[] = [
   {
     id: 'ag1',
@@ -238,26 +245,6 @@ export const AGENCIES: Agency[] = [
   },
 ];
 
-export type Agent = {
-  id: string;
-  n: string;
-  spec: string;
-  agencyId: string;
-  role: string;
-  r: number;
-  rev: number;
-  succ: number;
-  apps: number;
-  years: number;
-  fee: number;
-  resp: string;
-  seed: number;
-  tone: string;
-  avail: boolean;
-  langs: string[];
-  specs: string[];
-  bio: string;
-};
 export const AGENTS: Agent[] = [
   {
     id: 'a1',
@@ -321,15 +308,6 @@ export const AGENTS: Agent[] = [
   },
 ];
 
-export type Review = {
-  id: string;
-  agentId: string;
-  n: string;
-  seed: number;
-  r: number;
-  ago: string;
-  t: string;
-};
 export const REVIEWS: Review[] = [
   {
     id: 'r1',
@@ -369,26 +347,6 @@ export const STATUS: Record<string, { label: string; fg: string; bg: string }> =
     approved: { label: 'Approved', fg: '#1E8E55', bg: '#D6F2E2' },
   };
 
-export type AppStep = {
-  t: string; // title
-  d: string; // date / status label
-  s: 'done' | 'current' | 'next';
-  desc?: string; // what happened (timeline detail)
-  by?: 'you' | 'agent' | 'system'; // who performed the step (drives the dot colour)
-};
-export type App = {
-  id: string;
-  destId: string;
-  status: string;
-  step: number;
-  progress: number;
-  ref: string;
-  updated: string;
-  agentId: string;
-  next: { label: string; cta: string | null };
-  steps: AppStep[];
-  dest?: Dest; // resolved destination for live (backend) applications
-};
 export const APPS: App[] = [
   {
     id: 'ap1',
@@ -560,16 +518,6 @@ export const APPS: App[] = [
   },
 ];
 
-export type EligQ = {
-  id: string;
-  type: 'single' | 'number' | 'boolean' | 'multiple';
-  q: string;
-  help?: string;
-  opts?: string[];
-  unit?: string;
-  min?: number;
-  max?: number;
-};
 export const ELIG_Q: EligQ[] = [
   {
     id: 'q1',
@@ -629,15 +577,6 @@ export const ELIG_RESULT = {
   gaps: ['Proof of funds not yet uploaded', 'Medical certificate recommended'],
 };
 
-export type Convo = {
-  id: string;
-  agentId: string;
-  last: string;
-  ago: string;
-  unread: number;
-  online: boolean;
-  agentName?: string;
-};
 export const CONVOS: Convo[] = [
   {
     id: 'c1',
@@ -664,14 +603,6 @@ export const CONVOS: Convo[] = [
     online: true,
   },
 ];
-// A chat bubble. `files` carries any documents shared on the message — the demo
-// threads have none, so it's optional and absent everywhere below.
-export type Msg = {
-  from: 'agent' | 'me';
-  t: string;
-  at: string;
-  files?: { url: string; name: string }[];
-};
 export const THREAD: Record<string, Msg[]> = {
   c1: [
     {
@@ -694,19 +625,6 @@ export const THREAD: Record<string, Msg[]> = {
   ],
 };
 
-export type Consult = {
-  id: string;
-  agentId: string;
-  status: 'upcoming' | 'completed' | 'cancelled';
-  date: string;
-  time: string;
-  mode: string;
-  topic: string;
-  dur: string;
-  notes?: string; // agent-facing note the applicant left when booking
-  summary?: string; // post-call recap (completed consultations)
-  agentName?: string; // display name for live agents not in demo AGENTS
-};
 export const CONSULTS: Consult[] = [
   {
     id: 'cs1',
@@ -766,16 +684,6 @@ export const CONSULTS: Consult[] = [
   },
 ];
 
-export type Notif = {
-  id: string;
-  kind: 'status' | 'message' | 'action' | 'consult';
-  unread: boolean;
-  ago: string;
-  title: string;
-  body: string;
-  destId?: string;
-  agentId?: string;
-};
 export const NOTIFS: Notif[] = [
   {
     id: 'n1',
@@ -824,19 +732,6 @@ export const NOTIFS: Notif[] = [
   },
 ];
 
-export type SSDoc = {
-  name: string;
-  file: string | null;
-  status: 'verified' | 'uploaded' | 'rejected' | 'missing';
-  reason?: string;
-};
-export type SSReq = {
-  id: string;
-  title: string;
-  est: string;
-  desc: string;
-  docs: SSDoc[];
-};
 export const SS: {
   destId: string;
   ref: string;
@@ -913,15 +808,6 @@ export const PLAN_FEATURES: Record<string, string> = {
   priority: 'Priority support',
   alerts: 'Visa news alerts',
 };
-export type Plan = {
-  id: string;
-  name: string;
-  price: number;
-  interval: string | null;
-  tag: string | null;
-  features: string[];
-  blurb: string;
-};
 export const PLANS: Plan[] = [
   {
     id: 'free',
@@ -962,7 +848,7 @@ export const PLANS: Plan[] = [
 export const CURRENT_PLAN = 'free';
 
 // ── Promoted (sponsored) agencies — paid placement on Home ───────────────────
-export type Promo = {
+type Promo = {
   id: string;
   label: string;
   headline: string;
@@ -987,14 +873,6 @@ export const PROMOS: Promo[] = [
 ];
 
 // ── Auth onboarding carousel slides ──────────────────────────────────────────
-export type OnboardSlide = {
-  id: string;
-  img: string;
-  tone: string;
-  kicker: string;
-  title: string;
-  body: string;
-};
 export const ONBOARD: OnboardSlide[] = [
   {
     id: 'o1',
@@ -1044,16 +922,6 @@ export const COUNTRIES: Country[] = [
 ];
 
 // ── My documents (profile → documents) ───────────────────────────────────────
-export type Doc = {
-  id: string;
-  name: string;
-  category: string;
-  status: 'verified' | 'uploaded' | 'rejected' | 'missing';
-  file: string | null;
-  size?: string;
-  date: string;
-  destId?: string;
-};
 export const DOCUMENTS: Doc[] = [
   {
     id: 'd1',
@@ -1127,15 +995,6 @@ export const DOCUMENTS: Doc[] = [
 ];
 
 // ── Payments / transactions (profile → payments) ─────────────────────────────
-export type Payment = {
-  id: string;
-  title: string;
-  sub: string;
-  amount: number;
-  date: string;
-  status: 'paid' | 'pending' | 'refunded';
-  method: string;
-};
 export const PAYMENTS: Payment[] = [
   {
     id: 'pm1',

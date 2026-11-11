@@ -17,6 +17,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
 
 /**
@@ -132,6 +133,8 @@ export function useConsultation(id: string | undefined) {
       return response.data!;
     },
     enabled: !!id,
+    // japa#145: a 404 is final (not-found state), so don't retry it.
+    retry: retryUnlessNotFound,
   });
 }
 

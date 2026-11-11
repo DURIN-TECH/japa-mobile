@@ -7,7 +7,7 @@
 // stored in kobo/cents → divide by 100 for the ₦ display value.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Agent } from './data';
+import { Agent } from '@/types/explorer.type';
 import { ApiAgent } from '@/hooks/useAgents';
 
 // Tonal header palette (dark) — chosen deterministically by seed.

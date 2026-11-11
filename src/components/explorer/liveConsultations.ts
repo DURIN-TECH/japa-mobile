@@ -11,7 +11,7 @@
 
 import { format } from 'date-fns';
 import { fmtDate } from './liveDate';
-import { Consult } from './data';
+import { Consult } from '@/types/explorer.type';
 import { ApiConsultation } from '@/hooks/useConsultations';
 
 // Backend status (7 values) → the Explorer's 3-bucket display status.
