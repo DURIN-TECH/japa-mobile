@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { retryUnlessNotFound } from './queryErrors';
+import { retryUnlessUnavailable } from './queryErrors';
 import { apiService } from '@/services/api.service';
 import {
   EligibilityQuestion,
@@ -115,8 +115,8 @@ export function useEligibilityCheck(checkId: string) {
       return response.data;
     },
     enabled: !!checkId,
-    // japa#145: a 404 is final (not-found state), so don't retry it.
-    retry: retryUnlessNotFound,
+    // japa#145: a 404 or 403 (another user's check) is final, so don't retry.
+    retry: retryUnlessUnavailable,
     staleTime: 1000 * 60 * 5,
   });
 }

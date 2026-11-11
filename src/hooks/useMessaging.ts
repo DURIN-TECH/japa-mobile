@@ -13,7 +13,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { retryUnlessNotFound } from './queryErrors';
+import { retryUnlessUnavailable } from './queryErrors';
 import { apiService } from '@/services/api.service';
 import { Conversation, Message } from '@/types/messaging.type';
 
@@ -51,8 +51,8 @@ export function useMessages(conversationId: string) {
       return response.data ?? [];
     },
     enabled: !!conversationId,
-    // japa#145: a 404 (unknown / not your conversation) is final.
-    retry: retryUnlessNotFound,
+    // japa#145: a 404/403 (unknown / not your conversation) is final.
+    retry: retryUnlessUnavailable,
   });
 }
 

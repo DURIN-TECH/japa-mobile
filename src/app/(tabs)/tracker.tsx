@@ -279,12 +279,15 @@ export default function AppsView() {
         {/* ── Header: count eyebrow · title · new-application button ─────────── */}
         <ScreenHeader
           topInset={insets.top}
-          // Header sub line: the live count, or "No active applications" when
-          // there are none (or the count isn't known yet).
+          // Header sub line: only said once the data has loaded — the live
+          // count, or "No active applications" when it loaded empty. While
+          // loading or after an error nothing is claimed.
           eyebrow={
-            apps.length
-              ? `${apps.length} active application${apps.length === 1 ? '' : 's'}`
-              : 'No active applications'
+            state !== 'ready'
+              ? undefined
+              : apps.length
+                ? `${apps.length} active application${apps.length === 1 ? '' : 's'}`
+                : 'No active applications'
           }
           title="Your journey"
           right={

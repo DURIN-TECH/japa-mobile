@@ -41,7 +41,7 @@ import { EX } from '@/components/explorer/theme';
 import { mapCheckResult } from '@/components/explorer/liveEligibility';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useTopAgents } from '@/hooks/useAgents';
-import { isNotFoundError } from '@/hooks/queryErrors';
+import { isUnavailableError } from '@/hooks/queryErrors';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { loadErrorCopy } from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
@@ -244,8 +244,8 @@ export default function EligibilityResult() {
     );
   }
 
-  // Load failed (not a 404) with nothing cached → error + retry.
-  if (checkQ.isError && !checkQ.data && !isNotFoundError(checkQ.error)) {
+  // Load failed (not a 404/403) with nothing cached → error + retry.
+  if (checkQ.isError && !checkQ.data && !isUnavailableError(checkQ.error)) {
     return (
       <CenteredState
         icon={Ic.gauge}

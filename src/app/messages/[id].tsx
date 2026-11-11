@@ -48,7 +48,7 @@ import {
 } from '@/components/explorer/states';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { InlineError } from '@/components/explorer/AccountForm';
-import { isNotFoundError } from '@/hooks/queryErrors';
+import { isUnavailableError } from '@/hooks/queryErrors';
 import { hashString } from '@/assets/countries';
 
 // Send-failure copy (design spec, Thread row).
@@ -246,12 +246,12 @@ export default function ChatView() {
   const headerH = insets.top + 62; // approx header height for keyboard offset
 
   // ── Not found ─────────────────────────────────────────────────────────────
-  // The messages route 404s for an unknown / not-your conversation; and once
+  // The messages route 404s (or 403s) for an unknown / not-your conversation; and once
   // the list has loaded, an id that isn't in it is not one of yours either.
   // The copy never confirms the conversation exists.
   const notFound =
     !convId ||
-    isNotFoundError(msgsQ.error) ||
+    isUnavailableError(msgsQ.error) ||
     (convosQ.data !== undefined && !convo);
   if (notFound) {
     return (
