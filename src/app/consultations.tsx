@@ -4,23 +4,31 @@
 // Cancelled), then a list of consultation cards. Each card shows the agent, the
 // topic, a status pill, and a cream "info band" (date · time·dur · mode) with
 // contextual action buttons. An empty state shows when a filter has no results.
+//
+// japa#145: live only (GET /consultations). Loading → coral spinner; failed
+// load → InlineError + "Try again"; no consultations at all → first-run empty
+// state ("No consultations yet" + coral "Find an agent"), filters hidden.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { EX, displayText } from '@/components/explorer/theme';
+import type { Consult } from '@/types/explorer.type';
+import { useConversations } from '@/hooks/useMessaging';
+import { hashString } from '@/assets/countries';
 import {
-  CONSULTS,
-  CONVOS,
-  agentById,
-  type Consult,
-} from '@/components/explorer/data';
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Pill } from '@/components/explorer/primitives';
-// Live data: real consultations from the backend, mapped onto the demo `Consult`
-// shape. Falls back to the demo CONSULTS when the backend has none.
+// Live data: the user's consultations from the backend, mapped to `Consult`.
 import { useConsultations } from '@/hooks/useConsultations';
 import { mapConsult } from '@/components/explorer/liveConsultations';
 
@@ -140,21 +148,27 @@ export default function ConsultationsView() {
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<Consult['status']>('upcoming');
 
-  // Fetch the current user's consultations (role=client) and map them onto the
-  // demo `Consult` shape. Live-with-demo-fallback: use live rows when present,
-  // otherwise the demo CONSULTS so the screen is never empty.
+  // The current user's consultations (role=client), mapped to `Consult`.
   const consultsQ = useConsultations();
-  const live = useMemo(
+  const state = queryState(consultsQ);
+  const all = useMemo(
     () => (consultsQ.data ?? []).map(mapConsult),
     [consultsQ.data],
   );
-  const list0 = live.length ? live : CONSULTS;
+  // First run = the source answered with no rows → hide the filters.
+  const firstRun = state === 'ready' && all.length === 0;
 
-  const list = list0.filter((c) => c.status === filter);
+  const list = all.filter((c) => c.status === filter);
 
-  // Message action routes to the conversation with this agent (else agent page).
+  // Message action routes to the live conversation with this agent (else the
+  // agent page, where one can be started).
+  const { data: conversations } = useConversations();
+  const toAgents = () => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push('/(tabs)/agents');
+  };
   const openChat = (agentId: string) => {
-    const convo = CONVOS.find((c) => c.agentId === agentId);
+    const convo = conversations?.find((c) => c.agentId === agentId);
     if (convo) router.push(`/messages/${convo.id}`);
     else router.push(`/agent/${agentId}`);
   };
@@ -204,214 +218,240 @@ export default function ConsultationsView() {
         </View>
       </View>
 
-      {/* ── Filter chips (source row: padding '14px 22px 6px', gap 8) ──────── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{
-          gap: 8,
-          paddingHorizontal: 22,
-          paddingTop: 14,
-          paddingBottom: 6,
-        }}
-        style={{ flexGrow: 0 }}
-      >
-        {FILTERS.map((f) => {
-          const on = filter === f.key;
-          return (
-            <Pressable
-              key={f.key}
-              onPress={() => setFilter(f.key)}
-              style={{
-                borderWidth: 1,
-                borderColor: on ? EX.color.ink : EX.color.line12,
-                backgroundColor: on ? EX.color.ink : '#fff',
-                borderRadius: 999,
-                paddingHorizontal: 16,
-                paddingVertical: 8,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: '600',
-                  // Source: active text #FBF7F0, inactive #5B5468.
-                  color: on ? '#FBF7F0' : EX.color.inkMuted,
-                }}
-              >
-                {f.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      {/* ── Loading / error / first-run (japa#145) ─────────────────────────── */}
+      {state === 'loading' ? <StateLoading /> : null}
+      {state === 'error' ? (
+        <StateError
+          message={loadErrorCopy('your consultations')}
+          onRetry={() => consultsQ.refetch()}
+          retrying={consultsQ.isRefetching}
+        />
+      ) : null}
+      {firstRun ? (
+        <StateEmpty
+          icon={Ic.cal}
+          title="No consultations yet"
+          body="Book a consultation with a vetted agent for advice on your move."
+          action={{
+            label: 'Find an agent',
+            onPress: toAgents,
+            variant: 'coral',
+          }}
+        />
+      ) : null}
 
-      {/* ── List / empty state ────────────────────────────────────────────── */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          // Source list: padding '10px 22px 40px', gap 12.
-          paddingHorizontal: 22,
-          paddingTop: 10,
-          paddingBottom: 40,
-          gap: 12,
-        }}
-      >
-        {list.length === 0 ? (
-          // Source empty state: bare 38px calendar (opacity 0.5) + 14px caption.
-          <View
-            style={{
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingVertical: 48,
+      {/* ── Filter chips (source row: padding '14px 22px 6px', gap 8) ──────── */}
+      {state === 'ready' && !firstRun ? (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              gap: 8,
+              paddingHorizontal: 22,
+              paddingTop: 14,
+              paddingBottom: 6,
+            }}
+            style={{ flexGrow: 0 }}
+          >
+            {FILTERS.map((f) => {
+              const on = filter === f.key;
+              return (
+                <Pressable
+                  key={f.key}
+                  onPress={() => setFilter(f.key)}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: on ? EX.color.ink : EX.color.line12,
+                    backgroundColor: on ? EX.color.ink : '#fff',
+                    borderRadius: 999,
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: '600',
+                      // Source: active text #FBF7F0, inactive #5B5468.
+                      color: on ? '#FBF7F0' : EX.color.inkMuted,
+                    }}
+                  >
+                    {f.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          {/* ── List / empty state ────────────────────────────────────────────── */}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              // Source list: padding '10px 22px 40px', gap 12.
+              paddingHorizontal: 22,
+              paddingTop: 10,
+              paddingBottom: 40,
               gap: 12,
             }}
           >
-            <Ic.cal
-              size={38}
-              color={EX.color.muted}
-              strokeWidth={1.8}
-              style={{ opacity: 0.5 }}
-            />
-            <Text style={{ fontSize: 14, color: EX.color.muted }}>
-              No {filter} consultations
-            </Text>
-          </View>
-        ) : (
-          list.map((c) => {
-            // Resolve the agent's portrait/name. Live consultations reference
-            // agents that aren't in the demo AGENTS list, so fall back to the
-            // denormalized `agentName` (and seed 0) the backend provides.
-            const a = agentById(c.agentId);
-            const agentName = a?.n ?? c.agentName ?? 'Agent';
-            const agentSeed = a?.seed ?? 0;
-            const pill = STATUS_PILL[c.status];
-            const isVideo = c.mode.toLowerCase().includes('video');
-            return (
-              <Pressable
-                key={c.id}
-                onPress={() => router.push(`/consultation/${c.id}`)}
+            {list.length === 0 ? (
+              // Source empty state: bare 38px calendar (opacity 0.5) + 14px caption.
+              <View
                 style={{
-                  backgroundColor: '#fff',
-                  borderRadius: 20, // source card radius
-                  borderWidth: 1,
-                  borderColor: 'rgba(23,19,38,0.07)',
-                  padding: 15,
-                  // Source: cancelled cards dim to 0.7 opacity.
-                  opacity: c.status === 'cancelled' ? 0.7 : 1,
-                  shadowColor: '#171326',
-                  shadowOpacity: 0.04,
-                  shadowRadius: 2,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 48,
+                  gap: 12,
                 }}
               >
-                {/* Agent + topic + status */}
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
-                >
-                  <Portrait seed={agentSeed} size={46} name={agentName} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontWeight: '700',
-                        color: EX.color.ink,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {agentName}
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 12.5,
-                        color: EX.color.muted, // source topic #8B8499
-                        marginTop: 1,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {c.topic}
-                    </Text>
-                  </View>
-                  <Pill
-                    label={pill.label}
-                    fg={pill.fg}
-                    bg={pill.bg}
-                    small
-                    style={{ paddingHorizontal: 10, paddingVertical: 5 }}
-                  />
-                </View>
-
-                {/* Cream info band: date · time·dur · mode (source: radius 13, gap 8, 3px dots) */}
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: 8,
-                    backgroundColor: EX.color.cream,
-                    borderRadius: 13,
-                    paddingHorizontal: 13,
-                    paddingVertical: 11,
-                    marginTop: 13,
-                  }}
-                >
-                  <InfoBit icon={Ic.cal} label={c.date} />
-                  <DotSep />
-                  <InfoBit icon={Ic.clock} label={`${c.time} · ${c.dur}`} />
-                  <DotSep />
-                  <InfoBit
-                    icon={isVideo ? Ic.video : Ic.phone}
-                    label={c.mode}
-                  />
-                </View>
-
-                {/* Actions — source: cancelled shows none; upcoming = Join call + Message;
-                    completed = "Message agent" (flex) + Rebook. */}
-                {c.status !== 'cancelled' ? (
-                  <View
-                    style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}
+                <Ic.cal
+                  size={38}
+                  color={EX.color.muted}
+                  strokeWidth={1.8}
+                  style={{ opacity: 0.5 }}
+                />
+                <Text style={{ fontSize: 14, color: EX.color.muted }}>
+                  No {filter} consultations
+                </Text>
+              </View>
+            ) : (
+              list.map((c) => {
+                // Agent name is denormalised on the consultation; the portrait
+                // seed is derived from the agent id (stable per agent).
+                const agentName = c.agentName ?? 'Agent';
+                const agentSeed = hashString(c.agentId ?? '') % 6;
+                const pill = STATUS_PILL[c.status];
+                const isVideo = c.mode.toLowerCase().includes('video');
+                return (
+                  <Pressable
+                    key={c.id}
+                    onPress={() => router.push(`/consultation/${c.id}`)}
+                    style={{
+                      backgroundColor: '#fff',
+                      borderRadius: 20, // source card radius
+                      borderWidth: 1,
+                      borderColor: 'rgba(23,19,38,0.07)',
+                      padding: 15,
+                      // Source: cancelled cards dim to 0.7 opacity.
+                      opacity: c.status === 'cancelled' ? 0.7 : 1,
+                      shadowColor: '#171326',
+                      shadowOpacity: 0.04,
+                      shadowRadius: 2,
+                      shadowOffset: { width: 0, height: 1 },
+                      elevation: 1,
+                    }}
                   >
-                    {c.status === 'upcoming' ? (
-                      <>
-                        <ActionBtn
-                          label="Join call"
-                          icon={Ic.video}
-                          filled
-                          grow
-                          onPress={() => router.push(`/consultation/${c.id}`)}
-                        />
-                        <ActionBtn
-                          label="Message"
-                          icon={Ic.msg}
-                          onPress={() => openChat(c.agentId)}
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <ActionBtn
-                          label="Message agent"
-                          icon={Ic.msg}
-                          grow
-                          onPress={() => openChat(c.agentId)}
-                        />
-                        <ActionBtn
-                          label="Rebook"
-                          onPress={() => router.push(`/book/${c.agentId}`)}
-                        />
-                      </>
-                    )}
-                  </View>
-                ) : null}
-              </Pressable>
-            );
-          })
-        )}
-      </ScrollView>
+                    {/* Agent + topic + status */}
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                      }}
+                    >
+                      <Portrait seed={agentSeed} size={46} name={agentName} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text
+                          style={{
+                            fontSize: 15,
+                            fontWeight: '700',
+                            color: EX.color.ink,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {agentName}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 12.5,
+                            color: EX.color.muted, // source topic #8B8499
+                            marginTop: 1,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {c.topic}
+                        </Text>
+                      </View>
+                      <Pill
+                        label={pill.label}
+                        fg={pill.fg}
+                        bg={pill.bg}
+                        small
+                        style={{ paddingHorizontal: 10, paddingVertical: 5 }}
+                      />
+                    </View>
+
+                    {/* Cream info band: date · time·dur · mode (source: radius 13, gap 8, 3px dots) */}
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: 8,
+                        backgroundColor: EX.color.cream,
+                        borderRadius: 13,
+                        paddingHorizontal: 13,
+                        paddingVertical: 11,
+                        marginTop: 13,
+                      }}
+                    >
+                      <InfoBit icon={Ic.cal} label={c.date} />
+                      <DotSep />
+                      <InfoBit icon={Ic.clock} label={`${c.time} · ${c.dur}`} />
+                      <DotSep />
+                      <InfoBit
+                        icon={isVideo ? Ic.video : Ic.phone}
+                        label={c.mode}
+                      />
+                    </View>
+
+                    {/* Actions — source: cancelled shows none; upcoming = Join call + Message;
+                    completed = "Message agent" (flex) + Rebook. */}
+                    {c.status !== 'cancelled' ? (
+                      <View
+                        style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}
+                      >
+                        {c.status === 'upcoming' ? (
+                          <>
+                            <ActionBtn
+                              label="Join call"
+                              icon={Ic.video}
+                              filled
+                              grow
+                              onPress={() =>
+                                router.push(`/consultation/${c.id}`)
+                              }
+                            />
+                            <ActionBtn
+                              label="Message"
+                              icon={Ic.msg}
+                              onPress={() => openChat(c.agentId)}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <ActionBtn
+                              label="Message agent"
+                              icon={Ic.msg}
+                              grow
+                              onPress={() => openChat(c.agentId)}
+                            />
+                            <ActionBtn
+                              label="Rebook"
+                              onPress={() => router.push(`/book/${c.agentId}`)}
+                            />
+                          </>
+                        )}
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        </>
+      ) : null}
     </View>
   );
 }
