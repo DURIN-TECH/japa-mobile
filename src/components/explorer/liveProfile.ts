@@ -2,7 +2,7 @@
 // Profile — live backend adapter (japa#145).
 //
 // The Home greeting and the Profile header used to read a hard-coded persona
-// (`ME = { name: 'Alex Kayode', city: 'Lagos, Nigeria' }`). They now read the
+// (the static `ME` persona). They now read the
 // signed-in user's `GET /users/me` profile through these helpers:
 //
 //   • profileName(p)    "Ada Obi" from first + last name ('' when unknown)

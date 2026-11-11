@@ -3,7 +3,7 @@
  *
  * The signed-in user's profile from `GET /users/me`, as a React Query query,
  * so the Home greeting and the Profile header show the REAL name and city
- * (they used to show the hard-coded "Alex Kayode, Lagos" persona).
+ * (they used to show a hard-coded demo persona).
  *
  * The auth store also caches the profile (`useAuthStore().profile`, filled by
  * `fetchProfile`); this hook seeds from it so a screen has the name at once,

@@ -2,7 +2,7 @@
 // Seli Explorer — static product content (japa#145).
 //
 // What used to be explorer/data.ts, minus every demo fixture. data.ts shipped
-// a whole fake persona ("Alex Kayode", Lagos) with destinations, agents,
+// a whole fake persona with destinations, agents,
 // agencies, applications, messages, payments and more, which screens fell back
 // to whenever a query was empty or failing. Those are gone: screens now render
 // backend data or a loading / empty / error state (see states.tsx).
