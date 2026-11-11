@@ -81,7 +81,7 @@ export default function AuthRegister() {
           label="Full name"
           value={name}
           onChangeText={setName}
-          placeholder="Alex Kayode"
+          placeholder="Your full name"
           autoCapitalize="words"
           autoComplete="name"
         />
