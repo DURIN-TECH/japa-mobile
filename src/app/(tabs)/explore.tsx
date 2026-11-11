@@ -18,7 +18,7 @@ import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { DESTS, Dest } from '@/components/explorer/data';
+import type { Dest } from '@/types/explorer.type';
 import {
   mapVisasToDests,
   visaTypeToDest,
@@ -31,22 +31,42 @@ import {
 import { Ic } from '@/components/explorer/icons';
 import { Portrait } from '@/components/explorer/primitives';
 import { Tile } from '@/components/explorer/Tile';
+// japa#145: shared loading / empty / error states (no demo fallback).
+import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
+// japa#145: the greeting + portrait use the signed-in user's real name.
+import { useMe } from '@/hooks/useMe';
+import { profileName, profileSeed } from '@/components/explorer/liveProfile';
 
 export default function ExploreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [cat, setCat] = useState('All');
 
-  // ── Live data (GET /visas + /countries) with a demo fallback ──────────────
+  // ── Live data (GET /visas + /countries) ─────────────────────────────────
+  // japa#145: no sample destinations. The grid shows the backend's visas, or a
+  // loading / empty / error state (spec section 2, Explore row).
   const visaQuery = useVisaTypes({ limit: 60 });
   const { data: countries } = useCountriesWithVisas();
-  const liveDests = useMemo(() => {
+  const source = useMemo(() => {
     const visas = visaQuery.data?.visaTypes ?? [];
-    return visas.length ? mapVisasToDests(visas, countries ?? []) : [];
+    return mapVisasToDests(visas, countries ?? []);
   }, [visaQuery.data, countries]);
-  const usingLive = liveDests.length > 0;
-  const source = usingLive ? liveDests : DESTS;
-  const initialLoading = visaQuery.isLoading && !usingLive;
+  // 'loading' (first load, nothing cached) | 'error' (failed, nothing cached)
+  // | 'ready'. A background refetch with cached rows stays silent.
+  const state = queryState(visaQuery);
+  // First-run empty: the source has no destinations at all.
+  const firstRunEmpty = state === 'ready' && source.length === 0;
+
+  // ── Signed-in user (GET /users/me) for the greeting + portrait ────────────
+  const { data: me } = useMe();
+  const myName = profileName(me);
+  const firstName = myName.split(' ')[0];
 
   // ── Search (GET /visas/search, active at ≥2 chars) — overrides browse view ──
   const [query, setQuery] = useState('');
@@ -74,8 +94,8 @@ export default function ExploreScreen() {
   const list = source.filter((d) => cat === 'All' || d.cat === cat);
   const featured = list.find((d) => d.featured) ?? list[0];
   const rest = list.filter((d) => d !== featured);
-  // Pass the country code so the detail screen can fetch live visa data by
-  // (countryCode, visaId). Demo tiles ignore it (resolved from static DESTS).
+  // Pass the country code so the detail screen can fetch the visa by
+  // (countryCode, visaId).
   const open = (dd: Dest) =>
     router.push({
       pathname: '/destination/[id]',
@@ -90,7 +110,7 @@ export default function ExploreScreen() {
         contentContainerStyle={{ paddingBottom: EX.space.tabClear }}
         refreshControl={
           <RefreshControl
-            refreshing={visaQuery.isFetching && usingLive}
+            refreshing={visaQuery.isRefetching}
             onRefresh={() => visaQuery.refetch()}
             tintColor={EX.color.primary}
           />
@@ -117,14 +137,17 @@ export default function ExploreScreen() {
               }}
             >
               <View>
+                {/* Real first name when the profile has one; "Good morning"
+                    alone otherwise (never a persona). */}
                 <Text
+                  numberOfLines={1}
                   style={{
                     fontSize: 12.5,
                     color: EX.color.muted,
                     fontWeight: '600',
                   }}
                 >
-                  Good morning, Alex
+                  {firstName ? `Good morning, ${firstName}` : 'Good morning'}
                 </Text>
                 <Text style={[displayText(30, 'semibold'), { marginTop: 2 }]}>
                   Where to next?
@@ -163,7 +186,11 @@ export default function ExploreScreen() {
                   onPress={() => router.push('/(tabs)/profile')}
                   style={{ borderRadius: 21 }}
                 >
-                  <Portrait seed={3} size={42} name="Alex K" />
+                  <Portrait
+                    seed={profileSeed(me)}
+                    size={42}
+                    name={myName || ' '}
+                  />
                 </Pressable>
               </View>
             </View>
@@ -207,8 +234,9 @@ export default function ExploreScreen() {
             </View>
           </View>
 
-          {/* Category chips — hidden while searching */}
-          {!searchMode ? (
+          {/* Category chips — hidden while searching, and on first-run empty /
+              loading / error, where they would mean nothing (spec 1.2). */}
+          {!searchMode && state === 'ready' && !firstRunEmpty ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -299,40 +327,25 @@ export default function ExploreScreen() {
                 )}
               </View>
             )
-          ) : initialLoading ? (
-            <View style={{ paddingTop: 60, alignItems: 'center' }}>
-              <ActivityIndicator color={EX.color.primary} />
-              <Text
-                style={{ marginTop: 12, color: EX.color.muted, fontSize: 13.5 }}
-              >
-                Loading visas…
-              </Text>
-            </View>
+          ) : state === 'loading' ? (
+            // First load, nothing cached: the coral spinner.
+            <StateLoading />
+          ) : state === 'error' ? (
+            // Load failed, nothing cached: InlineError + Outline "Try again".
+            <StateError
+              section
+              message={loadErrorCopy('destinations')}
+              onRetry={() => visaQuery.refetch()}
+              retrying={visaQuery.isRefetching}
+            />
+          ) : firstRunEmpty ? (
+            <StateEmpty
+              icon={Ic.globe}
+              title="No destinations yet"
+              body="We’re adding new visas all the time. Check back soon."
+            />
           ) : (
             <>
-              {/* Fallback notice when the backend returned nothing (offline / empty). */}
-              {!usingLive ? (
-                <View
-                  style={{
-                    marginBottom: 12,
-                    backgroundColor: EX.color.cream,
-                    borderRadius: 12,
-                    paddingVertical: 9,
-                    paddingHorizontal: 13,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12.5,
-                      color: EX.color.amber,
-                      fontWeight: '600',
-                    }}
-                  >
-                    Showing sample destinations · pull to refresh for live visas
-                  </Text>
-                </View>
-              ) : null}
-
               {featured ? (
                 <View style={{ marginBottom: 14 }}>
                   <Tile d={featured} big onPress={() => open(featured)} />

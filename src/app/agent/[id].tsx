@@ -9,40 +9,46 @@
 // the agency they work at, and recent reviews. Sticky glass CTA at the base.
 //
 // Every measurement is quoted 1:1 from the prototype source.
+//
+// japa#145: live data only. GET /agents/:id (404 → not-found state), the
+// agency card from GET /agencies/browse/:id (hidden entirely, title included,
+// when the agent has no agency or it isn't public), and the reviews from
+// GET /agents/:id/reviews with their own loading / error / empty states.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import {
-  NAIRA,
-  agentById,
-  agencyById,
-  reviewsForAgent,
-} from '@/components/explorer/data';
+import { NAIRA } from '@/components/explorer/data';
 import { mapAgent } from '@/components/explorer/liveAgents';
+import { mapAgency } from '@/components/explorer/liveAgencies';
+import { usePublicAgency } from '@/hooks/useAgencies';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 import { mapReview } from '@/components/explorer/liveReviews';
 import { useAgent, useAgentReviews } from '@/hooks/useAgents';
 import { Ic } from '@/components/explorer/icons';
 import {
+  Card,
   Chip,
   GlassButton,
   Portrait,
   Stars,
   Verified,
 } from '@/components/explorer/primitives';
-import type { Review } from '@/components/explorer/data';
+import type { Review } from '@/types/explorer.type';
 
 // ── GlassStat — one column of the floating panel (value 19/700, label 11.5) ───
 // Source GlassStat: flex 1, textAlign center, padding '15px 8px'; value 19/700
@@ -204,53 +210,68 @@ export default function AgentDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // Demo agents resolve from static AGENTS; otherwise fetch live (GET /agents/:id).
-  const demo = agentById(id);
-  const liveQ = useAgent(demo ? undefined : id);
-  const a = demo ?? (liveQ.data ? mapAgent(liveQ.data) : undefined);
+  // ── Live sources (japa#145: no demo agents) ──────────────────────────────
+  // All hooks run before any early return.
+  const liveQ = useAgent(id);
+  const a = liveQ.data ? mapAgent(liveQ.data) : undefined;
+  const reviewsQ = useAgentReviews(id);
+  // The agency card: only fetched when the agent belongs to an agency.
+  const agencyQ = usePublicAgency(a?.agencyId || undefined);
 
-  // Reviews: demo agents use the static REVIEWS; live agents fetch from the
-  // backend (GET /agents/:id/reviews). Hook is called before any early return
-  // and disabled on the demo path (undefined agentId).
-  const reviewsQ = useAgentReviews(demo ? undefined : id);
-
-  if (!demo && liveQ.isLoading) {
+  // First load: coral spinner (the back button stays reachable).
+  if (liveQ.isLoading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <ActivityIndicator color={EX.color.primary} />
+      <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: insets.top + 6,
+            left: 18,
+            zIndex: 50,
+          }}
+        >
+          <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
+        </View>
+        <StateLoading />
       </View>
     );
   }
 
+  // Load failed (not a 404) with nothing cached: error + retry.
+  if (!a && liveQ.isError && !isNotFoundError(liveQ.error)) {
+    return (
+      <CenteredState
+        icon={Ic.users}
+        title="We couldn’t load this agent"
+        errorMessage="Check your connection and try again."
+        onRetry={() => liveQ.refetch()}
+        retrying={liveQ.isRefetching}
+        actionLabel="Back to agents"
+        onAction={() => router.replace('/(tabs)/agents')}
+      />
+    );
+  }
+
+  // Not found (404 or no id). Copy never confirms the agent exists.
   if (!a) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Agent not found.</Text>
-      </View>
+      <CenteredState
+        icon={Ic.users}
+        title="We couldn’t find this agent"
+        actionLabel="Back to agents"
+        onAction={() => router.replace('/(tabs)/agents')}
+      />
     );
   }
 
-  // Agency is demo-only for now; the section self-hides when absent.
-  const agency = agencyById(a.agencyId);
-  // Reviews: demo path uses static REVIEWS; live path maps backend reviews.
-  // The "Recent reviews" section already self-hides when the array is empty.
-  const reviews = demo
-    ? reviewsForAgent(a.id)
-    : (reviewsQ.data ?? []).map(mapReview);
+  // Agency card: only when the agent has an agency AND it loaded. An
+  // independent agent, a non-public agency (404) or a failed load all hide
+  // the section completely (spec: "No agency → hide the agency section").
+  const agency =
+    a.agencyId && agencyQ.data ? mapAgency(agencyQ.data) : undefined;
+  // Reviews, mapped from GET /agents/:id/reviews.
+  const reviews = (reviewsQ.data ?? []).map(mapReview);
+  const reviewsState = queryState(reviewsQ);
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -504,7 +525,8 @@ export default function AgentDetail() {
                     }}
                     numberOfLines={1}
                   >
-                    {a.role} · {agency.city}
+                    {/* No dangling separator when the agency has no city. */}
+                    {agency.city ? `${a.role} · ${agency.city}` : a.role}
                   </Text>
                 </View>
                 <Ic.chevR
@@ -516,45 +538,64 @@ export default function AgentDetail() {
             </>
           ) : null}
 
-          {/* Recent reviews (action = "{n} reviews") */}
-          {reviews.length ? (
-            <>
-              <View
+          {/* Recent reviews (action = "{n} reviews", only with rows).
+              japa#145: always shown, with loading / error / empty states. */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              marginTop: 26,
+              marginBottom: 12,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: EX.color.ink,
+                letterSpacing: -0.18,
+              }}
+            >
+              Recent reviews
+            </Text>
+            {reviews.length ? (
+              <Text
                 style={{
-                  flexDirection: 'row',
-                  alignItems: 'baseline',
-                  justifyContent: 'space-between',
-                  marginTop: 26,
-                  marginBottom: 12,
+                  color: EX.color.primary,
+                  fontSize: 13.5,
+                  fontWeight: '600',
                 }}
               >
-                <Text
-                  style={{
-                    fontSize: 18,
-                    fontWeight: '700',
-                    color: EX.color.ink,
-                    letterSpacing: -0.18,
-                  }}
-                >
-                  Recent reviews
-                </Text>
-                <Text
-                  style={{
-                    color: EX.color.primary,
-                    fontSize: 13.5,
-                    fontWeight: '600',
-                  }}
-                >
-                  {reviews.length} reviews
-                </Text>
-              </View>
-              <View style={{ gap: 11 }}>
-                {reviews.map((r) => (
-                  <ReviewCard key={r.id} rev={r} />
-                ))}
-              </View>
-            </>
-          ) : null}
+                {reviews.length} reviews
+              </Text>
+            ) : null}
+          </View>
+          {reviewsState === 'loading' ? (
+            <StateLoading section />
+          ) : reviewsState === 'error' ? (
+            <StateError
+              section
+              message={loadErrorCopy('reviews')}
+              onRetry={() => reviewsQ.refetch()}
+              retrying={reviewsQ.isFetching}
+            />
+          ) : reviews.length === 0 ? (
+            <Card padded={false}>
+              <StateEmpty
+                section
+                icon={Ic.star}
+                title="No reviews yet"
+                body="Reviews appear after clients finish a consultation."
+              />
+            </Card>
+          ) : (
+            <View style={{ gap: 11 }}>
+              {reviews.map((r) => (
+                <ReviewCard key={r.id} rev={r} />
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
 
