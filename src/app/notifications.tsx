@@ -2,21 +2,37 @@
 // Notifications (prototype messaging.jsx NotificationsView).
 // Back header with a "Mark all read" action, then a list of notification rows.
 // Each row has a kind-colored IconChip, a title + 2-line body, a relative time,
-// and a coral unread dot; unread rows sit on a faint coral tint. Tapping a row
-// marks it read (local state) and routes to the related application/destination
-// or agent chat.
+// and a coral unread dot; unread rows sit on a faint coral tint.
+//
+// japa#145: live only (GET /notifications), no demo NOTIFS and no local-only
+// unread state. Tapping a row marks it read on the backend (PUT
+// /notifications/:id/read) and routes to the related entity; a long press
+// deletes it (DELETE /notifications/:id). While a write is in flight the row
+// shows its new state; if it fails the row goes back to what the server has
+// and an InlineError shows at the top. Loading → coral spinner; failed load →
+// InlineError + "Try again"; none → "You’re all caught up" (no "Mark all
+// read").
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { NOTIFS, APPS, CONVOS, type Notif } from '@/components/explorer/data';
+import type { Notif } from '@/types/explorer.type';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
 import { IconChip } from '@/components/explorer/primitives';
-// ── Live data (backend) — falls back to the demo NOTIFS when the query is empty.
+// ── Live data (backend) ───────────────────────────────────────────────────────
 import {
+  useDeleteNotification,
   useNotifications,
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
@@ -43,55 +59,106 @@ export default function NotificationsView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // ── Live notifications → Notif[]; fall back to demo when the query is empty.
-  const { data: apiNotifs = [] } = useNotifications();
+  // ── Live notifications → Notif[] ──────────────────────────────────────────
+  const notifsQ = useNotifications();
+  const state = queryState(notifsQ);
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
-  const live = useMemo(() => apiNotifs.map(mapNotif), [apiNotifs]);
-  // `isLive` tracks whether we're rendering backend rows (drives the mutation
-  // calls below — demo rows have no backend counterpart to persist against).
-  const isLive = live.length > 0;
-  const items0 = isLive ? live : NOTIFS;
+  const del = useDeleteNotification();
+  const raw = useMemo(() => notifsQ.data ?? [], [notifsQ.data]);
+  const items = useMemo(() => raw.map(mapNotif), [raw]);
 
-  // Local unread state (demo — not persisted). Seeded from the effective list.
-  const [read, setRead] = useState<Record<string, boolean>>({});
-  const isUnread = (n: Notif) => n.unread && !read[n.id];
+  // In-flight writes only (never a persisted local state): ids being marked
+  // read / deleted show their new state until the refetch lands, and are
+  // dropped again on failure so the row returns to the server's state.
+  const [pendingRead, setPendingRead] = useState<Record<string, true>>({});
+  const [pendingDelete, setPendingDelete] = useState<Record<string, true>>({});
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const WRITE_ERROR = 'We couldn’t update that notification. Try again.';
+  const isUnread = (n: Notif) => n.unread && !pendingRead[n.id];
+  const visible = items.filter((n) => !pendingDelete[n.id]);
+
+  const drop = (
+    set: React.Dispatch<React.SetStateAction<Record<string, true>>>,
+    ids: string[],
+  ) =>
+    set((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => delete next[id]);
+      return next;
+    });
 
   const markAllRead = () => {
-    // Persist for live data; the local map keeps the UI instant either way.
-    if (isLive) markAll.mutate();
-    const all: Record<string, boolean> = {};
-    items0.forEach((n) => {
-      all[n.id] = true;
+    const ids = items.filter((n) => n.unread).map((n) => n.id);
+    setWriteError(null);
+    setPendingRead((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => (next[id] = true));
+      return next;
     });
-    setRead(all);
+    markAll.mutate(undefined, {
+      onError: () => {
+        drop(setPendingRead, ids);
+        setWriteError(WRITE_ERROR);
+      },
+    });
   };
 
-  // Mark read, then route by related entity.
+  // Route by the related entity on the raw backend record.
+  const routeFor = (id: string) => {
+    const r = raw.find((x) => x.id === id);
+    const target = r?.relatedEntityId ?? r?.referenceId;
+    switch (r?.relatedEntityType) {
+      case 'application':
+        return target ? `/application/${target}` : null;
+      case 'consultation':
+        return target ? `/consultation/${target}` : '/consultations';
+      case 'document':
+        return '/documents';
+      case 'payment_request':
+        return '/payments';
+      case 'message':
+        return '/messages';
+      default:
+        return null;
+    }
+  };
+
+  // Mark read on the backend (if unread), then route.
   const openNotif = (n: Notif) => {
-    // Persist the read for live rows (local map still handles the instant UI).
-    if (isLive) markRead.mutate(n.id);
-    setRead((prev) => ({ ...prev, [n.id]: true }));
-
-    if (isLive) {
-      // Live routing: message notifications open the messages list. Entity ids
-      // won't match the demo CONVOS/DESTS, so other kinds don't navigate.
-      if (n.agentId) {
-        const convo = CONVOS.find((c) => c.agentId === n.agentId);
-        router.push(convo ? `/messages/${convo.id}` : '/messages');
-      }
-      return;
+    if (isUnread(n)) {
+      setWriteError(null);
+      setPendingRead((prev) => ({ ...prev, [n.id]: true }));
+      markRead.mutate(n.id, {
+        onError: () => {
+          drop(setPendingRead, [n.id]);
+          setWriteError(WRITE_ERROR);
+        },
+      });
     }
+    const to = routeFor(n.id);
+    if (to) router.push(to as never);
+  };
 
-    // Demo routing (unchanged).
-    if (n.destId) {
-      const app = APPS.find((a) => a.destId === n.destId);
-      if (app) router.push(`/application/${app.id}`);
-      else router.push(`/destination/${n.destId}`);
-    } else if (n.agentId) {
-      const convo = CONVOS.find((c) => c.agentId === n.agentId);
-      if (convo) router.push(`/messages/${convo.id}`);
-    }
+  // Long press → confirm → delete on the backend.
+  const deleteNotif = (n: Notif) => {
+    Alert.alert('Delete notification?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          setWriteError(null);
+          setPendingDelete((prev) => ({ ...prev, [n.id]: true }));
+          del.mutate(n.id, {
+            onError: () => {
+              drop(setPendingDelete, [n.id]);
+              setWriteError(WRITE_ERROR);
+            },
+          });
+        },
+      },
+    ]);
   };
 
   return (
@@ -127,17 +194,20 @@ export default function NotificationsView() {
         <Text style={[displayText(24, 'semibold'), { flex: 1 }]}>
           Notifications
         </Text>
-        <Pressable onPress={markAllRead} hitSlop={8}>
-          <Text
-            style={{
-              color: EX.color.primary,
-              fontSize: 13, // source: 13 / 600
-              fontWeight: '600',
-            }}
-          >
-            Mark all read
-          </Text>
-        </Pressable>
+        {/* Hidden when there is nothing to mark (empty / loading / error). */}
+        {visible.length > 0 ? (
+          <Pressable onPress={markAllRead} hitSlop={8}>
+            <Text
+              style={{
+                color: EX.color.primary,
+                fontSize: 13, // source: 13 / 600
+                fontWeight: '600',
+              }}
+            >
+              Mark all read
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {/* ── Notification list ─────────────────────────────────────────────── */}
@@ -151,13 +221,37 @@ export default function NotificationsView() {
           gap: 4,
         }}
       >
-        {items0.map((n) => {
+        {/* A failed read / delete: row is back as it was, say so. */}
+        {writeError ? (
+          <View style={{ marginBottom: 8 }}>
+            <InlineError message={writeError} />
+          </View>
+        ) : null}
+        {state === 'loading' ? <StateLoading /> : null}
+        {state === 'error' ? (
+          <StateError
+            style={{ paddingHorizontal: 6 }}
+            message={loadErrorCopy('your notifications')}
+            onRetry={() => notifsQ.refetch()}
+            retrying={notifsQ.isRefetching}
+          />
+        ) : null}
+        {state === 'ready' && visible.length === 0 ? (
+          <StateEmpty
+            icon={Ic.bell}
+            title="You’re all caught up"
+            body="Updates on your applications, documents and consultations land here."
+          />
+        ) : null}
+        {visible.map((n) => {
           const k = KIND[n.kind];
           const unread = isUnread(n);
           return (
             <Pressable
               key={n.id}
               onPress={() => openNotif(n)}
+              onLongPress={() => deleteNotif(n)}
+              accessibilityHint="Long press to delete"
               style={{
                 // Source row: padding '13px 12px', gap 13, radius 16, unread tint (no separators).
                 flexDirection: 'row',
