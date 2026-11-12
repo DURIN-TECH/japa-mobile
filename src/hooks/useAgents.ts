@@ -24,7 +24,9 @@ import { apiService } from '@/services/api.service';
  */
 export interface ApiAgent {
   id: string;
-  userId: string;
+  // Optional: public agent responses (GET /agents*) no longer carry the account
+  // uid (issue #147). Never read it off a public response.
+  userId?: string;
   agencyId?: string;
   agencyRole?: string; // 'owner' | 'agent'
   displayName: string;
