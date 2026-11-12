@@ -38,7 +38,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import {
@@ -72,6 +73,44 @@ import {
   documentDisplayName,
 } from '@/types/documents.type';
 import { VisaRequirement } from '@/types/visas.type';
+// Visitor intake (#113): Step 1 card driven by the approved rubric's questions.
+import { useIntake } from '@/hooks/useIntake';
+import {
+  IntakeStep,
+  intakeOccupiesStep,
+} from '@/components/explorer/intake/IntakeStep';
+// Personal document checklist (#114): built server-side from the verified record.
+import { useChecklist } from '@/hooks/useChecklist';
+import {
+  DocumentChecklist,
+  isChecklistDocument,
+} from '@/components/explorer/DocumentChecklist';
+import type { ChecklistItem } from '@/types/checklist.type';
+// Per-upload document check (#115).
+import {
+  useDocumentChecks,
+  useRetryDocumentCheck,
+} from '@/hooks/useDocumentChecks';
+// Review (issue #43): statement + review cards and the wired submit CTA.
+import {
+  StatementCard,
+  ReviewCard,
+  deriveReviewState,
+  deriveReviewCta,
+} from '@/components/explorer/review/SelfServiceCards';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  assessmentKey,
+  lastReviewFinishedAt,
+  useAssessment,
+  useStartReview,
+} from '@/hooks/useCaseOfficer';
+import { PLANS_ROUTE } from '@/components/explorer/UpgradePrompt';
+import {
+  SUBMITTED_STATUSES,
+  isStatementLocked,
+  useStatement,
+} from '@/hooks/useStatement';
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -673,6 +712,46 @@ export default function SelfServiceView() {
   const docsQ = useApplicationDocuments(wantLive && app ? app.id : '');
   const docs = docsQ.data ?? [];
 
+  // Intake questions (#113). Enabled as soon as the application resolves and
+  // never on the demo path, so demo mode makes no request and shows no card.
+  const intakeQ = useIntake(app ? app.id : '', wantLive && !!app);
+  // When the route has an intake it is the first step and shifts the others
+  // down by one (see `stepNo` in the render below).
+  const intakeStep = wantLive && intakeOccupiesStep(intakeQ);
+  // Checklist (#114): self-service applications only; off on the demo path.
+  const checklistQ = useChecklist(
+    wantLive && app ? app.id : '',
+    wantLive && !!app && app.mode === 'self',
+  );
+  const checklist = checklistQ.data;
+  // Per-upload document checks (#115): polled while one is running.
+  const checksQ = useDocumentChecks(
+    wantLive && app ? app.id : '',
+    wantLive && !!app && app.mode === 'self',
+  );
+  const retryCheck = useRetryDocumentCheck(app?.id ?? '');
+  // documentRequestId currently uploading from a checklist item.
+  const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
+  // ── Review + statement (issue #43). Disabled on the demo path (empty id). ────
+  // The review query polls itself while a job is queued/running and refetches on
+  // app foreground, so a run survives backgrounding. The tier it carries comes
+  // from the server response.
+  const reviewId = wantLive && app ? app.id : '';
+  const reviewQ = useAssessment(reviewId);
+  const stmtQ = useStatement(reviewId);
+  const { start: startReview, isStarting } = useStartReview(reviewId);
+  // Inline error for the sticky bar when a start fails (offline / generic).
+  const [ctaError, setCtaError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  // Returning to this screen (from the statement, the review or the plans screen)
+  // refetches the review: the inputs or the plan may have changed meanwhile.
+  useFocusEffect(
+    useCallback(() => {
+      if (reviewId)
+        queryClient.invalidateQueries({ queryKey: assessmentKey(reviewId) });
+    }, [queryClient, reviewId]),
+  );
+
   // Upload mutation hooks (createDoc invalidates the documents query → list refreshes).
   const getUploadUrl = useGetUploadUrl();
   const createDoc = useCreateDocument();
@@ -695,7 +774,7 @@ export default function SelfServiceView() {
   // internally and PUTs it — so we hand it the picked file descriptor, not a
   // pre-fetched blob (matching the helper's actual signature in useDocuments.ts).
   const handleUpload = useCallback(
-    async (requirementId: string) => {
+    async (requirementId: string | null, documentRequestId?: string) => {
       if (!app) return;
       try {
         const res = await DocumentPicker.getDocumentAsync({
@@ -706,7 +785,9 @@ export default function SelfServiceView() {
         const f = res.assets[0];
         const contentType = f.mimeType ?? 'application/octet-stream';
 
-        setUploadingReqId(requirementId);
+        // Checklist uploads track the request id; requirement uploads the req id.
+        if (documentRequestId) setUploadingItemId(documentRequestId);
+        else setUploadingReqId(requirementId);
 
         // 1) Signed upload URL for this file.
         const up = await getUploadUrl.mutateAsync({
@@ -726,12 +807,19 @@ export default function SelfServiceView() {
         // 3) Register the document — invalidates the documents query on success.
         await createDoc.mutateAsync({
           applicationId: app.id,
-          requirementId,
+          // A checklist upload carries `documentRequestId`: the backend fulfils
+          // the request and derives the requirement id (`docreq:<id>`).
+          ...(documentRequestId
+            ? { documentRequestId }
+            : { requirementId: requirementId ?? undefined }),
           fileName: f.name,
           fileType: contentType,
           fileSizeMb: (f.size ?? 0) / 1e6,
           storagePath: up.storagePath,
         });
+        // A new document changes the review's inputs: refresh the review state
+        // so the card can show it as out of date.
+        queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
       } catch (e) {
         Alert.alert(
           'Upload failed',
@@ -739,13 +827,20 @@ export default function SelfServiceView() {
         );
       } finally {
         setUploadingReqId(null);
+        setUploadingItemId(null);
       }
     },
-    [app, getUploadUrl, createDoc],
+    [app, getUploadUrl, createDoc, queryClient],
   );
 
   // ── Live loading — initial application fetch in flight ───────────────────────
-  if (wantLive && appQ.isLoading) {
+  // Waits for the intake (#113), statement and review (#43) queries too (once the
+  // application is known) so step cards don't pop in and shift the numbering.
+  if (
+    wantLive &&
+    (appQ.isLoading ||
+      (!!app && (intakeQ.isLoading || reviewQ.isLoading || stmtQ.isLoading)))
+  ) {
     return (
       <View
         style={{
@@ -787,7 +882,59 @@ export default function SelfServiceView() {
     // (`docreq:<id>`). Collecting the leftovers guarantees every document on the
     // application is visible somewhere.
     const reqIds = new Set(orderedReqs.map((r) => r.id));
-    const otherDocs = docs.filter((d) => !reqIds.has(d.requirementId));
+    // A document uploaded against a checklist item is shown in the checklist,
+    // so it is left out here: nothing is listed twice (#114).
+    const otherDocs = docs.filter(
+      (d) => !reqIds.has(d.requirementId) && !isChecklistDocument(d, checklist),
+    );
+    // With a checklist on screen, requirement cards that hold no document yet
+    // are hidden (the checklist already asks for the documents); cards with
+    // documents stay, so nothing already uploaded disappears.
+    const hasChecklist = !!checklist && checklist.items.length > 0;
+    const shownReqs = hasChecklist
+      ? orderedReqs.filter((r) => docs.some((d) => d.requirementId === r.id))
+      : orderedReqs;
+
+    // ── Review state (issue #43) ─────────────────────────────────────────────
+    const submitted = SUBMITTED_STATUSES.includes(app.status as string);
+    const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError);
+    const reviewCta = deriveReviewCta(reviewState, submitted);
+    // Step numbers are computed from the steps that are present: the intake
+    // (#113) only exists for routes with questions, and it shifts the rest. The
+    // statement and review steps (#43) are always there on this live path.
+    const presentSteps = [
+      intakeStep ? 'intake' : null,
+      'official',
+      'documents',
+      'statement',
+      'review',
+    ].filter(Boolean) as string[];
+    const stepNo = (key: string) => presentSteps.indexOf(key) + 1;
+    // A refetch failed but a cached review is on screen → offline note.
+    const offlineCached = reviewQ.isError && !!reviewQ.data;
+    const openReview = () => router.push(`/self-service/${app.id}/review`);
+    const openStatement = () =>
+      router.push(`/self-service/${app.id}/statement`);
+
+    // Sticky CTA tap. Disabled while a start is in flight (no double jobs).
+    const onReviewCta = async () => {
+      if (!reviewCta || reviewCta.disabled || isStarting) return;
+      setCtaError(null);
+      if (reviewCta.action === 'open') return openReview();
+      if (reviewCta.action === 'upgrade') return router.push(PLANS_ROUTE);
+      const out = await startReview(
+        reviewCta.action === 'retry' ? 'retry' : 'cta',
+      );
+      if (out === 'started') return openReview();
+      if (out === 'offline')
+        setCtaError(
+          'You’re offline, so we couldn’t start your review. Reconnect and try again.',
+        );
+      else if (out === 'error')
+        setCtaError('We couldn’t start your review. Try again in a moment.');
+      // 'upgrade' (402) is not an error: the refetch shows the free out-of-date
+      // state. 'no_rubric': the refetch shows the no-rubric card.
+    };
 
     // Official application URL → button host label (strip protocol + path).
     const officialUrl = visaType?.applicationUrl;
@@ -1059,8 +1206,17 @@ export default function SelfServiceView() {
               </View>
             </View>
 
-            {/* ── Step 1 · Official application ───────────────────────────────── */}
-            <SectionTitle>Step 1 · Official application</SectionTitle>
+            {/* ── Intake summary card (#113), only when the route has an intake ──
+                It is the first step when present. Every step number below comes
+                from `stepNo`, so the numbering is right whichever steps exist. */}
+            <IntakeStep
+              query={intakeQ}
+              onOpen={() => router.push(`/self-service/${app.id}/intake`)}
+              lastReviewAt={lastReviewFinishedAt(reviewQ.data)}
+              stepNumber={stepNo('intake')}
+            />
+            {/* ── Official application ────────────────────────────────────────── */}
+            <SectionTitle>{`Step ${stepNo('official')} · Official application`}</SectionTitle>
             <View
               style={{
                 backgroundColor: EX.color.cream, // #FFF6EC
@@ -1133,9 +1289,43 @@ export default function SelfServiceView() {
               ) : null}
             </View>
 
-            {/* ── Step 2 · Upload documents ───────────────────────────────────── */}
-            <SectionTitle>Step 2 · Upload documents</SectionTitle>
-            {orderedReqs.map((req) => (
+            {/* ── Upload documents: the personal checklist (#114) with each item's
+                upload-check result (#115), then any leftover requirement cards ── */}
+            <SectionTitle>{`Step ${stepNo('documents')} · Upload documents`}</SectionTitle>
+            {/* Personal checklist (#114): self-service applications only. */}
+            {app.mode === 'self' ? (
+              <DocumentChecklist
+                checklist={checklist}
+                loading={checklistQ.isLoading}
+                error={checklistQ.isError}
+                onRetry={() => checklistQ.refetch()}
+                docs={docs}
+                uploadingId={uploadingItemId}
+                // Before the visit questions are answered the list points at them.
+                onOpenIntake={
+                  intakeStep
+                    ? () => router.push(`/self-service/${app.id}/intake`)
+                    : undefined
+                }
+                checksProps={{
+                  checks: checksQ.data,
+                  checksLoading: checksQ.isLoading,
+                  checksError: checksQ.isError,
+                  onReloadChecks: () => checksQ.refetch(),
+                  onRetryCheck: (documentId: string) =>
+                    retryCheck.mutate(documentId),
+                  retryingDocId: retryCheck.isPending
+                    ? (retryCheck.variables ?? null)
+                    : null,
+                }}
+                onUpload={(item: ChecklistItem) =>
+                  item.documentRequestId
+                    ? handleUpload(null, item.documentRequestId)
+                    : undefined
+                }
+              />
+            ) : null}
+            {shownReqs.map((req) => (
               <LiveRequirementCard
                 key={req.id}
                 req={req}
@@ -1151,48 +1341,179 @@ export default function SelfServiceView() {
             {otherDocs.length > 0 ? (
               <LiveOtherDocsCard docs={otherDocs} />
             ) : null}
+
+            {/* ── Your statement (issue #43) ──────────────────────────────────── */}
+            <SectionTitle>{`Step ${stepNo('statement')} · Your statement`}</SectionTitle>
+            <StatementCard
+              statement={stmtQ.data}
+              loadFailed={stmtQ.isError}
+              // The statement locks once the application is under review (server: 409).
+              readOnly={isStatementLocked(app.status as string)}
+              onOpen={openStatement}
+              onRetry={() => stmtQ.refetch()}
+            />
+
+            {/* ── Your review (issue #43; country context #116 shows on the review
+                screen it opens) ────────────────────────────────────────────── */}
+            <SectionTitle>{`Step ${stepNo('review')} · Your review`}</SectionTitle>
+            <ReviewCard
+              state={reviewState}
+              result={reviewQ.data}
+              offlineCached={offlineCached}
+              onSeeLast={openReview}
+              onRetryLoad={() => reviewQ.refetch()}
+            />
+            {/* ── Ask about your review (issue #45) ─────────────────────────────
+                A clearly separated entry to the ask-anywhere chat. Live path only,
+                so demo mode never reaches the chat (and makes no request). */}
+            <SectionTitle>Questions?</SectionTitle>
+            <Pressable
+              onPress={() => router.push(`/ai-chat/${app.id}`)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: '#fff',
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: EX.color.line06,
+                padding: 14,
+              }}
+            >
+              <Ic.msg size={20} color={EX.color.primary} strokeWidth={1.8} />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                  }}
+                >
+                  Ask about your review
+                </Text>
+                <Text style={{ fontSize: 12.5, color: EX.color.muted }}>
+                  Get answers from your saved review.
+                </Text>
+              </View>
+              <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
+            </Pressable>
+
+            {/* ── Been refused before? (issue #122) ─────────────────────────────
+                Entry to the refusal-letter analysis. Opens the static route
+                `self-service/refusal-letter`, which uploads the letter and shows
+                the mapped reasons, the checklist and the disclosure notice. */}
+            <SectionTitle>Been refused before?</SectionTitle>
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/self-service/refusal-letter',
+                  params: { applicationId: app.id },
+                })
+              }
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: EX.color.cardWhite,
+                borderRadius: EX.radius.cardLg,
+                borderWidth: 1,
+                borderColor: EX.color.line06,
+                padding: 15,
+              }}
+            >
+              <Ic.docs size={22} color={EX.color.primary} strokeWidth={1.8} />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    color: EX.color.ink,
+                    fontSize: 15,
+                    fontWeight: '700',
+                  }}
+                >
+                  Refusal letter
+                </Text>
+                <Text
+                  style={{
+                    color: EX.color.inkMuted,
+                    fontSize: 13,
+                    lineHeight: 18,
+                    marginTop: 2,
+                  }}
+                >
+                  See what it says next to the published rule.
+                </Text>
+              </View>
+              <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
+            </Pressable>
           </View>
         </Animated.ScrollView>
 
         {/* ── Sticky dark CTA (prototype glass bar → BlurView) ─────────────────── */}
-        <BlurView
-          intensity={30}
-          tint="light"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            paddingTop: 15,
-            paddingHorizontal: 22,
-            paddingBottom: Math.max(insets.bottom, 16) + 6,
-            backgroundColor: EX.color.glassWarm,
-            borderTopWidth: 1,
-            borderTopColor: EX.color.line06,
-          }}
-        >
-          <Pressable
+        {/* Wired to the review (issue #43). It starts a review and sends nothing
+            to anyone. Not rendered when there is no action (no approved rubric,
+            or a submitted application that was never reviewed). */}
+        {reviewCta ? (
+          <BlurView
+            intensity={30}
+            tint="light"
             style={{
-              height: 54,
-              borderRadius: EX.radius.button, // 16
-              backgroundColor: EX.color.ink,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              shadowColor: '#171326',
-              shadowOpacity: 0.5,
-              shadowRadius: 24,
-              shadowOffset: { width: 0, height: 14 },
-              elevation: 8,
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              paddingTop: 15,
+              paddingHorizontal: 22,
+              paddingBottom: Math.max(insets.bottom, 16) + 6,
+              backgroundColor: EX.color.glassWarm,
+              borderTopWidth: 1,
+              borderTopColor: EX.color.line06,
             }}
           >
-            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-              Submit application
-            </Text>
-            <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-          </Pressable>
-        </BlurView>
+            {ctaError ? (
+              <View style={{ marginBottom: 10 }}>
+                <InlineError message={ctaError} />
+              </View>
+            ) : null}
+            <Pressable
+              onPress={onReviewCta}
+              disabled={reviewCta.disabled || isStarting}
+              accessibilityRole="button"
+              accessibilityLabel={isStarting ? 'Starting' : reviewCta.label}
+              accessibilityState={{
+                disabled: !!reviewCta.disabled || isStarting,
+                busy: isStarting || !!reviewCta.disabled,
+              }}
+              style={({ pressed }) => ({
+                height: 54,
+                borderRadius: EX.radius.button, // 16
+                backgroundColor: EX.color.ink,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                opacity:
+                  reviewCta.disabled || isStarting ? 0.6 : pressed ? 0.85 : 1,
+                shadowColor: '#171326',
+                shadowOpacity: 0.5,
+                shadowRadius: 24,
+                shadowOffset: { width: 0, height: 14 },
+                elevation: 8,
+              })}
+            >
+              {isStarting || reviewCta.disabled ? (
+                <ActivityIndicator color="#fff" />
+              ) : null}
+              <Text
+                style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
+              >
+                {isStarting ? 'Starting…' : reviewCta.label}
+              </Text>
+              {reviewCta.withArrow && !isStarting ? (
+                <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
+              ) : null}
+            </Pressable>
+          </BlurView>
+        ) : null}
       </View>
     );
   }
@@ -1558,7 +1879,22 @@ export default function SelfServiceView() {
           borderTopColor: EX.color.line06,
         }}
       >
+        {/* Demo mode (issue #43): the CTA is explicitly disabled with demo copy.
+            Same label as the live path so the two don't diverge silently. */}
+        <Text
+          style={{
+            fontSize: 12,
+            color: EX.color.inkMuted,
+            textAlign: 'center',
+            marginBottom: 10,
+          }}
+        >
+          This is a sample application. Start your own to get a review.
+        </Text>
         <Pressable
+          disabled
+          accessibilityRole="button"
+          accessibilityState={{ disabled: true }}
           style={{
             height: 54,
             borderRadius: EX.radius.button, // 16
@@ -1567,6 +1903,7 @@ export default function SelfServiceView() {
             alignItems: 'center',
             justifyContent: 'center',
             gap: 8,
+            opacity: 0.6,
             shadowColor: '#171326',
             shadowOpacity: 0.5,
             shadowRadius: 24,
@@ -1575,7 +1912,7 @@ export default function SelfServiceView() {
           }}
         >
           <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-            Submit application
+            Review my application
           </Text>
           <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
         </Pressable>

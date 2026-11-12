@@ -161,6 +161,27 @@ class AnalyticsService {
   }
 
   // ─────────────────────────────────────────────
+  // REVIEW EVENTS (issue #43)
+  // The application review: started, viewed, upgrade prompt tapped, rule source
+  // opened. `tier` is the tier the SERVER answered with; `band` is the readiness
+  // band word. Never send a number or any finding text.
+  // ─────────────────────────────────────────────
+  async trackReviewEvent(
+    name:
+      | 'review_run_started'
+      | 'review_viewed'
+      | 'review_upgrade_prompt_tapped'
+      | 'review_rule_source_opened',
+    params: { tier?: string; band?: string; source?: string } = {},
+  ) {
+    try {
+      await logEvent(this.analytics, name, params);
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics review error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // NAVIGATION / CONTENT VIEW EVENTS
   // Track when users view specific content (agents, visas).
   // Helps understand which agents/visas get the most interest.
