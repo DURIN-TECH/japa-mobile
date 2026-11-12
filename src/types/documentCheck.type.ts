@@ -11,7 +11,13 @@ import type { ChecklistCitation } from '@/types/checklist.type';
 export type CheckOutcome = 'pass' | 'fix' | 'could_not_tell' | 'not_applicable';
 
 /** The five checks, in the order they are shown. */
-export const CHECK_KEYS = ['type', 'readable', 'inDate', 'name', 'period'] as const;
+export const CHECK_KEYS = [
+  'type',
+  'readable',
+  'inDate',
+  'name',
+  'period',
+] as const;
 export type CheckKey = (typeof CHECK_KEYS)[number];
 
 export interface CheckResult {

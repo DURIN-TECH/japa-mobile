@@ -93,7 +93,9 @@ export function isBlank(v: IntakeAnswer | undefined): boolean {
   if (typeof v === 'string') return v.trim() === '';
   if (Array.isArray(v)) return v.length === 0;
   if (typeof v === 'object') {
-    return Object.values(v).some((x) => x === undefined || x === null || x === '');
+    return Object.values(v).some(
+      (x) => x === undefined || x === null || x === '',
+    );
   }
   return false; // booleans (false is an answer)
 }
@@ -193,8 +195,13 @@ export function validateAnswers(
       // the other end is set to something unusable.
       if (r.from && r.to) {
         if (r.to < r.from) {
-          bad('the end date is before the start date. Choose a later end date.');
-        } else if (q.maxLengthDays && daysBetween(r.from, r.to) > q.maxLengthDays) {
+          bad(
+            'the end date is before the start date. Choose a later end date.',
+          );
+        } else if (
+          q.maxLengthDays &&
+          daysBetween(r.from, r.to) > q.maxLengthDays
+        ) {
           bad(
             `these dates are more than ${q.maxLengthDays} days apart. Choose dates closer together.`,
           );
@@ -234,7 +241,10 @@ export const groupDigits = (n: number): string =>
   n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
 /** A saved answer as one human line (summary card rows). */
-export function displayAnswer(q: IntakeQuestion, v: IntakeAnswer | undefined): string {
+export function displayAnswer(
+  q: IntakeQuestion,
+  v: IntakeAnswer | undefined,
+): string {
   if (v === undefined || isBlank(v)) return '';
   const optionLabel = (val: string) =>
     q.options?.find((o) => o.value === val)?.label ?? val;
@@ -262,4 +272,5 @@ export function displayAnswer(q: IntakeQuestion, v: IntakeAnswer | undefined): s
 }
 
 /** Plain "n day(s)" for a range. */
-export const daysLabel = (n: number): string => (n === 1 ? '1 day' : `${n} days`);
+export const daysLabel = (n: number): string =>
+  n === 1 ? '1 day' : `${n} days`;

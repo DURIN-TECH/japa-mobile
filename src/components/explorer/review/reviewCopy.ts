@@ -86,8 +86,18 @@ export function failedReasonLine(meta: AssessmentMeta | null): string {
 
 /** Date like "4 Mar 2026" (the app has no date lib for this; keep it local). */
 const MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '';

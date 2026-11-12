@@ -15,14 +15,12 @@
 import React, { useState } from 'react';
 import { Platform, Pressable, Text, TextInput, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
-import { EX } from '@/components/explorer/theme';
-import { Ic } from '@/components/explorer/icons';
-import type {
-  IntakeAnswer,
-  IntakeAnswers,
-  IntakeQuestion,
-} from '@/types/intake.type';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+} from 'react-native-reanimated';
 import {
   daysBetween,
   daysLabel,
@@ -35,6 +33,13 @@ import {
   toIsoDate,
   visibleIds,
 } from './intakeLogic';
+import { EX } from '@/components/explorer/theme';
+import { Ic } from '@/components/explorer/icons';
+import type {
+  IntakeAnswer,
+  IntakeAnswers,
+  IntakeQuestion,
+} from '@/types/intake.type';
 
 // Reveal animation: 300ms on the system's one curve. Reanimated honours the
 // OS "reduce motion" setting, so these become instant when it is on.
@@ -97,12 +102,19 @@ function OptionCard({
       })}
     >
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}>
+        <Text
+          style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}
+        >
           {label}
         </Text>
         {description ? (
           <Text
-            style={{ fontSize: 13, lineHeight: 18, color: EX.color.inkMuted, marginTop: 2 }}
+            style={{
+              fontSize: 13,
+              lineHeight: 18,
+              color: EX.color.inkMuted,
+              marginTop: 2,
+            }}
           >
             {description}
           </Text>
@@ -160,7 +172,9 @@ function YesNo({
               paddingVertical: 16,
               alignItems: 'center',
               borderRadius: EX.radius.button,
-              backgroundColor: selected ? EX.color.primaryTint07 : EX.color.cardWhite,
+              backgroundColor: selected
+                ? EX.color.primaryTint07
+                : EX.color.cardWhite,
               borderWidth: selected ? 1.5 : 1,
               borderColor: selected ? EX.color.primary : EX.color.line16,
               opacity: pressed ? 0.85 : 1,
@@ -250,7 +264,8 @@ function DateField({
   onChange: (iso: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const current = fromIsoDate(value) ?? initialDate ?? minimumDate ?? new Date();
+  const current =
+    fromIsoDate(value) ?? initialDate ?? minimumDate ?? new Date();
 
   return (
     <View style={{ flex: 1, minWidth: 0 }}>
@@ -270,7 +285,12 @@ function DateField({
       >
         {innerLabel ? (
           <Text
-            style={{ fontSize: 12.5, fontWeight: '600', color: EX.color.inkMuted, marginBottom: 4 }}
+            style={{
+              fontSize: 12.5,
+              fontWeight: '600',
+              color: EX.color.inkMuted,
+              marginBottom: 4,
+            }}
           >
             {innerLabel}
           </Text>
@@ -330,28 +350,59 @@ function QuestionBlock({
       <View style={{ gap: 4 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
           <Text
-            style={{ flex: 1, fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}
+            style={{
+              flex: 1,
+              fontSize: 15.5,
+              fontWeight: '700',
+              color: EX.color.ink,
+            }}
           >
             {q.label}
           </Text>
           {showOptionalTag ? (
-            <Text style={{ fontSize: 13.5, fontWeight: '600', color: EX.color.inkMuted }}>
+            <Text
+              style={{
+                fontSize: 13.5,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
+            >
               Optional
             </Text>
           ) : null}
         </View>
         {q.helpText ? (
-          <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}>
+          <Text
+            style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}
+          >
             {q.helpText}
           </Text>
         ) : null}
         {showOpenLine ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 2 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 7,
+              marginTop: 2,
+            }}
+          >
             {/* amber dot (a dot, not text: amber text fails contrast) */}
             <View
-              style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: EX.color.amber }}
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: EX.color.amber,
+              }}
             />
-            <Text style={{ fontSize: 12.5, fontWeight: '600', color: EX.color.inkMuted }}>
+            <Text
+              style={{
+                fontSize: 12.5,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
+            >
               Required, not answered yet
             </Text>
           </View>
@@ -359,7 +410,9 @@ function QuestionBlock({
       </View>
       {children}
       {hiddenNote ? (
-        <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}>
+        <Text
+          style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}
+        >
           The answers you gave below will be removed when you save.
         </Text>
       ) : null}
@@ -385,7 +438,13 @@ function TextControl({
   // A long answer (a generous limit) gets a multiline box; short ones stay one line.
   const long = (max ?? 0) > 120;
   return (
-    <View style={{ ...fieldSurface(hasError), paddingHorizontal: 16, paddingVertical: 15 }}>
+    <View
+      style={{
+        ...fieldSurface(hasError),
+        paddingHorizontal: 16,
+        paddingVertical: 15,
+      }}
+    >
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -408,7 +467,13 @@ function TextControl({
       {/* Counter only once past 80% of the limit */}
       {max && value.length > max * 0.8 ? (
         <Text
-          style={{ alignSelf: 'flex-end', fontSize: 12, fontWeight: '600', color: EX.color.inkMuted, marginTop: 6 }}
+          style={{
+            alignSelf: 'flex-end',
+            fontSize: 12,
+            fontWeight: '600',
+            color: EX.color.inkMuted,
+            marginTop: 6,
+          }}
         >
           {value.length}/{max}
         </Text>
@@ -442,7 +507,10 @@ function AmountControl({
     const clean = text.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
     setRaw(clean);
     const n = clean === '' || clean === '.' ? undefined : Number(clean);
-    onChange({ ...value, amount: Number.isFinite(n as number) ? n : undefined });
+    onChange({
+      ...value,
+      amount: Number.isFinite(n as number) ? n : undefined,
+    });
   };
 
   // Shown grouped ("2,500"), while the decimal part stays as typed.
@@ -470,11 +538,23 @@ function AmountControl({
         </View>
       ) : (
         // The rubric declared no currency list: a plain ISO-code field.
-        <View style={{ ...fieldSurface(hasError), paddingHorizontal: 16, paddingVertical: 15 }}>
+        <View
+          style={{
+            ...fieldSurface(hasError),
+            paddingHorizontal: 16,
+            paddingVertical: 15,
+          }}
+        >
           <TextInput
             value={value?.currency ?? ''}
             onChangeText={(t) =>
-              onChange({ ...value, currency: t.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) })
+              onChange({
+                ...value,
+                currency: t
+                  .toUpperCase()
+                  .replace(/[^A-Z]/g, '')
+                  .slice(0, 3),
+              })
             }
             editable={!disabled}
             autoCapitalize="characters"
@@ -482,11 +562,22 @@ function AmountControl({
             placeholder="Currency code, for example USD"
             placeholderTextColor={EX.color.inkMuted}
             accessibilityLabel={`${q.label}, currency code`}
-            style={{ fontSize: 16.5, fontWeight: '600', color: EX.color.ink, paddingVertical: 0 }}
+            style={{
+              fontSize: 16.5,
+              fontWeight: '600',
+              color: EX.color.ink,
+              paddingVertical: 0,
+            }}
           />
         </View>
       )}
-      <View style={{ ...fieldSurface(hasError), paddingHorizontal: 16, paddingVertical: 15 }}>
+      <View
+        style={{
+          ...fieldSurface(hasError),
+          paddingHorizontal: 16,
+          paddingVertical: 15,
+        }}
+      >
         <TextInput
           value={shown}
           onChangeText={onType}
@@ -496,7 +587,12 @@ function AmountControl({
           placeholderTextColor={EX.color.inkMuted}
           accessibilityLabel={q.label}
           accessibilityHint={q.helpText}
-          style={{ fontSize: 16.5, fontWeight: '600', color: EX.color.ink, paddingVertical: 0 }}
+          style={{
+            fontSize: 16.5,
+            fontWeight: '600',
+            color: EX.color.ink,
+            paddingVertical: 0,
+          }}
         />
       </View>
     </View>
@@ -517,8 +613,12 @@ function dateBounds(q: IntakeQuestion): { min?: Date; max?: Date } {
   if (lim?.relativeToToday === 'future_only') mins.push(today);
   if (lim?.relativeToToday === 'past_only') maxs.push(today);
   return {
-    min: mins.length ? new Date(Math.max(...mins.map((d) => d.getTime()))) : undefined,
-    max: maxs.length ? new Date(Math.min(...maxs.map((d) => d.getTime()))) : undefined,
+    min: mins.length
+      ? new Date(Math.max(...mins.map((d) => d.getTime())))
+      : undefined,
+    max: maxs.length
+      ? new Date(Math.min(...maxs.map((d) => d.getTime())))
+      : undefined,
   };
 }
 
@@ -633,7 +733,9 @@ function Control({
       const length = r.from && r.to ? daysBetween(r.from, r.to) : null;
       return (
         <View style={{ gap: 8 }}>
-          <View style={{ flexDirection: stackRange ? 'column' : 'row', gap: 10 }}>
+          <View
+            style={{ flexDirection: stackRange ? 'column' : 'row', gap: 10 }}
+          >
             <DateField
               value={r.from}
               innerLabel="From"
@@ -659,7 +761,13 @@ function Control({
             />
           </View>
           {length !== null && length >= 0 ? (
-            <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
+            >
               {daysLabel(length)}
             </Text>
           ) : null}
@@ -747,7 +855,8 @@ export function IntakeQuestionList({
     const groupStarts = !!q.group && q.group !== lastGroup;
     lastGroup = q.group;
     const groupQs = q.group ? questions.filter((x) => x.group === q.group) : [];
-    const groupOptional = groupQs.length > 0 && groupQs.every((x) => !x.required);
+    const groupOptional =
+      groupQs.length > 0 && groupQs.every((x) => !x.required);
 
     const open = q.required && isBlank(answers[q.id]);
 
@@ -772,12 +881,24 @@ export function IntakeQuestionList({
             }}
           >
             <Text
-              style={{ flex: 1, fontSize: 18, fontWeight: '700', color: EX.color.ink, letterSpacing: -0.18 }}
+              style={{
+                flex: 1,
+                fontSize: 18,
+                fontWeight: '700',
+                color: EX.color.ink,
+                letterSpacing: -0.18,
+              }}
             >
               {q.group}
             </Text>
             {groupOptional ? (
-              <Text style={{ fontSize: 13.5, fontWeight: '600', color: EX.color.inkMuted }}>
+              <Text
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: '600',
+                  color: EX.color.inkMuted,
+                }}
+              >
                 Optional
               </Text>
             ) : null}
@@ -833,7 +954,14 @@ export function IntakeQuestionList({
           }}
         >
           <Ic.shield size={17} color={EX.color.primary} strokeWidth={1.9} />
-          <Text style={{ flex: 1, fontSize: 13, lineHeight: 19, color: EX.color.ink2 }}>
+          <Text
+            style={{
+              flex: 1,
+              fontSize: 13,
+              lineHeight: 19,
+              color: EX.color.ink2,
+            }}
+          >
             One question can’t be shown in this version of the app. Update Seli
             to answer it.
           </Text>

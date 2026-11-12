@@ -47,7 +47,9 @@ export function useRetryDocumentCheck(applicationId: string) {
       await apiService.post(`/documents/${documentId}/check/retry`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['documentChecks', applicationId] });
+      queryClient.invalidateQueries({
+        queryKey: ['documentChecks', applicationId],
+      });
     },
   });
 }

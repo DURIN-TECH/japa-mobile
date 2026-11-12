@@ -46,7 +46,8 @@ export function useSendAiChat(applicationId: string) {
       return res.data;
     },
     // The server stored both turns; refetch so history is the source of truth.
-    onSuccess: () => qc.invalidateQueries({ queryKey: aiChatKey(applicationId) }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: aiChatKey(applicationId) }),
   });
 }
 
@@ -87,7 +88,8 @@ export function describeChatError(e: unknown): {
   if (code === 'CONVERSATION_FULL') {
     return {
       upgrade: false,
-      text: err?.message || 'This conversation is full. Clear it to start again.',
+      text:
+        err?.message || 'This conversation is full. Clear it to start again.',
     };
   }
   if (status === 403) {
@@ -97,7 +99,10 @@ export function describeChatError(e: unknown): {
     };
   }
   if (status === 400) {
-    return { upgrade: false, text: err?.message || 'That message cannot be sent.' };
+    return {
+      upgrade: false,
+      text: err?.message || 'That message cannot be sent.',
+    };
   }
   return {
     upgrade: false,

@@ -50,7 +50,14 @@ const cardStyle = {
 function Circle22({ state }: { state: 'empty' | 'done' | 'busy' }) {
   if (state === 'busy') {
     return (
-      <View style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: 22,
+          height: 22,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <ActivityIndicator size="small" color={EX.color.primary} />
       </View>
     );
@@ -85,11 +92,21 @@ function CardHead({
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
       <Circle22 state={state} />
-      <Text style={{ flex: 1, fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}>
+      <Text
+        style={{
+          flex: 1,
+          fontSize: 15.5,
+          fontWeight: '700',
+          color: EX.color.ink,
+        }}
+      >
         {title}
       </Text>
       {right ? (
-        <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }} numberOfLines={1}>
+        <Text
+          style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}
+          numberOfLines={1}
+        >
           {right}
         </Text>
       ) : null}
@@ -155,7 +172,11 @@ export function StatementCard({
   const words = wordCount(statement!.text);
   return (
     <View style={cardStyle}>
-      <CardHead state="done" title="Your statement" right={savedLabel(statement!.updatedAt)} />
+      <CardHead
+        state="done"
+        title="Your statement"
+        right={savedLabel(statement!.updatedAt)}
+      />
       <Text style={body} numberOfLines={3}>
         {statement!.text}
       </Text>
@@ -167,7 +188,11 @@ export function StatementCard({
           Submitted. Your statement can no longer be changed.
         </Text>
       ) : (
-        <OutlineButton label="Edit statement" onPress={onOpen} style={{ marginTop: 13 }} />
+        <OutlineButton
+          label="Edit statement"
+          onPress={onOpen}
+          style={{ marginTop: 13 }}
+        />
       )}
     </View>
   );
@@ -191,11 +216,13 @@ export function deriveReviewState(
   isError: boolean,
 ): ReviewState {
   if (!result) return isError ? 'load_error' : 'none';
-  if (result.kind === 'empty') return result.reason === 'no_rubric' ? 'no_rubric' : 'none';
+  if (result.kind === 'empty')
+    return result.reason === 'no_rubric' ? 'no_rubric' : 'none';
   const { meta, tier } = result.view;
   if (isInFlight(meta)) return 'running';
   if (meta.status === 'failed') return 'failed';
-  if (meta.stale || meta.staleReason) return tier === 'full' ? 'stale_full' : 'stale_free';
+  if (meta.stale || meta.staleReason)
+    return tier === 'full' ? 'stale_full' : 'stale_free';
   return 'ready';
 }
 
@@ -208,7 +235,10 @@ export interface ReviewCta {
   withArrow?: boolean;
 }
 
-export function deriveReviewCta(state: ReviewState, submitted: boolean): ReviewCta | null {
+export function deriveReviewCta(
+  state: ReviewState,
+  submitted: boolean,
+): ReviewCta | null {
   // After submission: view only. A review that was never run has no CTA.
   if (submitted) {
     return state === 'ready' || state === 'stale_full' || state === 'stale_free'
@@ -230,7 +260,11 @@ export function deriveReviewCta(state: ReviewState, submitted: boolean): ReviewC
     case 'stale_full':
       return { label: 'Run review again', action: 'run', withArrow: true };
     case 'stale_free':
-      return { label: 'Upgrade to run it again', action: 'upgrade', withArrow: true };
+      return {
+        label: 'Upgrade to run it again',
+        action: 'upgrade',
+        withArrow: true,
+      };
   }
 }
 
@@ -270,8 +304,8 @@ export function ReviewCard({
         <CardHead state="empty" title="No review for this visa yet" />
         <Text style={body}>
           Seli hasn’t finished checking the published rules for this visa, so
-          there’s nothing to review against yet. You can still prepare and upload
-          your documents here.
+          there’s nothing to review against yet. You can still prepare and
+          upload your documents here.
         </Text>
       </View>
     );
@@ -282,9 +316,9 @@ export function ReviewCard({
       <View style={cardStyle}>
         <CardHead state="empty" title="See how ready you are" />
         <Text style={body}>
-          Seli checks your answers, statement and documents against the published
-          rules for this visa and shows you what to fix first. It takes a few
-          minutes.
+          Seli checks your answers, statement and documents against the
+          published rules for this visa and shows you what to fix first. It
+          takes a few minutes.
         </Text>
       </View>
     );
@@ -299,7 +333,9 @@ export function ReviewCard({
           review will be here when you come back.
         </Text>
         {meta?.startedAt ? (
-          <Text style={{ fontSize: 12, color: EX.color.inkMuted, marginTop: 6 }}>
+          <Text
+            style={{ fontSize: 12, color: EX.color.inkMuted, marginTop: 6 }}
+          >
             Started at {fmtTime(meta.startedAt)}
           </Text>
         ) : null}
@@ -326,10 +362,14 @@ export function ReviewCard({
       <CardHead
         state="done"
         title={bandLabel(band)}
-        right={meta?.finishedAt ? `Reviewed ${fmtDate(meta.finishedAt)}` : undefined}
+        right={
+          meta?.finishedAt ? `Reviewed ${fmtDate(meta.finishedAt)}` : undefined
+        }
       />
       <ReadinessMeter band={band} />
-      <Text style={body}>Your review is ready. It shows what to fix first.</Text>
+      <Text style={body}>
+        Your review is ready. It shows what to fix first.
+      </Text>
       {offlineCached ? (
         <Text style={{ fontSize: 12, color: EX.color.inkMuted, marginTop: 6 }}>
           You’re offline. Showing your last saved review.
