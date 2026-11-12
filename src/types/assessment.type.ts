@@ -34,7 +34,22 @@ export type AssessmentStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 export type StaleReason = 'inputs_changed' | 'rules_updated';
 
 /** Rubric criterion kind (copied from the rubric by the backend). */
-export type CriterionKind = 'objective' | 'mandatory_bar' | 'judgement' | string;
+export type CriterionKind =
+  | 'objective'
+  | 'mandatory_bar'
+  | 'judgement'
+  | string;
+
+/**
+ * Decision stage a criterion belongs to (backend `DECISION_STAGES`). Copied from
+ * the rubric by code, never model text. Absent on reviews stored before the
+ * field existed, so readers must tolerate `undefined`.
+ */
+export type DecisionStage =
+  | 'validity'
+  | 'suitability'
+  | 'eligibility'
+  | 'credibility';
 
 /** Job metadata, beside `data` and never inside it. */
 export interface AssessmentMeta {
@@ -68,6 +83,8 @@ export interface CitedFinding {
   criterionId: string;
   title: string;
   kind?: CriterionKind;
+  /** Decision stage (backend integration): undefined on older stored reviews. */
+  stage?: DecisionStage;
   isMandatoryBar?: boolean;
   ruleRef: string | null;
   sourceUrl: string;
@@ -81,6 +98,18 @@ export interface PlainFinding {
   criterionId: string;
   title: string;
   detail: string;
+}
+
+/**
+ * A finding about the applicant's statement. `comment` is the explanation (the
+ * backend also copies it to `detail` for older readers); `nodePath` is the
+ * child index path of the block it is about, absent when the position could
+ * not be validated (a position is never guessed).
+ */
+export interface StatementFinding extends PlainFinding {
+  comment: string;
+  stage?: DecisionStage;
+  nodePath?: number[];
 }
 
 /** Something the engine could not decide. */
@@ -124,7 +153,7 @@ export interface FullAssessmentData {
   refusalGrounds: CitedFinding[];
   credibilityFlags: CitedFinding[];
   strengths: PlainFinding[];
-  statementFindings: PlainFinding[];
+  statementFindings: StatementFinding[];
   insufficientInformation: InsufficientItem[];
   /** Published figures note (#116). Absent unless the server sent one. */
   countryContext?: CountryContext;

@@ -37,6 +37,8 @@ import type {
   FullAssessmentData,
   InsufficientItem,
   PlainFinding,
+  StatementFinding,
+  DecisionStage,
 } from '@/types/assessment.type';
 
 /** How often a queued/running job is polled (spec: every 5s). */
@@ -56,7 +58,8 @@ const asApiError = (e: unknown): ApiError | null =>
 /** 402 UPGRADE_REQUIRED: a free caller tried to re-run changed inputs. */
 export const isUpgradeRequired = (e: unknown) => asApiError(e)?.status === 402;
 /** No response at all (offline / timeout). */
-export const isOffline = (e: unknown) => asApiError(e)?.code === 'NETWORK_ERROR';
+export const isOffline = (e: unknown) =>
+  asApiError(e)?.code === 'NETWORK_ERROR';
 /** 403: this account may not see this application's review. */
 export const isForbidden = (e: unknown) => asApiError(e)?.status === 403;
 /** The route has no approved rubric. */
@@ -67,12 +70,24 @@ export const isNoRubric = (e: unknown) =>
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
+const STAGES: string[] = [
+  'validity',
+  'suitability',
+  'eligibility',
+  'credibility',
+];
+const stageOf = (v: unknown): DecisionStage | undefined =>
+  typeof v === 'string' && STAGES.includes(v)
+    ? (v as DecisionStage)
+    : undefined;
+
 function pickCited(raw: unknown): CitedFinding {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     criterionId: str(r.criterionId),
     title: str(r.title),
     kind: typeof r.kind === 'string' ? r.kind : undefined,
+    stage: stageOf(r.stage),
     isMandatoryBar: r.isMandatoryBar === true,
     ruleRef: typeof r.ruleRef === 'string' ? r.ruleRef : null,
     sourceUrl: str(r.sourceUrl),
@@ -88,6 +103,28 @@ function pickPlain(raw: unknown): PlainFinding {
     criterionId: str(r.criterionId),
     title: str(r.title),
     detail: str(r.detail),
+  };
+}
+
+/**
+ * A statement finding. `comment` is the explanation; fall back to `detail` (the
+ * backend writes the same text to both) so either shape renders. `nodePath` is
+ * kept only when it is a list of non-negative integers, otherwise dropped.
+ */
+function pickStatementFinding(raw: unknown): StatementFinding {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const path = Array.isArray(r.nodePath) ? r.nodePath : null;
+  const validPath =
+    path && path.length > 0 && path.every((n) => Number.isInteger(n) && n >= 0)
+      ? (path as number[])
+      : undefined;
+  return {
+    criterionId: str(r.criterionId),
+    title: str(r.title),
+    comment: str(r.comment) || str(r.detail),
+    detail: str(r.detail) || str(r.comment),
+    stage: stageOf(r.stage),
+    nodePath: validPath,
   };
 }
 
@@ -164,7 +201,7 @@ export function pickFull(raw: unknown): FullAssessmentData {
     refusalGrounds: grounds.filter((f) => !isJudgement(f)),
     credibilityFlags: [...grounds.filter(isJudgement), ...flags],
     strengths: arr(r.strengths).map(pickPlain),
-    statementFindings: arr(r.statementFindings).map(pickPlain),
+    statementFindings: arr(r.statementFindings).map(pickStatementFinding),
     insufficientInformation: arr(r.insufficientInformation).map(
       pickInsufficient,
     ),
@@ -219,7 +256,9 @@ export function useAssessment(applicationId: string) {
     if (!applicationId) return;
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        queryClient.invalidateQueries({ queryKey: assessmentKey(applicationId) });
+        queryClient.invalidateQueries({
+          queryKey: assessmentKey(applicationId),
+        });
       }
     });
     return () => sub.remove();
@@ -230,9 +269,10 @@ export function useAssessment(applicationId: string) {
     enabled: !!applicationId,
     queryFn: async () => {
       try {
-        const res = await apiService.get<{ meta: AssessmentMeta; data: unknown }>(
-          `/ai/applications/${applicationId}/assessment`,
-        );
+        const res = await apiService.get<{
+          meta: AssessmentMeta;
+          data: unknown;
+        }>(`/ai/applications/${applicationId}/assessment`);
         if (!res.data) return { kind: 'empty', reason: 'none' } as const;
         return { kind: 'review', view: toView(res.data) } as const;
       } catch (e) {
@@ -278,6 +318,21 @@ export function useRunAssessment(applicationId: string) {
       queryClient.invalidateQueries({ queryKey: assessmentKey(applicationId) });
     },
   });
+}
+
+/**
+ * When the latest FINISHED review completed (ISO), or null when there is none
+ * yet. Integration: the intake response carries a `lastReviewAt` field, but the
+ * backend currently sends it as null, so the intake card and screen take the
+ * time from the review itself (this query) instead. A review that is still
+ * queued/running or failed has no finish time worth comparing against.
+ */
+export function lastReviewFinishedAt(
+  result: AssessmentResult | undefined,
+): string | null {
+  if (result?.kind !== 'review') return null;
+  const m = result.view.meta;
+  return m.status === 'succeeded' ? m.finishedAt : null;
 }
 
 /** What happened when the user asked for a review. */
