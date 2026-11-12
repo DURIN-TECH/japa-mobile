@@ -152,6 +152,8 @@ function RootLayoutContent() {
         <Stack.Screen name="consultations" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="self-service/[id]" />
+        {/* Intake questions (#113): pushes from the right like the other forms */}
+        <Stack.Screen name="self-service/[id]/intake" />
         <Stack.Screen
           name="subscription"
           options={{ animation: 'slide_from_bottom' }}

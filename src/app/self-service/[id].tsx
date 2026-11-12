@@ -72,6 +72,12 @@ import {
   documentDisplayName,
 } from '@/types/documents.type';
 import { VisaRequirement } from '@/types/visas.type';
+// Visitor intake (#113): Step 1 card driven by the approved rubric's questions.
+import { useIntake } from '@/hooks/useIntake';
+import {
+  IntakeStep,
+  intakeOccupiesStep,
+} from '@/components/explorer/intake/IntakeStep';
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -673,6 +679,13 @@ export default function SelfServiceView() {
   const docsQ = useApplicationDocuments(wantLive && app ? app.id : '');
   const docs = docsQ.data ?? [];
 
+  // Intake questions (#113). Enabled as soon as the application resolves and
+  // never on the demo path, so demo mode makes no request and shows no card.
+  const intakeQ = useIntake(app ? app.id : '', wantLive && !!app);
+  // When the route has an intake it is Step 1 and the two existing steps become
+  // 2 and 3; otherwise numbering stays exactly as before.
+  const intakeStep = wantLive && intakeOccupiesStep(intakeQ);
+
   // Upload mutation hooks (createDoc invalidates the documents query → list refreshes).
   const getUploadUrl = useGetUploadUrl();
   const createDoc = useCreateDocument();
@@ -745,7 +758,8 @@ export default function SelfServiceView() {
   );
 
   // ── Live loading — initial application fetch in flight ───────────────────────
-  if (wantLive && appQ.isLoading) {
+  // The spinner also waits for the intake query, so the step numbers don't jump.
+  if (wantLive && (appQ.isLoading || (!!app && intakeQ.isLoading))) {
     return (
       <View
         style={{
@@ -1060,7 +1074,14 @@ export default function SelfServiceView() {
             </View>
 
             {/* ── Step 1 · Official application ───────────────────────────────── */}
-            <SectionTitle>Step 1 · Official application</SectionTitle>
+            {/* Step 1 · intake summary card (only when the route has an intake) */}
+            <IntakeStep
+              query={intakeQ}
+              onOpen={() => router.push(`/self-service/${app.id}/intake`)}
+            />
+            <SectionTitle>
+              {intakeStep ? 'Step 2' : 'Step 1'} · Official application
+            </SectionTitle>
             <View
               style={{
                 backgroundColor: EX.color.cream, // #FFF6EC
@@ -1134,7 +1155,9 @@ export default function SelfServiceView() {
             </View>
 
             {/* ── Step 2 · Upload documents ───────────────────────────────────── */}
-            <SectionTitle>Step 2 · Upload documents</SectionTitle>
+            <SectionTitle>
+              {intakeStep ? 'Step 3' : 'Step 2'} · Upload documents
+            </SectionTitle>
             {orderedReqs.map((req) => (
               <LiveRequirementCard
                 key={req.id}
