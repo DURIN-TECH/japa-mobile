@@ -1361,6 +1361,54 @@ export default function SelfServiceView() {
               </View>
               <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
             </Pressable>
+
+            {/* ── Been refused before? (issue #122) ─────────────────────────────
+                Entry to the refusal-letter analysis. Opens the static route
+                `self-service/refusal-letter`, which uploads the letter and shows
+                the mapped reasons, the checklist and the disclosure notice. */}
+            <SectionTitle>Been refused before?</SectionTitle>
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/self-service/refusal-letter',
+                  params: { applicationId: app.id },
+                })
+              }
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: EX.color.cardWhite,
+                borderRadius: EX.radius.cardLg,
+                borderWidth: 1,
+                borderColor: EX.color.line06,
+                padding: 15,
+              }}
+            >
+              <Ic.docs size={22} color={EX.color.primary} strokeWidth={1.8} />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    color: EX.color.ink,
+                    fontSize: 15,
+                    fontWeight: '700',
+                  }}
+                >
+                  Refusal letter
+                </Text>
+                <Text
+                  style={{
+                    color: EX.color.inkMuted,
+                    fontSize: 13,
+                    lineHeight: 18,
+                    marginTop: 2,
+                  }}
+                >
+                  See what it says next to the published rule.
+                </Text>
+              </View>
+              <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
+            </Pressable>
           </View>
         </Animated.ScrollView>
 
