@@ -24,10 +24,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import {
+  ActivityIndicator,
+  Linking,
+  Pressable,
+  Text,
+  View,
+} from 'react-native';
+import { UpgradeLink } from '@/components/explorer/UpgradePrompt';
 import { EX } from '@/components/explorer/theme';
-import { Ic } from '@/components/explorer/icons';
 import { InlineError } from '@/components/explorer/AccountForm';
 import {
   CHECK_KEYS,
@@ -75,13 +80,37 @@ export interface DocumentCheckNoticeProps {
 function RuleSource({ check }: { check: DocumentCheck }) {
   if (!check.citation) return null;
   return (
-    <View style={{ marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: EX.color.cream }}>
-      <Text style={{ fontSize: 12, fontWeight: '700', color: EX.color.muted }}>The rule</Text>
-      <Text style={{ fontSize: 12.5, lineHeight: 18, color: EX.color.ink, fontStyle: 'italic', marginTop: 2 }}>
+    <View
+      style={{
+        marginTop: 8,
+        padding: 10,
+        borderRadius: 10,
+        backgroundColor: EX.color.cream,
+      }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: '700', color: EX.color.muted }}>
+        The rule
+      </Text>
+      <Text
+        style={{
+          fontSize: 12.5,
+          lineHeight: 18,
+          color: EX.color.ink,
+          fontStyle: 'italic',
+          marginTop: 2,
+        }}
+      >
         “{check.citation.quote}”
       </Text>
-      <Pressable onPress={() => Linking.openURL(check.citation!.url)} style={{ marginTop: 6 }}>
-        <Text style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.primary }}>Read the official page</Text>
+      <Pressable
+        onPress={() => Linking.openURL(check.citation!.url)}
+        style={{ marginTop: 6 }}
+      >
+        <Text
+          style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.primary }}
+        >
+          Read the official page
+        </Text>
       </Pressable>
     </View>
   );
@@ -105,7 +134,15 @@ function Box({ children }: { children: React.ReactNode }) {
   );
 }
 
-function LinkButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+function LinkButton({
+  label,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       onPress={onPress}
@@ -113,7 +150,11 @@ function LinkButton({ label, onPress, disabled }: { label: string; onPress: () =
       accessibilityRole="button"
       style={{ opacity: disabled ? 0.6 : 1, paddingVertical: 4 }}
     >
-      <Text style={{ fontSize: 13, fontWeight: '700', color: EX.color.primary }}>{label}</Text>
+      <Text
+        style={{ fontSize: 13, fontWeight: '700', color: EX.color.primary }}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -128,7 +169,6 @@ export function DocumentCheckNotice({
   onRetryCheck,
   retrying,
 }: DocumentCheckNoticeProps) {
-  const router = useRouter();
   // "Keep this document anyway": a local, per-screen choice. It only hides the
   // notice's actions; the document was never removed or rejected by the check.
   const [kept, setKept] = useState(false);
@@ -137,12 +177,14 @@ export function DocumentCheckNotice({
   if (upgradeRequired) {
     return (
       <Box>
-        <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}>
-          Your document is uploaded. Upgrade and Seli will check it for you: right document, readable, in date and in
-          the right name.
+        <Text
+          style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}
+        >
+          Your document is uploaded. Upgrade and Seli will check it for you:
+          right document, readable, in date and in the right name.
         </Text>
         <View style={{ marginTop: 6, alignSelf: 'flex-start' }}>
-          <LinkButton label="See plans" onPress={() => router.push('/subscription')} />
+          <UpgradeLink />
         </View>
       </Box>
     );
@@ -154,7 +196,9 @@ export function DocumentCheckNotice({
       <Box>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <ActivityIndicator color={EX.color.primary} size="small" />
-          <Text style={{ fontSize: 13, color: EX.color.inkMuted }}>Looking for your document check…</Text>
+          <Text style={{ fontSize: 13, color: EX.color.inkMuted }}>
+            Looking for your document check…
+          </Text>
         </View>
       </Box>
     );
@@ -176,7 +220,11 @@ export function DocumentCheckNotice({
   if (!check || check.state === 'not_checked') {
     return (
       <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
-        <LinkButton label="Check this document" onPress={onRetryCheck} disabled={retrying} />
+        <LinkButton
+          label="Check this document"
+          onPress={onRetryCheck}
+          disabled={retrying}
+        />
       </View>
     );
   }
@@ -187,7 +235,14 @@ export function DocumentCheckNotice({
       <Box>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <ActivityIndicator color={EX.color.primary} size="small" />
-          <Text style={{ flex: 1, fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}>
+          <Text
+            style={{
+              flex: 1,
+              fontSize: 13,
+              lineHeight: 19,
+              color: EX.color.inkMuted,
+            }}
+          >
             Checking your document. This usually takes under a minute.
           </Text>
         </View>
@@ -199,9 +254,21 @@ export function DocumentCheckNotice({
   if (check.state === 'could_not_check') {
     return (
       <Box>
-        <Text style={{ fontSize: 13.5, fontWeight: '700', color: EX.color.ink }}>We could not tell</Text>
-        <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted, marginTop: 3 }}>
-          {check.reason?.message ?? 'We could not check this document. Your upload is saved.'}
+        <Text
+          style={{ fontSize: 13.5, fontWeight: '700', color: EX.color.ink }}
+        >
+          We could not tell
+        </Text>
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.inkMuted,
+            marginTop: 3,
+          }}
+        >
+          {check.reason?.message ??
+            'We could not check this document. Your upload is saved.'}
         </Text>
         {kept ? (
           <Text style={{ fontSize: 12.5, color: EX.color.muted, marginTop: 6 }}>
@@ -209,8 +276,15 @@ export function DocumentCheckNotice({
           </Text>
         ) : (
           <View style={{ flexDirection: 'row', gap: 18, marginTop: 6 }}>
-            <LinkButton label={retrying ? 'Trying…' : 'Try again'} onPress={onRetryCheck} disabled={retrying} />
-            <LinkButton label="Keep this document anyway" onPress={() => setKept(true)} />
+            <LinkButton
+              label={retrying ? 'Trying…' : 'Try again'}
+              onPress={onRetryCheck}
+              disabled={retrying}
+            />
+            <LinkButton
+              label="Keep this document anyway"
+              onPress={() => setKept(true)}
+            />
           </View>
         )}
         <RuleSource check={check} />
@@ -222,11 +296,23 @@ export function DocumentCheckNotice({
   const checks = check.checks;
   if (!checks) return null;
   const anyFix = CHECK_KEYS.some((k) => checks[k].outcome === 'fix');
-  const anyUnsure = CHECK_KEYS.some((k) => checks[k].outcome === 'could_not_tell');
+  const anyUnsure = CHECK_KEYS.some(
+    (k) => checks[k].outcome === 'could_not_tell',
+  );
   return (
     <Box>
-      <Text style={{ fontSize: 13.5, fontWeight: '700', color: anyFix ? '#C0453C' : '#1E8E55' }}>
-        {anyFix ? 'One thing to fix' : anyUnsure ? 'Looks fine so far' : 'This looks right'}
+      <Text
+        style={{
+          fontSize: 13.5,
+          fontWeight: '700',
+          color: anyFix ? '#C0453C' : '#1E8E55',
+        }}
+      >
+        {anyFix
+          ? 'One thing to fix'
+          : anyUnsure
+            ? 'Looks fine so far'
+            : 'This looks right'}
       </Text>
       <View style={{ marginTop: 6, gap: 6 }}>
         {CHECK_KEYS.map((k) => {
@@ -234,11 +320,36 @@ export function DocumentCheckNotice({
           const s = OUTCOME_STYLE[r.outcome];
           return (
             <View key={k} style={{ flexDirection: 'row', gap: 8 }}>
-              <Text style={{ width: 14, fontSize: 13, fontWeight: '800', color: s.fg }}>{s.mark}</Text>
+              <Text
+                style={{
+                  width: 14,
+                  fontSize: 13,
+                  fontWeight: '800',
+                  color: s.fg,
+                }}
+              >
+                {s.mark}
+              </Text>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.ink }}>{CHECK_LABEL[k]}</Text>
-                <Text style={{ fontSize: 12.5, lineHeight: 18, color: EX.color.inkMuted }}>
-                  {r.outcome === 'not_applicable' ? 'Not applicable to this document.' : r.message}
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                  }}
+                >
+                  {CHECK_LABEL[k]}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    lineHeight: 18,
+                    color: EX.color.inkMuted,
+                  }}
+                >
+                  {r.outcome === 'not_applicable'
+                    ? 'Not applicable to this document.'
+                    : r.message}
                 </Text>
               </View>
             </View>
@@ -247,7 +358,11 @@ export function DocumentCheckNotice({
       </View>
       {anyFix || anyUnsure ? (
         <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
-          <LinkButton label={retrying ? 'Checking…' : 'Check again'} onPress={onRetryCheck} disabled={retrying} />
+          <LinkButton
+            label={retrying ? 'Checking…' : 'Check again'}
+            onPress={onRetryCheck}
+            disabled={retrying}
+          />
         </View>
       ) : null}
       <RuleSource check={check} />

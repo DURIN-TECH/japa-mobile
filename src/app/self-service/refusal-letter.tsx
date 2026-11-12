@@ -44,6 +44,7 @@ import {
   CoralSubmit,
   InlineError,
 } from '@/components/explorer/AccountForm';
+import { UpgradePrompt } from '@/components/explorer/UpgradePrompt';
 import {
   useGetUploadUrl,
   useCreateDocument,
@@ -676,13 +677,7 @@ export default function RefusalLetterScreen() {
       >
         {/* 402: the plan does not include reading letters. */}
         {upgrade ? (
-          <Card>
-            <EmptyState
-              message="Reading a refusal letter is part of the case-officer plan."
-              actionLabel="See plans"
-              onAction={() => router.push('/subscription')}
-            />
-          </Card>
+          <UpgradePrompt message="Reading a refusal letter is part of the case-officer plan." />
         ) : shownError ? (
           // Network or server failure, with retry.
           <View style={{ gap: 12 }}>

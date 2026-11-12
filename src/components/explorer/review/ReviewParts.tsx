@@ -10,7 +10,7 @@
 //   RuleQuote        rule reference + verbatim quote + "Read the rule" link
 //   FindingCard      one finding; `footer` is the reserved per-item action slot (#44)
 //   BlockingRuleCard a fixed rule blocks the application
-//   UpgradePanel     the static "what the full review adds" panel (no hidden data)
+//   (UpgradePanel and StickyBar moved to explorer/UpgradePrompt.tsx and explorer/StickyBar.tsx)
 //   NumberedRow / CheckRow / OutlineButton / SolidButton   small shared pieces
 //
 // No number is ever drawn for readiness: only the band label and its level.
@@ -38,8 +38,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
-import { BlurView } from 'expo-blur';
-import { GlassButton, Card } from '@/components/explorer/primitives';
+import { GlassButton } from '@/components/explorer/primitives';
 import type { CountryContext, ReadinessBand } from '@/types/assessment.type';
 import {
   BAND_LABEL,
@@ -73,7 +72,9 @@ function GaugeSegment({
   const offset = -(index * SEG + GAP / 2);
   const props = useAnimatedProps(() => ({
     // Segments fill one after another as progress runs 0 → 1 across the level.
-    strokeOpacity: filled ? Math.min(1, Math.max(0, progress.value * 4 - index)) : 0,
+    strokeOpacity: filled
+      ? Math.min(1, Math.max(0, progress.value * 4 - index))
+      : 0,
   }));
   return (
     <AnimatedCircle
@@ -99,7 +100,10 @@ export function ReadinessGauge({ band }: { band: ReadinessBand | null }) {
     // 1100ms on the system curve; instant with reduced motion.
     progress.value = reduced
       ? 1
-      : withTiming(1, { duration: 1100, easing: Easing.bezier(0.2, 0.8, 0.2, 1) });
+      : withTiming(1, {
+          duration: 1100,
+          easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+        });
   }, [band, reduced, progress]);
 
   const label = band ? BAND_LABEL[band] : 'Reviewed';
@@ -107,9 +111,18 @@ export function ReadinessGauge({ band }: { band: ReadinessBand | null }) {
     <View
       accessible
       accessibilityLabel={`Readiness: ${label}, level ${level} of 4`}
-      style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}
+      style={{
+        width: SIZE,
+        height: SIZE,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
     >
-      <Svg width={SIZE} height={SIZE} style={{ transform: [{ rotate: '-90deg' }] }}>
+      <Svg
+        width={SIZE}
+        height={SIZE}
+        style={{ transform: [{ rotate: '-90deg' }] }}
+      >
         {/* Track: four dim segments */}
         {[0, 1, 2, 3].map((i) => (
           <Circle
@@ -126,7 +139,12 @@ export function ReadinessGauge({ band }: { band: ReadinessBand | null }) {
         ))}
         {/* Filled segments */}
         {[0, 1, 2, 3].map((i) => (
-          <GaugeSegment key={`f${i}`} index={i} filled={i < level} progress={progress} />
+          <GaugeSegment
+            key={`f${i}`}
+            index={i}
+            filled={i < level}
+            progress={progress}
+          />
         ))}
       </Svg>
       <View
@@ -233,7 +251,14 @@ export function ReviewHero({
           backgroundColor: 'rgba(255,255,255,0.07)',
         }}
       />
-      <View style={{ position: 'absolute', top: insetTop + 6, left: 18, zIndex: 10 }}>
+      <View
+        style={{
+          position: 'absolute',
+          top: insetTop + 6,
+          left: 18,
+          zIndex: 10,
+        }}
+      >
         <GlassButton icon={Ic.chevL} onPress={onBack} />
       </View>
       <ReadinessGauge band={band} />
@@ -248,10 +273,18 @@ export function ReviewHero({
           backgroundColor: 'rgba(255,255,255,0.16)',
         }}
       >
-        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{pill}</Text>
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+          {pill}
+        </Text>
       </View>
       {offline ? (
-        <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 8 }}>
+        <Text
+          style={{
+            color: 'rgba(255,255,255,0.85)',
+            fontSize: 12,
+            marginTop: 8,
+          }}
+        >
           You’re offline. Showing your last saved review.
         </Text>
       ) : null}
@@ -292,7 +325,14 @@ export function RuleQuote({
       }}
     >
       {head ? (
-        <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted, marginBottom: 4 }}>
+        <Text
+          style={{
+            fontSize: 12,
+            fontWeight: '600',
+            color: EX.color.inkMuted,
+            marginBottom: 4,
+          }}
+        >
           {head}
         </Text>
       ) : null}
@@ -339,7 +379,10 @@ export function RuleQuote({
 /** Chip kinds for a finding: rule, officer question, or "couldn't tell". */
 export type FindingKind = 'rule' | 'question' | 'unknown' | 'statement';
 
-const CHIP: Record<FindingKind, { bg: string; fg: string; icon: React.ElementType }> = {
+const CHIP: Record<
+  FindingKind,
+  { bg: string; fg: string; icon: React.ElementType }
+> = {
   rule: { bg: '#FCEAC8', fg: EX.color.amber, icon: Ic.plus },
   question: { bg: '#DCEBF7', fg: '#2F62A0', icon: Ic.search },
   unknown: { bg: EX.color.line06, fg: EX.color.inkMuted, icon: Ic.help },
@@ -396,23 +439,50 @@ export function FindingCard({
         >
           <Icon size={15} color={chip.fg} strokeWidth={2.2} />
         </View>
-        <Text style={{ flex: 1, fontSize: 15, fontWeight: '700', color: EX.color.ink }}>
+        <Text
+          style={{
+            flex: 1,
+            fontSize: 15,
+            fontWeight: '700',
+            color: EX.color.ink,
+          }}
+        >
           {title}
         </Text>
       </View>
       {body ? (
-        <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink2, marginTop: 8 }}>
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.ink2,
+            marginTop: 8,
+          }}
+        >
           {body}
         </Text>
       ) : null}
-      {parts?.filter((p) => p.text).map((p) => (
-        <View key={p.label} style={{ marginTop: 10 }}>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted, marginBottom: 2 }}>
-            {p.label}
-          </Text>
-          <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink2 }}>{p.text}</Text>
-        </View>
-      ))}
+      {parts
+        ?.filter((p) => p.text)
+        .map((p) => (
+          <View key={p.label} style={{ marginTop: 10 }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+                marginBottom: 2,
+              }}
+            >
+              {p.label}
+            </Text>
+            <Text
+              style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink2 }}
+            >
+              {p.text}
+            </Text>
+          </View>
+        ))}
       {children}
       {footer ? <View style={{ marginTop: 12 }}>{footer}</View> : null}
     </View>
@@ -452,57 +522,29 @@ export function BlockingRuleCard({
         >
           <Ic.alert size={15} color="#C0453C" strokeWidth={2.2} />
         </View>
-        <Text style={{ flex: 1, fontSize: 16, fontWeight: '700', color: EX.color.ink }}>
+        <Text
+          style={{
+            flex: 1,
+            fontSize: 16,
+            fontWeight: '700',
+            color: EX.color.ink,
+          }}
+        >
           {title}
         </Text>
       </View>
-      <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink2, marginTop: 8 }}>
+      <Text
+        style={{
+          fontSize: 13,
+          lineHeight: 19,
+          color: EX.color.ink2,
+          marginTop: 8,
+        }}
+      >
         {body}
       </Text>
       {children}
     </View>
-  );
-}
-
-/**
- * The locked area on the free tier. STATIC: it states what the full review
- * contains and shows no placeholder rows, blur or counts, so nothing locked is
- * drawn from data.
- */
-export function UpgradePanel({ onPress }: { onPress: () => void }) {
-  const rows = [
-    'Each issue explained, with the published rule it comes from',
-    'A check on every document you upload',
-    'A new review each time you change something',
-  ];
-  return (
-    <Card style={{ padding: 18, borderRadius: EX.radius.cardLg }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}>
-        <LinearGradient
-          colors={[EX.color.primary, EX.color.primaryDark]}
-          style={{ width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Ic.crown size={22} color="#fff" strokeWidth={1.8} />
-        </LinearGradient>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 16, fontWeight: '700', color: EX.color.ink }}>
-            Get the full review
-          </Text>
-          <Text style={{ fontSize: 13, color: EX.color.inkMuted, marginTop: 2 }}>
-            This is the short version. The full review adds:
-          </Text>
-        </View>
-      </View>
-      <View style={{ gap: 9, marginTop: 14, marginBottom: 16 }}>
-        {rows.map((r) => (
-          <View key={r} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-            <Ic.check size={16} color={EX.color.primary} strokeWidth={2.6} />
-            <Text style={{ flex: 1, fontSize: 14, fontWeight: '600', color: EX.color.ink2 }}>{r}</Text>
-          </View>
-        ))}
-      </View>
-      <SolidButton label="See plans" onPress={onPress} tone="coral" />
-    </Card>
   );
 }
 
@@ -534,9 +576,20 @@ export function NumberedRow({ n, label }: { n: number; label: string }) {
           borderColor: EX.color.line08,
         }}
       >
-        <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>{n}</Text>
+        <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>
+          {n}
+        </Text>
       </View>
-      <Text style={{ flex: 1, fontSize: 14, fontWeight: '600', color: EX.color.ink }}>{label}</Text>
+      <Text
+        style={{
+          flex: 1,
+          fontSize: 14,
+          fontWeight: '600',
+          color: EX.color.ink,
+        }}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -569,7 +622,16 @@ export function CheckRow({ label }: { label: string }) {
       >
         <Ic.check size={15} color={EX.color.success} strokeWidth={2.6} />
       </View>
-      <Text style={{ flex: 1, fontSize: 14, fontWeight: '600', color: EX.color.ink }}>{label}</Text>
+      <Text
+        style={{
+          flex: 1,
+          fontSize: 14,
+          fontWeight: '600',
+          color: EX.color.ink,
+        }}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -617,8 +679,12 @@ export function SolidButton({
       ]}
     >
       {loading ? <ActivityIndicator color="#fff" /> : null}
-      <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>{label}</Text>
-      {Icon && !loading ? <Icon size={18} color="#fff" strokeWidth={1.8} /> : null}
+      <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+        {label}
+      </Text>
+      {Icon && !loading ? (
+        <Icon size={18} color="#fff" strokeWidth={1.8} />
+      ) : null}
     </Pressable>
   );
 }
@@ -656,7 +722,13 @@ export function OutlineButton({
         style,
       ]}
     >
-      <Text style={{ color: EX.color.ink, fontSize: height >= 54 ? 15.5 : 14, fontWeight: '700' }}>
+      <Text
+        style={{
+          color: EX.color.ink,
+          fontSize: height >= 54 ? 15.5 : 14,
+          fontWeight: '700',
+        }}
+      >
         {label}
       </Text>
     </Pressable>
@@ -692,11 +764,18 @@ export function CountryContextCard({
         marginTop: 20,
       }}
     >
-      <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>{text.headline}</Text>
+      <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>
+        {text.headline}
+      </Text>
       {text.lines.map((line, i) => (
         <Text
           key={`${i}-${line.slice(0, 24)}`}
-          style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink2, marginTop: i === 0 ? 8 : 6 }}
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.ink2,
+            marginTop: i === 0 ? 8 : 6,
+          }}
         >
           {line}
         </Text>
@@ -719,7 +798,14 @@ export function CountryContextCard({
             opacity: pressed ? 0.85 : 1,
           })}
         >
-          <Text style={{ fontSize: 13.5, fontWeight: '600', color: EX.color.ink, textDecorationLine: 'underline' }}>
+          <Text
+            style={{
+              fontSize: 13.5,
+              fontWeight: '600',
+              color: EX.color.ink,
+              textDecorationLine: 'underline',
+            }}
+          >
             Open the published data tables
           </Text>
           <Ic.arrowUR size={15} color={EX.color.primary} strokeWidth={2} />
@@ -732,39 +818,17 @@ export function CountryContextCard({
 /** Small caption under a section title. */
 export function Caption({ children }: { children: React.ReactNode }) {
   return (
-    <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted, marginBottom: 12, marginHorizontal: 2 }}>
-      {children}
-    </Text>
-  );
-}
-
-/** Sticky bottom bar (the glass bar the self-service screen already uses). */
-export function StickyBar({
-  children,
-  insetBottom,
-}: {
-  children: React.ReactNode;
-  insetBottom: number;
-}) {
-  return (
-    <BlurView
-      intensity={30}
-      tint="light"
+    <Text
       style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        paddingTop: 15,
-        paddingHorizontal: 22,
-        paddingBottom: Math.max(insetBottom, 16) + 6,
-        backgroundColor: EX.color.glassWarm,
-        borderTopWidth: 1,
-        borderTopColor: EX.color.line06,
+        fontSize: 13,
+        lineHeight: 19,
+        color: EX.color.inkMuted,
+        marginBottom: 12,
+        marginHorizontal: 2,
       }}
     >
       {children}
-    </BlurView>
+    </Text>
   );
 }
 
@@ -781,7 +845,13 @@ export function ReviewEmpty({
   note?: string;
 }) {
   return (
-    <View style={{ alignItems: 'center', paddingHorizontal: 12, paddingVertical: 28 }}>
+    <View
+      style={{
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 28,
+      }}
+    >
       <View
         style={{
           width: 54,
@@ -797,14 +867,31 @@ export function ReviewEmpty({
       >
         <Icon size={24} color={EX.color.inkMuted} strokeWidth={1.8} />
       </View>
-      <Text style={[displayText(22, 'semibold'), { textAlign: 'center' }]}>{title}</Text>
+      <Text style={[displayText(22, 'semibold'), { textAlign: 'center' }]}>
+        {title}
+      </Text>
       {body ? (
-        <Text style={{ fontSize: 14, lineHeight: 21, color: EX.color.inkMuted, textAlign: 'center', marginTop: 8 }}>
+        <Text
+          style={{
+            fontSize: 14,
+            lineHeight: 21,
+            color: EX.color.inkMuted,
+            textAlign: 'center',
+            marginTop: 8,
+          }}
+        >
           {body}
         </Text>
       ) : null}
       {note ? (
-        <Text style={{ fontSize: 13, color: EX.color.inkMuted, textAlign: 'center', marginTop: 6 }}>
+        <Text
+          style={{
+            fontSize: 13,
+            color: EX.color.inkMuted,
+            textAlign: 'center',
+            marginTop: 6,
+          }}
+        >
           {note}
         </Text>
       ) : null}

@@ -23,7 +23,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   View,
@@ -45,8 +44,14 @@ import {
   requiredCount,
   validateAnswers,
 } from '@/components/explorer/intake/intakeLogic';
+import {
+  OutlineButton,
+  SolidButton,
+} from '@/components/explorer/review/ReviewParts';
+import { StickyBar } from '@/components/explorer/StickyBar';
 import { useApplication } from '@/hooks/useApplications';
 import { useIntake, useSaveIntake } from '@/hooks/useIntake';
+import { lastReviewFinishedAt, useAssessment } from '@/hooks/useCaseOfficer';
 import type { IntakeAnswer, IntakeAnswers } from '@/types/intake.type';
 
 // Copy fallbacks used when the rubric carries no intake-level strings.
@@ -58,30 +63,10 @@ const FALLBACK_INTRO =
 function stable(v: unknown): string {
   return JSON.stringify(v, (_k, val) =>
     val && typeof val === 'object' && !Array.isArray(val)
-      ? Object.fromEntries(Object.entries(val).sort(([a], [b]) => a.localeCompare(b)))
+      ? Object.fromEntries(
+          Object.entries(val).sort(([a], [b]) => a.localeCompare(b)),
+        )
       : val,
-  );
-}
-
-// 46px outline button (same shape as the in-card buttons on the application screen).
-function OutlineButton({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => ({
-        height: 46,
-        borderRadius: 13,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: EX.color.cardWhite,
-        borderWidth: 1,
-        borderColor: EX.color.line10,
-        opacity: pressed ? 0.85 : 1,
-      })}
-    >
-      <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -96,6 +81,11 @@ export default function IntakeScreen() {
   const appQ = useApplication(id ?? '');
   const save = useSaveIntake(id ?? '');
   const data = intakeQ.data;
+  // The last review's finish time comes from the review query (#43); the
+  // intake response's own `lastReviewAt` is not filled in by the backend yet.
+  const reviewQ = useAssessment(id ?? '');
+  const reviewedAt =
+    lastReviewFinishedAt(reviewQ.data) ?? data?.lastReviewAt ?? null;
 
   // ── Local form state ──────────────────────────────────────────────────────
   // Answers live here until a save succeeds (so hidden answers can be
@@ -129,14 +119,18 @@ export default function IntakeScreen() {
   const scrollToQuestion = useCallback((qid: string) => {
     const y = ys.current[qid];
     if (y !== undefined) {
-      scrollRef.current?.scrollTo({ y: Math.max(0, listY.current + y - 16), animated: true });
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, listY.current + y - 16),
+        animated: true,
+      });
     }
   }, []);
 
   // Resume: after the push transition, scroll to the first open required question.
   const scrolledOnce = useRef(false);
   useEffect(() => {
-    if (!ready || !data || scrolledOnce.current || data.updatedAt === null) return;
+    if (!ready || !data || scrolledOnce.current || data.updatedAt === null)
+      return;
     scrolledOnce.current = true;
     const first = openRequired(data.questions, data.answers)[0];
     if (first) setTimeout(() => scrollToQuestion(first.id), 450);
@@ -157,7 +151,8 @@ export default function IntakeScreen() {
           problems.length === 1
             ? problems[0].message
             : `${problems.length} answers need another look, starting with “${
-                data.questions.find((q) => q.id === problems[0].questionId)?.label ?? ''
+                data.questions.find((q) => q.id === problems[0].questionId)
+                  ?.label ?? ''
               }”.`,
         );
         setErrorId(problems[0].questionId);
@@ -170,7 +165,9 @@ export default function IntakeScreen() {
         setFailed(false);
         setSavedOnce(true);
         allowLeave.current = true;
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        ).catch(() => {});
         if (leave === 'back') router.back();
         return true;
       } catch (e) {
@@ -179,7 +176,9 @@ export default function IntakeScreen() {
         if (err.code === 'NOT_EDITABLE' || err.status === 409) {
           // Submitted meanwhile: no more edits; typed values stay on screen.
           setNotEditable(true);
-          setError('This application has been submitted, so these answers can’t be changed.');
+          setError(
+            'This application has been submitted, so these answers can’t be changed.',
+          );
         } else if (err.code === 'NETWORK_ERROR') {
           setError(
             'You’re offline, so your answers aren’t saved yet. They’re still here. Reconnect and try again.',
@@ -188,13 +187,17 @@ export default function IntakeScreen() {
           // The server's message names the question ("<label>: ..."); use it
           // as sent and mark the matching control.
           setError(err.message);
-          const hit = data.questions.find((q) => err.message!.startsWith(`${q.label}:`));
+          const hit = data.questions.find((q) =>
+            err.message!.startsWith(`${q.label}:`),
+          );
           if (hit) {
             setErrorId(hit.id);
             scrollToQuestion(hit.id);
           }
         } else {
-          setError('We couldn’t save your answers. They’re still here. Try again in a moment.');
+          setError(
+            'We couldn’t save your answers. They’re still here. Try again in a moment.',
+          );
         }
         return false;
       }
@@ -207,24 +210,28 @@ export default function IntakeScreen() {
     const unsub = navigation.addListener('beforeRemove', (e) => {
       if (allowLeave.current || !dirty || notEditable) return;
       e.preventDefault();
-      Alert.alert('Save your changes?', 'You have answers that aren’t saved yet.', [
-        {
-          text: 'Save',
-          onPress: async () => {
-            // Same save; leave only on success.
-            if (await doSave('none')) navigation.dispatch(e.data.action);
+      Alert.alert(
+        'Save your changes?',
+        'You have answers that aren’t saved yet.',
+        [
+          {
+            text: 'Save',
+            onPress: async () => {
+              // Same save; leave only on success.
+              if (await doSave('none')) navigation.dispatch(e.data.action);
+            },
           },
-        },
-        {
-          text: 'Discard changes',
-          style: 'destructive',
-          onPress: () => {
-            allowLeave.current = true;
-            navigation.dispatch(e.data.action);
+          {
+            text: 'Discard changes',
+            style: 'destructive',
+            onPress: () => {
+              allowLeave.current = true;
+              navigation.dispatch(e.data.action);
+            },
           },
-        },
-        { text: 'Keep editing', style: 'cancel' },
-      ]);
+          { text: 'Keep editing', style: 'cancel' },
+        ],
+      );
     });
     return unsub;
   }, [navigation, dirty, notEditable, doSave]);
@@ -258,7 +265,9 @@ export default function IntakeScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <View
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+        >
           <ActivityIndicator color={EX.color.primary} />
         </View>
       </View>
@@ -285,7 +294,10 @@ export default function IntakeScreen() {
         {header}
         <View style={{ padding: EX.space.screenX, gap: 10 }}>
           <InlineError message="This application has been submitted, so these answers can’t be changed." />
-          <OutlineButton label="Back to your application" onPress={() => router.back()} />
+          <OutlineButton
+            label="Back to your application"
+            onPress={() => router.back()}
+          />
         </View>
       </View>
     );
@@ -295,13 +307,19 @@ export default function IntakeScreen() {
   const total = requiredCount(data.questions, answers);
   const open = openRequired(data.questions, answers);
   const answered = total - open.length;
-  const anyAnswer = Object.keys(payloadAnswers(data.questions, answers)).length > 0;
+  const anyAnswer =
+    Object.keys(payloadAnswers(data.questions, answers)).length > 0;
   const started = data.updatedAt !== null || savedOnce;
-  const ctaLabel = failed ? 'Try again' : open.length > 0 ? 'Save and finish later' : 'Save answers';
+  const ctaLabel = failed
+    ? 'Try again'
+    : open.length > 0
+      ? 'Save and finish later'
+      : 'Save answers';
   // Nothing to save yet on a fresh form: the CTA stays dimmed (60%).
   const ctaDisabled = saving || (!started && !anyAnswer);
   const questionsChanged =
-    data.savedRubricVersion !== null && data.savedRubricVersion !== data.rubricVersion;
+    data.savedRubricVersion !== null &&
+    data.savedRubricVersion !== data.rubricVersion;
 
   return (
     <KeyboardAvoidingView
@@ -331,7 +349,7 @@ export default function IntakeScreen() {
           </InfoNote>
         ) : null}
 
-        {data.lastReviewAt ? (
+        {reviewedAt ? (
           <InfoNote>
             Your last review used your earlier answers. If you change anything,
             run the review again. Your document checklist may update too.
@@ -360,67 +378,54 @@ export default function IntakeScreen() {
       </ScrollView>
 
       {/* ── Sticky bar: required counter · coral save button ─────────────────── */}
-      <View
-        style={{
-          paddingTop: 12,
-          paddingHorizontal: EX.space.screenX,
-          paddingBottom: Math.max(insets.bottom, 16) + 6,
-          backgroundColor: EX.color.glassWarm,
-          borderTopWidth: 1,
-          borderTopColor: EX.color.line06,
-          gap: 10,
-        }}
-      >
+      <StickyBar insetBottom={insets.bottom} inline>
         {/* One InlineError, announced when it appears */}
-        <View accessibilityLiveRegion="polite">
+        <View
+          accessibilityLiveRegion="polite"
+          style={error ? { marginBottom: 10 } : undefined}
+        >
           <InlineError message={error} />
         </View>
 
         {notEditable ? (
-          <OutlineButton label="Back to your application" onPress={() => router.back()} />
+          <OutlineButton
+            label="Back to your application"
+            onPress={() => router.back()}
+          />
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
             {total > 0 ? (
               <View>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: '600',
+                    color: EX.color.inkMuted,
+                  }}
+                >
                   Required
                 </Text>
-                <Text style={{ fontSize: 21, fontWeight: '700', color: EX.color.ink }}>
+                <Text
+                  style={{
+                    fontSize: 21,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                  }}
+                >
                   {`${answered} of ${total}`}
                 </Text>
               </View>
             ) : null}
-            <Pressable
+            <SolidButton
+              label={ctaLabel}
               onPress={() => doSave('back')}
+              loading={saving}
               disabled={ctaDisabled}
-              accessibilityRole="button"
-              accessibilityLabel={ctaLabel}
-              style={({ pressed }) => ({
-                flex: 1,
-                height: 54,
-                borderRadius: EX.radius.button,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: EX.color.primary,
-                opacity: ctaDisabled ? 0.6 : pressed ? 0.85 : 1,
-                shadowColor: EX.color.primary,
-                shadowOpacity: 0.45,
-                shadowRadius: 16,
-                shadowOffset: { width: 0, height: 10 },
-                elevation: 6,
-              })}
-            >
-              {saving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-                  {ctaLabel}
-                </Text>
-              )}
-            </Pressable>
+              style={{ flex: 1 }}
+            />
           </View>
         )}
-      </View>
+      </StickyBar>
     </KeyboardAvoidingView>
   );
 }

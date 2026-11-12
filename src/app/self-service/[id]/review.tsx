@@ -56,9 +56,9 @@ import {
   ReviewHero,
   RuleQuote,
   SolidButton,
-  StickyBar,
-  UpgradePanel,
 } from '@/components/explorer/review/ReviewParts';
+import { StickyBar } from '@/components/explorer/StickyBar';
+import { PLANS_ROUTE, UpgradePanel } from '@/components/explorer/UpgradePrompt';
 import {
   BAND_SUMMARY,
   DISCLAIMER,
@@ -168,7 +168,10 @@ export default function ReviewScreen() {
   // Analytics: the result was viewed (tier and band words only).
   const viewedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (view?.meta.status === 'succeeded' && viewedFor.current !== view.meta.assessmentId) {
+    if (
+      view?.meta.status === 'succeeded' &&
+      viewedFor.current !== view.meta.assessmentId
+    ) {
       viewedFor.current = view.meta.assessmentId;
       analyticsService.trackReviewEvent('review_viewed', {
         tier: view.tier,
@@ -179,8 +182,10 @@ export default function ReviewScreen() {
 
   const goBackToApplication = () => router.back();
   const goPlans = (source: 'panel' | 'rerun') => {
-    analyticsService.trackReviewEvent('review_upgrade_prompt_tapped', { source });
-    router.push('/subscription');
+    analyticsService.trackReviewEvent('review_upgrade_prompt_tapped', {
+      source,
+    });
+    router.push(PLANS_ROUTE);
   };
 
   /** Start a review and map the outcome to this screen's behaviour. */
@@ -188,7 +193,9 @@ export default function ReviewScreen() {
     setStartError(null);
     const out: StartOutcome = await start(source);
     if (out === 'offline')
-      setStartError('You’re offline, so we couldn’t start your review. Reconnect and try again.');
+      setStartError(
+        'You’re offline, so we couldn’t start your review. Reconnect and try again.',
+      );
     else if (out === 'error')
       setStartError('We couldn’t start your review. Try again in a moment.');
     // 'upgrade' is not an error: the refetch shows the free out-of-date state.
@@ -207,7 +214,14 @@ export default function ReviewScreen() {
   // ── Loading ──────────────────────────────────────────────────────────────────
   if (q.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <ActivityIndicator color={EX.color.primary} />
       </View>
     );
@@ -219,8 +233,15 @@ export default function ReviewScreen() {
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
         <View style={pad}>
-          <ReviewEmpty icon={Ic.help} title="This review isn’t available on this account." />
-          <OutlineButton label="Back to your application" onPress={goBackToApplication} height={54} />
+          <ReviewEmpty
+            icon={Ic.help}
+            title="This review isn’t available on this account."
+          />
+          <OutlineButton
+            label="Back to your application"
+            onPress={goBackToApplication}
+            height={54}
+          />
         </View>
       </View>
     );
@@ -256,7 +277,11 @@ export default function ReviewScreen() {
             title="No review for this visa yet"
             body="Seli hasn’t finished checking the published rules for this visa, so there’s nothing to review against yet. You can still prepare and upload your documents here."
           />
-          <OutlineButton label="Back to your application" onPress={goBackToApplication} height={54} />
+          <OutlineButton
+            label="Back to your application"
+            onPress={goBackToApplication}
+            height={54}
+          />
         </View>
       </View>
     );
@@ -275,7 +300,11 @@ export default function ReviewScreen() {
           />
         </View>
         <StickyBar insetBottom={insets.bottom}>
-          {startError ? <View style={{ marginBottom: 10 }}><InlineError message={startError} /></View> : null}
+          {startError ? (
+            <View style={{ marginBottom: 10 }}>
+              <InlineError message={startError} />
+            </View>
+          ) : null}
           <SolidButton
             label={isStarting ? 'Starting…' : 'Review my application'}
             loading={isStarting}
@@ -297,15 +326,32 @@ export default function ReviewScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
-        <ScrollView contentContainerStyle={[pad, { paddingTop: 20, paddingBottom: 40, gap: 16 }]}>
-          <View style={{ alignItems: 'center', gap: 10, paddingVertical: 12 }} accessibilityLiveRegion="polite">
+        <ScrollView
+          contentContainerStyle={[
+            pad,
+            { paddingTop: 20, paddingBottom: 40, gap: 16 },
+          ]}
+        >
+          <View
+            style={{ alignItems: 'center', gap: 10, paddingVertical: 12 }}
+            accessibilityLiveRegion="polite"
+          >
             <ActivityIndicator size="large" color={EX.color.primary} />
-            <Text style={[displayText(22, 'semibold'), { textAlign: 'center' }]}>
+            <Text
+              style={[displayText(22, 'semibold'), { textAlign: 'center' }]}
+            >
               {meta.status === 'queued'
                 ? 'Your review is in the queue'
                 : 'Reviewing your application'}
             </Text>
-            <Text style={{ fontSize: 14, lineHeight: 21, color: EX.color.inkMuted, textAlign: 'center' }}>
+            <Text
+              style={{
+                fontSize: 14,
+                lineHeight: 21,
+                color: EX.color.inkMuted,
+                textAlign: 'center',
+              }}
+            >
               {stillWorking
                 ? 'Still working. Applications with more documents take a little longer.'
                 : 'This usually takes a few minutes.'}
@@ -325,7 +371,11 @@ export default function ReviewScreen() {
               <NumberedRow key={l} n={i + 1} label={l} />
             ))}
           </View>
-          <OutlineButton label="Back to your application" onPress={goBackToApplication} height={54} />
+          <OutlineButton
+            label="Back to your application"
+            onPress={goBackToApplication}
+            height={54}
+          />
         </ScrollView>
       </View>
     );
@@ -345,7 +395,11 @@ export default function ReviewScreen() {
           />
         </View>
         <StickyBar insetBottom={insets.bottom}>
-          {startError ? <View style={{ marginBottom: 10 }}><InlineError message={startError} /></View> : null}
+          {startError ? (
+            <View style={{ marginBottom: 10 }}>
+              <InlineError message={startError} />
+            </View>
+          ) : null}
           {/* A retry after a failed job is free on both tiers. */}
           <SolidButton
             label={isStarting ? 'Starting…' : 'Try again'}
@@ -405,7 +459,9 @@ export default function ReviewScreen() {
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: showBar ? EX.space.ctaClear : 48 }}
+        contentContainerStyle={{
+          paddingBottom: showBar ? EX.space.ctaClear : 48,
+        }}
       >
         <Animated.View entering={FadeIn.duration(300)}>
           <ReviewHero
@@ -431,12 +487,25 @@ export default function ReviewScreen() {
                       quote={barItem.sourceQuote}
                       url={barItem.sourceUrl}
                       onSurface
-                      onOpen={() => analyticsService.trackReviewEvent('review_rule_source_opened', { tier: 'full' })}
+                      onOpen={() =>
+                        analyticsService.trackReviewEvent(
+                          'review_rule_source_opened',
+                          { tier: 'full' },
+                        )
+                      }
                     />
                   ) : null}
                 </BlockingRuleCard>
-                <Text style={{ fontSize: 14, lineHeight: 22, color: EX.color.inkMuted, marginTop: 16 }}>
-                  We stopped the review here, because this rule comes before everything else.
+                <Text
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 22,
+                    color: EX.color.inkMuted,
+                    marginTop: 16,
+                  }}
+                >
+                  We stopped the review here, because this rule comes before
+                  everything else.
                 </Text>
                 <SectionTitle>What to do next</SectionTitle>
                 <Card>
@@ -445,7 +514,15 @@ export default function ReviewScreen() {
                     'If your details are wrong, correct them and run the review again.',
                     'If the rule does apply to you, an agent can talk you through other routes.',
                   ].map((s, i) => (
-                    <Text key={s} style={{ fontSize: 14, lineHeight: 21, color: EX.color.ink2, marginTop: i ? 8 : 0 }}>
+                    <Text
+                      key={s}
+                      style={{
+                        fontSize: 14,
+                        lineHeight: 21,
+                        color: EX.color.ink2,
+                        marginTop: i ? 8 : 0,
+                      }}
+                    >
                       {i + 1}. {s}
                     </Text>
                   ))}
@@ -458,7 +535,14 @@ export default function ReviewScreen() {
                 {staleNote}
                 {/* Summary sentence by band */}
                 {band ? (
-                  <Text style={{ fontSize: 14.5, lineHeight: 23, color: EX.color.inkMuted, marginTop: 20 }}>
+                  <Text
+                    style={{
+                      fontSize: 14.5,
+                      lineHeight: 23,
+                      color: EX.color.inkMuted,
+                      marginTop: 20,
+                    }}
+                  >
                     {BAND_SUMMARY[band]}
                   </Text>
                 ) : null}
@@ -486,9 +570,15 @@ export default function ReviewScreen() {
                 <SectionTitle>Start with these</SectionTitle>
                 <View style={{ gap: 9 }}>
                   {free.topIssues.length > 0 ? (
-                    free.topIssues.slice(0, 3).map((t, i) => (
-                      <NumberedRow key={t.criterionId || i} n={i + 1} label={t.title} />
-                    ))
+                    free.topIssues
+                      .slice(0, 3)
+                      .map((t, i) => (
+                        <NumberedRow
+                          key={t.criterionId || i}
+                          n={i + 1}
+                          label={t.title}
+                        />
+                      ))
                   ) : (
                     <CheckRow label="Nothing stood out as a priority in what you’ve given us." />
                   )}
@@ -504,9 +594,14 @@ export default function ReviewScreen() {
               <FullSections
                 d={full}
                 onRuleOpened={() =>
-                  analyticsService.trackReviewEvent('review_rule_source_opened', { tier: 'full' })
+                  analyticsService.trackReviewEvent(
+                    'review_rule_source_opened',
+                    { tier: 'full' },
+                  )
                 }
-                onEditStatement={() => router.push(`/self-service/${applicationId}/statement`)}
+                onEditStatement={() =>
+                  router.push(`/self-service/${applicationId}/statement`)
+                }
               />
             ) : null}
           </View>
@@ -515,7 +610,11 @@ export default function ReviewScreen() {
 
       {showBar ? (
         <StickyBar insetBottom={insets.bottom}>
-          {startError ? <View style={{ marginBottom: 10 }}><InlineError message={startError} /></View> : null}
+          {startError ? (
+            <View style={{ marginBottom: 10 }}>
+              <InlineError message={startError} />
+            </View>
+          ) : null}
           {stale ? (
             <SolidButton
               label={isStarting ? 'Starting…' : 'Run review again'}
@@ -523,7 +622,10 @@ export default function ReviewScreen() {
               onPress={() => run('rerun')}
             />
           ) : (
-            <SolidButton label="Back to your application" onPress={goBackToApplication} />
+            <SolidButton
+              label="Back to your application"
+              onPress={goBackToApplication}
+            />
           )}
         </StickyBar>
       ) : null}
@@ -547,7 +649,9 @@ function FullSections({
     <>
       {/* Rules not met yet (refusalGrounds; judgement entries are already routed out) */}
       <SectionTitle>Rules not met yet</SectionTitle>
-      <Caption>Fixed rules, checked against your answers and documents.</Caption>
+      <Caption>
+        Fixed rules, checked against your answers and documents.
+      </Caption>
       <View style={{ gap: 10 }}>
         {d.refusalGrounds.length === 0 ? (
           <CheckRow label="No rule-based issues in what you’ve given us." />
@@ -560,7 +664,12 @@ function FullSections({
               body={g.detail}
               // Slot B (#44): per-item action goes in `footer`; nothing renders yet.
             >
-              <RuleQuote ruleRef={g.ruleRef} quote={g.sourceQuote} url={g.sourceUrl} onOpen={onRuleOpened} />
+              <RuleQuote
+                ruleRef={g.ruleRef}
+                quote={g.sourceQuote}
+                url={g.sourceUrl}
+                onOpen={onRuleOpened}
+              />
             </FindingCard>
           ))
         )}
@@ -595,11 +704,21 @@ function FullSections({
         <>
           <SectionTitle>In your statement</SectionTitle>
           <View style={{ gap: 10 }}>
-            {d.statementFindings.map((s) => (
-              <FindingCard key={s.criterionId} kind="statement" title={s.title} body={s.detail} />
+            {d.statementFindings.map((s, i) => (
+              // Several findings can share a criterion, so the key carries the index.
+              <FindingCard
+                key={`${s.criterionId}:${i}`}
+                kind="statement"
+                title={s.title}
+                body={s.comment || s.detail}
+              />
             ))}
           </View>
-          <OutlineButton label="Edit statement" onPress={onEditStatement} style={{ marginTop: 12 }} />
+          <OutlineButton
+            label="Edit statement"
+            onPress={onEditStatement}
+            style={{ marginTop: 12 }}
+          />
         </>
       ) : null}
 
@@ -608,12 +727,17 @@ function FullSections({
         <>
           <SectionTitle>What we couldn’t tell</SectionTitle>
           <Caption>
-            We didn’t have enough to check these. Add what’s missing and the next
-            review will cover them.
+            We didn’t have enough to check these. Add what’s missing and the
+            next review will cover them.
           </Caption>
           <View style={{ gap: 10 }}>
             {d.insufficientInformation.map((i) => (
-              <FindingCard key={i.criterionId} kind="unknown" title={i.title} body={i.reason} />
+              <FindingCard
+                key={i.criterionId}
+                kind="unknown"
+                title={i.title}
+                body={i.reason}
+              />
             ))}
           </View>
         </>
@@ -635,7 +759,15 @@ function FullSections({
       <SectionTitle>What to do next</SectionTitle>
       <Card>
         {nextSteps(d).map((s, i) => (
-          <Text key={s} style={{ fontSize: 14, lineHeight: 21, color: EX.color.ink2, marginTop: i ? 8 : 0 }}>
+          <Text
+            key={s}
+            style={{
+              fontSize: 14,
+              lineHeight: 21,
+              color: EX.color.ink2,
+              marginTop: i ? 8 : 0,
+            }}
+          >
             {i + 1}. {s}
           </Text>
         ))}

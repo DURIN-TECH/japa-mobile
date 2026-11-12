@@ -11,7 +11,8 @@
 // States (design spec): loading spinner · couldn't load (InlineError + retry) ·
 // empty (CTA disabled) · saving (spinner, everything disabled) · saved (success
 // haptic, pop back) · save failed / offline (InlineError, text kept, CTA becomes
-// "Try again") · not allowed / submitted (InlineError + back button) ·
+// "Try again") · locked: the application is under review or later (InlineError
+// + back button; the real routes answer 409 STATEMENT_LOCKED) ·
 // leaving with unsaved text (native alert).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -38,16 +39,18 @@ import {
 import {
   OutlineButton,
   SolidButton,
-  StickyBar,
 } from '@/components/explorer/review/ReviewParts';
+import { StickyBar } from '@/components/explorer/StickyBar';
 import { useApplication } from '@/hooks/useApplications';
 import {
-  SUBMITTED_STATUSES,
+  isStatementLocked,
+  isStatementLockedError,
+  isVersionConflict,
   useSaveStatement,
   useStatement,
   wordCount,
 } from '@/hooks/useStatement';
-import { isForbidden, isOffline } from '@/hooks/useCaseOfficer';
+import { isOffline } from '@/hooks/useCaseOfficer';
 
 export default function StatementScreen() {
   const router = useRouter();
@@ -67,19 +70,22 @@ export default function StatementScreen() {
   // The leave-alert must not fire after a successful save pops the screen.
   const allowLeave = useRef(false);
 
+  // Locked once the application is under review or later. Known from the
+  // application's status up front, and confirmed by a 409 STATEMENT_LOCKED if
+  // the status changed while the screen was open.
   const locked =
-    !!appQ.data && SUBMITTED_STATUSES.includes(appQ.data.status as string);
-  const forbidden = isForbidden(save.error) || isForbidden(stmtQ.error);
-  const blocked = locked || forbidden;
+    isStatementLocked(appQ.data?.status as string | undefined) ||
+    isStatementLockedError(save.error);
+  const blocked = locked;
 
   const doSave = useCallback(
     async (then?: () => void) => {
       if (!stmtQ.data) return;
       try {
         await save.mutateAsync({ current: stmtQ.data, text });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
-          () => undefined,
-        );
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        ).catch(() => undefined);
         allowLeave.current = true;
         if (then) then();
         else router.back();
@@ -123,7 +129,14 @@ export default function StatementScreen() {
   // ── Loading ──────────────────────────────────────────────────────────────────
   if (stmtQ.isLoading || appQ.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: EX.color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <ActivityIndicator color={EX.color.primary} />
       </View>
     );
@@ -139,11 +152,17 @@ export default function StatementScreen() {
   );
 
   // ── Couldn't load (not a permission problem) ─────────────────────────────────
-  if (stmtQ.isError && !forbidden) {
+  if (stmtQ.isError) {
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
-        <View style={{ paddingHorizontal: EX.space.screenX, paddingTop: 16, gap: 12 }}>
+        <View
+          style={{
+            paddingHorizontal: EX.space.screenX,
+            paddingTop: 16,
+            gap: 12,
+          }}
+        >
           <InlineError message="We couldn’t load your statement. Check your connection and try again." />
           <OutlineButton label="Try again" onPress={() => stmtQ.refetch()} />
         </View>
@@ -151,30 +170,37 @@ export default function StatementScreen() {
     );
   }
 
-  // ── Not allowed / no longer editable ─────────────────────────────────────────
+  // ── No longer editable (the application is under review or later) ───────────
   if (blocked) {
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
-        <View style={{ paddingHorizontal: EX.space.screenX, paddingTop: 16, gap: 12 }}>
-          <InlineError
-            message={
-              locked
-                ? 'This application has been submitted, so your statement can’t be changed.'
-                : 'This statement isn’t available on this account.'
-            }
+        <View
+          style={{
+            paddingHorizontal: EX.space.screenX,
+            paddingTop: 16,
+            gap: 12,
+          }}
+        >
+          <InlineError message="Your application is under review, so your statement can’t be changed now." />
+          <OutlineButton
+            label="Back to your application"
+            onPress={backToApplication}
           />
-          <OutlineButton label="Back to your application" onPress={backToApplication} />
         </View>
       </View>
     );
   }
 
   // Save-failure line for the CTA bar.
+  // A VERSION_CONFLICT means it was saved elsewhere (another device): the typed
+  // text is kept, the statement was re-read, and saving again replaces that copy.
   const saveError = save.isError
-    ? isOffline(save.error)
-      ? 'You’re offline, so your statement isn’t saved yet. It’s still here. Reconnect and try again.'
-      : 'We couldn’t save your statement. It’s still here. Try again in a moment.'
+    ? isVersionConflict(save.error)
+      ? 'Your statement was changed somewhere else. Your text is still here. Saving again replaces that copy.'
+      : isOffline(save.error)
+        ? 'You’re offline, so your statement isn’t saved yet. It’s still here. Reconnect and try again.'
+        : 'We couldn’t save your statement. It’s still here. Try again in a moment.'
     : null;
 
   const words = wordCount(text);
@@ -211,9 +237,16 @@ export default function StatementScreen() {
           onChangeText={setDraft}
           placeholder="Why you’re applying and what you plan to do"
           textAlignVertical="top"
-          style={{ minHeight: 280, fontSize: 15, fontWeight: '400', lineHeight: 22 }}
+          style={{
+            minHeight: 280,
+            fontSize: 15,
+            fontWeight: '400',
+            lineHeight: 22,
+          }}
         />
-        <Text style={{ fontSize: 12, color: EX.color.inkMuted, textAlign: 'right' }}>
+        <Text
+          style={{ fontSize: 12, color: EX.color.inkMuted, textAlign: 'right' }}
+        >
           {words} {words === 1 ? 'word' : 'words'}
         </Text>
       </ScrollView>
