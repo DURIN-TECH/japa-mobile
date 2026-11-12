@@ -40,7 +40,7 @@ import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { BlurView } from 'expo-blur';
 import { GlassButton, Card } from '@/components/explorer/primitives';
-import type { ReadinessBand } from '@/types/assessment.type';
+import type { CountryContext, ReadinessBand } from '@/types/assessment.type';
 import {
   BAND_LABEL,
   BAND_LEVEL,
@@ -660,6 +660,72 @@ export function OutlineButton({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+/**
+ * Country context card (#116): published figures, shown exactly as the server
+ * sends them. Visually separate from findings (its own white card with a
+ * hairline border, no finding chip, no colour accent). It has NO wording of its
+ * own about likelihood or the applicant's chances: the headline and every line
+ * come from `context.text`; this component only lays them out and adds the
+ * source link. Renders nothing unless the note is `available`.
+ */
+export function CountryContextCard({
+  context,
+  onOpen,
+}: {
+  context: CountryContext | undefined;
+  onOpen?: () => void;
+}) {
+  if (!context || context.status !== 'available') return null;
+  const { text, source } = context;
+  return (
+    <View
+      accessibilityRole="summary"
+      style={{
+        backgroundColor: EX.color.cardWhite,
+        borderWidth: 1,
+        borderColor: EX.color.line08,
+        borderRadius: EX.radius.chip,
+        padding: 14,
+        marginTop: 20,
+      }}
+    >
+      <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>{text.headline}</Text>
+      {text.lines.map((line, i) => (
+        <Text
+          key={`${i}-${line.slice(0, 24)}`}
+          style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink2, marginTop: i === 0 ? 8 : 6 }}
+        >
+          {line}
+        </Text>
+      ))}
+      {source.pageUrl ? (
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Open the published data tables"
+          onPress={() => {
+            onOpen?.();
+            Linking.openURL(source.pageUrl).catch(() => undefined);
+          }}
+          hitSlop={8}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 5,
+            marginTop: 8,
+            minHeight: 44,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <Text style={{ fontSize: 13.5, fontWeight: '600', color: EX.color.ink, textDecorationLine: 'underline' }}>
+            Open the published data tables
+          </Text>
+          <Ic.arrowUR size={15} color={EX.color.primary} strokeWidth={2} />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 

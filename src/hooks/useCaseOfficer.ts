@@ -33,6 +33,7 @@ import type {
   AssessmentView,
   CitedFinding,
   FreeAssessmentData,
+  CountryContext,
   FullAssessmentData,
   InsufficientItem,
   PlainFinding,
@@ -99,6 +100,32 @@ function pickInsufficient(raw: unknown): InsufficientItem {
   };
 }
 
+/**
+ * Whitelist the country-context note (#116). Only an `available` note with its
+ * server-written text and a source page is kept; anything else (absent,
+ * unavailable, malformed) is undefined, so the screen draws nothing.
+ */
+function pickCountryContext(raw: unknown): CountryContext | undefined {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  if (r.status !== 'available') return undefined;
+  const t = (r.text ?? {}) as Record<string, unknown>;
+  const lines = arr(t.lines).map(str).filter(Boolean);
+  const src = (r.source ?? {}) as Record<string, unknown>;
+  const period = (r.period ?? {}) as Record<string, unknown>;
+  if (!str(t.headline) || lines.length === 0) return undefined;
+  return {
+    status: 'available',
+    text: { headline: str(t.headline), lines },
+    period: { label: str(period.label) },
+    source: {
+      publisher: str(src.publisher),
+      pageUrl: str(src.pageUrl),
+      fileName: str(src.fileName),
+      caveats: arr(src.caveats).map(str).filter(Boolean),
+    },
+  };
+}
+
 const BANDS = ['not_ready', 'weak', 'competitive', 'strong'];
 const band = (v: unknown) =>
   typeof v === 'string' && BANDS.includes(v)
@@ -141,6 +168,7 @@ export function pickFull(raw: unknown): FullAssessmentData {
     insufficientInformation: arr(r.insufficientInformation).map(
       pickInsufficient,
     ),
+    countryContext: pickCountryContext(r.countryContext),
   };
 }
 

@@ -91,6 +91,30 @@ export interface InsufficientItem {
 }
 
 /**
+ * Published outcome statistics for the applicant's passport country (#116),
+ * exactly as the server sends it. Present on the FULL tier only, and only when
+ * the server found published figures (`status: 'available'`); the server omits
+ * the field otherwise, and the app draws nothing. The wording (`text`) is
+ * written by the server from the published numbers: the app shows it as
+ * received and adds no wording of its own about likelihood.
+ */
+export interface CountryContext {
+  status: 'available';
+  /** Server-written template text: a headline and the lines under it. */
+  text: { headline: string; lines: string[] };
+  /** Period the figures cover, e.g. "year ending 2026 Q2". */
+  period: { label: string };
+  source: {
+    publisher: string;
+    /** The data tables page the figures come from (opened as a link). */
+    pageUrl: string;
+    fileName: string;
+    /** The publisher's caveats (already included in `text.lines`). */
+    caveats: string[];
+  };
+}
+
+/**
  * The full `data` object, trimmed to the fields mobile uses. Everything the
  * backend sends beyond these is ignored on purpose.
  */
@@ -102,6 +126,8 @@ export interface FullAssessmentData {
   strengths: PlainFinding[];
   statementFindings: PlainFinding[];
   insufficientInformation: InsufficientItem[];
+  /** Published figures note (#116). Absent unless the server sent one. */
+  countryContext?: CountryContext;
 }
 
 /** What the review hook hands to screens, already tier-discriminated. */
