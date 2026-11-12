@@ -158,6 +158,10 @@ export function useCreateDocument() {
         queryClient.invalidateQueries({
           queryKey: ['checklist', data.applicationId],
         });
+        // #115: the upload also queued a document check; look for it now.
+        queryClient.invalidateQueries({
+          queryKey: ['documentChecks', data.applicationId],
+        });
       }
     },
   });
