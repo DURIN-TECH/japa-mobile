@@ -26,7 +26,7 @@ import { apiService } from '@/services/api.service';
  * Explorer's richer `Agency` shape is synthesised by `mapAgency()` in
  * `src/components/explorer/liveAgencies.ts`.
  *
- * `consultationFee` is in cents (divide by 100 for the ₦ value).
+ * `consultationFee` is in WHOLE NAIRA (no /100; #144/#148).
  * `createdAt` may arrive either as a Firestore Timestamp serialized to
  * `{ _seconds, _nanoseconds }` OR as an ISO string — the mapper handles both.
  */
@@ -38,7 +38,7 @@ export interface ApiAgency {
   address?: string;
   description?: string;
   logoUrl?: string;
-  consultationFee?: number; // in cents (divide by 100 for display)
+  consultationFee?: number; // whole naira (no /100)
   services: { id: string; name: string; price: number }[];
   agentCount: number;
   totalCases: number;
