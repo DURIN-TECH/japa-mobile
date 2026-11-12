@@ -87,7 +87,10 @@ import {
 } from '@/components/explorer/DocumentChecklist';
 import type { ChecklistItem } from '@/types/checklist.type';
 // Per-upload document check (#115).
-import { useDocumentChecks, useRetryDocumentCheck } from '@/hooks/useDocumentChecks';
+import {
+  useDocumentChecks,
+  useRetryDocumentCheck,
+} from '@/hooks/useDocumentChecks';
 // Review (issue #43): statement + review cards and the wired submit CTA.
 import {
   StatementCard,
@@ -98,10 +101,16 @@ import {
 import { InlineError } from '@/components/explorer/AccountForm';
 import {
   assessmentKey,
+  lastReviewFinishedAt,
   useAssessment,
   useStartReview,
 } from '@/hooks/useCaseOfficer';
-import { SUBMITTED_STATUSES, useStatement } from '@/hooks/useStatement';
+import { PLANS_ROUTE } from '@/components/explorer/UpgradePrompt';
+import {
+  SUBMITTED_STATUSES,
+  isStatementLocked,
+  useStatement,
+} from '@/hooks/useStatement';
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -706,8 +715,8 @@ export default function SelfServiceView() {
   // Intake questions (#113). Enabled as soon as the application resolves and
   // never on the demo path, so demo mode makes no request and shows no card.
   const intakeQ = useIntake(app ? app.id : '', wantLive && !!app);
-  // When the route has an intake it is Step 1 and the two existing steps become
-  // 2 and 3; otherwise numbering stays exactly as before.
+  // When the route has an intake it is the first step and shifts the others
+  // down by one (see `stepNo` in the render below).
   const intakeStep = wantLive && intakeOccupiesStep(intakeQ);
   // Checklist (#114): self-service applications only; off on the demo path.
   const checklistQ = useChecklist(
@@ -890,6 +899,17 @@ export default function SelfServiceView() {
     const submitted = SUBMITTED_STATUSES.includes(app.status as string);
     const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError);
     const reviewCta = deriveReviewCta(reviewState, submitted);
+    // Step numbers are computed from the steps that are present: the intake
+    // (#113) only exists for routes with questions, and it shifts the rest. The
+    // statement and review steps (#43) are always there on this live path.
+    const presentSteps = [
+      intakeStep ? 'intake' : null,
+      'official',
+      'documents',
+      'statement',
+      'review',
+    ].filter(Boolean) as string[];
+    const stepNo = (key: string) => presentSteps.indexOf(key) + 1;
     // A refetch failed but a cached review is on screen → offline note.
     const offlineCached = reviewQ.isError && !!reviewQ.data;
     const openReview = () => router.push(`/self-service/${app.id}/review`);
@@ -901,7 +921,7 @@ export default function SelfServiceView() {
       if (!reviewCta || reviewCta.disabled || isStarting) return;
       setCtaError(null);
       if (reviewCta.action === 'open') return openReview();
-      if (reviewCta.action === 'upgrade') return router.push('/subscription');
+      if (reviewCta.action === 'upgrade') return router.push(PLANS_ROUTE);
       const out = await startReview(
         reviewCta.action === 'retry' ? 'retry' : 'cta',
       );
@@ -1186,15 +1206,17 @@ export default function SelfServiceView() {
               </View>
             </View>
 
-            {/* ── Step 1 · Official application ───────────────────────────────── */}
-            {/* Step 1 · intake summary card (only when the route has an intake) */}
+            {/* ── Intake summary card (#113), only when the route has an intake ──
+                It is the first step when present. Every step number below comes
+                from `stepNo`, so the numbering is right whichever steps exist. */}
             <IntakeStep
               query={intakeQ}
               onOpen={() => router.push(`/self-service/${app.id}/intake`)}
+              lastReviewAt={lastReviewFinishedAt(reviewQ.data)}
+              stepNumber={stepNo('intake')}
             />
-            <SectionTitle>
-              {intakeStep ? 'Step 2' : 'Step 1'} · Official application
-            </SectionTitle>
+            {/* ── Official application ────────────────────────────────────────── */}
+            <SectionTitle>{`Step ${stepNo('official')} · Official application`}</SectionTitle>
             <View
               style={{
                 backgroundColor: EX.color.cream, // #FFF6EC
@@ -1267,10 +1289,9 @@ export default function SelfServiceView() {
               ) : null}
             </View>
 
-            {/* ── Step 2 · Upload documents ───────────────────────────────────── */}
-            <SectionTitle>
-              {intakeStep ? 'Step 3' : 'Step 2'} · Upload documents
-            </SectionTitle>
+            {/* ── Upload documents: the personal checklist (#114) with each item's
+                upload-check result (#115), then any leftover requirement cards ── */}
+            <SectionTitle>{`Step ${stepNo('documents')} · Upload documents`}</SectionTitle>
             {/* Personal checklist (#114): self-service applications only. */}
             {app.mode === 'self' ? (
               <DocumentChecklist
@@ -1280,13 +1301,22 @@ export default function SelfServiceView() {
                 onRetry={() => checklistQ.refetch()}
                 docs={docs}
                 uploadingId={uploadingItemId}
+                // Before the visit questions are answered the list points at them.
+                onOpenIntake={
+                  intakeStep
+                    ? () => router.push(`/self-service/${app.id}/intake`)
+                    : undefined
+                }
                 checksProps={{
                   checks: checksQ.data,
                   checksLoading: checksQ.isLoading,
                   checksError: checksQ.isError,
                   onReloadChecks: () => checksQ.refetch(),
-                  onRetryCheck: (documentId: string) => retryCheck.mutate(documentId),
-                  retryingDocId: retryCheck.isPending ? (retryCheck.variables ?? null) : null,
+                  onRetryCheck: (documentId: string) =>
+                    retryCheck.mutate(documentId),
+                  retryingDocId: retryCheck.isPending
+                    ? (retryCheck.variables ?? null)
+                    : null,
                 }}
                 onUpload={(item: ChecklistItem) =>
                   item.documentRequestId
@@ -1312,18 +1342,20 @@ export default function SelfServiceView() {
               <LiveOtherDocsCard docs={otherDocs} />
             ) : null}
 
-            {/* ── Step 3 · Your statement (issue #43) ─────────────────────────── */}
-            <SectionTitle>Step 3 · Your statement</SectionTitle>
+            {/* ── Your statement (issue #43) ──────────────────────────────────── */}
+            <SectionTitle>{`Step ${stepNo('statement')} · Your statement`}</SectionTitle>
             <StatementCard
               statement={stmtQ.data}
               loadFailed={stmtQ.isError}
-              readOnly={submitted}
+              // The statement locks once the application is under review (server: 409).
+              readOnly={isStatementLocked(app.status as string)}
               onOpen={openStatement}
               onRetry={() => stmtQ.refetch()}
             />
 
-            {/* ── Step 4 · Your review (issue #43) ────────────────────────────── */}
-            <SectionTitle>Step 4 · Your review</SectionTitle>
+            {/* ── Your review (issue #43; country context #116 shows on the review
+                screen it opens) ────────────────────────────────────────────── */}
+            <SectionTitle>{`Step ${stepNo('review')} · Your review`}</SectionTitle>
             <ReviewCard
               state={reviewState}
               result={reviewQ.data}
@@ -1351,7 +1383,11 @@ export default function SelfServiceView() {
               <Ic.msg size={20} color={EX.color.primary} strokeWidth={1.8} />
               <View style={{ flex: 1 }}>
                 <Text
-                  style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                  }}
                 >
                   Ask about your review
                 </Text>
@@ -1455,7 +1491,8 @@ export default function SelfServiceView() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 8,
-                opacity: reviewCta.disabled || isStarting ? 0.6 : pressed ? 0.85 : 1,
+                opacity:
+                  reviewCta.disabled || isStarting ? 0.6 : pressed ? 0.85 : 1,
                 shadowColor: '#171326',
                 shadowOpacity: 0.5,
                 shadowRadius: 24,
@@ -1466,7 +1503,9 @@ export default function SelfServiceView() {
               {isStarting || reviewCta.disabled ? (
                 <ActivityIndicator color="#fff" />
               ) : null}
-              <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+              <Text
+                style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
+              >
                 {isStarting ? 'Starting…' : reviewCta.label}
               </Text>
               {reviewCta.withArrow && !isStarting ? (

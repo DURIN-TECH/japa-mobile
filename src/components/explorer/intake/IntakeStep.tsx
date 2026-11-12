@@ -10,12 +10,6 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import type { UseQueryResult } from '@tanstack/react-query';
-import { EX } from '@/components/explorer/theme';
-import { Ic } from '@/components/explorer/icons';
-import { Progress, SectionTitle } from '@/components/explorer/primitives';
-import { InfoNote, InlineError } from '@/components/explorer/AccountForm';
-import { toDate } from '@/components/explorer/liveDate';
-import type { IntakeResponse } from '@/types/intake.type';
 import {
   displayAnswer,
   displayDate,
@@ -26,6 +20,12 @@ import {
   toIsoDate,
   visibleIds,
 } from './intakeLogic';
+import { EX } from '@/components/explorer/theme';
+import { Ic } from '@/components/explorer/icons';
+import { Progress, SectionTitle } from '@/components/explorer/primitives';
+import { InfoNote, InlineError } from '@/components/explorer/AccountForm';
+import { toDate } from '@/components/explorer/liveDate';
+import type { IntakeResponse } from '@/types/intake.type';
 
 /**
  * True when the screen should number the intake as Step 1: the route has an
@@ -104,15 +104,24 @@ const cardStyle = {
 export function IntakeStep({
   query,
   onOpen,
+  lastReviewAt,
+  stepNumber = 1,
 }: {
   query: UseQueryResult<IntakeResponse>;
   onOpen: () => void;
+  /**
+   * When the latest review finished, from the review hook (#43). Wins over the
+   * intake response's own `lastReviewAt`, which the backend does not fill in yet.
+   */
+  lastReviewAt?: string | null;
+  /** Computed by the screen from which steps are present (always 1 today). */
+  stepNumber?: number;
 }) {
   // ── Couldn't load: the other steps and uploads still work ──────────────────
   if (query.isError) {
     return (
       <>
-        <SectionTitle>Step 1 · Your details</SectionTitle>
+        <SectionTitle>{`Step ${stepNumber} · Your details`}</SectionTitle>
         <View style={{ gap: 10 }}>
           <InlineError message="We couldn’t load your questions. Check your connection and try again." />
           <CardButton
@@ -138,10 +147,12 @@ export function IntakeStep({
   const partial = started && open.length > 0;
 
   // Edited after the last review (#42): only when a review exists.
+  // The review hook's finish time is the source; the intake field is a fallback.
+  const reviewedAt = lastReviewAt ?? data.lastReviewAt;
   const editedAfterReview =
-    !!data.lastReviewAt &&
+    !!reviewedAt &&
     !!data.updatedAt &&
-    new Date(data.updatedAt) > new Date(data.lastReviewAt);
+    new Date(data.updatedAt) > new Date(reviewedAt);
 
   // Answered, visible rows for the saved layout (optional blanks are not listed).
   const vis = visibleIds(questions, answers);
@@ -156,7 +167,7 @@ export function IntakeStep({
 
   return (
     <>
-      <SectionTitle>{`Step 1 · ${meta.title ?? 'Your details'}`}</SectionTitle>
+      <SectionTitle>{`Step ${stepNumber} · ${meta.title ?? 'Your details'}`}</SectionTitle>
       <View style={cardStyle}>
         {/* Header: status circle · title · counter / saved line */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -186,20 +197,37 @@ export function IntakeStep({
           )}
           <Text
             numberOfLines={1}
-            style={{ flex: 1, fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}
+            style={{
+              flex: 1,
+              fontSize: 15.5,
+              fontWeight: '700',
+              color: EX.color.ink,
+            }}
           >
             {complete || (!editable && started) ? 'Your answers' : cardTitle}
           </Text>
           {complete || (!editable && started) ? (
-            <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
+            >
               {savedLine(data.updatedAt)}
             </Text>
           ) : total > 0 ? (
             <Text
               numberOfLines={1}
-              style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
             >
-              {partial ? `${answered} of ${total} required` : `${total} required`}
+              {partial
+                ? `${answered} of ${total} required`
+                : `${total} required`}
             </Text>
           ) : null}
         </View>
@@ -207,10 +235,17 @@ export function IntakeStep({
         {/* Not started: the rubric's intro + the primary button */}
         {!started && editable ? (
           <View style={{ marginTop: 12, gap: 14 }}>
-            <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}>
+            <Text
+              style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted }}
+            >
               {intro}
             </Text>
-            <CardButton label="Answer questions" variant="coral" arrow onPress={onOpen} />
+            <CardButton
+              label="Answer questions"
+              variant="coral"
+              arrow
+              onPress={onOpen}
+            />
           </View>
         ) : null}
 
@@ -218,44 +253,80 @@ export function IntakeStep({
         {partial && editable ? (
           <View style={{ marginTop: 12, gap: 12 }}>
             <Progress value={total > 0 ? answered / total : 0} />
-            <Text style={{ fontSize: 12.5, fontWeight: '600', color: EX.color.inkMuted }}>
+            <Text
+              style={{
+                fontSize: 12.5,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
+            >
               Still to answer
             </Text>
             <View style={{ gap: 6 }}>
               {open.slice(0, 3).map((q) => (
-                <View key={q.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View
+                  key={q.id}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                >
                   <View
-                    style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: EX.color.amber }}
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: EX.color.amber,
+                    }}
                   />
                   <Text
                     numberOfLines={1}
-                    style={{ flex: 1, fontSize: 13, fontWeight: '600', color: EX.color.ink2 }}
+                    style={{
+                      flex: 1,
+                      fontSize: 13,
+                      fontWeight: '600',
+                      color: EX.color.ink2,
+                    }}
                   >
                     {q.label}
                   </Text>
                 </View>
               ))}
               {open.length > 3 ? (
-                <Text style={{ fontSize: 13, fontWeight: '600', color: EX.color.inkMuted }}>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '600',
+                    color: EX.color.inkMuted,
+                  }}
+                >
                   {`and ${open.length - 3} more`}
                 </Text>
               ) : null}
             </View>
-            <CardButton label="Continue" variant="coral" arrow onPress={onOpen} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}>
+            <CardButton
+              label="Continue"
+              variant="coral"
+              arrow
+              onPress={onOpen}
+            />
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
+            >
               {savedLine(data.updatedAt)}
             </Text>
           </View>
         ) : null}
 
         {/* Saved (complete) or read-only: the answered rows */}
-        {(complete || (!editable && started)) ? (
+        {complete || (!editable && started) ? (
           <View style={{ marginTop: 12 }}>
             {editedAfterReview ? (
               <View style={{ marginBottom: 12 }}>
                 <InfoNote>
                   {`You’ve changed your answers since your review on ${displayDate(
-                    toIsoDate(new Date(data.lastReviewAt as string)),
+                    toIsoDate(new Date(reviewedAt as string)),
                   )}. Run the review again so it reflects your answers as they are now.`}
                 </InfoNote>
               </View>
@@ -269,12 +340,23 @@ export function IntakeStep({
                   borderTopColor: EX.color.line06,
                 }}
               >
-                <Text style={{ fontSize: 12.5, fontWeight: '600', color: EX.color.inkMuted }}>
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: '600',
+                    color: EX.color.inkMuted,
+                  }}
+                >
                   {q.label}
                 </Text>
                 <Text
                   numberOfLines={2}
-                  style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink, marginTop: 2 }}
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '600',
+                    color: EX.color.ink,
+                    marginTop: 2,
+                  }}
                 >
                   {displayAnswer(q, answers[q.id])}
                 </Text>
@@ -282,15 +364,31 @@ export function IntakeStep({
             ))}
             {editable ? (
               <View style={{ marginTop: 12 }}>
-                <CardButton label="Edit answers" variant="outline" onPress={onOpen} />
+                <CardButton
+                  label="Edit answers"
+                  variant="outline"
+                  onPress={onOpen}
+                />
               </View>
             ) : (
               <View style={{ marginTop: 10, gap: 4 }}>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: '600',
+                    color: EX.color.inkMuted,
+                  }}
+                >
                   Submitted. These answers can no longer be changed.
                 </Text>
                 {open.length > 0 ? (
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '600',
+                      color: EX.color.inkMuted,
+                    }}
+                  >
                     {open.length === 1
                       ? '1 question was left unanswered.'
                       : `${open.length} questions were left unanswered.`}
@@ -304,11 +402,23 @@ export function IntakeStep({
         {/* Read-only and never answered */}
         {!editable && !started ? (
           <View style={{ marginTop: 10, gap: 4 }}>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
+            >
               Submitted. These answers can no longer be changed.
             </Text>
             {total > 0 ? (
-              <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.inkMuted }}>
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: '600',
+                  color: EX.color.inkMuted,
+                }}
+              >
                 {total === 1
                   ? '1 question was left unanswered.'
                   : `${total} questions were left unanswered.`}

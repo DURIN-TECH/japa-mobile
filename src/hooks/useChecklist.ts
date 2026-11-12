@@ -2,6 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { apiService } from '@/services/api.service';
 import { Checklist } from '@/types/checklist.type';
 
+/** Query key for one application's checklist (also invalidated by uploads and intake saves). */
+export const checklistKey = (applicationId: string) =>
+  ['checklist', applicationId] as const;
+
 /**
  * The applicant's personal document checklist (issue #114).
  *
@@ -16,7 +20,7 @@ import { Checklist } from '@/types/checklist.type';
  */
 export function useChecklist(applicationId: string, enabled: boolean) {
   return useQuery({
-    queryKey: ['checklist', applicationId],
+    queryKey: checklistKey(applicationId),
     queryFn: async (): Promise<Checklist | null> => {
       const response = await apiService.post<Checklist>(
         `/applications/${applicationId}/checklist/refresh`,

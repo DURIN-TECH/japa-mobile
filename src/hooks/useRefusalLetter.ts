@@ -77,7 +77,11 @@ export function useConfirmRefusalChecklist(analysisId: string | null) {
       queryClient.invalidateQueries({
         queryKey: ['refusalAnalysis', analysisId],
       });
-      queryClient.invalidateQueries({ queryKey: ['documentRequests'] });
+      // INTEGRATION: nothing reads a ['documentRequests'] query. The added
+      // items show up in the personal checklist (#114) and the documents list,
+      // so refresh those (prefix keys: this hook only knows the analysis id).
+      queryClient.invalidateQueries({ queryKey: ['checklist'] });
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
     },
   });
 }

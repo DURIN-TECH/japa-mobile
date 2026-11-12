@@ -33,16 +33,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { destById } from '@/components/explorer/data';
-import {
-  BackHeader,
-  InlineError,
-} from '@/components/explorer/AccountForm';
+import { BackHeader, InlineError } from '@/components/explorer/AccountForm';
 import {
   describeChatError,
   useAiChatHistory,
   useClearAiChat,
   useSendAiChat,
 } from '@/hooks/useAiChat';
+import { UpgradeLink } from '@/components/explorer/UpgradePrompt';
+import { OutlineButton } from '@/components/explorer/review/ReviewParts';
+import { useStartReview } from '@/hooks/useCaseOfficer';
 import type { ChatCitation, ChatReplyKind } from '@/types/ai-chat.type';
 
 // Mirrors the backend limit (CHAT_MAX_MESSAGE_CHARS).
@@ -111,6 +111,10 @@ export default function AiChatScreen() {
   const historyQ = useAiChatHistory(appId, !isDemo);
   const send = useSendAiChat(appId);
   const clear = useClearAiChat(appId);
+  // "Run your review" (the server's `offerAssessment`): the same start the
+  // application's sticky button uses, from the review hook (#43).
+  const { start: startReview, isStarting } = useStartReview(appId);
+  const [reviewMsg, setReviewMsg] = useState<string | null>(null);
 
   const [draft, setDraft] = useState('');
   // The message currently in flight (shown as a pending user bubble).
@@ -144,7 +148,10 @@ export default function AiChatScreen() {
 
   const trimmed = draft.trim();
   const canSend =
-    !isDemo && !send.isPending && trimmed.length > 0 && trimmed.length <= MAX_CHARS;
+    !isDemo &&
+    !send.isPending &&
+    trimmed.length > 0 &&
+    trimmed.length <= MAX_CHARS;
 
   const onSend = async () => {
     if (!canSend) return;
@@ -164,6 +171,23 @@ export default function AiChatScreen() {
     } finally {
       setPendingText(null);
     }
+  };
+
+  // Start a review, then open it. 402 (free plan, changed inputs) goes to the
+  // plans screen's prompt in the line below; nothing is sent to anyone.
+  const onRunReview = async () => {
+    setReviewMsg(null);
+    const out = await startReview('cta');
+    if (out === 'started') router.push(`/self-service/${appId}/review`);
+    else if (out === 'upgrade')
+      setError({ upgrade: true, text: 'A new review is part of a paid plan.' });
+    else if (out === 'no_rubric')
+      setReviewMsg('There is nothing to review this application against yet.');
+    else if (out === 'offline')
+      setReviewMsg(
+        'You’re offline, so we couldn’t start your review. Reconnect and try again.',
+      );
+    else setReviewMsg('We couldn’t start your review. Try again in a moment.');
   };
 
   const onClear = async () => {
@@ -201,10 +225,7 @@ export default function AiChatScreen() {
           <ActivityIndicator color={EX.color.primary} />
         ) : historyQ.isError ? (
           // History failure: same mapping as a send failure (402 → upgrade).
-          <ErrorBlock
-            e={describeChatError(historyQ.error)}
-            onUpgrade={() => router.push('/subscription')}
-          />
+          <ErrorBlock e={describeChatError(historyQ.error)} />
         ) : bubbles.length === 0 && !pendingText ? (
           <EmptyLine text="Ask a question about your review." />
         ) : null}
@@ -231,13 +252,18 @@ export default function AiChatScreen() {
           </>
         ) : null}
 
-        {/* Server asked us to offer a review. HOOK-UP POINT: when the review UI
-            (branch feat/43-verdict-ui) is merged, replace this plain line with
-            a button that starts a review for this application. */}
+        {/* The server asked us to offer a review: start it (review hook, #43) and
+            open the review screen. Ask again once it has finished. */}
         {lastFlags?.offerAssessment ? (
-          <Text style={noteStyle}>
-            Run your review from your application, then ask again.
-          </Text>
+          <View style={{ gap: 8 }}>
+            <Text style={noteStyle}>Run your review, then ask again.</Text>
+            <OutlineButton
+              label="Run your review"
+              onPress={onRunReview}
+              disabled={isStarting}
+            />
+            {reviewMsg ? <InlineError message={reviewMsg} /> : null}
+          </View>
         ) : null}
 
         {/* The stored review is older than the application's current state. */}
@@ -245,9 +271,7 @@ export default function AiChatScreen() {
           <Text style={noteStyle}>This review is out of date.</Text>
         ) : null}
 
-        {error ? (
-          <ErrorBlock e={error} onUpgrade={() => router.push('/subscription')} />
-        ) : null}
+        {error ? <ErrorBlock e={error} /> : null}
       </ScrollView>
 
       {/* Composer */}
@@ -342,26 +366,13 @@ function EmptyLine({ text }: { text: string }) {
   );
 }
 
-// Error line; a 402 adds an upgrade action to the existing plans screen.
-function ErrorBlock({
-  e,
-  onUpgrade,
-}: {
-  e: { upgrade: boolean; text: string };
-  onUpgrade: () => void;
-}) {
+// Error line; a 402 adds the shared "See plans" link (same plans screen as
+// every other upgrade prompt).
+function ErrorBlock({ e }: { e: { upgrade: boolean; text: string } }) {
   return (
     <View style={{ gap: 8 }}>
       <InlineError message={e.text} />
-      {e.upgrade ? (
-        <Pressable onPress={onUpgrade} hitSlop={6}>
-          <Text
-            style={{ fontSize: 13, fontWeight: '700', color: EX.color.primary }}
-          >
-            See plans
-          </Text>
-        </Pressable>
-      ) : null}
+      {e.upgrade ? <UpgradeLink /> : null}
     </View>
   );
 }

@@ -17,7 +17,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Linking,
+  Pressable,
+  Text,
+  View,
+} from 'react-native';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Pill, SectionTitle } from '@/components/explorer/primitives';
@@ -49,7 +55,10 @@ export const checklistRequirementId = (documentRequestId: string) =>
  * True when `doc` was uploaded against one of the checklist's items, so the
  * screen can leave it out of "Other documents" (no document listed twice).
  */
-export function isChecklistDocument(doc: Document, checklist?: Checklist | null) {
+export function isChecklistDocument(
+  doc: Document,
+  checklist?: Checklist | null,
+) {
   if (!checklist) return false;
   return checklist.items.some(
     (i) =>
@@ -59,9 +68,17 @@ export function isChecklistDocument(doc: Document, checklist?: Checklist | null)
 }
 
 // What the applicant sees for an item: waiting, uploaded, accepted, needs another.
-type ItemState = 'waiting' | 'uploaded' | 'accepted' | 'needs_another' | 'not_needed';
+type ItemState =
+  | 'waiting'
+  | 'uploaded'
+  | 'accepted'
+  | 'needs_another'
+  | 'not_needed';
 
-const STATE_STYLE: Record<ItemState, { label: string; fg: string; bg: string }> = {
+const STATE_STYLE: Record<
+  ItemState,
+  { label: string; fg: string; bg: string }
+> = {
   waiting: { label: 'Waiting', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
   uploaded: { label: 'Uploaded', fg: '#B26A14', bg: '#FCEAC8' },
   accepted: { label: 'Accepted', fg: '#1E8E55', bg: '#D6F2E2' },
@@ -106,25 +123,48 @@ function ChecklistRow({
   // Upload is offered while waiting or when another file is needed. A request
   // not yet stored (no id) cannot be uploaded against.
   const canUpload =
-    !!item.documentRequestId && (state === 'waiting' || state === 'needs_another');
+    !!item.documentRequestId &&
+    (state === 'waiting' || state === 'needs_another');
   // The latest document uploaded against this item (#115): the check is about it.
   const latestDoc = item.documentRequestId
-    ? docs.find((d) => d.requirementId === checklistRequirementId(item.documentRequestId!))
+    ? docs.find(
+        (d) =>
+          d.requirementId === checklistRequirementId(item.documentRequestId!),
+      )
     : undefined;
   // The check for THAT document; a check of an older file is not shown for it.
   const itemCheck =
     checksProps.checks?.tier === 'full' && latestDoc
       ? checksProps.checks.checks.find(
-          (c) => c.checklistItemId === item.checklistItemId && c.documentId === latestDoc.id,
+          (c) =>
+            c.checklistItemId === item.checklistItemId &&
+            c.documentId === latestDoc.id,
         )
       : undefined;
 
   return (
-    <View style={{ borderTopWidth: first ? 0 : 1, borderTopColor: EX.color.line06, paddingVertical: 13 }}>
+    <View
+      style={{
+        borderTopWidth: first ? 0 : 1,
+        borderTopColor: EX.color.line06,
+        paddingVertical: 13,
+      }}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}>{item.title}</Text>
-          <Text style={{ fontSize: 12, fontWeight: '600', color: EX.color.muted, marginTop: 1 }}>
+          <Text
+            style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}
+          >
+            {item.title}
+          </Text>
+          <Text
+            style={{
+              fontSize: 12,
+              fontWeight: '600',
+              color: EX.color.muted,
+              marginTop: 1,
+            }}
+          >
             {item.required ? 'Required' : 'Optional'}
           </Text>
         </View>
@@ -133,7 +173,14 @@ function ChecklistRow({
 
       {/* Reason: always present (a template filled from the published rule). */}
       {item.reason ? (
-        <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.inkMuted, marginTop: 6 }}>
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.inkMuted,
+            marginTop: 6,
+          }}
+        >
           {item.reason}
         </Text>
       ) : null}
@@ -142,16 +189,37 @@ function ChecklistRow({
       <Pressable
         onPress={() => setOpen((o) => !o)}
         accessibilityRole="button"
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 4,
+          marginTop: 6,
+        }}
       >
-        <Text style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.primary }}>
+        <Text
+          style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.primary }}
+        >
           {open ? 'Hide source' : 'Where this comes from'}
         </Text>
         <Ic.chevR size={13} color={EX.color.primary} strokeWidth={2} />
       </Pressable>
       {open ? (
-        <View style={{ marginTop: 8, padding: 12, borderRadius: 12, backgroundColor: EX.color.cream }}>
-          <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink, fontStyle: 'italic' }}>
+        <View
+          style={{
+            marginTop: 8,
+            padding: 12,
+            borderRadius: 12,
+            backgroundColor: EX.color.cream,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 13,
+              lineHeight: 19,
+              color: EX.color.ink,
+              fontStyle: 'italic',
+            }}
+          >
             “{item.citation.quote}”
           </Text>
           {item.citation.ruleRef ? (
@@ -159,8 +227,17 @@ function ChecklistRow({
               {item.citation.ruleRef}
             </Text>
           ) : null}
-          <Pressable onPress={() => Linking.openURL(item.citation.url)} style={{ marginTop: 8 }}>
-            <Text style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.primary }}>
+          <Pressable
+            onPress={() => Linking.openURL(item.citation.url)}
+            style={{ marginTop: 8 }}
+          >
+            <Text
+              style={{
+                fontSize: 12.5,
+                fontWeight: '700',
+                color: EX.color.primary,
+              }}
+            >
               Read the official page
             </Text>
           </Pressable>
@@ -202,7 +279,11 @@ function ChecklistRow({
             <Ic.upload size={15} color="#fff" strokeWidth={2} />
           )}
           <Text style={{ color: '#fff', fontSize: 13.5, fontWeight: '700' }}>
-            {uploading ? 'Uploading…' : state === 'needs_another' ? 'Upload another' : 'Upload'}
+            {uploading
+              ? 'Uploading…'
+              : state === 'needs_another'
+                ? 'Upload another'
+                : 'Upload'}
           </Text>
         </Pressable>
       ) : null}
@@ -239,9 +320,20 @@ function Group({
         marginBottom: 13,
       }}
     >
-      <Text style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}>{title}</Text>
+      <Text style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}>
+        {title}
+      </Text>
       {note ? (
-        <Text style={{ fontSize: 12.5, lineHeight: 18, color: EX.color.muted, marginTop: 3 }}>{note}</Text>
+        <Text
+          style={{
+            fontSize: 12.5,
+            lineHeight: 18,
+            color: EX.color.muted,
+            marginTop: 3,
+          }}
+        >
+          {note}
+        </Text>
       ) : null}
       <View style={{ marginTop: 6 }}>
         {items.map((item, i) => (
@@ -261,11 +353,42 @@ function Group({
 }
 
 // ── Empty / loading / error shells ────────────────────────────────────────────
-function Empty({ line }: { line: string }) {
+function Empty({
+  line,
+  actionLabel,
+  onAction,
+}: {
+  line: string;
+  /** Optional link under the line (the empty-state pattern: icon + line + action). */
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <View style={{ alignItems: 'center', paddingVertical: 22, gap: 8 }}>
       <Ic.docs size={22} color={EX.color.muted} strokeWidth={1.8} />
-      <Text style={{ fontSize: 13.5, lineHeight: 19, color: EX.color.inkMuted, textAlign: 'center' }}>{line}</Text>
+      <Text
+        style={{
+          fontSize: 13.5,
+          lineHeight: 19,
+          color: EX.color.inkMuted,
+          textAlign: 'center',
+        }}
+      >
+        {line}
+      </Text>
+      {actionLabel && onAction ? (
+        <Pressable onPress={onAction} accessibilityRole="link" hitSlop={6}>
+          <Text
+            style={{
+              fontSize: 13.5,
+              fontWeight: '700',
+              color: EX.color.primary,
+            }}
+          >
+            {actionLabel}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -283,6 +406,7 @@ export function DocumentChecklist({
   docs,
   uploadingId,
   onUpload,
+  onOpenIntake,
   checksProps,
 }: {
   checklist?: Checklist | null;
@@ -292,6 +416,12 @@ export function DocumentChecklist({
   docs: Document[];
   uploadingId: string | null;
   onUpload: (item: ChecklistItem) => void;
+  /**
+   * Opens the visit-details questions (#113). When given, the "answer your visit
+   * details" empty state links there; without it (a route with no intake) the
+   * line stays plain.
+   */
+  onOpenIntake?: () => void;
   /** Per-upload check data and actions (#115). */
   checksProps: ChecksProps;
 }) {
@@ -306,8 +436,20 @@ export function DocumentChecklist({
     body = (
       <View style={{ gap: 10 }}>
         <InlineError message="We couldn't load your document list." />
-        <Pressable onPress={onRetry} accessibilityRole="button" style={{ alignSelf: 'flex-start' }}>
-          <Text style={{ fontSize: 13.5, fontWeight: '700', color: EX.color.primary }}>Try again</Text>
+        <Pressable
+          onPress={onRetry}
+          accessibilityRole="button"
+          style={{ alignSelf: 'flex-start' }}
+        >
+          <Text
+            style={{
+              fontSize: 13.5,
+              fontWeight: '700',
+              color: EX.color.primary,
+            }}
+          >
+            Try again
+          </Text>
         </Pressable>
       </View>
     );
@@ -318,8 +460,15 @@ export function DocumentChecklist({
         line={
           checklist?.state === 'intake_needed'
             ? 'Answer your visit details and your document list will appear here.'
-            : (checklist?.emptyReason ?? 'There is no document list for this visa yet.')
+            : (checklist?.emptyReason ??
+              'There is no document list for this visa yet.')
         }
+        actionLabel={
+          checklist?.state === 'intake_needed' && onOpenIntake
+            ? 'Answer your visit details'
+            : undefined
+        }
+        onAction={onOpenIntake}
       />
     );
   } else {
@@ -327,7 +476,14 @@ export function DocumentChecklist({
     const sponsors = checklist.items.filter((i) => i.holder === 'sponsor');
     body = (
       <>
-        <Group title="Yours" items={yours} docs={docs} uploadingId={uploadingId} onUpload={onUpload} checksProps={checksProps} />
+        <Group
+          title="Yours"
+          items={yours}
+          docs={docs}
+          uploadingId={uploadingId}
+          onUpload={onUpload}
+          checksProps={checksProps}
+        />
         <Group
           title="Your sponsor's"
           note="Your sponsor has no account here. You upload their documents for them."
