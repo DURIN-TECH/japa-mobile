@@ -153,6 +153,11 @@ export function useCreateDocument() {
           queryKey: ['application', data.applicationId],
         });
         queryClient.invalidateQueries({ queryKey: ['applications'] });
+        // #114: an upload against a checklist item flips it to "uploaded", so
+        // the checklist re-reads without a manual refresh.
+        queryClient.invalidateQueries({
+          queryKey: ['checklist', data.applicationId],
+        });
       }
     },
   });

@@ -106,7 +106,11 @@ export interface UploadUrlResponse {
 
 export interface CreateDocumentInput {
   applicationId: string;
-  requirementId: string;
+  // Optional since #114: an upload made against a checklist item sends
+  // `documentRequestId` instead (the backend derives the requirement id).
+  requirementId?: string;
+  // Fulfils that checklist / agent request through POST /documents.
+  documentRequestId?: string;
   fileName: string;
   fileType: string;
   fileSizeMb: number;
