@@ -7,7 +7,8 @@
 // away on blur / screen blur / app to background, trimmed text only, only when
 // it changed, one save in flight. Unsaved text lives in the in-memory draft
 // store (answerDrafts.store.ts), so a failed or offline save never loses it.
-// A refetched server answer never overwrites a draft.
+// A refetched server answer never overwrites a draft. Drafts also survive an app
+// kill: they are mirrored to the encrypted vault (services/draftVault.ts).
 //
 // The answer text is personal: it is never logged.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,13 +111,15 @@ export function useAnswerField({
     saver.setSaved(savedText);
   }, [saver, savedText]);
 
-  // A draft left from earlier (offline, left the screen): save it on open.
+  // A draft left from earlier (offline, app killed, left the screen) arrives
+  // from the vault shortly after the screen opens: save it once, when it shows.
+  const restored = useRef(false);
   useEffect(() => {
-    if (draft !== undefined && typed === null) {
+    if (draft !== undefined && typed === null && !restored.current) {
+      restored.current = true;
       saver.change(draft);
     }
-    // Only on first mount with a draft.
-  }, []);
+  }, [draft, typed, saver]);
 
   // Save right away when the screen loses focus, the app goes to the
   // background, and on unmount (the saver finishes an in-flight save quietly).

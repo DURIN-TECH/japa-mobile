@@ -28,7 +28,7 @@
 // render only.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
@@ -91,6 +91,7 @@ import {
   isChecklistDocument,
 } from '@/components/explorer/DocumentChecklist';
 import type { ChecklistItem } from '@/types/checklist.type';
+import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
 // Information items (#187): typed answers, saved on the server.
 import { useAnswers, useSaveAnswer } from '@/hooks/useAnswers';
 import {
@@ -688,6 +689,11 @@ export default function SelfServiceView() {
     !!app && app.mode === 'self' && hasInfoItems,
   );
   const saveAnswerM = useSaveAnswer(app?.id ?? '');
+  // Unsaved answers from an earlier visit (offline, app killed) come back from
+  // the encrypted vault when the screen opens.
+  useEffect(() => {
+    void useAnswerDraftsStore.getState().loadFromVault();
+  }, []);
   // Set by a 409 ANSWERS_LOCKED from a save: answers are read-only from then on.
   const [answersLockedByServer, setAnswersLockedByServer] = useState(false);
   // Per-upload document checks (#115): polled while one is running.
