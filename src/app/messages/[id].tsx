@@ -39,18 +39,10 @@ import {
   useSendMessage,
 } from '@/hooks/useMessaging';
 import { mapConvo, mapMessage } from '@/components/explorer/liveMessaging';
-// AI message access (#172): pinned bar, one-time notice, and the pure rule for
-// when the notice shows.
-import {
-  AiAccessBar,
-  useAiAccessControl,
-} from '@/components/explorer/AiAccessBar';
-import { AiNoticeSheet } from '@/components/explorer/AiNoticeSheet';
-import { shouldShowNotice } from '@/components/explorer/aiMessageAccessLogic';
-import {
-  useAiMessageAccessState,
-  useDismissAiNotice,
-} from '@/hooks/useAiMessageAccess';
+// AI message access (#172/#193): the chat shows only a header icon. Its
+// highlighted/gray decision is the pure `chatAiIconView`.
+import { chatAiIconView } from '@/components/explorer/aiMessageAccessLogic';
+import { useConversation } from '@/hooks/useAiMessageAccess';
 
 // ── Single message row (bubble + timestamp) ──────────────────────────────────
 function Bubble({ m }: { m: Msg }) {
@@ -230,26 +222,16 @@ export default function ChatView() {
       sendMessage.mutate({ conversationId: convId, content: t });
   };
 
-  // ── AI message access (#172) ───────────────────────────────────────────────
-  // Live chats only: demo threads have no server conversation, so no bar and no
-  // notice. The bar's conversation query is disabled for an empty id.
-  const aiControl = useAiAccessControl(isLive ? convId : '');
-  const aiState = useAiMessageAccessState(isLive && !!convId);
-  const dismissNotice = useDismissAiNotice();
-  // Closed this session (covers the gap before the server answers, and a failed
-  // record: the server still says "not dismissed", so it returns next open).
-  const [noticeClosed, setNoticeClosed] = useState(false);
-  const noticeOpen = shouldShowNotice(
-    aiState.data,
-    noticeClosed,
-    isLive && !!convId,
-  );
-  const closeNotice = () => {
-    setNoticeClosed(true);
-    // Fire and forget: a failure shows nothing and is retried on the next open.
-    dismissNotice.mutate();
-  };
-  const openAiSettings = () => router.push('/ai-message-access');
+  // ── AI message access (#193) ───────────────────────────────────────────────
+  // Live chats only: demo threads have no server conversation, so no icon. The
+  // query is disabled for an empty id. Unknown / loading state stays gray.
+  const aiConv = useConversation(isLive ? convId : '');
+  const aiIcon = chatAiIconView(aiConv.data?.aiAccess);
+  const openAiSettings = () =>
+    router.push({
+      pathname: '/ai-message-access',
+      params: { conversationId: convId },
+    });
 
   const hasText = draft.trim().length > 0;
   // Show a spinner only when a live thread is still loading its first page.
@@ -364,6 +346,35 @@ export default function ChatView() {
           </Pressable>
         ) : null}
 
+        {/* AI access button: same 38px round chip as the call button. Coral when
+            AI access is on for this chat, gray otherwise (incl. loading). Static
+            style objects only (#190). Hidden on demo threads. */}
+        {isLive && convId ? (
+          <Pressable
+            onPress={openAiSettings}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={aiIcon.label}
+            accessibilityState={{ selected: aiIcon.highlighted }}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: aiIcon.highlighted
+                ? EX.color.primaryTint10
+                : EX.color.line06,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ic.spark
+              size={18}
+              color={aiIcon.highlighted ? EX.color.primary : EX.color.inkMuted}
+              strokeWidth={1.8}
+            />
+          </Pressable>
+        ) : null}
+
         {/* Phone / call button — source: 38px coral-tint chip (no border) */}
         <Pressable
           hitSlop={6}
@@ -379,26 +390,6 @@ export default function ChatView() {
           <Ic.phone size={18} color={EX.color.primary} strokeWidth={1.8} />
         </Pressable>
       </BlurView>
-
-      {/* ── AI access bar (pinned; does not scroll with messages) ───────────── */}
-      {isLive && convId ? (
-        <AiAccessBar control={aiControl} onOpenSettings={openAiSettings} />
-      ) : null}
-
-      {/* ── One-time AI notice (plan-only people, until dismissed) ──────────── */}
-      {aiState.data ? (
-        <AiNoticeSheet
-          visible={noticeOpen}
-          wording={aiState.data.noticeWording}
-          control={aiControl}
-          onClose={closeNotice}
-          onOpenSettings={() => {
-            // Close the sheet (recording the dismissal), then open the screen.
-            closeNotice();
-            openAiSettings();
-          }}
-        />
-      ) : null}
 
       {/* ── Shared files sheet ────────────────────────────────────────────── */}
       <Modal

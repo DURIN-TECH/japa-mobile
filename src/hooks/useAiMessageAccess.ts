@@ -120,24 +120,6 @@ export function useSetAccountWideOff() {
   });
 }
 
-/** Record that the one-time notice was seen (server-side dismissal). */
-export function useDismissAiNotice() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      const res = await tracked(() =>
-        apiService.post<AiMessageAccessState>(
-          '/users/me/ai-message-access/notice-dismissed',
-        ),
-      );
-      return res.data;
-    },
-    onSuccess: (state) => {
-      if (state) qc.setQueryData(AI_ACCESS_KEY, state);
-    },
-  });
-}
-
 // ─────────────────────────────────────────────
 // PER-CHAT SWITCH
 // ─────────────────────────────────────────────
