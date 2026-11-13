@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Platform, Text, TextInput, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Animated, {
   Easing,
@@ -33,6 +33,7 @@ import {
   toIsoDate,
   visibleIds,
 } from './intakeLogic';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import type {
@@ -83,7 +84,7 @@ function OptionCard({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableStatic
       onPress={onPress}
       disabled={disabled}
       accessibilityRole={multi ? 'checkbox' : 'radio'}
@@ -135,7 +136,7 @@ function OptionCard({
       >
         {selected ? <Ic.check size={13} color="#fff" strokeWidth={3} /> : null}
       </View>
-    </Pressable>
+    </PressableStatic>
   );
 }
 
@@ -160,7 +161,7 @@ function YesNo({
       {[true, false].map((opt) => {
         const selected = value === opt;
         return (
-          <Pressable
+          <PressableStatic
             key={String(opt)}
             onPress={() => onChange(opt)}
             disabled={disabled}
@@ -189,7 +190,7 @@ function YesNo({
             >
               {opt ? 'Yes' : 'No'}
             </Text>
-          </Pressable>
+          </PressableStatic>
         );
       })}
     </View>
@@ -209,7 +210,7 @@ function FilterChip({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableStatic
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="radio"
@@ -234,7 +235,7 @@ function FilterChip({
       >
         {label}
       </Text>
-    </Pressable>
+    </PressableStatic>
   );
 }
 
@@ -269,7 +270,7 @@ function DateField({
 
   return (
     <View style={{ flex: 1, minWidth: 0 }}>
-      <Pressable
+      <PressableStatic
         onPress={() => setOpen((o) => !o)}
         disabled={disabled}
         accessibilityRole="button"
@@ -305,7 +306,7 @@ function DateField({
         >
           {value ? displayDate(value) : 'Choose a date'}
         </Text>
-      </Pressable>
+      </PressableStatic>
       {open ? (
         <DateTimePicker
           value={current}

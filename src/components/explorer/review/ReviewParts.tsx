@@ -20,7 +20,6 @@ import React, { useEffect } from 'react';
 import {
   ActivityIndicator,
   Linking,
-  Pressable,
   Text,
   View,
   type StyleProp,
@@ -36,6 +35,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { GlassButton } from '@/components/explorer/primitives';
@@ -342,7 +342,7 @@ export function RuleQuote({
         </Text>
       ) : null}
       {url ? (
-        <Pressable
+        <PressableStatic
           accessibilityRole="link"
           accessibilityLabel={`Read the rule${ruleRef ? `: ${ruleRef}` : ''}`}
           onPress={() => {
@@ -370,7 +370,7 @@ export function RuleQuote({
             Read the rule
           </Text>
           <Ic.arrowUR size={15} color={EX.color.primary} strokeWidth={2} />
-        </Pressable>
+        </PressableStatic>
       ) : null}
     </View>
   );
@@ -657,7 +657,7 @@ export function SolidButton({
   const Icon = icon;
   const off = disabled || loading;
   return (
-    <Pressable
+    <PressableStatic
       onPress={onPress}
       disabled={off}
       accessibilityRole="button"
@@ -685,7 +685,7 @@ export function SolidButton({
       {Icon && !loading ? (
         <Icon size={18} color="#fff" strokeWidth={1.8} />
       ) : null}
-    </Pressable>
+    </PressableStatic>
   );
 }
 
@@ -704,7 +704,7 @@ export function OutlineButton({
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <Pressable
+    <PressableStatic
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
@@ -731,7 +731,7 @@ export function OutlineButton({
       >
         {label}
       </Text>
-    </Pressable>
+    </PressableStatic>
   );
 }
 
@@ -781,7 +781,7 @@ export function CountryContextCard({
         </Text>
       ))}
       {source.pageUrl ? (
-        <Pressable
+        <PressableStatic
           accessibilityRole="link"
           accessibilityLabel="Open the published data tables"
           onPress={() => {
@@ -809,7 +809,7 @@ export function CountryContextCard({
             Open the published data tables
           </Text>
           <Ic.arrowUR size={15} color={EX.color.primary} strokeWidth={2} />
-        </Pressable>
+        </PressableStatic>
       ) : null}
     </View>
   );

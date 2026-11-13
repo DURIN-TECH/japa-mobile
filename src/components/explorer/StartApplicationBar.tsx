@@ -11,6 +11,7 @@ import React from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { InlineError } from '@/components/explorer/AccountForm';
@@ -69,7 +70,7 @@ export function StartApplicationBar({
       {failure === 'upgrade' ? (
         <View>
           <UpgradePrompt message={START_COPY.upgrade} />
-          <Pressable
+          <PressableStatic
             onPress={onDismissUpgrade}
             accessibilityRole="button"
             style={{
@@ -87,7 +88,7 @@ export function StartApplicationBar({
             >
               Not now
             </Text>
-          </Pressable>
+          </PressableStatic>
         </View>
       ) : (
         <>
@@ -118,7 +119,7 @@ export function StartApplicationBar({
                 ${price.toLocaleString()}
               </Text>
             </View>
-            <Pressable
+            <PressableStatic
               onPress={onStart}
               disabled={disabled}
               accessibilityRole="button"
@@ -156,7 +157,7 @@ export function StartApplicationBar({
                   <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
                 </>
               )}
-            </Pressable>
+            </PressableStatic>
           </View>
         </>
       )}

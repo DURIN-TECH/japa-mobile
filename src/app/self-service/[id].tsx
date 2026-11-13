@@ -48,6 +48,7 @@ import Animated, {
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { countryArt } from '@/components/explorer/liveExplore';
 import { Ic } from '@/components/explorer/icons';
@@ -472,7 +473,7 @@ function LiveRequirementCard({
       ) : null}
 
       {/* Coral Upload button (per-requirement) with in-flight spinner */}
-      <Pressable
+      <PressableStatic
         onPress={() => onUpload(req.id)}
         disabled={uploading}
         style={{
@@ -495,7 +496,7 @@ function LiveRequirementCard({
         <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>
           {uploading ? 'Uploading…' : 'Upload document'}
         </Text>
-      </Pressable>
+      </PressableStatic>
     </View>
   );
 }
@@ -1129,7 +1130,7 @@ export default function SelfServiceView() {
               </View>
               {/* Only render the open-portal button when the backend supplies a URL */}
               {officialUrl ? (
-                <Pressable
+                <PressableStatic
                   onPress={() => Linking.openURL(officialUrl)}
                   style={{
                     flexDirection: 'row',
@@ -1148,7 +1149,7 @@ export default function SelfServiceView() {
                   >
                     Open {officialHost}
                   </Text>
-                </Pressable>
+                </PressableStatic>
               ) : null}
             </View>
 
@@ -1326,7 +1327,7 @@ export default function SelfServiceView() {
             {/* ── Ask about your review (issue #45) ─────────────────────────────
                 A clearly separated entry to the ask-anywhere chat. */}
             <SectionTitle>Questions?</SectionTitle>
-            <Pressable
+            <PressableStatic
               onPress={() => router.push(`/ai-chat/${app.id}`)}
               style={{
                 flexDirection: 'row',
@@ -1355,14 +1356,14 @@ export default function SelfServiceView() {
                 </Text>
               </View>
               <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
-            </Pressable>
+            </PressableStatic>
 
             {/* ── Been refused before? (issue #122) ─────────────────────────────
                 Entry to the refusal-letter analysis. Opens the static route
                 `self-service/refusal-letter`, which uploads the letter and shows
                 the mapped reasons, the checklist and the disclosure notice. */}
             <SectionTitle>Been refused before?</SectionTitle>
-            <Pressable
+            <PressableStatic
               onPress={() =>
                 router.push({
                   pathname: '/self-service/refusal-letter',
@@ -1403,7 +1404,7 @@ export default function SelfServiceView() {
                 </Text>
               </View>
               <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
-            </Pressable>
+            </PressableStatic>
           </View>
         </Animated.ScrollView>
 
@@ -1433,7 +1434,7 @@ export default function SelfServiceView() {
                 <InlineError message={ctaError} />
               </View>
             ) : null}
-            <Pressable
+            <PressableStatic
               onPress={onReviewCta}
               disabled={reviewCta.disabled || isStarting}
               accessibilityRole="button"
@@ -1470,7 +1471,7 @@ export default function SelfServiceView() {
               {reviewCta.withArrow && !isStarting ? (
                 <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
               ) : null}
-            </Pressable>
+            </PressableStatic>
           </BlurView>
         ) : null}
       </View>

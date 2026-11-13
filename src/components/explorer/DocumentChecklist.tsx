@@ -24,6 +24,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Pill, SectionTitle } from '@/components/explorer/primitives';
@@ -186,7 +187,7 @@ function ChecklistRow({
       ) : null}
 
       {/* Source: the verbatim quote and a link to the official page. */}
-      <Pressable
+      <PressableStatic
         onPress={() => setOpen((o) => !o)}
         accessibilityRole="button"
         style={{
@@ -202,7 +203,7 @@ function ChecklistRow({
           {open ? 'Hide source' : 'Where this comes from'}
         </Text>
         <Ic.chevR size={13} color={EX.color.primary} strokeWidth={2} />
-      </Pressable>
+      </PressableStatic>
       {open ? (
         <View
           style={{
@@ -227,7 +228,7 @@ function ChecklistRow({
               {item.citation.ruleRef}
             </Text>
           ) : null}
-          <Pressable
+          <PressableStatic
             onPress={() => Linking.openURL(item.citation.url)}
             style={{ marginTop: 8 }}
           >
@@ -240,7 +241,7 @@ function ChecklistRow({
             >
               Read the official page
             </Text>
-          </Pressable>
+          </PressableStatic>
         </View>
       ) : null}
 
@@ -258,7 +259,7 @@ function ChecklistRow({
       ) : null}
 
       {canUpload ? (
-        <Pressable
+        <PressableStatic
           onPress={() => onUpload(item)}
           disabled={uploading}
           style={{
@@ -285,7 +286,7 @@ function ChecklistRow({
                 ? 'Upload another'
                 : 'Upload'}
           </Text>
-        </Pressable>
+        </PressableStatic>
       ) : null}
     </View>
   );
@@ -377,7 +378,11 @@ function Empty({
         {line}
       </Text>
       {actionLabel && onAction ? (
-        <Pressable onPress={onAction} accessibilityRole="link" hitSlop={6}>
+        <PressableStatic
+          onPress={onAction}
+          accessibilityRole="link"
+          hitSlop={6}
+        >
           <Text
             style={{
               fontSize: 13.5,
@@ -387,7 +392,7 @@ function Empty({
           >
             {actionLabel}
           </Text>
-        </Pressable>
+        </PressableStatic>
       ) : null}
     </View>
   );
@@ -436,7 +441,7 @@ export function DocumentChecklist({
     body = (
       <View style={{ gap: 10 }}>
         <InlineError message="We couldn't load your document list." />
-        <Pressable
+        <PressableStatic
           onPress={onRetry}
           accessibilityRole="button"
           style={{ alignSelf: 'flex-start' }}
@@ -450,7 +455,7 @@ export function DocumentChecklist({
           >
             Try again
           </Text>
-        </Pressable>
+        </PressableStatic>
       </View>
     );
   } else if (!checklist || checklist.items.length === 0) {
