@@ -70,8 +70,8 @@ describe('pickBarState: qualifying person (standard bar)', () => {
     const v = bar();
     expect(v.kind).toBe('standard');
     if (v.kind !== 'standard') return;
-    expect(v.title).toBe('AI access to this chat');
-    expect(v.helper).toBe(AI_COPY.on);
+    expect(v.title).toBe('AI access to this chat is On');
+    expect(v.helper).toBeNull(); // plain On has no second line
     expect(v.switch).toMatchObject({
       value: true,
       disabled: false,
@@ -84,14 +84,18 @@ describe('pickBarState: qualifying person (standard bar)', () => {
       aiAccess: access({ myAiAccess: 'off', myChatSwitchOff: true }),
     });
     if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe('Off. Nothing in this chat is read by Seli’s AI.');
+    expect(v.title).toBe('AI access to this chat is Off');
+    expect(v.helper).toBeNull();
     expect(v.switch).toMatchObject({ value: false, nextOff: false });
   });
 
   it('off by the other person: line shown, my switch still on and usable', () => {
     const v = bar({ aiAccess: access({ otherSwitchedOff: true }) });
     if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe(AI_COPY.offByOther);
+    expect(v.title).toBe('AI access to this chat is Off');
+    expect(v.helper).toBe(
+      'The other person has switched it off. Your own switch is still on.',
+    );
     expect(v.switch).toMatchObject({ value: true, disabled: false });
   });
 
@@ -104,7 +108,8 @@ describe('pickBarState: qualifying person (standard bar)', () => {
       }),
     });
     if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe(AI_COPY.offByBoth);
+    expect(v.title).toBe('AI access to this chat is Off');
+    expect(v.helper).toBe('The other person has switched it off too.');
     expect(v.switch.value).toBe(false);
   });
 });
@@ -122,27 +127,27 @@ describe('pickBarState: not active (does not qualify)', () => {
   it('keeps the approve link AND the "Keep AI out" row', () => {
     const v = na({});
     expect(v.title).toBe('AI access: not active');
-    expect(v.helper).toBe(AI_COPY.notActive);
+    expect(v.helper).toBe('Seli’s AI doesn’t read your messages.');
     expect(v.link).toBe('Review and approve');
     expect(v.row2.title).toBe('Keep AI out of this chat');
   });
 
   it('row 2 polarity: switch ON means my side is off', () => {
     expect(na({}).row2.switch).toMatchObject({ value: false, nextOff: true });
-    expect(na({}).row2.helper).toBe(AI_COPY.keepOutNone);
+    expect(na({}).row2.helper).toBeNull();
     const kept = na({ myAiAccess: 'off', myChatSwitchOff: true });
     expect(kept.row2.switch).toMatchObject({ value: true, nextOff: false });
-    expect(kept.row2.helper).toBe(AI_COPY.keepOutMine);
+    expect(kept.row2.helper).toBeNull();
   });
 
   it('row 2 other-person and both lines', () => {
     expect(na({ otherSwitchedOff: true }).row2.helper).toBe(
-      AI_COPY.keepOutOther,
+      'The other person has switched it off.',
     );
     expect(
       na({ myAiAccess: 'off', myChatSwitchOff: true, otherSwitchedOff: true })
         .row2.helper,
-    ).toBe(AI_COPY.keepOutBoth);
+    ).toBe('The other person has switched it off too.');
   });
 
   it('saving and offline only touch row 2', () => {
@@ -187,7 +192,8 @@ describe('pickBarState: account-wide off', () => {
         }),
       });
       if (v.kind !== 'account-off') throw new Error(v.kind);
-      expect(v.helper).toBe(AI_COPY.accountOff);
+      expect(v.title).toBe('AI access to this chat is Off');
+      expect(v.helper).toBe('Off for all your chats.');
       expect(v.link).toBe('Change in settings');
       expect(v.switch).toMatchObject({ value: false, disabled: true });
     }
@@ -205,7 +211,11 @@ describe('pickBarState: account-wide off', () => {
 describe('pickBarState: loading, error, saving, offline', () => {
   it('loading while the conversation is not loaded', () => {
     const v = bar({ aiAccess: undefined, conversationLoaded: false });
-    expect(v).toMatchObject({ kind: 'loading', helper: 'Checking…' });
+    expect(v).toMatchObject({
+      kind: 'loading',
+      title: 'AI access to this chat', // no On/Off while unknown
+      helper: 'Checking…',
+    });
   });
 
   it('a failed load is an error with a Try again link, never "on"', () => {
@@ -229,6 +239,7 @@ describe('pickBarState: loading, error, saving, offline', () => {
   it('saving keeps the OLD value, disabled, with the switching copy (not optimistic)', () => {
     const off = bar({ saving: { off: true } });
     if (off.kind !== 'standard') throw new Error(off.kind);
+    expect(off.title).toBe('AI access to this chat is On'); // old state's line
     expect(off.helper).toBe('Switching off…');
     expect(off.switch).toMatchObject({
       value: true,
@@ -240,6 +251,7 @@ describe('pickBarState: loading, error, saving, offline', () => {
       saving: { off: false },
     });
     if (on.kind !== 'standard') throw new Error(on.kind);
+    expect(on.title).toBe('AI access to this chat is Off');
     expect(on.helper).toBe('Switching on…');
     expect(on.switch.value).toBe(false);
   });
@@ -247,7 +259,7 @@ describe('pickBarState: loading, error, saving, offline', () => {
   it('a failed save keeps the previous state, enabled, with the error', () => {
     const v = bar({ saveError: { off: true } });
     if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe(AI_COPY.on);
+    expect(v.helper).toBeNull();
     expect(v.switch).toMatchObject({ value: true, disabled: false });
     expect(v.error).toBe(
       'We couldn’t switch AI access off. It’s still on. Try again.',
@@ -268,6 +280,7 @@ describe('pickBarState: loading, error, saving, offline', () => {
   it('offline: offline line, switch at last known value and disabled, no repeated error', () => {
     const v = bar({ offline: true, saveError: { off: true, status: 0 } });
     if (v.kind !== 'standard') throw new Error(v.kind);
+    expect(v.title).toBe('AI access to this chat is On'); // current state's line
     expect(v.helper).toBe('You’re offline. Reconnect to change this.');
     expect(v.switch).toMatchObject({ value: true, disabled: true });
     expect(v.error).toBeNull();

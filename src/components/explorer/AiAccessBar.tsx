@@ -102,7 +102,7 @@ export function AiSwitch({
 }: {
   sw: BarSwitch;
   /** The helper line, read as the switch's accessibility hint. */
-  hint?: string;
+  hint?: string | null;
   onChange: (nextOff: boolean) => void;
 }) {
   return (
@@ -120,7 +120,7 @@ export function AiSwitch({
         thumbColor="#fff"
         ios_backgroundColor={EX.color.line10}
         accessibilityLabel={sw.label}
-        accessibilityHint={hint}
+        accessibilityHint={hint ?? undefined}
         accessibilityState={{
           checked: sw.value,
           disabled: sw.disabled,
@@ -133,20 +133,26 @@ export function AiSwitch({
 }
 
 // ── Coral link with a trailing arrow (15.5 / 700) ────────────────────────────
+// The Pressable's `style` is a STATIC object, never `({ pressed }) => …`: the
+// function form renders unstyled under NativeWind css-interop (#190). Pressed
+// feedback comes from a state flag set by onPressIn / onPressOut instead.
 function CoralLink({ label, onPress }: { label: string; onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
   return (
     <Pressable
       onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       accessibilityRole="link"
       hitSlop={6}
-      style={({ pressed }) => ({
+      style={{
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
         marginTop: 8,
         opacity: pressed ? 0.7 : 1,
         alignSelf: 'flex-start',
-      })}
+      }}
     >
       <Text
         style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.primary }}
@@ -158,16 +164,53 @@ function CoralLink({ label, onPress }: { label: string; onPress: () => void }) {
   );
 }
 
+// ── Plain coral text button ("Try again"), static style like CoralLink ─────────
+function CoralTextButton({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      hitSlop={8}
+      accessibilityRole="button"
+      style={{ opacity: pressed ? 0.7 : 1 }}
+    >
+      <Text
+        style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.primary }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 // ── Title + helper text block ────────────────────────────────────────────────
+// LAYOUT RULE (#193): the block must size to its text. It is NOT `flex: 1`
+// itself: nested inside another `flex: 1` column (an auto-height parent) a
+// zero-basis flex child collapses to no height, and the wrapped helper line then
+// spills out of the bar over the messages. Only when it is a direct child of a
+// ROW (`inRow`) does it take `flex: 1; minWidth: 0`, which shares the row's
+// WIDTH with the switch and lets the text wrap; a width-axis flex never affects
+// the height, so the bar grows with its content.
 function TextBlock({
   title,
   helper,
+  inRow = false,
 }: {
   title: string;
   helper?: string | null;
+  /** True when the block is a direct child of a row next to a switch/spinner. */
+  inRow?: boolean;
 }) {
   return (
-    <View style={{ flex: 1, minWidth: 0 }}>
+    <View style={inRow ? { flex: 1, minWidth: 0 } : { minWidth: 0 }}>
       <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>
         {title}
       </Text>
@@ -208,7 +251,11 @@ export function AiAccessRows({
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <IconChip icon={Ic.spark} size={36} radius={11} iconSize={17} />
-        <TextBlock title={view.title} helper={compact ? null : view.helper} />
+        <TextBlock
+          title={view.title}
+          helper={compact ? null : view.helper}
+          inRow
+        />
         <ActivityIndicator size="small" color={EX.color.primary} />
       </View>
     );
@@ -220,19 +267,9 @@ export function AiAccessRows({
       <View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <IconChip icon={Ic.spark} size={36} radius={11} iconSize={17} />
-          <TextBlock title={view.title} />
+          <TextBlock title={view.title} inRow />
           {compact ? null : (
-            <Pressable onPress={retry} hitSlop={8} accessibilityRole="button">
-              <Text
-                style={{
-                  fontSize: 15.5,
-                  fontWeight: '700',
-                  color: EX.color.primary,
-                }}
-              >
-                {view.link}
-              </Text>
-            </Pressable>
+            <CoralTextButton label={view.link} onPress={retry} />
           )}
         </View>
         <View style={{ marginTop: 10 }}>
@@ -279,6 +316,7 @@ export function AiAccessRows({
           <TextBlock
             title={view.row2.title}
             helper={compact ? null : view.row2.helper}
+            inRow
           />
           <AiSwitch
             sw={view.row2.switch}

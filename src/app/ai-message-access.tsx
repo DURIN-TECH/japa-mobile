@@ -50,6 +50,11 @@ import { useIsOffline } from '@/utils/networkStatus';
 import type { AiMessageAccessState } from '@/types/ai-message-access.type';
 
 // ── Outline button (the system keeps Danger for delete flows, so withdraw is Outline) ─
+// Same size, radius and position as `CoralSubmit` (54pt, radius 16, full width,
+// label centred). The Pressable `style` is a STATIC object: the function form
+// `({ pressed }) => …` renders unstyled under NativeWind css-interop (#190), which
+// showed as bare left-aligned text (#193). Pressed feedback comes from a state
+// flag set by onPressIn / onPressOut instead.
 function OutlineButton({
   label,
   onPress,
@@ -62,22 +67,25 @@ function OutlineButton({
   disabled?: boolean;
 }) {
   const off = !!disabled || !!loading;
+  const [pressed, setPressed] = useState(false);
   return (
     <Pressable
       onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       disabled={off}
       accessibilityRole="button"
       accessibilityState={{ disabled: off, busy: !!loading }}
-      style={({ pressed }) => ({
+      style={{
         height: 54,
-        borderRadius: EX.radius.button,
+        borderRadius: 16,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: EX.color.cardWhite,
         borderWidth: 1.5,
         borderColor: EX.color.line16,
         opacity: off ? 0.6 : pressed ? 0.7 : 1,
-      })}
+      }}
     >
       {loading ? (
         <ActivityIndicator color={EX.color.ink} />
@@ -92,16 +100,10 @@ function OutlineButton({
   );
 }
 
-// ── Wording card: heading, the exact wording, then the version line ──────────
-function WordingCard({
-  heading,
-  text,
-  version,
-}: {
-  heading: string;
-  text: string;
-  version: string | null;
-}) {
+// ── Wording card: heading, then the exact wording (no version id shown, #193) ─
+// The version is still stored with the approval and sent on approve; it is just
+// not something the person needs to read.
+function WordingCard({ heading, text }: { heading: string; text: string }) {
   // The server joins paragraphs with a blank line; show them 12 apart.
   const paragraphs = text.split('\n\n');
   return (
@@ -119,18 +121,6 @@ function WordingCard({
           </Text>
         ))}
       </View>
-      {version ? (
-        <Text
-          style={{
-            fontSize: 12.5,
-            fontWeight: '500',
-            color: EX.color.inkMuted,
-            marginTop: 12,
-          }}
-        >
-          Wording version {version}
-        </Text>
-      ) : null}
     </Card>
   );
 }
@@ -364,7 +354,6 @@ export default function AiMessageAccessScreen() {
             <WordingCard
               heading={AI_COPY.cardApproved}
               text={state.wording ?? ''}
-              version={state.wordingVersion}
             />
           </>
         ) : (
@@ -385,7 +374,6 @@ export default function AiMessageAccessScreen() {
             <WordingCard
               heading={AI_COPY.cardApproving}
               text={state.currentApprovalWording.text}
-              version={state.currentApprovalWording.versionId}
             />
             <InfoNote>{AI_COPY.infoNote}</InfoNote>
           </>

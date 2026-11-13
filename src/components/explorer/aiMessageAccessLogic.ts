@@ -24,14 +24,14 @@ import type {
 export const AI_COPY = {
   barTitle: 'AI access to this chat',
   barTitleNotActive: 'AI access: not active',
-  on: 'On. Seli’s AI can read the messages you send here.',
-  offByMe: 'Off. Nothing in this chat is read by Seli’s AI.',
+  // First lines of the qualifying bar (#193). The plain On / Off states have no
+  // second line, so there is no "on" / "offByMe" helper any more.
+  titleOn: 'AI access to this chat is On',
+  titleOff: 'AI access to this chat is Off',
   offByOther:
-    'The other person in this chat has switched AI access off, so nothing here is read. Your own switch is still on.',
-  offByBoth:
-    'Off. Nothing in this chat is read by Seli’s AI. The other person has switched it off too.',
-  notActive:
-    'Seli’s AI doesn’t read your messages. Approve it if you’d like it to.',
+    'The other person has switched it off. Your own switch is still on.',
+  offByBoth: 'The other person has switched it off too.',
+  notActive: 'Seli’s AI doesn’t read your messages.',
   reviewLink: 'Review and approve',
   loading: 'Checking…',
   switchingOff: 'Switching off…',
@@ -44,16 +44,11 @@ export const AI_COPY = {
   errForbidden: 'You can’t change AI access for this chat.',
   switchLabel: 'AI access to this chat',
 
-  // Not-active bar, row 2 ("Keep AI out of this chat"; switch on = my side off)
+  // Not-active bar, row 2 ("Keep AI out of this chat"; switch on = my side off).
+  // Second lines only appear when the other person has switched it off.
   keepOutTitle: 'Keep AI out of this chat',
-  keepOutNone:
-    'The other person’s messages here may still be read, if they’ve allowed it.',
-  keepOutMine:
-    'AI is kept out. Nothing in this chat is read, including the other person’s messages.',
-  keepOutOther:
-    'The other person in this chat has switched AI access off, so nothing here is read.',
-  keepOutBoth:
-    'AI is kept out. Nothing in this chat is read. The other person has switched it off too.',
+  keepOutOther: 'The other person has switched it off.',
+  keepOutBoth: 'The other person has switched it off too.',
   keepingOut: 'Keeping AI out…',
   lettingIn: 'Letting AI back in…',
   errKeepOut:
@@ -62,8 +57,7 @@ export const AI_COPY = {
     'We couldn’t change this. AI is still kept out of this chat. Try again.',
 
   // Bar while the account-wide setting is on
-  accountOff:
-    'Off for all your chats. You’ve kept AI out of every chat in your settings.',
+  accountOff: 'Off for all your chats.',
   changeInSettings: 'Change in settings',
 
   // One-time notice (paragraphs and title come from the server)
@@ -164,7 +158,8 @@ export type BarView =
   | {
       kind: 'standard';
       title: string;
-      helper: string;
+      /** Second line; null in the plain On / Off states (nothing to add). */
+      helper: string | null;
       switch: BarSwitch;
       error: string | null;
     }
@@ -175,7 +170,8 @@ export type BarView =
       link: string;
       row2: {
         title: string;
-        helper: string;
+        /** Second line; null when there is nothing to add. */
+        helper: string | null;
         switch: BarSwitch;
         error: string | null;
       };
@@ -226,7 +222,7 @@ export function pickBarState(i: BarInput): BarView {
   if (a.accountWideOff) {
     return {
       kind: 'account-off',
-      title,
+      title: AI_COPY.titleOff,
       helper: AI_COPY.accountOff,
       switch: {
         value: false,
@@ -243,14 +239,15 @@ export function pickBarState(i: BarInput): BarView {
   //    = my side is off, so the polarity is the reverse of the standard bar.
   if (!a.qualifies) {
     const keptOut = !mineOn;
-    let helper: string;
+    // Second line (table in #193): none unless saving, offline, or the other
+    // person has switched it off.
+    let helper: string | null;
     if (i.saving)
       helper = i.saving.off ? AI_COPY.keepingOut : AI_COPY.lettingIn;
     else if (i.offline) helper = AI_COPY.offline;
-    else if (keptOut)
-      helper = a.otherSwitchedOff ? AI_COPY.keepOutBoth : AI_COPY.keepOutMine;
-    else
-      helper = a.otherSwitchedOff ? AI_COPY.keepOutOther : AI_COPY.keepOutNone;
+    else if (a.otherSwitchedOff)
+      helper = keptOut ? AI_COPY.keepOutBoth : AI_COPY.keepOutOther;
+    else helper = null;
     return {
       kind: 'not-active',
       title: AI_COPY.barTitleNotActive,
@@ -272,16 +269,20 @@ export function pickBarState(i: BarInput): BarView {
   }
 
   // 5. Qualifies: the ordinary one-row bar. Switch on = AI may read this chat.
-  let helper: string;
+  // First line: "On" only when both sides allow it. Switches are not
+  // optimistic, so while saving / offline this is still the current state.
+  const effectivelyOn = mineOn && !a.otherSwitchedOff;
+  // Second line: none in the plain On / Off states.
+  let helper: string | null;
   if (i.saving)
     helper = i.saving.off ? AI_COPY.switchingOff : AI_COPY.switchingOn;
   else if (i.offline) helper = AI_COPY.offline;
-  else if (mineOn)
-    helper = a.otherSwitchedOff ? AI_COPY.offByOther : AI_COPY.on;
-  else helper = a.otherSwitchedOff ? AI_COPY.offByBoth : AI_COPY.offByMe;
+  else if (a.otherSwitchedOff)
+    helper = mineOn ? AI_COPY.offByOther : AI_COPY.offByBoth;
+  else helper = null;
   return {
     kind: 'standard',
-    title,
+    title: effectivelyOn ? AI_COPY.titleOn : AI_COPY.titleOff,
     helper,
     switch: {
       value: mineOn,
