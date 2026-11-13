@@ -19,10 +19,10 @@ import {
 
 // Backend ApplicationStatus → one of the Explorer STATUS keys
 // ('documents' | 'review' | 'interview' | 'submitted' | 'approved').
-// Anything without a natural Explorer bucket (draft, pending_payment, rejected,
+// ('draft' is its own bucket.) Anything without a natural bucket (pending_payment, rejected,
 // withdrawn, expired) falls back to 'review' so the row still renders a pill.
 const STATUS_MAP: Record<ApplicationStatus, string> = {
-  draft: 'review',
+  draft: 'draft', // japa#174: shown as "Draft", not "Under review"
   pending_payment: 'review',
   pending_documents: 'documents', // *_documents → documents
   under_review: 'review', // *review → review

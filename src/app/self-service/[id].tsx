@@ -758,6 +758,17 @@ export default function SelfServiceView() {
       !intakeWaiting &&
       (app.mode !== 'self' || checklistSettled);
 
+    // japa#174: when the visa lists requirements but the personal checklist is
+    // empty (e.g. "There is no document list for this visa yet."), showing that
+    // line above the requirement cards contradicts them. Hide the checklist
+    // section then; keep it while loading / failed / waiting on intake / filled.
+    const showChecklist =
+      checklistQ.isLoading ||
+      checklistQ.isError ||
+      hasChecklist ||
+      checklist?.state === 'intake_needed' ||
+      orderedReqs.length === 0;
+
     // ── Review state (issue #43) ─────────────────────────────────────────────
     const submitted = SUBMITTED_STATUSES.includes(app.status as string);
     const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError);
@@ -1209,7 +1220,7 @@ export default function SelfServiceView() {
                   )}
                 </View>
               </View>
-            ) : app.mode === 'self' ? (
+            ) : app.mode === 'self' && showChecklist ? (
               <>
                 <DocumentChecklist
                   checklist={checklist}

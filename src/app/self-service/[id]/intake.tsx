@@ -293,7 +293,15 @@ export default function IntakeScreen() {
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
         <View style={{ padding: EX.space.screenX, gap: 10 }}>
-          <InlineError message="This application has been submitted, so these answers can’t be changed." />
+          {/* japa#174: only say "submitted" when the server says it is read-only;
+              a draft with no visit questions gets its own line. */}
+          <InlineError
+            message={
+              data.available
+                ? 'This application has been submitted, so these answers can’t be changed.'
+                : 'There are no visit questions for this application.'
+            }
+          />
           <OutlineButton
             label="Back to your application"
             onPress={() => router.back()}
