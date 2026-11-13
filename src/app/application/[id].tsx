@@ -26,6 +26,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -44,16 +45,13 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
-import {
-  AppStep,
-  CONVOS,
-  NAIRA,
-  agentById,
-  appById,
-  convoForAgent,
-  destById,
-  paymentRequestsForApp,
-} from '@/components/explorer/data';
+import { NAIRA } from '@/components/explorer/content';
+import type { AppStep } from '@/types/explorer.type';
+// japa#145: the case's agent and their conversation come from the backend
+// (GET /agents/:id, GET /conversations), never the demo AGENTS / CONVOS.
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useAgent } from '@/hooks/useAgents';
+import { useConversations } from '@/hooks/useMessaging';
 import {
   mapApplication,
   mapTimeline,
@@ -66,7 +64,14 @@ import {
 import { isNotFoundError } from '@/hooks/queryErrors';
 import { useVisaType } from '@/hooks/useVisaTypes';
 import { CenteredState } from '@/components/explorer/CenteredState';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  PAYMENT_ERROR_MESSAGE,
+  getAuthorizationUrl,
+  getPaystackReference,
+} from '@/hooks/paymentRequestFlow';
 // Live payment-request read + approve/reject mutations (client side of the flow).
+// Approve starts a Paystack charge; the pay screen verifies it (japa#145).
 import {
   useApprovePaymentRequest,
   usePaymentRequests,
@@ -96,11 +101,16 @@ const REJECT_REASONS = [
 
 const HERO = 240;
 
+// Copy of a keyed record without one key (rollback of per-request state).
+function omitKey<T>(rec: Record<string, T>, key: string): Record<string, T> {
+  const next = { ...rec };
+  delete next[key];
+  return next;
+}
+
 // ── Unified payment-request row ──────────────────────────────────────────────
-// Demo fixtures and live backend requests are both mapped to this single shape so
-// the card renders identically. `live` tells the approve/reject handlers whether
-// to fire the real backend mutations (demo rows stay local-only). `amount` is the
-// display value in whole naira (live rows are pre-divided from kobo).
+// Backend payment requests (GET /payment-requests) mapped to the card's shape.
+// `amount` is the display value in whole naira (pre-divided from kobo).
 type PayReqRow = {
   id: string;
   title: string;
@@ -108,9 +118,12 @@ type PayReqRow = {
   agentId: string;
   agentName?: string;
   status: 'pending' | 'approved' | 'rejected';
+  // Backend status is 'paid' (settled): show it as paid, no checkout button.
+  paid: boolean;
+  // Paystack reference minted at approve time; needed to verify the charge.
+  reference?: string;
   due: string;
   note: string;
-  live: boolean;
 };
 
 // ── Timeline — detailed activity stepper ─────────────────────────────────────
@@ -246,30 +259,31 @@ export default function AppDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // ── Resolve demo-first, else fetch live (GET /applications/:id) ─────────────
-  // The single-item hooks are disabled (empty id) on the demo path so we never
-  // hit the backend for a static application.
-  const demo = appById(id);
-  const liveQ = useApplication(demo ? '' : id);
-  const tl = useApplicationTimeline(demo ? '' : id);
+  // ── The case (GET /applications/:id) and its timeline ─────────────────────
+  // japa#145: live only; an unknown id is the backend 404 → not-found.
+  const liveQ = useApplication(id ?? '');
+  const tl = useApplicationTimeline(id ?? '');
   // japa#106: when the case has no denormalised visa name, fetch the visa
   // detail for it (allowed: the user has a case on this visa, #102). The
   // query stays disabled otherwise (empty ids).
-  const needsVisaName = !demo && !!liveQ.data && !liveQ.data.visaTypeName;
+  const needsVisaName = !!liveQ.data && !liveQ.data.visaTypeName;
   const visaNameQ = useVisaType(
     needsVisaName ? (liveQ.data?.countryCode ?? '') : '',
     needsVisaName ? (liveQ.data?.visaTypeId ?? '') : '',
   );
-  const app =
-    demo ??
-    (liveQ.data
-      ? mapApplication(liveQ.data, undefined, visaNameQ.data?.visaType?.name)
-      : undefined);
-  // Live apps carry a resolved `dest`; demo apps resolve from static DESTS.
-  const dest = app?.dest ?? destById(app?.destId);
-  const agent = agentById(app?.agentId);
-  // Find the agent's conversation (matched by agentId) for the message actions.
-  const convo = app ? CONVOS.find((c) => c.agentId === app.agentId) : undefined;
+  const app = liveQ.data
+    ? mapApplication(liveQ.data, undefined, visaNameQ.data?.visaType?.name)
+    : undefined;
+  // Mapped cases carry a self-contained `dest` (assets-module art).
+  const dest = app?.dest;
+  // The assigned agent (none for a self-service case → the row's empty copy).
+  const agentQ = useAgent(app?.agentId || undefined);
+  const agent = agentQ.data ? mapAgent(agentQ.data) : undefined;
+  // The user's conversation with that agent, for the message actions.
+  const { data: conversations } = useConversations();
+  const convo = app?.agentId
+    ? conversations?.find((c) => c.agentId === app.agentId)
+    : undefined;
 
   // Parallax: hero translates up at py * -0.3 (source transform translateY).
   const scrollY = useSharedValue(0);
@@ -280,23 +294,27 @@ export default function AppDetail() {
     transform: [{ translateY: scrollY.value * -0.3 }],
   }));
 
-  // Local approve / reject decision per agent-raised payment request (demo state,
-  // keyed by request id; falls back to the request's own status).
+  // Optimistic approve / reject decision per request (keyed by id). The backend
+  // mutation fires too; on FAILURE the entry is rolled back (see rollbackReq)
+  // and an InlineError is shown, so the card never states a decision the
+  // server doesn't have. The list refetches on success.
   const [reqOverride, setReqOverride] = useState<
     Record<string, 'pending' | 'approved' | 'rejected'>
   >({});
   // Reason captured when the client declines a request (id → reason).
   const [reqReason, setReqReason] = useState<Record<string, string>>({});
+  // Failure copy per request (shown as an InlineError under the card actions).
+  const [reqError, setReqError] = useState<Record<string, string>>({});
+  // Request currently being approved (disables a second tap mid-flight).
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   // Reject-reason modal: which request is being declined, + the picked reason.
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [reasonSel, setReasonSel] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
 
-  // ── Payment requests (live-with-demo-fallback) ──────────────────────────────
-  // For a live application, fetch this client's requests scoped to the route id
-  // (GET /payment-requests?role=client&applicationId=…). Demo apps keep the static
-  // PAYMENT_REQUESTS fixtures. Mutation hooks are created here (top level, before
-  // any early return) so approve/reject can fire the real backend calls.
+  // ── Payment requests (GET /payment-requests?role=client&applicationId=…) ────
+  // Mutation hooks are created here (top level, before any early return) so
+  // approve/reject fire the real backend calls. None → the block is hidden.
   const payReqQ = usePaymentRequests(id);
   const approveReq = useApprovePaymentRequest();
   const rejectReq = useRejectPaymentRequest();
@@ -312,8 +330,8 @@ export default function AppDetail() {
           ? 'rejected'
           : 'pending';
 
-    // Live path: real requests for this application (defensively re-filtered by id).
-    if (!demo && app) {
+    // Real requests for this application (defensively re-filtered by id).
+    if (app) {
       return (payReqQ.data ?? [])
         .filter((r) => r.applicationId === app.id)
         .map<PayReqRow>((r) => ({
@@ -325,32 +343,17 @@ export default function AppDetail() {
           // Backend request carries no agent name; card falls back gracefully.
           agentName: undefined,
           status: toRowStatus(r.status),
+          paid: r.status === 'paid',
+          reference: r.paystackReference,
           due: r.expiresAt ? `Due ${fmtDate(r.expiresAt, 'MMM d')}` : '',
           note: r.description,
-          live: true,
         }));
     }
-
-    // Demo path: static fixtures keep their existing display fields verbatim.
-    if (app) {
-      return paymentRequestsForApp(app.id).map<PayReqRow>((r) => ({
-        id: r.id,
-        title: r.title,
-        amount: r.amount,
-        agentId: r.agentId,
-        agentName: undefined,
-        // Demo status is 'pending' | 'paid' — both render as Pending (unchanged).
-        status: r.status === 'paid' ? 'pending' : r.status,
-        due: r.due,
-        note: r.note,
-        live: false,
-      }));
-    }
     return [];
-  }, [demo, app, payReqQ.data]);
+  }, [app, payReqQ.data]);
 
-  // Spinner while the live application is still loading (demo path is instant).
-  if (!demo && liveQ.isLoading) {
+  // Spinner while the case is loading with nothing cached.
+  if (liveQ.isLoading) {
     return (
       <View
         style={{
@@ -367,7 +370,7 @@ export default function AppDetail() {
 
   // Load failure that isn't a 404 (offline, server error) with nothing
   // cached: say so and offer a retry instead of claiming it doesn't exist.
-  if (!demo && liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
+  if (liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
     return (
       <CenteredState
         icon={Ic.docs}
@@ -394,16 +397,15 @@ export default function AppDetail() {
     );
   }
 
-  // Timeline: live events (mapped) when present, else the demo app's own steps.
-  const steps: AppStep[] =
-    !demo && tl.data?.length ? mapTimeline(tl.data) : app.steps;
+  // Timeline: the case's live events ([] while loading or when none).
+  const steps: AppStep[] = tl.data?.length ? mapTimeline(tl.data) : app.steps;
 
   const pct = Math.round(app.progress * 100);
   const actionable = app.next.cta != null;
 
-  // Open (or fall back to) an agent's conversation for a payment-request message.
+  // Open the agent's live conversation, else their profile.
   const messageAgent = (agentId: string) => {
-    const c = convoForAgent(agentId);
+    const c = conversations?.find((x) => x.agentId === agentId);
     if (c) router.push(`/messages/${c.id}`);
     else router.push(`/agent/${agentId}`);
   };
@@ -414,18 +416,106 @@ export default function AppDetail() {
     setReasonSel(null);
     setReasonText('');
   };
-  const confirmReject = () => {
+  // Undo an optimistic decision for one request after a failed write.
+  const rollbackReq = (reqId: string, message: string) => {
+    setReqOverride((s) => {
+      return omitKey(s, reqId);
+    });
+    setReqReason((r) => {
+      return omitKey(r, reqId);
+    });
+    setReqError((e) => ({ ...e, [reqId]: message }));
+  };
+  const clearReqError = (reqId: string) =>
+    setReqError((e) => {
+      return omitKey(e, reqId);
+    });
+
+  const confirmReject = async () => {
     if (!rejectId) return;
+    const reqId = rejectId;
     const reason = reasonSel === 'Other' ? reasonText.trim() : reasonSel;
     if (!reason) return; // guarded by the disabled button, but keep it safe
-    // For a live request, reject on the backend (auto-creates a chat with the
-    // reason). Demo requests only update local state.
-    const target = payReqs.find((r) => r.id === rejectId);
-    if (target?.live) rejectReq.mutate({ requestId: rejectId, reason });
-    setReqOverride((s) => ({ ...s, [rejectId]: 'rejected' }));
-    setReqReason((r) => ({ ...r, [rejectId]: reason }));
+    clearReqError(reqId);
+    // Optimistic: show Declined at once, roll back if the backend refuses.
+    setReqOverride((s) => ({ ...s, [reqId]: 'rejected' }));
+    setReqReason((r) => ({ ...r, [reqId]: reason }));
     closeReject();
+    try {
+      // Reject on the backend (auto-creates a chat with the reason).
+      await rejectReq.mutateAsync({ requestId: reqId, reason });
+    } catch {
+      rollbackReq(
+        reqId,
+        'We couldn’t decline this request. Nothing changed. Try again.',
+      );
+    }
   };
+
+  // Approve = client consent. The backend marks the request approved and
+  // returns a Paystack `authorizationUrl` + `paystackReference`; NO money has
+  // moved yet. We open the checkout and hand off to /pay, which verifies the
+  // charge (POST /payment-requests/:id/verify) before it shows a confirmation.
+  const approveRequest = async (req: PayReqRow) => {
+    if (approvingId) return;
+    clearReqError(req.id);
+    setApprovingId(req.id);
+    // Optimistic: show Approved at once, roll back if the backend refuses.
+    setReqOverride((s) => ({ ...s, [req.id]: 'approved' }));
+    let result: Awaited<ReturnType<typeof approveReq.mutateAsync>>;
+    try {
+      result = await approveReq.mutateAsync(req.id);
+    } catch {
+      setApprovingId(null);
+      rollbackReq(
+        req.id,
+        'We couldn’t approve this request. Nothing changed. Try again.',
+      );
+      return;
+    }
+    setApprovingId(null);
+    const url = getAuthorizationUrl(result);
+    const reference = getPaystackReference(result);
+    // The server DID approve, so the row stays Approved. Without a checkout
+    // URL / reference the payment can't start; say so (never fake success).
+    if (!url || !reference) {
+      setReqError((e) => ({ ...e, [req.id]: PAYMENT_ERROR_MESSAGE }));
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setReqError((e) => ({
+        ...e,
+        [req.id]: 'We couldn’t open checkout. Tap Complete payment to retry.',
+      }));
+    }
+    toPay(req, reference, url);
+  };
+
+  // Open the pay screen for an approved request: it verifies the Paystack
+  // charge by `reference`, and can reopen checkout via `authorizationUrl`.
+  const toPay = (
+    req: PayReqRow,
+    reference?: string,
+    authorizationUrl?: string,
+  ) =>
+    router.push({
+      pathname: '/pay',
+      params: {
+        type: 'application',
+        requestId: req.id,
+        reference: reference ?? req.reference ?? '',
+        authorizationUrl: authorizationUrl ?? '',
+        agentId: req.agentId,
+        dateIso: '',
+        time: '',
+        topic: req.title,
+        mode: '',
+        dur: '',
+        fee: String(req.amount),
+      },
+    });
 
   // Sticky / nudge action: perform the next step (self-service flow) when
   // actionable, otherwise open the agent conversation.
@@ -433,7 +523,8 @@ export default function AppDetail() {
     if (convo) router.push(`/messages/${convo.id}`);
   };
   const onNext = () => {
-    if (actionable) router.push(`/self-service/${dest.id}`);
+    // self-service/[id] takes the APPLICATION id (japa#145).
+    if (actionable) router.push(`/self-service/${app.id}`);
     else openConvo();
   };
 
@@ -612,9 +703,8 @@ export default function AppDetail() {
           {/* ── Visa details link (japa#106) ─────────────────────────────────
               Reuses destination/[id].tsx's "Full visa breakdown" row. Opens
               the visa breakdown, which works for an agency-only visa because
-              the user has a case on it (#102). Live cases only: demo apps
-              resolve their visa from the static fixtures instead. */}
-          {!demo ? (
+              the user has a case on it (#102). */}
+          {dest.id ? (
             <Pressable
               onPress={() =>
                 router.push({
@@ -806,10 +896,11 @@ export default function AppDetail() {
                       }}
                     >
                       <Portrait
-                        seed={agentById(req.agentId)?.seed ?? 0}
+                        seed={agent?.id === req.agentId ? agent.seed : 0}
                         size={22}
                         name={
-                          req.agentName ?? agentById(req.agentId)?.n ?? 'Agent'
+                          req.agentName ??
+                          (agent?.id === req.agentId ? agent.n : 'Agent')
                         }
                       />
                       <Text
@@ -821,8 +912,7 @@ export default function AppDetail() {
                       >
                         Requested by{' '}
                         {req.agentName ??
-                          agentById(req.agentId)?.n ??
-                          'your agent'}
+                          (agent?.id === req.agentId ? agent.n : 'your agent')}
                       </Text>
                     </View>
 
@@ -898,22 +988,6 @@ export default function AppDetail() {
                     {/* Actions by decision state */}
                     {(() => {
                       const st = reqOverride[req.id] ?? req.status;
-                      const setSt = (v: 'pending' | 'approved' | 'rejected') =>
-                        setReqOverride((s) => ({ ...s, [req.id]: v }));
-                      const toPay = () =>
-                        router.push({
-                          pathname: '/pay',
-                          params: {
-                            type: 'application',
-                            agentId: req.agentId,
-                            dateIso: '',
-                            time: '',
-                            topic: req.title,
-                            mode: '',
-                            dur: '',
-                            fee: String(req.amount),
-                          },
-                        });
                       if (st === 'pending') {
                         return (
                           <View
@@ -934,12 +1008,9 @@ export default function AppDetail() {
                                     { text: 'Cancel', style: 'cancel' },
                                     {
                                       text: 'Approve',
-                                      onPress: () => {
-                                        // Live request → approve on the backend
-                                        // (releases escrow); demo stays local.
-                                        if (req.live) approveReq.mutate(req.id);
-                                        setSt('approved');
-                                      },
+                                      // Approve on the backend (consent only; the
+                                      // Paystack charge follows, see approveRequest).
+                                      onPress: () => void approveRequest(req),
                                     },
                                   ],
                                 )
@@ -1023,8 +1094,9 @@ export default function AppDetail() {
                                 marginTop: 12,
                               }}
                             >
-                              You approved this request — complete payment to
-                              continue.
+                              {req.paid
+                                ? 'Paid — thank you.'
+                                : 'Approved, awaiting payment — complete payment to continue.'}
                             </Text>
                             <View
                               style={{
@@ -1034,39 +1106,41 @@ export default function AppDetail() {
                                 marginTop: 12,
                               }}
                             >
-                              <Pressable
-                                onPress={toPay}
-                                style={{
-                                  flex: 1,
-                                  height: 46,
-                                  borderRadius: 14,
-                                  backgroundColor: EX.color.primary,
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: 7,
-                                  shadowColor: EX.color.primary,
-                                  shadowOpacity: 0.4,
-                                  shadowRadius: 12,
-                                  shadowOffset: { width: 0, height: 8 },
-                                  elevation: 5,
-                                }}
-                              >
-                                <Text
+                              {req.paid ? null : (
+                                <Pressable
+                                  onPress={() => toPay(req)}
                                   style={{
-                                    color: '#fff',
-                                    fontSize: 14.5,
-                                    fontWeight: '700',
+                                    flex: 1,
+                                    height: 46,
+                                    borderRadius: 14,
+                                    backgroundColor: EX.color.primary,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 7,
+                                    shadowColor: EX.color.primary,
+                                    shadowOpacity: 0.4,
+                                    shadowRadius: 12,
+                                    shadowOffset: { width: 0, height: 8 },
+                                    elevation: 5,
                                   }}
                                 >
-                                  Complete payment
-                                </Text>
-                                <Ic.arrow
-                                  size={16}
-                                  color="#fff"
-                                  strokeWidth={1.8}
-                                />
-                              </Pressable>
+                                  <Text
+                                    style={{
+                                      color: '#fff',
+                                      fontSize: 14.5,
+                                      fontWeight: '700',
+                                    }}
+                                  >
+                                    Complete payment
+                                  </Text>
+                                  <Ic.arrow
+                                    size={16}
+                                    color="#fff"
+                                    strokeWidth={1.8}
+                                  />
+                                </Pressable>
+                              )}
                               <Pressable
                                 onPress={() => messageAgent(req.agentId)}
                                 style={{
@@ -1115,29 +1189,6 @@ export default function AppDetail() {
                             }}
                           >
                             <Pressable
-                              onPress={() => setSt('pending')}
-                              style={{
-                                flex: 1,
-                                height: 46,
-                                borderRadius: 14,
-                                backgroundColor: '#fff',
-                                borderWidth: 1,
-                                borderColor: EX.color.line12,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: EX.color.ink,
-                                  fontSize: 14.5,
-                                  fontWeight: '700',
-                                }}
-                              >
-                                Undo
-                              </Text>
-                            </Pressable>
-                            <Pressable
                               onPress={() => messageAgent(req.agentId)}
                               style={{
                                 flex: 1,
@@ -1171,82 +1222,94 @@ export default function AppDetail() {
                         </>
                       );
                     })()}
+                    {/* Failed approve / reject / checkout (spec 1.3). */}
+                    {reqError[req.id] ? (
+                      <View style={{ marginTop: 12 }}>
+                        <InlineError message={reqError[req.id]} />
+                      </View>
+                    ) : null}
                   </View>
                 ))}
               </View>
             </>
           ) : null}
 
-          {/* ── Your agent ───────────────────────────────────────────────────── */}
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            Your agent
-          </Text>
+          {/* japa#145: no assigned agent (self-service case) → no section. */}
           {agent ? (
-            <Pressable
-              onPress={() => router.push(`/agent/${agent.id}`)}
-              style={[
-                {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 13,
-                  backgroundColor: '#fff',
-                  borderWidth: 1,
-                  borderColor: EX.color.line08,
-                  borderRadius: 20,
-                  padding: 14,
-                },
-                EXShadow.card,
-              ]}
-            >
-              <Portrait seed={agent.seed} size={48} name={agent.n} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text
-                  style={{
-                    fontSize: 15,
-                    fontWeight: '700',
-                    color: EX.color.ink,
-                  }}
-                  numberOfLines={1}
-                >
-                  {agent.n}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 12.5,
-                    color: EX.color.muted,
-                    marginTop: 2,
-                  }}
-                  numberOfLines={1}
-                >
-                  {agent.spec} · responds in {agent.resp}
-                </Text>
-              </View>
-              {/* Message circle: 38, radius 19, coral tint .10 */}
-              <Pressable
-                onPress={openConvo}
-                hitSlop={8}
+            <>
+              <Text
                 style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 19,
-                  backgroundColor: EX.color.primaryTint10,
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                  marginTop: 26,
+                  marginBottom: 12,
+                  marginHorizontal: 2,
                 }}
               >
-                <Ic.msg size={18} color={EX.color.primary} strokeWidth={1.8} />
+                Your agent
+              </Text>
+              <Pressable
+                onPress={() => router.push(`/agent/${agent.id}`)}
+                style={[
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 13,
+                    backgroundColor: '#fff',
+                    borderWidth: 1,
+                    borderColor: EX.color.line08,
+                    borderRadius: 20,
+                    padding: 14,
+                  },
+                  EXShadow.card,
+                ]}
+              >
+                <Portrait seed={agent.seed} size={48} name={agent.n} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={{
+                      fontSize: 15,
+                      fontWeight: '700',
+                      color: EX.color.ink,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {agent.n}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      color: EX.color.muted,
+                      marginTop: 2,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {agent.spec} · responds in {agent.resp}
+                  </Text>
+                </View>
+                {/* Message circle: 38, radius 19, coral tint .10 */}
+                <Pressable
+                  onPress={openConvo}
+                  hitSlop={8}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: EX.color.primaryTint10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ic.msg
+                    size={18}
+                    color={EX.color.primary}
+                    strokeWidth={1.8}
+                  />
+                </Pressable>
               </Pressable>
-            </Pressable>
+            </>
           ) : null}
         </View>
       </Animated.ScrollView>

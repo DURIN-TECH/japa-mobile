@@ -1,12 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Onboarding — Step 2 of 4 · Country / nationality
 //
-// A searchable single-select country list. A pill search input filters COUNTRIES
-// by name; each row shows a round Flag (28) + the country name, and a coral check
+// A searchable single-select country list, loaded from GET /countries
+// (japa#145: replaces the static COUNTRIES list). A pill search input filters
+// it by name; each row shows a round Flag (28) + the country name, and a coral check
 // when selected (the whole row tints coral). A sticky glass CTA ("Continue")
 // stays disabled until a country is chosen, then pushes to the personal-info
 // step. Wrapped in KeyboardAvoidingView so the search keyboard never covers the
 // CTA (the footer rides above it).
+//
+// States (japa#145 spec, onboarding row): the header and search stay visible;
+// the list area shows the coral spinner while loading and an InlineError with
+// an Outline "Try again" when the load fails with nothing cached.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
@@ -23,7 +28,15 @@ import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { COUNTRIES } from '@/components/explorer/data';
+// Countries come from the backend. `includeUnsupported` = every country, not
+// just destinations with visas: this is the user's NATIONALITY.
+import { useCountries } from '@/hooks/useCountries';
+import {
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
 import { Flag } from '@/components/explorer/primitives';
 
@@ -91,12 +104,24 @@ export default function CountryStep() {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null); // ISO2 code
 
-  // Case-insensitive name filter over the onboarding country list.
+  // Live country list (GET /countries?includeUnsupported=true). Codes are
+  // normalised to lowercase here (Flag + selection key); the CTA uppercases.
+  const countriesQ = useCountries(true);
+  const state = queryState(countriesQ);
+  const countries = useMemo(
+    () =>
+      (countriesQ.data ?? [])
+        .map((c) => ({ code: c.code.toLowerCase(), name: c.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [countriesQ.data],
+  );
+
+  // Case-insensitive name filter over the country list.
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return COUNTRIES;
-    return COUNTRIES.filter((c) => c.name.toLowerCase().includes(q));
-  }, [query]);
+    if (!q) return countries;
+    return countries.filter((c) => c.name.toLowerCase().includes(q));
+  }, [query, countries]);
 
   return (
     <KeyboardAvoidingView
@@ -171,7 +196,17 @@ export default function CountryStep() {
           gap: 8,
         }}
       >
-        {results.length === 0 ? (
+        {state === 'loading' ? (
+          // First load: coral spinner where the rows go.
+          <StateLoading section />
+        ) : state === 'error' ? (
+          <StateError
+            section
+            message={loadErrorCopy('countries')}
+            onRetry={() => countriesQ.refetch()}
+            retrying={countriesQ.isRefetching}
+          />
+        ) : results.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 40, gap: 10 }}>
             <Ic.globe
               size={34}
@@ -179,7 +214,7 @@ export default function CountryStep() {
               strokeWidth={1.8}
               style={{ opacity: 0.5 }}
             />
-            <Text style={{ fontSize: 14, color: EX.color.muted }}>
+            <Text style={{ fontSize: 14, color: EX.color.inkMuted }}>
               No countries match “{query.trim()}”
             </Text>
           </View>
@@ -246,7 +281,7 @@ export default function CountryStep() {
         <Pressable
           // Forward prior params + the selected country. The backend stores
           // residentialCountry as an UPPERCASE ISO2 code (e.g. "NG"), while the
-          // COUNTRIES data uses lowercase codes — so uppercase here.
+          // list keys are lowercase codes — so uppercase here.
           onPress={() =>
             router.push({
               pathname: '/(onboard)/personal-info',

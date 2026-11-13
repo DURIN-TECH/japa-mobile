@@ -16,6 +16,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
+import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
 
 /**
@@ -81,7 +82,7 @@ export interface ApiReview {
  * Used on: Explorer agent detail screen "Recent reviews" section.
  *
  * @param agentId - Agent document ID. Query is disabled until an id is present
- *   (so the demo-agent path, which passes `undefined`, never fires a request).
+ *   A 404 is not retried.
  */
 export function useAgentReviews(agentId: string | undefined) {
   return useQuery({
@@ -93,6 +94,8 @@ export function useAgentReviews(agentId: string | undefined) {
       return response.data ?? [];
     },
     enabled: !!agentId,
+    // japa#145: a 404 is final (not-found state), so don't retry it.
+    retry: retryUnlessNotFound,
   });
 }
 
@@ -163,6 +166,8 @@ export function useAgent(id: string | undefined) {
     },
     // Don't fetch until we have an ID (prevents firing on initial render)
     enabled: !!id,
+    // japa#145: a 404 is final (not-found state), so don't retry it.
+    retry: retryUnlessNotFound,
   });
 }
 

@@ -17,7 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, parseISO } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
-import { NAIRA } from '@/components/explorer/data';
+import { NAIRA } from '@/components/explorer/content';
 import { Ic } from '@/components/explorer/icons';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).

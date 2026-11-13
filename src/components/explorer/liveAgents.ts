@@ -7,7 +7,7 @@
 // stored in WHOLE NAIRA (#148) → used as the ₦ display value as-is.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Agent } from './data';
+import { Agent } from '@/types/explorer.type';
 import { ApiAgent } from '@/hooks/useAgents';
 
 // Tonal header palette (dark) — chosen deterministically by seed.

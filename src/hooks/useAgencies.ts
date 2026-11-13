@@ -24,6 +24,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { ApiAgent } from './useAgents';
+import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
 import { normalizeVisaPrices } from '@/components/explorer/liveAgencies';
 
@@ -41,6 +42,8 @@ import { normalizeVisaPrices } from '@/components/explorer/liveAgencies';
  */
 export interface ApiAgency {
   id: string;
+  /** Public page slug (`/a/<slug>`); sent by the #144 browse endpoints. */
+  slug?: string;
   name: string;
   ownerName: string;
   state?: string;
@@ -118,14 +121,17 @@ export function useBrowseAgencies() {
  * Fetch a single public agency by ID.
  * Used on: Explorer Agency detail screen.
  *
- * @param id - Agency document ID. Query is disabled until an id is present
- *   (so the demo-agency path, which passes `undefined`, never fires a request).
+ * @param id - Agency document ID. Query is disabled until an id is present.
+ *   A 404 (unknown / not public agency) is not retried, so the not-found
+ *   state shows at once.
  */
 export function usePublicAgency(id?: string) {
   return useQuery({
     queryKey: ['agencies', 'browse', id],
     queryFn: () => fetchPublicAgency(id as string),
     enabled: !!id,
+    // japa#145: a 404 is final (not-found state), so don't retry it.
+    retry: retryUnlessNotFound,
   });
 }
 
@@ -143,8 +149,7 @@ export function usePublicAgency(id?: string) {
  * Offline: React Query keeps the last good data, so the list renders from
  * cache; with no cache the screen shows its error state.
  *
- * @param id - Agency document ID. Disabled until present (demo agencies
- *   pass `undefined`; their fixtures have no visas).
+ * @param id - Agency document ID. Disabled until present.
  */
 export function useAgencyVisaPrices(id?: string) {
   return useQuery({
@@ -153,6 +158,8 @@ export function useAgencyVisaPrices(id?: string) {
     select: (agency: ApiAgency | undefined) =>
       normalizeVisaPrices(agency?.visaPrices),
     enabled: !!id,
+    // japa#145: a 404 is final (not-found state), so don't retry it.
+    retry: retryUnlessNotFound,
   });
 }
 

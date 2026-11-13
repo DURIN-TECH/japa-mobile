@@ -30,3 +30,26 @@ export function retryUnlessNotFound(
   if (isNotFoundError(error)) return false;
   return failureCount < 2;
 }
+
+/**
+ * True when the backend answered 404 OR 403 (`ApiError.status`). For records
+ * that belong to someone else (an eligibility check, a conversation) the
+ * backend says 403; retrying can never succeed and the screen must not
+ * confirm the record exists, so it shows the same not-found state as a 404.
+ */
+export function isUnavailableError(error: unknown): boolean {
+  const status =
+    typeof error === 'object' && error !== null
+      ? (error as { status?: unknown }).status
+      : undefined;
+  return status === 404 || status === 403;
+}
+
+/** React Query `retry` option: never retry a 404 or 403, else up to twice. */
+export function retryUnlessUnavailable(
+  failureCount: number,
+  error: unknown,
+): boolean {
+  if (isUnavailableError(error)) return false;
+  return failureCount < 2;
+}

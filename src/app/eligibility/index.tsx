@@ -1,9 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Eligibility wizard (prototype eligibility.jsx → EligibilityView).
 //
-// A short 5-question quiz (ELIG_Q) that steps the user through boolean / single /
-// multiple / number inputs, tracks answers locally, and pushes to the result
-// screen when finished. Coral/cream Explorer design language.
+// A short quiz that steps the user through boolean / single / multiple /
+// number inputs, tracks answers locally, and pushes to the result screen when
+// finished. Coral/cream Explorer design language.
+//
+// japa#145: live only. Questions come from GET /eligibility/questions/:visaId
+// (the static ELIG_Q is gone) and answers are scored by POST
+// /eligibility/check. States: no visa param → "Pick a visa to check your
+// eligibility"; loading → coral spinner; failed load → error + retry; a visa
+// with no questions → "No eligibility questions for this visa yet"; a failed
+// submit → InlineError above the CTA (no fallback result).
 //
 // Layout (matches the prototype 1:1):
 //   • Fixed header block = back circle (40px) + "Eligibility check" + destination
@@ -30,64 +37,24 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import { ELIG_Q, EligQ, destById } from '@/components/explorer/data';
+import type { EligQ } from '@/types/explorer.type';
+import { mapQuestion } from '@/components/explorer/liveEligibility';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { InlineError } from '@/components/explorer/AccountForm';
+import { loadErrorCopy } from '@/components/explorer/states';
+import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
+import { countryNameFor } from '@/components/explorer/liveAgencies';
 import { Ic } from '@/components/explorer/icons';
 import { Progress } from '@/components/explorer/primitives';
-// ── Live backend wiring ───────────────────────────────────────────────────────
-// The Explorer wizard normally runs on the static demo questions (ELIG_Q). When a
-// *real* visa is opened (it carries a country `code` and isn't one of the demo
-// destinations), we instead fetch its eligibility questions from the backend and
-// submit the answers to score the check. Everything renders identically — only
-// the data source changes; the demo path stays as a fallback.
+// ── Live backend wiring (questions + scoring) ─────────────────────────────────
 import {
   useEligibilityQuestions,
   useSubmitEligibilityCheck,
 } from '@/hooks/useEligibility';
-import {
-  EligibilityAnswer,
-  EligibilityQuestion,
-} from '@/types/eligibility.type';
+import { EligibilityAnswer } from '@/types/eligibility.type';
 import { useAuthStore } from '@/stores/auth.store';
 
-// ── mapQuestion — backend EligibilityQuestion → wizard's EligQ shape ──────────
-// The wizard only knows how to render four input types (boolean / single /
-// multiple / number). We map the backend `type` onto the nearest one:
-//   • boolean / single / multiple / number → same
-//   • date / text (and anything unrecognised) can't render natively, so we fall
-//     back to a single-select when the question ships options, else a number
-//     field. This guarantees every question is renderable.
-function mapQuestion(bq: EligibilityQuestion): EligQ {
-  let type: EligQ['type'];
-  switch (bq.type) {
-    case 'boolean':
-      type = 'boolean';
-      break;
-    case 'multiple':
-      type = 'multiple';
-      break;
-    case 'number':
-      type = 'number';
-      break;
-    case 'single':
-      type = 'single';
-      break;
-    // 'date' | 'text' | anything else → single (if it has options) else number.
-    default:
-      type = bq.options?.length ? 'single' : 'number';
-      break;
-  }
-  return {
-    id: bq.id,
-    type,
-    q: bq.question,
-    // Prefer explicit help text; fall back to the longer description.
-    help: bq.helpText ?? bq.description,
-    opts: bq.options,
-    unit: bq.unit,
-    min: bq.minValue,
-    max: bq.maxValue,
-  };
-}
+// mapQuestion (backend question → EligQ) lives in liveEligibility.ts.
 
 // Answers keyed by question id; value type varies per question type.
 type Answer = string | number | string[] | boolean | undefined;
@@ -210,45 +177,46 @@ function BoolButton({
 export default function EligibilityView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  // A live visa carries a country `code`; demo destinations don't. When we have a
-  // code and `dest` isn't a demo destination, `dest` is the visaTypeId to score.
+  // `dest` = the visaTypeId to score, `code` = its country (ISO2). Both are
+  // required; without them there is no visa to check (empty state below).
   const { dest, code } = useLocalSearchParams<{
     dest: string;
     code?: string;
   }>();
-  const demoDest = destById(dest);
-  const wantLive = !demoDest && !!code;
-  const d = demoDest;
+  const hasVisa = !!dest && !!code;
+  const cc = (code ?? '').toUpperCase();
+
+  // Header caption ("Country · Visa") from the live visa record.
+  const visaQ = useVisaType(hasVisa ? cc : '', hasVisa ? dest : '');
+  const vt = visaQ.data?.visaType;
+  const { data: countries } = useCountriesWithVisas();
+  const caption = vt
+    ? `${countryNameFor(vt.countryCode, countries)} · ${vt.name}`
+    : '';
 
   // User profile → nationality for the check payload (see below).
   const profile = useAuthStore((s) => s.profile);
 
-  // Fetch backend questions only on the live path (empty visaTypeId disables it).
-  const questionsQ = useEligibilityQuestions(wantLive ? dest : '');
+  // Backend questions (an empty visaTypeId disables the query).
+  const questionsQ = useEligibilityQuestions(hasVisa ? dest : '');
   // Mutation that submits the answers and returns the scored EligibilityCheck.
   const submitCheck = useSubmitEligibilityCheck();
 
-  // Effective question list: live backend questions when present, else the demo
-  // set. During the initial live fetch `questionsQ.data` is undefined, so we fall
-  // back to ELIG_Q here and gate rendering with the loading branch below.
-  const questions: EligQ[] =
-    wantLive && questionsQ.data?.length
-      ? questionsQ.data.map(mapQuestion)
-      : ELIG_Q;
+  // The question list ([] until loaded; the states below gate rendering).
+  const questions: EligQ[] = (questionsQ.data ?? []).map(mapQuestion);
 
   const N = questions.length;
   const [i, setI] = useState(0); // current question index
   const [answers, setAnswers] = useState<Answers>({});
   const [showHelp, setShowHelp] = useState(false);
   const [submitting, setSubmitting] = useState(false); // live submit in flight
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // While the live questions are still loading (and nothing answered yet) show a
-  // spinner in the body instead of the (fallback) demo questions.
-  const showLoading =
-    wantLive && questionsQ.isLoading && Object.keys(answers).length === 0;
+  // First load: spinner in the body (the header stays).
+  const showLoading = questionsQ.isLoading && !questionsQ.data;
 
   const q = questions[i];
-  const pct = Math.round(((i + 1) / N) * 100);
+  const pct = N ? Math.round(((i + 1) / N) * 100) : 0;
   const answered = q ? isAnswered(q, answers) : false;
   const last = i === N - 1;
 
@@ -294,39 +262,34 @@ export default function EligibilityView() {
       answer: (answers[qq.id] ?? '') as EligibilityAnswer['answer'],
     }));
 
-    if (wantLive) {
-      // Live: submit the check, then route to the result with the returned id so
-      // the result screen renders the real scored EligibilityCheck. On any error
-      // we fall back to the static result (no checkId) so the user never dead-ends.
+    {
+      // Submit the check, then route to the result with the returned id so the
+      // result screen renders the real scored EligibilityCheck. A failure
+      // stays here with an InlineError above the CTA (the CTA is the retry).
+      setSubmitError(null);
       setSubmitting(true);
       try {
         const check = await submitCheck.mutateAsync({
           visaTypeId: dest,
-          countryCode: code as string,
+          countryCode: cc,
           // The profile has no dedicated `nationality`; residentialCountry is the
           // closest, then passportCountry, then a sensible default.
           nationality:
             profile?.residentialCountry ?? profile?.passportCountry ?? 'NG',
           answers: answerPayload,
         });
+        if (!check?.id) throw new Error('No check id');
         router.push({
           pathname: '/eligibility/result',
-          params: { checkId: check?.id ?? '', dest },
+          params: { checkId: check.id, dest },
         });
       } catch {
-        router.push({
-          pathname: '/eligibility/result',
-          params: { dest },
-        });
+        setSubmitError(
+          'We couldn’t check your answers. Try again in a moment.',
+        );
       } finally {
         setSubmitting(false);
       }
-    } else {
-      // Demo: no checkId → the result screen shows the static ELIG_RESULT.
-      router.push({
-        pathname: '/eligibility/result',
-        params: { dest: dest ?? '' },
-      });
     }
   };
   // Back circle steps through the wizard, then leaves the screen.
@@ -334,6 +297,50 @@ export default function EligibilityView() {
     if (i > 0) setI((n) => n - 1);
     else router.back();
   };
+
+  // Back to the visa this quiz was opened from.
+  const toVisa = () =>
+    router.replace({ pathname: '/visa/[id]', params: { id: dest, code: cc } });
+
+  // ── No visa to check (opened without real ids) ─────────────────────────────
+  if (!hasVisa) {
+    return (
+      <CenteredState
+        icon={Ic.shield}
+        title="Pick a visa to check your eligibility"
+        body="Open any visa and tap Check eligibility."
+        actionLabel="Explore visas"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
+    );
+  }
+
+  // ── Questions failed to load, nothing cached → error + retry ───────────────
+  if (questionsQ.isError && !questionsQ.data) {
+    return (
+      <CenteredState
+        icon={Ic.shield}
+        title="We couldn’t load the questions"
+        errorMessage={loadErrorCopy('the questions')}
+        onRetry={() => questionsQ.refetch()}
+        retrying={questionsQ.isRefetching}
+        actionLabel="Back to visa"
+        onAction={toVisa}
+      />
+    );
+  }
+
+  // ── Loaded, but this visa has no questions ────────────────────────────────
+  if (questionsQ.data && N === 0) {
+    return (
+      <CenteredState
+        icon={Ic.shield}
+        title="No eligibility questions for this visa yet"
+        actionLabel="Back to visa"
+        onAction={toVisa}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -384,12 +391,12 @@ export default function EligibilityView() {
               >
                 Eligibility check
               </Text>
-              {d ? (
+              {caption ? (
                 <Text
                   style={{ fontSize: 12, color: EX.color.muted }}
                   numberOfLines={1}
                 >
-                  {d.country} · {d.visa}
+                  {caption}
                 </Text>
               ) : null}
             </View>
@@ -424,7 +431,7 @@ export default function EligibilityView() {
                 {pct}%
               </Text>
             </View>
-            <Progress value={(i + 1) / N} height={6} />
+            <Progress value={N ? (i + 1) / N : 0} height={6} />
           </View>
         </View>
 
@@ -616,6 +623,12 @@ export default function EligibilityView() {
             backgroundColor: EX.color.cardWhite,
           }}
         >
+          {/* Submit failure above the CTA (the CTA is the retry). */}
+          {submitError ? (
+            <View style={{ marginBottom: 12 }}>
+              <InlineError message={submitError} />
+            </View>
+          ) : null}
           <Pressable
             onPress={next}
             // Disable while unanswered OR while a live submit is in flight.

@@ -11,6 +11,12 @@
 // 11.5/600 #8B8499, visa 16/700, "Step X of N" 11.5, 6px Progress, next-step band
 // radius 14 (coral tint .07 + zap / cream #FFF6EC + clock), summary band height
 // 142 / radius 24 / 105° scrim.
+//
+// japa#145: live data only (GET /applications). Live only: while the
+// first load runs the coral spinner shows; a failed load with nothing cached
+// shows InlineError + "Try again"; a new user with no applications sees the
+// first-run empty state ("No applications yet" + coral "Start exploring"),
+// with the filter chips and summary band hidden (zeros there mean nothing).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
@@ -18,9 +24,11 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import { APPS, App, destById } from '@/components/explorer/data';
+import type { App } from '@/types/explorer.type';
+import { STATUS } from '@/components/explorer/content';
 import { mapApplication } from '@/components/explorer/liveApplications';
 import { useApplications } from '@/hooks/useApplications';
 import { Ic } from '@/components/explorer/icons';
@@ -30,6 +38,13 @@ import {
   ScreenHeader,
   StatusPill,
 } from '@/components/explorer/primitives';
+import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 
 // ── AppCard — one application row (white radius-24 card) ──────────────────────
 // Layout mirrors the source button exactly:
@@ -39,8 +54,9 @@ import {
 //   • bottom (padding 0/13/13): "Step X of N" 11.5/600 · pct 11.5/700 #171326,
 //     6px Progress, then the next-step band.
 function AppCard({ app, onPress }: { app: App; onPress: () => void }) {
-  // Live rows carry a resolved `dest`; demo rows resolve from static DESTS.
-  const d = app.dest ?? destById(app.destId);
+  // Every live row carries its resolved `dest` (mapApplication builds it from
+  // the case + the country assets module).
+  const d = app.dest;
   if (!d) return null;
 
   const pct = Math.round(app.progress * 100);
@@ -210,17 +226,28 @@ export default function AppsView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // ── Live data (GET /applications) with a demo fallback ─────────────────────
+  // ── Live data (GET /applications) — no fallback rows ───────────────────────
   const appsQuery = useApplications();
-  const live = useMemo(
+  const apps = useMemo(
     () => (appsQuery.data ?? []).map((a) => mapApplication(a)),
     [appsQuery.data],
   );
-  const apps = live.length ? live : APPS;
+  // 'loading' (first load, nothing cached) | 'error' (failed, nothing cached)
+  // | 'ready'. A background refetch with cached rows stays silent.
+  const state = queryState(appsQuery);
+  // First-run: the source answered with no applications at all.
+  const firstRun = state === 'ready' && apps.length === 0;
+
+  // "Start exploring": switch to the Explore tab with the same selection
+  // haptic a tab press gives (see (tabs)/_layout.tsx).
+  const startExploring = () => {
+    Haptics.selectionAsync().catch(() => {});
+    router.push('/(tabs)/explore');
+  };
 
   // Source uses the first application as the lead (NOT sorted by progress).
   const lead = apps[0];
-  const leadDest = lead ? (lead.dest ?? destById(lead.destId)) : undefined;
+  const leadDest = lead?.dest;
   const leadPct = lead ? Math.round(lead.progress * 100) : 0;
 
   // ── Status filter chips ────────────────────────────────────────────────────
@@ -252,7 +279,16 @@ export default function AppsView() {
         {/* ── Header: count eyebrow · title · new-application button ─────────── */}
         <ScreenHeader
           topInset={insets.top}
-          eyebrow={`${apps.length} active applications`}
+          // Header sub line: only said once the data has loaded — the live
+          // count, or "No active applications" when it loaded empty. While
+          // loading or after an error nothing is claimed.
+          eyebrow={
+            state !== 'ready'
+              ? undefined
+              : apps.length
+                ? `${apps.length} active application${apps.length === 1 ? '' : 's'}`
+                : 'No active applications'
+          }
           title="Your journey"
           right={
             <Pressable
@@ -272,6 +308,29 @@ export default function AppsView() {
             </Pressable>
           }
         />
+
+        {/* ── Loading / error / first-run states (japa#145) ─────────────────
+            Each replaces the summary band AND the list below it. */}
+        {state === 'loading' ? <StateLoading /> : null}
+        {state === 'error' ? (
+          <StateError
+            message={loadErrorCopy('your applications')}
+            onRetry={() => appsQuery.refetch()}
+            retrying={appsQuery.isRefetching}
+          />
+        ) : null}
+        {firstRun ? (
+          <StateEmpty
+            icon={Ic.layers}
+            title="No applications yet"
+            body="Pick a destination and we’ll track every step from here."
+            action={{
+              label: 'Start exploring',
+              onPress: startExploring,
+              variant: 'coral',
+            }}
+          />
+        ) : null}
 
         {/* ── Summary band over the lead destination (source: 105° scrim, height 142) ── */}
         {lead && leadDest ? (
@@ -352,7 +411,8 @@ export default function AppsView() {
                       fontWeight: '600',
                     }}
                   >
-                    Under review
+                    {/* The lead case's real status (was a fixed "Under review"). */}
+                    {STATUS[lead.status]?.label ?? ''}
                   </Text>
                   <Text
                     style={{ fontSize: 11.5, color: '#fff', fontWeight: '700' }}
@@ -372,86 +432,90 @@ export default function AppsView() {
           </Pressable>
         ) : null}
 
-        {/* ── All applications (cards gap 13, bottom clears tab bar) ─────────── */}
-        <View style={{ paddingHorizontal: EX.space.screenX }}>
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            All applications
-          </Text>
+        {/* ── All applications (cards gap 13, bottom clears tab bar) ─────────── 
+            Only when there are rows: first-run / loading / error render above. */}
+        {apps.length > 0 ? (
+          <View style={{ paddingHorizontal: EX.space.screenX }}>
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: EX.color.ink,
+                letterSpacing: -0.18,
+                marginTop: 26,
+                marginBottom: 12,
+                marginHorizontal: 2,
+              }}
+            >
+              All applications
+            </Text>
 
-          {/* Status filter chips */}
-          <View
-            style={{
-              flexDirection: 'row',
-              flexWrap: 'wrap',
-              gap: 8,
-              marginBottom: 14,
-              marginHorizontal: 2,
-            }}
-          >
-            {FILTERS.map((f) => {
-              const on = filter === f.key;
-              return (
-                <Pressable
-                  key={f.key}
-                  onPress={() => setFilter(f.key)}
-                  style={{
-                    borderWidth: 1,
-                    borderColor: on ? EX.color.ink : EX.color.line12,
-                    backgroundColor: on ? EX.color.ink : EX.color.cardWhite,
-                    borderRadius: 999,
-                    paddingHorizontal: 14,
-                    paddingVertical: 8,
-                  }}
-                >
-                  <Text
+            {/* Status filter chips */}
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                gap: 8,
+                marginBottom: 14,
+                marginHorizontal: 2,
+              }}
+            >
+              {FILTERS.map((f) => {
+                const on = filter === f.key;
+                return (
+                  <Pressable
+                    key={f.key}
+                    onPress={() => setFilter(f.key)}
                     style={{
-                      fontSize: 13,
-                      fontWeight: '600',
-                      color: on ? EX.color.bg : EX.color.ink2,
+                      borderWidth: 1,
+                      borderColor: on ? EX.color.ink : EX.color.line12,
+                      backgroundColor: on ? EX.color.ink : EX.color.cardWhite,
+                      borderRadius: 999,
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
                     }}
                   >
-                    {f.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '600',
+                        color: on ? EX.color.bg : EX.color.ink2,
+                      }}
+                    >
+                      {f.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
-          {filtered.length > 0 ? (
-            <View style={{ gap: 13 }}>
-              {filtered.map((app) => (
-                <AppCard
-                  key={app.id}
-                  app={app}
-                  onPress={() => router.push(`/application/${app.id}`)}
+            {filtered.length > 0 ? (
+              <View style={{ gap: 13 }}>
+                {filtered.map((app) => (
+                  <AppCard
+                    key={app.id}
+                    app={app}
+                    onPress={() => router.push(`/application/${app.id}`)}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View style={{ alignItems: 'center', paddingVertical: 44 }}>
+                <Ic.layers
+                  size={38}
+                  color={EX.color.muted}
+                  strokeWidth={1.5}
+                  style={{ opacity: 0.5, marginBottom: 12 }}
                 />
-              ))}
-            </View>
-          ) : (
-            <View style={{ alignItems: 'center', paddingVertical: 44 }}>
-              <Ic.layers
-                size={38}
-                color={EX.color.muted}
-                strokeWidth={1.5}
-                style={{ opacity: 0.5, marginBottom: 12 }}
-              />
-              <Text style={{ fontSize: 14, color: EX.color.muted }}>
-                No {FILTERS.find((f) => f.key === filter)?.label.toLowerCase()}{' '}
-                applications
-              </Text>
-            </View>
-          )}
-        </View>
+                <Text style={{ fontSize: 14, color: EX.color.muted }}>
+                  No{' '}
+                  {FILTERS.find((f) => f.key === filter)?.label.toLowerCase()}{' '}
+                  applications
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );
