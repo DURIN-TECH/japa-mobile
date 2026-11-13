@@ -39,6 +39,18 @@ import {
   useSendMessage,
 } from '@/hooks/useMessaging';
 import { mapConvo, mapMessage } from '@/components/explorer/liveMessaging';
+// AI message access (#172): pinned bar, one-time notice, and the pure rule for
+// when the notice shows.
+import {
+  AiAccessBar,
+  useAiAccessControl,
+} from '@/components/explorer/AiAccessBar';
+import { AiNoticeSheet } from '@/components/explorer/AiNoticeSheet';
+import { shouldShowNotice } from '@/components/explorer/aiMessageAccessLogic';
+import {
+  useAiMessageAccessState,
+  useDismissAiNotice,
+} from '@/hooks/useAiMessageAccess';
 
 // ── Single message row (bubble + timestamp) ──────────────────────────────────
 function Bubble({ m }: { m: Msg }) {
@@ -218,6 +230,27 @@ export default function ChatView() {
       sendMessage.mutate({ conversationId: convId, content: t });
   };
 
+  // ── AI message access (#172) ───────────────────────────────────────────────
+  // Live chats only: demo threads have no server conversation, so no bar and no
+  // notice. The bar's conversation query is disabled for an empty id.
+  const aiControl = useAiAccessControl(isLive ? convId : '');
+  const aiState = useAiMessageAccessState(isLive && !!convId);
+  const dismissNotice = useDismissAiNotice();
+  // Closed this session (covers the gap before the server answers, and a failed
+  // record: the server still says "not dismissed", so it returns next open).
+  const [noticeClosed, setNoticeClosed] = useState(false);
+  const noticeOpen = shouldShowNotice(
+    aiState.data,
+    noticeClosed,
+    isLive && !!convId,
+  );
+  const closeNotice = () => {
+    setNoticeClosed(true);
+    // Fire and forget: a failure shows nothing and is retried on the next open.
+    dismissNotice.mutate();
+  };
+  const openAiSettings = () => router.push('/ai-message-access');
+
   const hasText = draft.trim().length > 0;
   // Show a spinner only when a live thread is still loading its first page.
   const showLoading = isLive && liveMsgs.isLoading && msgs.length === 0;
@@ -346,6 +379,26 @@ export default function ChatView() {
           <Ic.phone size={18} color={EX.color.primary} strokeWidth={1.8} />
         </Pressable>
       </BlurView>
+
+      {/* ── AI access bar (pinned; does not scroll with messages) ───────────── */}
+      {isLive && convId ? (
+        <AiAccessBar control={aiControl} onOpenSettings={openAiSettings} />
+      ) : null}
+
+      {/* ── One-time AI notice (plan-only people, until dismissed) ──────────── */}
+      {aiState.data ? (
+        <AiNoticeSheet
+          visible={noticeOpen}
+          wording={aiState.data.noticeWording}
+          control={aiControl}
+          onClose={closeNotice}
+          onOpenSettings={() => {
+            // Close the sheet (recording the dismissal), then open the screen.
+            closeNotice();
+            openAiSettings();
+          }}
+        />
+      ) : null}
 
       {/* ── Shared files sheet ────────────────────────────────────────────── */}
       <Modal
