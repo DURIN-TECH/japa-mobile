@@ -123,6 +123,45 @@ describe('one save in flight', () => {
   });
 });
 
+describe('edited back to the saved text', () => {
+  it('sends nothing but clears the draft (it equals the server text)', async () => {
+    const { saver, saveFn, cleared } = setup('abc');
+    saver.change('abcd');
+    saver.change('abc');
+    saver.flush();
+    await settle();
+    expect(saveFn).not.toHaveBeenCalled();
+    expect(cleared).toEqual(['abc']);
+  });
+});
+
+describe('shared across remounts', () => {
+  it('a second flush while a save is in flight never sends a second PUT', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { saver, saveFn } = setup('', async () => gate);
+    saver.change('abcd');
+    saver.flush();
+    saver.change('abcd'); // the remounted field restores the same draft
+    saver.flush();
+    await settle();
+    expect(saveFn).toHaveBeenCalledTimes(1);
+    release();
+    await settle();
+    expect(saveFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel stops further sends', async () => {
+    const { saver, saveFn } = setup('');
+    saver.change('x');
+    saver.cancel();
+    jest.advanceTimersByTime(SAVE_DEBOUNCE_MS * 2);
+    saver.flush();
+    await settle();
+    expect(saveFn).not.toHaveBeenCalled();
+  });
+});
+
 describe('failure keeps the text', () => {
   it('reports the error, keeps the text, and a retry sends it again', async () => {
     let fail = true;

@@ -20,11 +20,8 @@ import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { InlineError, LabeledInput } from '@/components/explorer/AccountForm';
-import {
-  createAnswerSaver,
-  type AnswerSaver,
-  type SaverStatus,
-} from '@/components/explorer/answerSaver';
+import type { SaverStatus } from '@/components/explorer/answerSaver';
+import { acquireSaver, dropSaver } from '@/components/explorer/answerSavers';
 import {
   SAVE_ERROR_COPY,
   classifySaveError,
@@ -56,6 +53,7 @@ export function useAnswerField({
   savedText,
   save,
   onLocked,
+  locked,
 }: {
   applicationId: string;
   itemId: string;
@@ -65,45 +63,56 @@ export function useAnswerField({
   save: (trimmed: string) => Promise<unknown>;
   /** A 409 ANSWERS_LOCKED came back. */
   onLocked: () => void;
+  /** Read-only: show the server answer, send nothing, drop any draft. */
+  locked: boolean;
 }) {
-  const draft = useAnswerDraftsStore(
-    (s) => s.drafts[draftKey(applicationId, itemId)],
-  );
+  const key = draftKey(applicationId, itemId);
+  const draft = useAnswerDraftsStore((s) => s.drafts[key]);
   // `null` until the person types: until then the field shows the draft, else
   // the server text. Once they type, their text is the truth while mounted.
   const [typed, setTyped] = useState<string | null>(null);
-  const value = typed ?? draft ?? savedText;
-  const [status, setStatus] = useState<SaverStatus>({ phase: 'idle' });
+  // Locked: the server's answer, never an unsaved draft.
+  const value = locked ? savedText : (typed ?? draft ?? savedText);
 
-  // Latest callbacks, so the saver (created once) never goes stale.
+  // ONE saver per item, shared by every mount (answerSavers.ts), so a remount
+  // never starts a second save while one is in flight.
+  const entry = acquireSaver(key, savedText);
+  const saver = entry.saver;
+  const [status, setStatus] = useState<SaverStatus>(entry.status);
+
+  // Latest callbacks, so the shared saver never calls a stale mount.
   const saveRef = useRef(save);
   saveRef.current = save;
   const lockedRef = useRef(onLocked);
   lockedRef.current = onLocked;
 
-  const saverRef = useRef<AnswerSaver | null>(null);
-  if (!saverRef.current) {
-    saverRef.current = createAnswerSaver({
-      saved: savedText,
-      save: async (trimmed) => {
-        await saveRef.current(trimmed);
-      },
-      onStatus: (s) => {
-        if (
-          s.phase === 'error' &&
-          classifySaveError(s.error, s.text) === 'locked'
-        )
-          lockedRef.current();
-        setStatus(s);
-      },
-      // A successful save of what is in the field: the draft is no longer needed.
-      onSaved: (trimmed, latest) => {
-        if (latest.trim() === trimmed)
-          useAnswerDraftsStore.getState().clearDraft(applicationId, itemId);
-      },
-    });
-  }
-  const saver = saverRef.current;
+  useEffect(() => {
+    // Plug this mount into the saver; unplug on unmount (the saver carries on).
+    entry.holder.save = (trimmed) => saveRef.current(trimmed);
+    entry.holder.onStatus = (s) => {
+      if (
+        s.phase === 'error' &&
+        classifySaveError(s.error, s.text) === 'locked'
+      )
+        lockedRef.current();
+      setStatus(s);
+    };
+    // A successful save: the draft goes, but only if it is still THIS text (a
+    // newer draft typed meanwhile must survive).
+    entry.holder.onSaved = (trimmed, latest) => {
+      const store = useAnswerDraftsStore.getState();
+      const current = store.drafts[key];
+      if (
+        latest.trim() === trimmed &&
+        (current === undefined || current.trim() === trimmed)
+      )
+        store.clearDraft(applicationId, itemId);
+    };
+    setStatus(entry.status);
+    return () => {
+      entry.holder.onStatus = () => {};
+    };
+  }, [entry, key, applicationId, itemId]);
 
   // Server text arrives or changes (load, refetch): tell the saver, but only
   // while there is nothing unsaved (the saver enforces it).
@@ -111,35 +120,46 @@ export function useAnswerField({
     saver.setSaved(savedText);
   }, [saver, savedText]);
 
+  // Locked (under review, or a 409): nothing is sent any more and the unsaved
+  // text is dropped, so it can never overwrite or linger.
+  useEffect(() => {
+    if (!locked) return;
+    dropSaver(key);
+    useAnswerDraftsStore.getState().clearDraft(applicationId, itemId);
+  }, [locked, key, applicationId, itemId]);
+
   // A draft left from earlier (offline, app killed, left the screen) arrives
   // from the vault shortly after the screen opens: save it once, when it shows.
   const restored = useRef(false);
   useEffect(() => {
-    if (draft !== undefined && typed === null && !restored.current) {
+    if (!locked && draft !== undefined && typed === null && !restored.current) {
       restored.current = true;
       saver.change(draft);
     }
-  }, [draft, typed, saver]);
+  }, [locked, draft, typed, saver]);
 
-  // Save right away when the screen loses focus, the app goes to the
-  // background, and on unmount (the saver finishes an in-flight save quietly).
+  // Save right away when the screen loses focus or the app goes to the
+  // background; the vault write is flushed at the same moments.
   useFocusEffect(
     useCallback(() => {
-      return () => saver.flush();
+      return () => {
+        saver.flush();
+        useAnswerDraftsStore.getState().flushWrites();
+      };
     }, [saver]),
   );
   useEffect(() => {
-    saver.resume();
     const sub = AppState.addEventListener('change', (next) => {
-      if (next !== 'active') saver.flush();
+      if (next !== 'active') {
+        saver.flush();
+        useAnswerDraftsStore.getState().flushWrites();
+      }
     });
-    return () => {
-      sub.remove();
-      saver.dispose();
-    };
+    return () => sub.remove();
   }, [saver]);
 
   const onChangeText = (text: string) => {
+    if (locked) return;
     setTyped(text);
     // Unsaved text is held in memory the moment it is typed.
     useAnswerDraftsStore.getState().setDraft(applicationId, itemId, text);
@@ -150,7 +170,10 @@ export function useAnswerField({
     value,
     status,
     onChangeText,
-    onBlur: () => saver.flush(),
+    onBlur: () => {
+      saver.flush();
+      useAnswerDraftsStore.getState().flushWrites();
+    },
     retry: () => saver.flush(),
   };
 }
@@ -257,6 +280,7 @@ export function InformationAnswer({
     savedText,
     save,
     onLocked,
+    locked,
   });
   const errorKind: Exclude<SaveErrorKind, 'locked'> | null =
     field.status.phase === 'error'

@@ -30,10 +30,11 @@ export interface AnswerSaver {
   flush: () => void;
   /** The server's saved text (initial load, or a refetch while nothing is dirty). */
   setSaved: (text: string) => void;
-  /** Stop timers and callbacks (unmount). An in-flight save still completes. */
-  dispose: () => void;
-  /** Undo `dispose` (a remount that reuses the saver, e.g. React StrictMode). */
-  resume: () => void;
+  /**
+   * Stop for good WITHOUT sending anything (sign-out, locked application, item no
+   * longer listed). An in-flight save still completes, but nothing new is sent.
+   */
+  cancel: () => void;
 }
 
 export function createAnswerSaver(opts: {
@@ -64,11 +65,13 @@ export function createAnswerSaver(opts: {
   };
 
   const run = async (): Promise<void> => {
-    if (latest === null || inFlight) return;
+    if (disposed || latest === null || inFlight) return;
     const text = latest;
     const trimmed = text.trim();
     if (trimmed === saved) {
-      // Edited back to the saved text after a failed save: nothing left to send.
+      // Edited back to the saved text: nothing to send, and the draft (kept for
+      // a text that differed) is no longer needed, so it is cleared too.
+      opts.onSaved(trimmed, latest ?? '');
       if (phase === 'error') status({ phase: 'idle' });
       return;
     }
@@ -78,10 +81,10 @@ export function createAnswerSaver(opts: {
       await opts.save(trimmed);
       saved = trimmed;
       inFlight = false;
-      // Called even after dispose: it only clears the in-memory draft.
+      // Lets the owner clear the draft (it checks the draft is still this text).
       opts.onSaved(trimmed, latest ?? '');
       // Typed during the save: the newest text goes next.
-      if ((latest ?? '').trim() !== saved) {
+      if (!disposed && (latest ?? '').trim() !== saved) {
         status({ phase: 'saving' });
         void run();
       } else {
@@ -112,14 +115,10 @@ export function createAnswerSaver(opts: {
       if (latest !== null && latest.trim() !== saved) return;
       saved = text.trim();
     },
-    dispose() {
-      // Unmount: send what is pending once more, then go quiet.
+    cancel() {
       clearTimer();
-      void run();
+      latest = null;
       disposed = true;
-    },
-    resume() {
-      disposed = false;
     },
   };
 }

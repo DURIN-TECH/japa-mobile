@@ -6,11 +6,18 @@
 // (unencrypted): these answers are personal details. NATIVE MODULE: needs a new
 // dev build.
 //
+// Drafts belong to a USER: the Firebase uid is part of every key and of the index.
+// `load(uid)` returns only that uid's drafts and deletes every other uid's (a
+// session that ended while the app was closed, or a Keychain that survived an
+// uninstall, must never hand one person's drafts to the next). Values are stored
+// WHEN_UNLOCKED_THIS_DEVICE_ONLY, so they are not migrated to other devices or
+// included in backups.
+//
 // The store talks to the small `DraftVault` interface below (save / delete /
 // clearAll / load); `secureStoreVault` is the implementation.
 //
 // LAYOUT, one logical entry per draft (application id + item id):
-//   <base>        JSON { updatedAt, chunks }       base = "seli.draft.<enc app>.<enc item>"
+//   <base>        JSON { updatedAt, chunks }       base = "seli.draft.<enc uid>.<enc app>.<enc item>"
 //   <base>.c0..n  the text, split into chunks
 // plus one index entry listing the drafts (ids only, no text), because
 // SecureStore cannot list its keys.
@@ -47,15 +54,19 @@ export interface StoredDraft {
 /** What the drafts store needs from a persistent backend. */
 export interface DraftVault {
   save: (
+    uid: string,
     applicationId: string,
     itemId: string,
     text: string,
     updatedAt?: number,
   ) => Promise<void>;
-  delete: (applicationId: string, itemId: string) => Promise<void>;
+  delete: (uid: string, applicationId: string, itemId: string) => Promise<void>;
   clearAll: () => Promise<void>;
-  /** Every stored draft, with drafts older than 7 days dropped. */
-  load: (now?: number) => Promise<StoredDraft[]>;
+  /**
+   * `uid`'s stored drafts, with drafts older than 7 days dropped. Every other
+   * uid's drafts are deleted.
+   */
+  load: (uid: string, now?: number) => Promise<StoredDraft[]>;
 }
 
 /**
@@ -81,8 +92,16 @@ export function decodeId(enc: string): string {
 }
 
 /** Base key of one draft. */
-export const draftBaseKey = (applicationId: string, itemId: string) =>
-  `${PREFIX}${encodeId(applicationId)}.${encodeId(itemId)}`;
+export const draftBaseKey = (
+  uid: string,
+  applicationId: string,
+  itemId: string,
+) => `${PREFIX}${encodeId(uid)}.${encodeId(applicationId)}.${encodeId(itemId)}`;
+
+/** Written with every value: not migrated to another device, not in backups. */
+const WRITE_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
 
 /** UTF-8 byte length of one code point. */
 const bytesOf = (cp: number) =>
@@ -108,6 +127,7 @@ export function chunkText(text: string, max = CHUNK_BYTES): string[] {
 }
 
 interface IndexEntry {
+  u: string;
   a: string;
   i: string;
 }
@@ -116,7 +136,10 @@ async function readIndex(): Promise<IndexEntry[]> {
   try {
     const raw = await SecureStore.getItemAsync(INDEX_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    // Entries without a uid are unusable (no key can be built): ignore them.
+    return Array.isArray(parsed)
+      ? parsed.filter((e) => e && typeof e.u === 'string')
+      : [];
   } catch {
     return [];
   }
@@ -125,15 +148,20 @@ async function readIndex(): Promise<IndexEntry[]> {
 async function writeIndex(entries: IndexEntry[]): Promise<void> {
   try {
     if (entries.length === 0) await SecureStore.deleteItemAsync(INDEX_KEY);
-    else await SecureStore.setItemAsync(INDEX_KEY, JSON.stringify(entries));
+    else
+      await SecureStore.setItemAsync(
+        INDEX_KEY,
+        JSON.stringify(entries),
+        WRITE_OPTIONS,
+      );
   } catch {
     /* best effort */
   }
 }
 
 /** Remove one draft's entries (meta and every chunk). */
-async function removeEntry(applicationId: string, itemId: string) {
-  const base = draftBaseKey(applicationId, itemId);
+async function removeEntry(uid: string, applicationId: string, itemId: string) {
+  const base = draftBaseKey(uid, applicationId, itemId);
   try {
     const raw = await SecureStore.getItemAsync(base);
     const chunks = raw
@@ -149,25 +177,29 @@ async function removeEntry(applicationId: string, itemId: string) {
 
 /** Write one draft (replaces the previous one for the same item). */
 async function saveImpl(
+  uid: string,
   applicationId: string,
   itemId: string,
   text: string,
   updatedAt = Date.now(),
 ): Promise<void> {
   try {
-    const base = draftBaseKey(applicationId, itemId);
+    const base = draftBaseKey(uid, applicationId, itemId);
     const chunks = chunkText(text);
     // Drop leftover chunks of a longer previous version first.
-    await removeEntry(applicationId, itemId);
+    await removeEntry(uid, applicationId, itemId);
     for (let n = 0; n < chunks.length; n++)
-      await SecureStore.setItemAsync(`${base}.c${n}`, chunks[n]);
+      await SecureStore.setItemAsync(`${base}.c${n}`, chunks[n], WRITE_OPTIONS);
     await SecureStore.setItemAsync(
       base,
       JSON.stringify({ updatedAt, chunks: chunks.length }),
+      WRITE_OPTIONS,
     );
     const index = await readIndex();
-    if (!index.some((e) => e.a === applicationId && e.i === itemId))
-      await writeIndex([...index, { a: applicationId, i: itemId }]);
+    if (
+      !index.some((e) => e.u === uid && e.a === applicationId && e.i === itemId)
+    )
+      await writeIndex([...index, { u: uid, a: applicationId, i: itemId }]);
   } catch {
     /* best effort */
   }
@@ -175,20 +207,23 @@ async function saveImpl(
 
 /** Delete one draft (after a successful save). */
 async function deleteImpl(
+  uid: string,
   applicationId: string,
   itemId: string,
 ): Promise<void> {
-  await removeEntry(applicationId, itemId);
+  await removeEntry(uid, applicationId, itemId);
   const index = await readIndex();
   await writeIndex(
-    index.filter((e) => !(e.a === applicationId && e.i === itemId)),
+    index.filter(
+      (e) => !(e.u === uid && e.a === applicationId && e.i === itemId),
+    ),
   );
 }
 
 /** Delete every draft (sign-out). */
 async function clearAllImpl(): Promise<void> {
   const index = await readIndex();
-  for (const e of index) await removeEntry(e.a, e.i);
+  for (const e of index) await removeEntry(e.u, e.a, e.i);
   await writeIndex([]);
 }
 
@@ -196,12 +231,17 @@ async function clearAllImpl(): Promise<void> {
  * Read every stored draft, reassembling chunks. Drafts older than 7 days (or
  * unreadable / incomplete) are deleted and not returned.
  */
-async function loadImpl(now = Date.now()): Promise<StoredDraft[]> {
+async function loadImpl(uid: string, now = Date.now()): Promise<StoredDraft[]> {
   const index = await readIndex();
   const out: StoredDraft[] = [];
   for (const e of index) {
     try {
-      const base = draftBaseKey(e.a, e.i);
+      // Another user's draft: never loaded, and removed.
+      if (e.u !== uid) {
+        await deleteImpl(e.u, e.a, e.i);
+        continue;
+      }
+      const base = draftBaseKey(e.u, e.a, e.i);
       const raw = await SecureStore.getItemAsync(base);
       const meta = raw
         ? (JSON.parse(raw) as { updatedAt?: number; chunks?: number })
@@ -212,7 +252,7 @@ async function loadImpl(now = Date.now()): Promise<StoredDraft[]> {
         typeof meta.chunks !== 'number' ||
         now - meta.updatedAt > DRAFT_MAX_AGE_MS
       ) {
-        await deleteImpl(e.a, e.i);
+        await deleteImpl(e.u, e.a, e.i);
         continue;
       }
       let text = '';
@@ -226,7 +266,7 @@ async function loadImpl(now = Date.now()): Promise<StoredDraft[]> {
         text += part;
       }
       if (!complete) {
-        await deleteImpl(e.a, e.i);
+        await deleteImpl(e.u, e.a, e.i);
         continue;
       }
       out.push({
@@ -256,15 +296,20 @@ function enqueue<T>(op: () => Promise<T>): Promise<T> {
 }
 
 export const saveDraft = (
+  uid: string,
   applicationId: string,
   itemId: string,
   text: string,
   updatedAt = Date.now(),
-) => enqueue(() => saveImpl(applicationId, itemId, text, updatedAt));
-export const deleteDraft = (applicationId: string, itemId: string) =>
-  enqueue(() => deleteImpl(applicationId, itemId));
+) => enqueue(() => saveImpl(uid, applicationId, itemId, text, updatedAt));
+export const deleteDraft = (
+  uid: string,
+  applicationId: string,
+  itemId: string,
+) => enqueue(() => deleteImpl(uid, applicationId, itemId));
 export const clearAllDrafts = () => enqueue(clearAllImpl);
-export const loadDrafts = (now = Date.now()) => enqueue(() => loadImpl(now));
+export const loadDrafts = (uid: string, now = Date.now()) =>
+  enqueue(() => loadImpl(uid, now));
 
 /** The SecureStore-backed implementation of `DraftVault`. */
 export const secureStoreVault: DraftVault = {

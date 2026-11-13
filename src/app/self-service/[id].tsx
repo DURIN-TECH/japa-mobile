@@ -92,6 +92,7 @@ import {
 } from '@/components/explorer/DocumentChecklist';
 import type { ChecklistItem } from '@/types/checklist.type';
 import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
+import { useAuthStore } from '@/stores/auth.store';
 // Information items (#187): typed answers, saved on the server.
 import { useAnswers, useSaveAnswer } from '@/hooks/useAnswers';
 import {
@@ -689,13 +690,35 @@ export default function SelfServiceView() {
     !!app && app.mode === 'self' && hasInfoItems,
   );
   const saveAnswerM = useSaveAnswer(app?.id ?? '');
-  // Unsaved answers from an earlier visit (offline, app killed) come back from
-  // the encrypted vault when the screen opens.
-  useEffect(() => {
-    void useAnswerDraftsStore.getState().loadFromVault();
-  }, []);
   // Set by a 409 ANSWERS_LOCKED from a save: answers are read-only from then on.
   const [answersLockedByServer, setAnswersLockedByServer] = useState(false);
+  // Unsaved answers from an earlier visit (offline, app killed) come back from
+  // the encrypted vault when the screen opens.
+  // Drafts that can no longer be saved are dropped: all of this application's
+  // when it is read-only, and those of items no longer in the list (after
+  // "Refresh list"). The server answer is shown instead.
+  const draftsLocked =
+    answersLockedByServer || isStatementLocked(app?.status as string);
+  useEffect(() => {
+    if (!app) return;
+    if (draftsLocked) {
+      useAnswerDraftsStore.getState().pruneDrafts(app.id, []);
+      return;
+    }
+    if (checklist?.state !== 'ready') return; // not known yet: keep everything
+    useAnswerDraftsStore.getState().pruneDrafts(
+      app.id,
+      checklist.items
+        .filter(
+          (i) => isInformationItem(i) && i.current && i.status !== 'waived',
+        )
+        .map((i) => i.checklistItemId),
+    );
+  }, [app, checklist, draftsLocked]);
+  useEffect(() => {
+    const uid = useAuthStore.getState().user?.uid;
+    if (uid) void useAnswerDraftsStore.getState().loadFromVault(uid);
+  }, []);
   // Per-upload document checks (#115): polled while one is running.
   const checksQ = useDocumentChecks(
     app ? app.id : '',
