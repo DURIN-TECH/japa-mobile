@@ -15,12 +15,35 @@ export interface ChecklistCitation {
   ruleRef?: string;
 }
 
+/** What the item is: a file to upload, or a detail to type (issue #187). */
+export type ChecklistItemKind = 'document' | 'information';
+
+/**
+ * How much the applicant needs it (issue #187). `conditional` items carry the
+ * verbatim clause that makes them conditional in `appliesWhen`.
+ */
+export type ChecklistNeed = 'required' | 'conditional' | 'optional';
+
 export interface ChecklistItem {
   checklistItemId: string;
   title: string;
   /** Whose document it is. Sponsor documents are uploaded by the applicant. */
   holder: 'applicant' | 'sponsor';
+  /** Kept for compatibility: true only when `need === 'required'`. */
   required: boolean;
+  /**
+   * #187. Older responses (and older cached lists) have none of these four:
+   * a missing `kind` is a document, a missing `need` is derived from `required`
+   * (see checklistLogic.ts).
+   */
+  kind?: ChecklistItemKind;
+  /** True = the server could not classify it, so it stays a document. */
+  kindReview?: true;
+  /** Verbatim lead-in or item text the `kind` was decided from. */
+  kindQuote?: string;
+  need?: ChecklistNeed;
+  /** Verbatim "if ..." / "unless ..." clause, or the "Depending on..." lead-in. */
+  appliesWhen?: string;
   reason: string;
   citation: ChecklistCitation;
   /** The DocumentRequest to upload against (null until generated). */

@@ -67,6 +67,12 @@ export interface RequiredDocument {
   acceptedFormats: string[];
   maxSizeMb: number;
   isRequired: boolean;
+  /** #187: same meaning as on a checklist item. All optional (older data has none). */
+  kind?: 'document' | 'information';
+  kindReview?: true;
+  kindQuote?: string;
+  need?: 'required' | 'conditional' | 'optional';
+  appliesWhen?: string;
   validationCriteria?: string[];
   sampleUrl?: string;
 }
