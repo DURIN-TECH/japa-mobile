@@ -36,6 +36,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import Animated, {
   useAnimatedScrollHandler,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
@@ -502,6 +503,146 @@ function LiveRequirementCard({
   );
 }
 
+// ── SelfServiceHero — the fixed, parallaxing photo behind the sheet ───────────
+// japa#174: lives in its own memoized component that owns its animated style
+// and only receives the scroll shared value. The screen re-renders often
+// (review / document-check polling, focus refetches) and a long application
+// re-renders most; before, every render rebuilt the hero's animated style
+// array next to the screen's scroll handler and the parallax stopped tracking
+// on long applications. Memoized, the hero never re-renders unless its own
+// props change, so its animated style is created once and stays attached.
+const SelfServiceHero = React.memo(function SelfServiceHero({
+  scrollY,
+  img,
+  tone,
+  flag,
+  country,
+  refCode,
+  visa,
+}: {
+  scrollY: SharedValue<number>;
+  img: string;
+  tone: string;
+  flag: string;
+  country: string;
+  refCode: string;
+  visa: string;
+}) {
+  // The prototype translated the hero at `py * -0.3` (no image zoom).
+  const heroStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: scrollY.value * -0.3 }],
+  }));
+  return (
+    <Animated.View
+      style={[
+        {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: HERO,
+          overflow: 'hidden',
+          backgroundColor: tone,
+        },
+        heroStyle,
+      ]}
+    >
+      <Image
+        source={{ uri: img }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+        }}
+        contentFit="cover"
+        transition={200}
+      />
+      {/* Scrim — prototype: .82 → .2 @55% → .34, bottom→top */}
+      <LinearGradient
+        colors={[
+          'rgba(12,10,8,0.82)',
+          'rgba(12,10,8,0.2)',
+          'rgba(12,10,8,0.34)',
+        ]}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.5, y: 1 }}
+        end={{ x: 0.5, y: 0 }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+        }}
+      />
+
+      {/* Bottom hero content: glass "Self-service" badge · flag+country·ref · visa */}
+      <View style={{ position: 'absolute', left: 22, right: 22, bottom: 42 }}>
+        <BlurView
+          intensity={20}
+          tint="light"
+          style={{
+            alignSelf: 'flex-start',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            borderRadius: 999,
+            overflow: 'hidden',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.26)',
+            backgroundColor: 'rgba(255,255,255,0.16)',
+            paddingHorizontal: 11,
+            paddingVertical: 5,
+            marginBottom: 8,
+          }}
+        >
+          <Ic.docs size={13} color="#fff" strokeWidth={2} />
+          <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}>
+            Self-service
+          </Text>
+        </BlurView>
+
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 4,
+          }}
+        >
+          <Flag code={flag} size={18} radius={5} />
+          <Text
+            style={{
+              color: '#fff',
+              fontSize: 12.5,
+              fontWeight: '600',
+              opacity: 0.95,
+            }}
+          >
+            {country} · Ref {refCode}
+          </Text>
+        </View>
+        <Text
+          style={{
+            color: '#fff',
+            fontFamily: EX.font.display.semibold,
+            fontSize: 26,
+            lineHeight: 28,
+            letterSpacing: -0.26,
+            textShadowColor: 'rgba(0,0,0,0.3)',
+            textShadowOffset: { width: 0, height: 2 },
+            textShadowRadius: 14,
+          }}
+        >
+          {visa}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+});
+
 export default function SelfServiceView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -584,9 +725,6 @@ export default function SelfServiceView() {
   const onScroll = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
   });
-  const heroStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: scrollY.value * -0.3 }],
-  }));
 
   // ── Upload flow (pick → signed URL → PUT to storage → register doc) ──────────
   // `uploadToStorage(uploadUrl, { uri, type, name })` fetches the file as a blob
@@ -819,118 +957,15 @@ export default function SelfServiceView() {
 
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
-        {/* HERO — fixed behind, parallaxes as the sheet scrolls over it */}
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: HERO,
-              overflow: 'hidden',
-              backgroundColor: art.tone,
-            },
-            heroStyle,
-          ]}
-        >
-          <Image
-            source={{ uri: art.img }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-            }}
-            contentFit="cover"
-            transition={200}
-          />
-          {/* Scrim — prototype: .82 → .2 @55% → .34, bottom→top */}
-          <LinearGradient
-            colors={[
-              'rgba(12,10,8,0.82)',
-              'rgba(12,10,8,0.2)',
-              'rgba(12,10,8,0.34)',
-            ]}
-            locations={[0, 0.55, 1]}
-            start={{ x: 0.5, y: 1 }}
-            end={{ x: 0.5, y: 0 }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-            }}
-          />
-
-          {/* Bottom hero content: glass "Self-service" badge · flag+country·ref · visa */}
-          <View
-            style={{ position: 'absolute', left: 22, right: 22, bottom: 42 }}
-          >
-            <BlurView
-              intensity={20}
-              tint="light"
-              style={{
-                alignSelf: 'flex-start',
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                borderRadius: 999,
-                overflow: 'hidden',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.26)',
-                backgroundColor: 'rgba(255,255,255,0.16)',
-                paddingHorizontal: 11,
-                paddingVertical: 5,
-                marginBottom: 8,
-              }}
-            >
-              <Ic.docs size={13} color="#fff" strokeWidth={2} />
-              <Text
-                style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}
-              >
-                Self-service
-              </Text>
-            </BlurView>
-
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 4,
-              }}
-            >
-              <Flag code={flag} size={18} radius={5} />
-              <Text
-                style={{
-                  color: '#fff',
-                  fontSize: 12.5,
-                  fontWeight: '600',
-                  opacity: 0.95,
-                }}
-              >
-                {country} · Ref {ref}
-              </Text>
-            </View>
-            <Text
-              style={{
-                color: '#fff',
-                fontFamily: EX.font.display.semibold,
-                fontSize: 26,
-                lineHeight: 28,
-                letterSpacing: -0.26,
-                textShadowColor: 'rgba(0,0,0,0.3)',
-                textShadowOffset: { width: 0, height: 2 },
-                textShadowRadius: 14,
-              }}
-            >
-              {visa}
-            </Text>
-          </View>
-        </Animated.View>
+        <SelfServiceHero
+          scrollY={scrollY}
+          img={art.img}
+          tone={art.tone}
+          flag={flag}
+          country={country}
+          refCode={ref}
+          visa={visa}
+        />
 
         {/* Top glass back control (prototype top:54 → safe-area inset + 6) */}
         <View
