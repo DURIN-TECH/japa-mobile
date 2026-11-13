@@ -35,7 +35,6 @@ export const AI_COPY = {
   errSwitchOn: 'We couldn’t switch AI access on. It’s still off. Try again.',
   errForbidden: 'You can’t change AI access for this chat.',
   errChatLoad: 'We couldn’t load AI access for this chat.',
-  loading: 'Checking…',
   switchingOff: 'Switching off…',
   switchingOn: 'Switching on…',
   offline: 'You’re offline. Reconnect to change this.',
