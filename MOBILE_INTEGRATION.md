@@ -64,7 +64,7 @@
   `GET /agents/:id`, `GET /agents/visa/:visaTypeId`
 - **Adapter:** `formatAgentForDisplay(apiAgent)`
   converts `ApiAgent` to legacy display format with
-  `initials`, `price` (cents to display string),
+  `initials`, `price` (whole naira, unscaled; #148),
   `verificationCount`
 - **Changes:** Replaced `verificationAgents` mock
   array with `useAgent()`/`useAgents()` hooks. Added

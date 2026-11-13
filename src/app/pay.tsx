@@ -278,7 +278,7 @@ export default function PayScreen() {
 
     // ── Consultation (booking) path — create a REAL consultation ─────────────
     // Build the CreateConsultationInput from the booking params, converting
-    // units the backend expects (24-hour time, integer minutes, kobo fee).
+    // units the backend expects (24-hour time, integer minutes, whole-naira fee).
     const input: CreateConsultationInput = {
       agentId,
       type: mapTopicToConsultationType(topic),
@@ -286,7 +286,7 @@ export default function PayScreen() {
       scheduledTime: to24HourTime(time), // "10:00 AM" → "10:00"
       durationMinutes: parseInt(dur, 10) || 30, // "30 min" → 30
       timezone: resolveTimezone(),
-      fee: feeNum * 100, // naira → kobo/cents
+      fee: feeNum, // whole naira, stored as-is (#148); Paystack kobo is the backend's concern
     };
 
     try {

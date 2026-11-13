@@ -102,16 +102,19 @@ export function LabeledInput({
         elevation: 1,
       }}
     >
-      <Text
-        style={{
-          fontSize: 12.5,
-          fontWeight: '600',
-          color: EX.color.muted,
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </Text>
+      {/* An empty label means "no inner label" (e.g. the statement editor). */}
+      {label ? (
+        <Text
+          style={{
+            fontSize: 12.5,
+            fontWeight: '600',
+            color: EX.color.muted,
+            marginBottom: 4,
+          }}
+        >
+          {label}
+        </Text>
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <TextInput
           placeholderTextColor={EX.color.faint}
