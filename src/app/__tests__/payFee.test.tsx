@@ -11,10 +11,10 @@ const mockMutateAsync = jest.fn<(input: unknown) => Promise<object>>(
 // The explorer primitives import reanimated, whose native worklets part does
 // not exist under Jest: use the library's own JS mock (japa#174).
 jest.mock('react-native-reanimated', () =>
-  require('react-native-reanimated/mock'),
+  jest.requireActual('react-native-reanimated/mock'),
 );
 jest.mock('react-native-worklets', () =>
-  require('react-native-worklets/lib/module/mock'),
+  jest.requireActual('react-native-worklets/lib/module/mock'),
 );
 jest.mock('expo-blur', () => ({
   BlurView: ({ children }: { children: React.ReactNode }) => children,
