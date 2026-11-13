@@ -9,6 +9,10 @@
 // action, and a "Where this comes from" toggle that reveals the verbatim quote
 // and a link to the official page.
 //
+// Issue #187: an item is either a document (upload) or INFORMATION (a typed
+// answer that saves itself, see InformationAnswer). Every item shows one of three
+// need labels: Required, "If it applies to you" (+ the verbatim clause), Optional.
+//
 // A document is never listed twice: the screen filters documents that fulfil a
 // checklist item out of its "Other documents" card (see `isChecklistDocument`).
 //
@@ -22,8 +26,22 @@ import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Pill, SectionTitle } from '@/components/explorer/primitives';
-import { InlineError } from '@/components/explorer/AccountForm';
+import { InlineError, InfoNote } from '@/components/explorer/AccountForm';
 import { Checklist, ChecklistItem } from '@/types/checklist.type';
+import type { SavedAnswer } from '@/types/answers.type';
+import { ANSWERS_LOCKED_COPY } from '@/hooks/useAnswers';
+import { InformationAnswer } from '@/components/explorer/InformationAnswer';
+import { useAnswerDraftsStore, draftKey } from '@/stores/answerDrafts.store';
+import {
+  appliesWhenText,
+  checklistRequirementId,
+  isInformationItem,
+  itemState,
+  latestDocFor,
+  needLabel,
+  needOf,
+  type ItemState,
+} from '@/components/explorer/checklistLogic';
 import { Document } from '@/types/documents.type';
 // Per-upload document check (#115): shown on the item once a document is uploaded.
 import { DocumentCheckNotice } from '@/components/explorer/DocumentCheckNotice';
@@ -42,15 +60,36 @@ export interface ChecksProps {
   retryingDocId: string | null;
 }
 
+/**
+ * The answers data and actions the checklist threads down to each information
+ * item (#187). Absent = the screen has no answers support (all items as documents).
+ */
+export interface AnswersProps {
+  applicationId: string;
+  /** Saved answers by item id; undefined until the fetch succeeds. */
+  answers?: Record<string, SavedAnswer>;
+  answersLoading: boolean;
+  answersError: boolean;
+  onRetryAnswers: () => void;
+  /** Sends one trimmed answer (rejects on failure). */
+  saveAnswer: (itemId: string, trimmed: string) => Promise<unknown>;
+  /** Read-only: the application is under review (409 ANSWERS_LOCKED). */
+  locked: boolean;
+  onLocked: () => void;
+  /** Opens /subscription (read-only plan error). */
+  onSeePlans: () => void;
+  /** Refetches the checklist and the answers (list-changed error). */
+  onRefreshList: () => void;
+}
+
 /** A failed checklist-item upload (japa#174): which request it was and what to say. */
 export interface UploadFailure {
   documentRequestId?: string;
   message: string;
 }
 
-/** The `requirementId` the backend gives an upload made against a request. */
-export const checklistRequirementId = (documentRequestId: string) =>
-  `docreq:${documentRequestId}`;
+// Re-exported: callers import it from here (it lives in checklistLogic.ts).
+export { checklistRequirementId };
 
 /**
  * True when `doc` was uploaded against one of the checklist's items, so the
@@ -68,39 +107,17 @@ export function isChecklistDocument(
   );
 }
 
-// What the applicant sees for an item: waiting, uploaded, accepted, needs another.
-type ItemState =
-  | 'waiting'
-  | 'uploaded'
-  | 'accepted'
-  | 'needs_another'
-  | 'not_needed';
-
 const STATE_STYLE: Record<
   ItemState,
   { label: string; fg: string; bg: string }
 > = {
+  answered: { label: 'Answered', fg: '#1E8E55', bg: '#D6F2E2' },
   waiting: { label: 'Waiting', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
   uploaded: { label: 'Uploaded', fg: '#B26A14', bg: '#FCEAC8' },
   accepted: { label: 'Accepted', fg: '#1E8E55', bg: '#D6F2E2' },
   needs_another: { label: 'Needs another', fg: '#C0453C', bg: '#FBE3E1' },
   not_needed: { label: 'Not needed', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
 };
-
-/** Derive the state from the request status and the latest document on it. */
-function itemState(item: ChecklistItem, docs: Document[]): ItemState {
-  if (item.status === 'waived') return 'not_needed';
-  if (!item.documentRequestId) return 'waiting';
-  // Latest document uploaded against this item (the list is newest first).
-  const doc = docs.find(
-    (d) => d.requirementId === checklistRequirementId(item.documentRequestId!),
-  );
-  if (!doc) return 'waiting';
-  if (doc.status === 'verified') return 'accepted';
-  if (doc.status === 'rejected' || doc.status === 'resubmission_required')
-    return 'needs_another';
-  return 'uploaded';
-}
 
 // ── One item ──────────────────────────────────────────────────────────────────
 function ChecklistRow({
@@ -111,6 +128,7 @@ function ChecklistRow({
   onUpload,
   checksProps,
   uploadError,
+  answersProps,
 }: {
   item: ChecklistItem;
   docs: Document[];
@@ -120,22 +138,30 @@ function ChecklistRow({
   checksProps: ChecksProps;
   /** japa#174: message of a failed upload made from THIS item (shown in its card). */
   uploadError?: string | null;
+  /** #187: answers data for information items. */
+  answersProps?: AnswersProps;
 }) {
   const [open, setOpen] = useState(false);
-  const state = itemState(item, docs);
+  // #187: a typed-detail item has no upload; a `kindReview` item is a document.
+  const info = isInformationItem(item) && !!answersProps;
+  const answers = answersProps?.answers;
+  const state = itemState(item, docs, info ? answers : null);
+  const clause = appliesWhenText(item);
+  // Unsaved text for this item (a draft is newer than anything from the server).
+  const hasDraft = useAnswerDraftsStore(
+    (st) =>
+      answersProps &&
+      draftKey(answersProps.applicationId, item.checklistItemId) in st.drafts,
+  );
   const s = STATE_STYLE[state];
   // Upload is offered while waiting or when another file is needed. A request
   // not yet stored (no id) cannot be uploaded against.
   const canUpload =
+    !info &&
     !!item.documentRequestId &&
     (state === 'waiting' || state === 'needs_another');
   // The latest document uploaded against this item (#115): the check is about it.
-  const latestDoc = item.documentRequestId
-    ? docs.find(
-        (d) =>
-          d.requirementId === checklistRequirementId(item.documentRequestId!),
-      )
-    : undefined;
+  const latestDoc = info ? undefined : latestDocFor(item, docs);
   // The check for THAT document; a check of an older file is not shown for it.
   const itemCheck =
     checksProps.checks?.tier === 'full' && latestDoc
@@ -161,16 +187,31 @@ function ChecklistRow({
           >
             {item.title}
           </Text>
+          {/* Need label (#187): ink-muted, because it can carry a condition the
+              person must read (`muted` is 3.58:1 on white). */}
           <Text
             style={{
               fontSize: 12,
               fontWeight: '600',
-              color: EX.color.muted,
+              color: EX.color.inkMuted,
               marginTop: 1,
             }}
           >
-            {item.required ? 'Required' : 'Optional'}
+            {needLabel(needOf(item))}
           </Text>
+          {clause ? (
+            <Text
+              style={{
+                fontSize: 12.5,
+                lineHeight: 18,
+                fontStyle: 'italic',
+                color: EX.color.inkMuted,
+                marginTop: 2,
+              }}
+            >
+              “{clause}”
+            </Text>
+          ) : null}
         </View>
         <Pill label={s.label} fg={s.fg} bg={s.bg} small />
       </View>
@@ -248,6 +289,53 @@ function ChecklistRow({
         </View>
       ) : null}
 
+      {/* Information item (#187): the answer field, in place of upload. */}
+      {info && answersProps && item.status !== 'waived' ? (
+        answersProps.answers || hasDraft ? (
+          <InformationAnswer
+            applicationId={answersProps.applicationId}
+            itemId={item.checklistItemId}
+            title={item.title}
+            savedText={answersProps.answers?.[item.checklistItemId]?.text ?? ''}
+            save={(trimmed) =>
+              answersProps.saveAnswer(item.checklistItemId, trimmed)
+            }
+            locked={answersProps.locked}
+            onLocked={answersProps.onLocked}
+            onSeePlans={answersProps.onSeePlans}
+            onRefreshList={answersProps.onRefreshList}
+          />
+        ) : answersProps.answersLoading ? (
+          // Same size as the field, not editable, so nothing jumps when it loads.
+          <View
+            style={{
+              marginTop: 10,
+              minHeight: 92,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: EX.color.cardWhite,
+              borderWidth: 1,
+              borderColor: EX.color.line10,
+              borderRadius: 18,
+            }}
+          >
+            <ActivityIndicator size="small" color={EX.color.primary} />
+          </View>
+        ) : (
+          // Fetch failed: no field, so a blank one can never overwrite a saved answer.
+          <Text
+            style={{
+              fontSize: 13,
+              lineHeight: 19,
+              color: EX.color.inkMuted,
+              marginTop: 10,
+            }}
+          >
+            Your answer will show here once it loads.
+          </Text>
+        )
+      ) : null}
+
       {/* Document check result (#115): only once a document is uploaded. */}
       {latestDoc ? (
         <DocumentCheckNotice
@@ -319,6 +407,7 @@ function Group({
   onUpload: (item: ChecklistItem) => void;
   checksProps: ChecksProps;
   uploadFailure?: UploadFailure | null;
+  answersProps?: AnswersProps;
 }) {
   // Hidden when empty (the sponsor group in particular).
   if (items.length === 0) return null;
@@ -359,6 +448,7 @@ function Group({
             uploading={rest.uploadingId === item.documentRequestId}
             onUpload={rest.onUpload}
             checksProps={rest.checksProps}
+            answersProps={rest.answersProps}
             uploadError={
               rest.uploadFailure &&
               rest.uploadFailure.documentRequestId === item.documentRequestId
@@ -433,6 +523,7 @@ export function DocumentChecklist({
   onOpenIntake,
   checksProps,
   uploadFailure,
+  answersProps,
 }: {
   checklist?: Checklist | null;
   loading: boolean;
@@ -451,6 +542,8 @@ export function DocumentChecklist({
   checksProps: ChecksProps;
   /** The last failed upload; shown inside the item it came from (#174). */
   uploadFailure?: UploadFailure | null;
+  /** Answers for information items (#187). */
+  answersProps?: AnswersProps;
 }) {
   let body: React.ReactNode;
   if (loading) {
@@ -501,8 +594,51 @@ export function DocumentChecklist({
   } else {
     const yours = checklist.items.filter((i) => i.holder === 'applicant');
     const sponsors = checklist.items.filter((i) => i.holder === 'sponsor');
+    // #187: the list holds typed details as well as documents.
+    const hasInfo = !!answersProps && checklist.items.some(isInformationItem);
     body = (
       <>
+        {hasInfo ? (
+          <View style={{ gap: 10, marginBottom: 13 }}>
+            <InfoNote>
+              Some items are details, not documents. Type them here so they’re
+              ready when you fill in the official application.
+            </InfoNote>
+            {/* Answers could not be loaded: one error for the list; documents
+                still render and upload normally. */}
+            {answersProps?.answersError && !answersProps.answers ? (
+              <View style={{ gap: 8 }}>
+                <InlineError message="We couldn’t load your saved answers. Check your connection and try again." />
+                <PressableStatic
+                  onPress={answersProps.onRetryAnswers}
+                  accessibilityRole="button"
+                  style={{ alignSelf: 'flex-start' }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: '700',
+                      color: EX.color.primary,
+                    }}
+                  >
+                    Try again
+                  </Text>
+                </PressableStatic>
+              </View>
+            ) : null}
+            {answersProps?.locked ? (
+              <Text
+                style={{
+                  fontSize: 13,
+                  lineHeight: 19,
+                  color: EX.color.inkMuted,
+                }}
+              >
+                {ANSWERS_LOCKED_COPY}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
         <Group
           title="Yours"
           items={yours}
@@ -511,6 +647,7 @@ export function DocumentChecklist({
           onUpload={onUpload}
           checksProps={checksProps}
           uploadFailure={uploadFailure}
+          answersProps={answersProps}
         />
         <Group
           title="Your sponsor's"
@@ -521,14 +658,23 @@ export function DocumentChecklist({
           onUpload={onUpload}
           checksProps={checksProps}
           uploadFailure={uploadFailure}
+          answersProps={answersProps}
         />
       </>
     );
   }
 
+  // #187: the inner title follows the step title when typed details are listed.
+  const titleHasInfo =
+    !!answersProps &&
+    !!checklist &&
+    checklist.items.length > 0 &&
+    checklist.items.some(isInformationItem);
   return (
     <>
-      <SectionTitle>Your documents</SectionTitle>
+      <SectionTitle>
+        {titleHasInfo ? 'Your documents and details' : 'Your documents'}
+      </SectionTitle>
       {body}
     </>
   );
