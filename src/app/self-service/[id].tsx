@@ -1277,8 +1277,6 @@ export default function SelfServiceView() {
                     )}
                   </View>
                 ) : null}
-                  </View>
-                ) : null}
               </>
             ) : null}
             {shownReqs.map((req) => (
