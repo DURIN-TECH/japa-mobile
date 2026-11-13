@@ -49,6 +49,7 @@ import {
   useWithdrawAiAccess,
 } from '@/hooks/useAiMessageAccess';
 import { fmtDate } from '@/components/explorer/liveDate';
+import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
 import { useIsOffline } from '@/utils/networkStatus';
 import type { AiMessageAccessState } from '@/types/ai-message-access.type';
 
@@ -337,6 +338,8 @@ export default function AiMessageAccessScreen() {
   const insets = useSafeAreaInsets();
   const offline = useIsOffline();
   const q = useAiMessageAccessState();
+  // Refresh on regaining focus; previous data stays shown meanwhile.
+  useRefetchOnFocus(q.refetch);
   const approve = useApproveAiAccess();
   const withdraw = useWithdrawAiAccess();
   // Error above the CTA (approve / withdraw), cleared on the next tap.

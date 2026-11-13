@@ -102,7 +102,7 @@ export function chatAiIconView(
 ): { highlighted: boolean; label: string } {
   const highlighted =
     !!aiAccess &&
-    aiAccess.qualifies &&
+    aiAccess.qualifies === true && // missing = unknown, never a definite state
     aiAccess.myAiAccess === 'on' &&
     !aiAccess.otherSwitchedOff;
   return {

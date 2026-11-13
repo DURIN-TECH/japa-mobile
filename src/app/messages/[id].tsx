@@ -43,6 +43,7 @@ import { mapConvo, mapMessage } from '@/components/explorer/liveMessaging';
 // highlighted/gray decision is the pure `chatAiIconView`.
 import { chatAiIconView } from '@/components/explorer/aiMessageAccessLogic';
 import { useConversation } from '@/hooks/useAiMessageAccess';
+import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
 
 // ── Single message row (bubble + timestamp) ──────────────────────────────────
 function Bubble({ m }: { m: Msg }) {
@@ -226,6 +227,8 @@ export default function ChatView() {
   // Live chats only: demo threads have no server conversation, so no icon. The
   // query is disabled for an empty id. Unknown / loading state stays gray.
   const aiConv = useConversation(isLive ? convId : '');
+  // Pick up changes made elsewhere (e.g. the settings screen) on coming back.
+  useRefetchOnFocus(aiConv.refetch, isLive && !!convId);
   const aiIcon = chatAiIconView(aiConv.data?.aiAccess);
   const openAiSettings = () =>
     router.push({

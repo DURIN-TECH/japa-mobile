@@ -79,6 +79,14 @@ describe('chatAiIconView', () => {
     expect(chatAiIconView(null).highlighted).toBe(false);
     expect(chatAiIconView(undefined).highlighted).toBe(false);
   });
+
+  it('a missing qualifies is unknown, so gray', () => {
+    const partial = {
+      myAiAccess: 'on',
+      otherSwitchedOff: false,
+    } as unknown as ConversationAiAccess;
+    expect(chatAiIconView(partial).highlighted).toBe(false);
+  });
 });
 
 describe('chatSwitchView ("This chat" row)', () => {
