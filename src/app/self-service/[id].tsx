@@ -1256,22 +1256,27 @@ export default function SelfServiceView() {
                 {/* Waiting on the visit details with no requirements: uploading
                     what you already have must still be possible. */}
                 {intakeWaiting ? (
-                  <View style={{ marginTop: 10 }}>
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    {/* Error above the button; label becomes Try again (#174). */}
+                    {uploadFailure?.key === 'general' ? (
+                      <InlineError
+                        message={uploadErrorCopy(uploadFailure.fileName)}
+                      />
+                    ) : null}
                     {uploadingGeneral ? (
                       <ActivityIndicator color={EX.color.primary} />
                     ) : (
                       <OutlineButton
-                        label="Upload a document"
+                        label={
+                          uploadFailure?.key === 'general'
+                            ? 'Try again'
+                            : 'Upload a document'
+                        }
                         onPress={() => handleUpload(null)}
                       />
                     )}
-                    {uploadFailure?.key === 'general' ? (
-                      <View style={{ marginTop: 8 }}>
-                        <InlineError
-                          message={uploadErrorCopy(uploadFailure.fileName)}
-                        />
-                      </View>
-                    ) : null}
+                  </View>
+                ) : null}
                   </View>
                 ) : null}
               </>

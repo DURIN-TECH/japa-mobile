@@ -92,6 +92,7 @@ function PathCard({
   accent = EX.color.ink,
   dark = false,
   onPress,
+  disabled = false,
 }: {
   icon: React.ElementType;
   title: string;
@@ -100,11 +101,15 @@ function PathCard({
   accent?: string;
   dark?: boolean;
   onPress?: () => void;
+  /** japa#174: dimmed like the sticky CTA when the visa can't be started. */
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       style={{
+        opacity: disabled ? 0.6 : 1,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 14,
@@ -501,6 +506,7 @@ export default function DestinationDetail() {
               title="Self-service"
               sub="Step-by-step DIY application"
               onPress={startApp.start}
+              disabled={startApp.failure === 'unavailable'}
             />
           </View>
 
