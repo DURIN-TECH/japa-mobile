@@ -2,7 +2,7 @@
 // Settings screen (Explorer, coral/cream design).
 // Grouped white cards that reuse the profile.tsx `ProfileRow` visual language:
 //   36px cream icon chip · label 15/600 · optional muted value · chevron.
-// Sections: Appearance · Notifications · Billing · Legal · Security · Account.
+// Sections: Appearance · Notifications · Privacy · Billing · Legal · Security · Account.
 // Notification toggles + the security/account rows are LIVE (persist to the
 // backend); Appearance/Billing/Legal/Support remain display-only for now.
 // Native primitives only; safe-area aware.
@@ -31,6 +31,12 @@ import { authService } from '@/services/auth.service';
 // Notification channel prefs are read from the cached profile + persisted through
 // the auth store (PATCH /users/me/notification-preferences).
 import { useAuthStore } from '@/stores/auth.store';
+// Privacy row value (#172): approved / included in plan / not approved / off for all.
+import { useAiMessageAccessState } from '@/hooks/useAiMessageAccess';
+import {
+  AI_COPY,
+  settingsRowValue,
+} from '@/components/explorer/aiMessageAccessLogic';
 
 // ── One settings row ─────────────────────────────────────────────────────────
 // Mirrors profile.tsx `ProfileRow`: 36px cream icon chip, 15/600 label, optional
@@ -196,6 +202,11 @@ export default function SettingsScreen() {
     }
   };
 
+  // AI message access state for the Privacy row. No value while loading or when
+  // loading failed: the row still opens the screen, which shows the error.
+  const aiAccessState = useAiMessageAccessState();
+  const aiAccessValue = settingsRowValue(aiAccessState.data);
+
   // Subscription tier label from the shared plan catalogue.
   const currentPlanName =
     PLANS.find((p) => p.id === CURRENT_PLAN)?.name ?? 'Free';
@@ -328,6 +339,18 @@ export default function SettingsScreen() {
                 ios_backgroundColor={EX.color.line10}
               />
             }
+          />
+        </Card>
+
+        {/* ── 2b. Privacy (AI message access, #172) ──────────────────────── */}
+        <View style={{ height: 22 }} />
+        <GroupLabel>{AI_COPY.settingsGroup}</GroupLabel>
+        <Card>
+          <SettingsRow
+            icon={Ic.spark}
+            label={AI_COPY.settingsRow}
+            value={aiAccessValue}
+            onPress={() => router.push('/ai-message-access')}
           />
         </Card>
 

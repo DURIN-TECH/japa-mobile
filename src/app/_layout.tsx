@@ -176,6 +176,7 @@ function RootLayoutContent() {
         <Stack.Screen name="settings" />
         {/* Account security / self-service (reached from Settings) */}
         <Stack.Screen name="verify-email" />
+        <Stack.Screen name="ai-message-access" />
         <Stack.Screen name="change-password" />
         <Stack.Screen name="change-email" />
         <Stack.Screen name="delete-account" />
