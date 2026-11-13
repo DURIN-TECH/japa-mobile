@@ -21,7 +21,6 @@ const access = (
   o: Partial<ConversationAiAccess> = {},
 ): ConversationAiAccess => ({
   myAiAccess: 'on',
-  myChatSwitchOff: false,
   accountWideOff: false,
   otherSwitchedOff: false,
   qualifies: true,
@@ -64,9 +63,6 @@ describe('chatAiIconView', () => {
   it('gray for every other state', () => {
     const gray = { highlighted: false, label: 'AI access off for this chat' };
     expect(chatAiIconView(access({ qualifies: false }))).toEqual(gray);
-    expect(
-      chatAiIconView(access({ myAiAccess: 'off', myChatSwitchOff: true })),
-    ).toEqual(gray);
     expect(
       chatAiIconView(access({ myAiAccess: 'off', accountWideOff: true })),
     ).toEqual(gray);

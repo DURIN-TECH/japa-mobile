@@ -46,12 +46,10 @@ export interface AiMessageAccessState {
  * conversation means the server could not compute it: unknown, NEVER "on".
  */
 export interface ConversationAiAccess {
-  /** Effective: off if my chat switch OR my account-wide setting is off. */
+  /** Effective: off only when my account-wide setting is off (no per-chat switch). */
   myAiAccess: 'on' | 'off';
-  /** My per-chat switch alone. */
-  myChatSwitchOff: boolean;
   accountWideOff: boolean;
-  /** Yes/no only: the other person's chat switch OR account-wide setting. */
+  /** Yes/no only: the other person's account-wide setting is off (or they can't be resolved). */
   otherSwitchedOff: boolean;
   /** I have an active approval or an AI plan. */
   qualifies: boolean;
