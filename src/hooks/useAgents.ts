@@ -9,8 +9,9 @@
  * - GET /agents/:id      → single agent detail (for agent profile screen)
  * - GET /agents/visa/:id → agents specializing in a specific visa type
  *
- * The backend stores consultation fees in cents (e.g. 5000_00 = ₦50,000).
- * The `formatAgentForDisplay()` helper converts to the display format
+ * The backend stores consultation fees in WHOLE NAIRA (e.g. 50000 = ₦50,000;
+ * issue #148). No scaling is needed for display.
+ * The `formatAgentForDisplay()` helper maps to the display format
  * expected by existing components (AgentCard, ConsultationCard, etc.).
  */
 
@@ -24,7 +25,9 @@ import { apiService } from '@/services/api.service';
  */
 export interface ApiAgent {
   id: string;
-  userId: string;
+  // Optional: public agent responses (GET /agents*) no longer carry the account
+  // uid (issue #147). Never read it off a public response.
+  userId?: string;
   agencyId?: string;
   agencyRole?: string; // 'owner' | 'agent'
   displayName: string;
@@ -39,7 +42,7 @@ export interface ApiAgent {
   totalApplications: number;
   successRate: number; // 0-100 percentage
   responseTime: string; // e.g. '2-4 hours'
-  consultationFee: number; // in cents (divide by 100 for display)
+  consultationFee: number; // whole naira (no scaling for display)
   isAvailable: boolean;
   availableSlots?: { dayOfWeek: number; startTime: string; endTime: string }[];
   createdAt: string;
@@ -105,16 +108,6 @@ function getInitials(name: string): string {
     .join('')
     .toUpperCase()
     .slice(0, 2);
-}
-
-/**
- * Convert cents (backend storage format) to display amount.
- * Backend stores all monetary values in cents to avoid floating-point issues.
- * e.g. 5000_00 → 50000 (₦50,000 stored as 5000000 cents → display as 50000)
- * Note: the backend uses kobo (1/100 of Naira), so 500000 kobo = ₦5,000
- */
-function centsToDisplay(cents: number): number {
-  return Math.round(cents / 100);
 }
 
 /**
@@ -210,10 +203,10 @@ export function formatAgentForDisplay(agent: ApiAgent) {
     initials: getInitials(agent.displayName),
     rating: agent.rating,
     verificationCount: agent.totalReviews, // "verificationCount" = total reviews in legacy UI
-    price: centsToDisplay(agent.consultationFee),
+    price: agent.consultationFee, // whole naira, unscaled (#148)
     description: agent.bio ?? '',
     specializations: agent.specializations,
-    consultationFee: centsToDisplay(agent.consultationFee),
+    consultationFee: agent.consultationFee, // whole naira, unscaled (#148)
     availability: agent.isAvailable,
     responseTime: agent.responseTime,
     languages: agent.languages,

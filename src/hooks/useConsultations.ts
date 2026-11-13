@@ -62,7 +62,7 @@ export interface ApiConsultation {
   scheduledTime: string;
   durationMinutes: number;
   timezone?: string;
-  fee: number; // in cents
+  fee: number; // whole naira (#148)
   paymentStatus?: string;
   notes?: string;
   summary?: string;
@@ -82,7 +82,7 @@ export interface CreateConsultationInput {
   scheduledTime: string; // HH:mm
   durationMinutes: number;
   timezone: string;
-  fee: number; // in cents — comes from the agent's consultationFee
+  fee: number; // whole naira (#148) — comes from the agent's consultationFee; sent as-is
   applicationId?: string; // optional link to an existing application
 }
 

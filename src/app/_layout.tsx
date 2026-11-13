@@ -152,6 +152,15 @@ function RootLayoutContent() {
         <Stack.Screen name="consultations" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="self-service/[id]" />
+        {/* Intake questions (#113): pushes from the right like the other forms */}
+        <Stack.Screen name="self-service/[id]/intake" />
+        {/* Review flow (issue #43): both push from the right. */}
+        <Stack.Screen name="self-service/[id]/statement" />
+        <Stack.Screen name="self-service/[id]/review" />
+        {/* Ask-about-your-review chat (#45) and refusal-letter reading (#122). The
+            static `refusal-letter` route wins over `self-service/[id]`. */}
+        <Stack.Screen name="ai-chat/[id]" />
+        <Stack.Screen name="self-service/refusal-letter" />
         <Stack.Screen
           name="subscription"
           options={{ animation: 'slide_from_bottom' }}
@@ -167,6 +176,7 @@ function RootLayoutContent() {
         <Stack.Screen name="settings" />
         {/* Account security / self-service (reached from Settings) */}
         <Stack.Screen name="verify-email" />
+        <Stack.Screen name="ai-message-access" />
         <Stack.Screen name="change-password" />
         <Stack.Screen name="change-email" />
         <Stack.Screen name="delete-account" />
