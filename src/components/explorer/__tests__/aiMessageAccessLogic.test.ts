@@ -1,18 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Pure UI logic of the AI message access feature (issue #172): which bar state
-// shows for (aiAccess, load/save status, offline), when the one-time notice
-// shows, and the settings / approval helpers. Copy is asserted verbatim.
+// Pure UI logic of the AI message access feature (issues #172, #193): the chat
+// header icon (highlighted or gray), the "This chat" switch on the settings
+// screen, and the settings / approval helpers. Copy is asserted verbatim.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, expect, it } from '@jest/globals';
 import {
   AI_COPY,
   approvalMode,
-  pickBarState,
+  chatAiIconView,
   settingsRowValue,
-  shouldShowNotice,
   withdrawConfirmBody,
-  type BarInput,
 } from '../aiMessageAccessLogic';
 import type {
   AiMessageAccessState,
@@ -29,17 +27,6 @@ const access = (
   qualifies: true,
   ...o,
 });
-
-const bar = (o: Partial<BarInput> = {}) =>
-  pickBarState({
-    aiAccess: access(),
-    conversationLoaded: true,
-    loadFailed: false,
-    offline: false,
-    saving: null,
-    saveError: null,
-    ...o,
-  });
 
 const wording = {
   versionId: 'v',
@@ -65,246 +52,38 @@ const userState = (
   ...o,
 });
 
-describe('pickBarState: qualifying person (standard bar)', () => {
-  it('on: mine on, other on', () => {
-    const v = bar();
-    expect(v.kind).toBe('standard');
-    if (v.kind !== 'standard') return;
-    expect(v.title).toBe('AI access to this chat');
-    expect(v.helper).toBe(AI_COPY.on);
-    expect(v.switch).toMatchObject({
-      value: true,
-      disabled: false,
-      nextOff: true,
+describe('chatAiIconView', () => {
+  const on = access();
+  it('highlighted only when qualifying, my access on, and the other person not off', () => {
+    expect(chatAiIconView(on)).toEqual({
+      highlighted: true,
+      label: 'AI access on for this chat',
     });
   });
 
-  it('off by me: mine off, other on', () => {
-    const v = bar({
-      aiAccess: access({ myAiAccess: 'off', myChatSwitchOff: true }),
-    });
-    if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe('Off. Nothing in this chat is read by Seli’s AI.');
-    expect(v.switch).toMatchObject({ value: false, nextOff: false });
-  });
-
-  it('off by the other person: line shown, my switch still on and usable', () => {
-    const v = bar({ aiAccess: access({ otherSwitchedOff: true }) });
-    if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe(AI_COPY.offByOther);
-    expect(v.switch).toMatchObject({ value: true, disabled: false });
-  });
-
-  it('off by both', () => {
-    const v = bar({
-      aiAccess: access({
-        myAiAccess: 'off',
-        myChatSwitchOff: true,
-        otherSwitchedOff: true,
-      }),
-    });
-    if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe(AI_COPY.offByBoth);
-    expect(v.switch.value).toBe(false);
-  });
-});
-
-describe('pickBarState: not active (does not qualify)', () => {
-  const na = (
-    o: Partial<ConversationAiAccess>,
-    extra: Partial<BarInput> = {},
-  ) => {
-    const v = bar({ aiAccess: access({ qualifies: false, ...o }), ...extra });
-    if (v.kind !== 'not-active') throw new Error(v.kind);
-    return v;
-  };
-
-  it('keeps the approve link AND the "Keep AI out" row', () => {
-    const v = na({});
-    expect(v.title).toBe('AI access: not active');
-    expect(v.helper).toBe(AI_COPY.notActive);
-    expect(v.link).toBe('Review and approve');
-    expect(v.row2.title).toBe('Keep AI out of this chat');
-  });
-
-  it('row 2 polarity: switch ON means my side is off', () => {
-    expect(na({}).row2.switch).toMatchObject({ value: false, nextOff: true });
-    expect(na({}).row2.helper).toBe(AI_COPY.keepOutNone);
-    const kept = na({ myAiAccess: 'off', myChatSwitchOff: true });
-    expect(kept.row2.switch).toMatchObject({ value: true, nextOff: false });
-    expect(kept.row2.helper).toBe(AI_COPY.keepOutMine);
-  });
-
-  it('row 2 other-person and both lines', () => {
-    expect(na({ otherSwitchedOff: true }).row2.helper).toBe(
-      AI_COPY.keepOutOther,
-    );
+  it('gray for every other state', () => {
+    const gray = { highlighted: false, label: 'AI access off for this chat' };
+    expect(chatAiIconView(access({ qualifies: false }))).toEqual(gray);
     expect(
-      na({ myAiAccess: 'off', myChatSwitchOff: true, otherSwitchedOff: true })
-        .row2.helper,
-    ).toBe(AI_COPY.keepOutBoth);
-  });
-
-  it('saving and offline only touch row 2', () => {
-    const saving = na({}, { saving: { off: true } });
-    expect(saving.row2.helper).toBe('Keeping AI out…');
-    expect(saving.row2.switch).toMatchObject({
-      value: false,
-      disabled: true,
-      busy: true,
-    });
-    expect(saving.helper).toBe(AI_COPY.notActive);
-    expect(na({}, { saving: { off: false } }).row2.helper).toBe(
-      'Letting AI back in…',
-    );
-    const off = na({}, { offline: true });
-    expect(off.row2.helper).toBe(AI_COPY.offline);
-    expect(off.row2.switch.disabled).toBe(true);
-  });
-
-  it('row 2 errors name the state it is still in', () => {
-    expect(na({}, { saveError: { off: true } }).row2.error).toBe(
-      AI_COPY.errKeepOut,
-    );
-    expect(na({}, { saveError: { off: false } }).row2.error).toBe(
-      AI_COPY.errLetIn,
-    );
-    expect(na({}, { saveError: { off: true, status: 403 } }).row2.error).toBe(
-      'You can’t change AI access for this chat.',
-    );
-  });
-});
-
-describe('pickBarState: account-wide off', () => {
-  it('replaces every other state, qualifying or not, with one disabled row and a link', () => {
-    for (const qualifies of [true, false]) {
-      const v = bar({
-        aiAccess: access({
-          qualifies,
-          accountWideOff: true,
-          myAiAccess: 'off',
-          otherSwitchedOff: true,
-        }),
-      });
-      if (v.kind !== 'account-off') throw new Error(v.kind);
-      expect(v.helper).toBe(AI_COPY.accountOff);
-      expect(v.link).toBe('Change in settings');
-      expect(v.switch).toMatchObject({ value: false, disabled: true });
-    }
-  });
-
-  it('stays the same row offline (the link still opens the screen)', () => {
-    const v = bar({
-      aiAccess: access({ accountWideOff: true }),
-      offline: true,
-    });
-    expect(v.kind).toBe('account-off');
-  });
-});
-
-describe('pickBarState: loading, error, saving, offline', () => {
-  it('loading while the conversation is not loaded', () => {
-    const v = bar({ aiAccess: undefined, conversationLoaded: false });
-    expect(v).toMatchObject({ kind: 'loading', helper: 'Checking…' });
-  });
-
-  it('a failed load is an error with a Try again link, never "on"', () => {
-    const v = bar({
-      aiAccess: undefined,
-      conversationLoaded: false,
-      loadFailed: true,
-    });
-    expect(v).toMatchObject({
-      kind: 'load-error',
-      error: 'We couldn’t load AI access for this chat. Try again.',
-      link: 'Try again',
-    });
-  });
-
-  it('aiAccess null (server could not compute) is an error, not "on"', () => {
-    expect(bar({ aiAccess: null }).kind).toBe('load-error');
-    expect(bar({ aiAccess: undefined }).kind).toBe('load-error');
-  });
-
-  it('saving keeps the OLD value, disabled, with the switching copy (not optimistic)', () => {
-    const off = bar({ saving: { off: true } });
-    if (off.kind !== 'standard') throw new Error(off.kind);
-    expect(off.helper).toBe('Switching off…');
-    expect(off.switch).toMatchObject({
-      value: true,
-      disabled: true,
-      busy: true,
-    });
-    const on = bar({
-      aiAccess: access({ myAiAccess: 'off' }),
-      saving: { off: false },
-    });
-    if (on.kind !== 'standard') throw new Error(on.kind);
-    expect(on.helper).toBe('Switching on…');
-    expect(on.switch.value).toBe(false);
-  });
-
-  it('a failed save keeps the previous state, enabled, with the error', () => {
-    const v = bar({ saveError: { off: true } });
-    if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe(AI_COPY.on);
-    expect(v.switch).toMatchObject({ value: true, disabled: false });
-    expect(v.error).toBe(
-      'We couldn’t switch AI access off. It’s still on. Try again.',
-    );
-    const back = bar({
-      aiAccess: access({ myAiAccess: 'off' }),
-      saveError: { off: false },
-    });
-    if (back.kind !== 'standard') throw new Error(back.kind);
-    expect(back.error).toBe(
-      'We couldn’t switch AI access on. It’s still off. Try again.',
-    );
-    const denied = bar({ saveError: { off: true, status: 403 } });
-    if (denied.kind !== 'standard') throw new Error(denied.kind);
-    expect(denied.error).toBe('You can’t change AI access for this chat.');
-  });
-
-  it('offline: offline line, switch at last known value and disabled, no repeated error', () => {
-    const v = bar({ offline: true, saveError: { off: true, status: 0 } });
-    if (v.kind !== 'standard') throw new Error(v.kind);
-    expect(v.helper).toBe('You’re offline. Reconnect to change this.');
-    expect(v.switch).toMatchObject({ value: true, disabled: true });
-    expect(v.error).toBeNull();
-  });
-});
-
-describe('shouldShowNotice', () => {
-  const live = true;
-  it('shows to plan-only people who have not dismissed it', () => {
+      chatAiIconView(access({ myAiAccess: 'off', myChatSwitchOff: true })),
+    ).toEqual(gray);
     expect(
-      shouldShowNotice({ planOnly: true, noticeDismissed: false }, false, live),
-    ).toBe(true);
+      chatAiIconView(access({ myAiAccess: 'off', accountWideOff: true })),
+    ).toEqual(gray);
+    expect(chatAiIconView(access({ otherSwitchedOff: true }))).toEqual(gray);
   });
-  it('never to approved or non-plan people, or once dismissed', () => {
-    expect(
-      shouldShowNotice(
-        { planOnly: false, noticeDismissed: false },
-        false,
-        live,
-      ),
-    ).toBe(false);
-    expect(
-      shouldShowNotice({ planOnly: true, noticeDismissed: true }, false, live),
-    ).toBe(false);
-    expect(
-      shouldShowNotice({ planOnly: true, noticeDismissed: false }, true, live),
-    ).toBe(false);
+
+  it('gray while loading or unknown (null / undefined), never highlighted', () => {
+    expect(chatAiIconView(null).highlighted).toBe(false);
+    expect(chatAiIconView(undefined).highlighted).toBe(false);
   });
-  it('not on demo threads, and not before the state loads', () => {
-    expect(
-      shouldShowNotice(
-        { planOnly: true, noticeDismissed: false },
-        false,
-        false,
-      ),
-    ).toBe(false);
-    expect(shouldShowNotice(undefined, false, live)).toBe(false);
+
+  it('a missing qualifies is unknown, so gray', () => {
+    const partial = {
+      myAiAccess: 'on',
+      otherSwitchedOff: false,
+    } as unknown as ConversationAiAccess;
+    expect(chatAiIconView(partial).highlighted).toBe(false);
   });
 });
 

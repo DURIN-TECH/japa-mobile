@@ -56,18 +56,11 @@ const SEND_ERROR = 'Your message didn’t send. Tap send to try again.';
 
 // An optimistic bubble, tagged so it can be dropped once the send settles.
 type PendingMsg = Msg & { key: number };
-// AI message access (#172): pinned bar, one-time notice, and the pure rule for
-// when the notice shows.
-import {
-  AiAccessBar,
-  useAiAccessControl,
-} from '@/components/explorer/AiAccessBar';
-import { AiNoticeSheet } from '@/components/explorer/AiNoticeSheet';
-import { shouldShowNotice } from '@/components/explorer/aiMessageAccessLogic';
-import {
-  useAiMessageAccessState,
-  useDismissAiNotice,
-} from '@/hooks/useAiMessageAccess';
+// AI message access (#172/#193): the chat shows only a header icon. Its
+// highlighted/gray decision is the pure `chatAiIconView`.
+import { chatAiIconView } from '@/components/explorer/aiMessageAccessLogic';
+import { useConversation } from '@/hooks/useAiMessageAccess';
+import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
 
 // ── Single message row (bubble + timestamp) ──────────────────────────────────
 function Bubble({ m }: { m: Msg }) {
@@ -254,21 +247,13 @@ export default function ChatView() {
     );
   };
 
-  // ── AI message access (#172) ───────────────────────────────────────────────
+  // ── AI message access (#193) ───────────────────────────────────────────────
   // Every thread is a real server conversation (no demo threads since #145).
-  // The bar's conversation query is disabled for an empty id.
-  const aiControl = useAiAccessControl(convId);
-  const aiState = useAiMessageAccessState(!!convId);
-  const dismissNotice = useDismissAiNotice();
-  // Closed this session (covers the gap before the server answers, and a failed
-  // record: the server still says "not dismissed", so it returns next open).
-  const [noticeClosed, setNoticeClosed] = useState(false);
-  const noticeOpen = shouldShowNotice(aiState.data, noticeClosed, !!convId);
-  const closeNotice = () => {
-    setNoticeClosed(true);
-    // Fire and forget: a failure shows nothing and is retried on the next open.
-    dismissNotice.mutate();
-  };
+  // The query is disabled for an empty id. Unknown / loading state stays gray.
+  const aiConv = useConversation(convId);
+  // Pick up changes made elsewhere (e.g. the settings screen) on coming back.
+  useRefetchOnFocus(aiConv.refetch, !!convId);
+  const aiIcon = chatAiIconView(aiConv.data?.aiAccess);
   const openAiSettings = () => router.push('/ai-message-access');
 
   const hasText = draft.trim().length > 0;
@@ -403,6 +388,35 @@ export default function ChatView() {
           </Pressable>
         ) : null}
 
+        {/* AI access button: same 38px round chip as the call button. Coral when
+            AI access is on for this chat, gray otherwise (incl. loading). Static
+            style objects only (#190). Needs a conversation id. */}
+        {convId ? (
+          <Pressable
+            onPress={openAiSettings}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={aiIcon.label}
+            accessibilityState={{ selected: aiIcon.highlighted }}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: aiIcon.highlighted
+                ? EX.color.primaryTint10
+                : EX.color.line06,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ic.spark
+              size={18}
+              color={aiIcon.highlighted ? EX.color.primary : EX.color.inkMuted}
+              strokeWidth={1.8}
+            />
+          </Pressable>
+        ) : null}
+
         {/* Phone / call button — source: 38px coral-tint chip (no border) */}
         <Pressable
           hitSlop={6}
@@ -418,26 +432,6 @@ export default function ChatView() {
           <Ic.phone size={18} color={EX.color.primary} strokeWidth={1.8} />
         </Pressable>
       </BlurView>
-
-      {/* ── AI access bar (pinned; does not scroll with messages) ───────────── */}
-      {convId ? (
-        <AiAccessBar control={aiControl} onOpenSettings={openAiSettings} />
-      ) : null}
-
-      {/* ── One-time AI notice (plan-only people, until dismissed) ──────────── */}
-      {aiState.data ? (
-        <AiNoticeSheet
-          visible={noticeOpen}
-          wording={aiState.data.noticeWording}
-          control={aiControl}
-          onClose={closeNotice}
-          onOpenSettings={() => {
-            // Close the sheet (recording the dismissal), then open the screen.
-            closeNotice();
-            openAiSettings();
-          }}
-        />
-      ) : null}
 
       {/* ── Shared files sheet ────────────────────────────────────────────── */}
       <Modal
