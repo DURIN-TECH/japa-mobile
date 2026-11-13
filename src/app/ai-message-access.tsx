@@ -22,7 +22,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow } from '@/components/explorer/theme';
 import {
@@ -37,14 +37,11 @@ import {
   accountWideError,
   approvalError,
   approvalMode,
-  chatSwitchView,
   withdrawConfirmBody,
 } from '@/components/explorer/aiMessageAccessLogic';
 import {
   useAiMessageAccessState,
   useApproveAiAccess,
-  useConversation,
-  useSetChatAiAccess,
   useSetAccountWideOff,
   useWithdrawAiAccess,
 } from '@/hooks/useAiMessageAccess';
@@ -126,113 +123,6 @@ function WordingCard({ heading, text }: { heading: string; text: string }) {
         ))}
       </View>
     </Card>
-  );
-}
-
-// ── "This chat": the per-chat switch (only when opened from a chat) ──────────
-// Not optimistic: the switch keeps the server's value until the call returns.
-// Works for everyone (qualifying or not): it only changes MY side of the chat.
-function ThisChatSection({ conversationId }: { conversationId: string }) {
-  const conv = useConversation(conversationId);
-  const setSwitch = useSetChatAiAccess(conversationId);
-  const offline = useIsOffline();
-  const [saveError, setSaveError] = useState<{
-    off: boolean;
-    status?: number;
-  } | null>(null);
-
-  const view = chatSwitchView({
-    aiAccess: conv.data?.aiAccess,
-    saving: setSwitch.isPending ? { off: !!setSwitch.variables } : null,
-    offline,
-    saveError,
-  });
-
-  const toggle = (off: boolean) => {
-    setSaveError(null);
-    setSwitch.mutate(off, {
-      onError: (e) =>
-        setSaveError({ off, status: (e as { status?: number })?.status }),
-    });
-  };
-
-  return (
-    <>
-      <SectionTitle>{AI_COPY.thisChat}</SectionTitle>
-      <View
-        style={[
-          {
-            backgroundColor: EX.color.cardWhite,
-            borderRadius: 22,
-            borderWidth: 1,
-            borderColor: EX.color.line06,
-            paddingVertical: 15,
-            paddingHorizontal: 16,
-          },
-          EXShadow.card,
-        ]}
-      >
-        {view ? (
-          <>
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
-            >
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text
-                  style={{
-                    fontSize: 15,
-                    fontWeight: '600',
-                    color: EX.color.ink,
-                  }}
-                >
-                  {AI_COPY.chatSwitchTitle}
-                </Text>
-                {view.helper ? (
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      lineHeight: 19,
-                      color: EX.color.inkMuted,
-                      marginTop: 2,
-                    }}
-                  >
-                    {view.helper}
-                  </Text>
-                ) : null}
-              </View>
-              {view.busy ? (
-                <ActivityIndicator size="small" color={EX.color.primary} />
-              ) : null}
-              <Switch
-                value={view.value}
-                onValueChange={() => toggle(view.nextOff)}
-                disabled={view.disabled}
-                trackColor={{ false: EX.color.line10, true: EX.color.primary }}
-                thumbColor="#fff"
-                ios_backgroundColor={EX.color.line10}
-                accessibilityLabel={AI_COPY.chatSwitchTitle}
-                accessibilityHint={view.helper ?? undefined}
-                accessibilityState={{
-                  checked: view.value,
-                  disabled: view.disabled,
-                  busy: view.busy,
-                }}
-                style={{ opacity: view.disabled ? 0.6 : 1 }}
-              />
-            </View>
-            {view.error ? (
-              <View style={{ marginTop: 10 }}>
-                <InlineError message={view.error} />
-              </View>
-            ) : null}
-          </>
-        ) : conv.isLoading ? (
-          <ActivityIndicator color={EX.color.primary} />
-        ) : (
-          <InlineError message={AI_COPY.errChatLoad} />
-        )}
-      </View>
-    </>
   );
 }
 
@@ -331,10 +221,6 @@ function AllChatsSection({
 
 export default function AiMessageAccessScreen() {
   const router = useRouter();
-  // Present only when opened from a chat's header icon (#193).
-  const { conversationId } = useLocalSearchParams<{
-    conversationId?: string;
-  }>();
   const insets = useSafeAreaInsets();
   const offline = useIsOffline();
   const q = useAiMessageAccessState();
@@ -433,11 +319,6 @@ export default function AiMessageAccessScreen() {
           gap: 14,
         }}
       >
-        {/* "This chat" row: only when opened from a chat, never from Settings. */}
-        {conversationId ? (
-          <ThisChatSection conversationId={conversationId} />
-        ) : null}
-
         {approved ? (
           <>
             <View>

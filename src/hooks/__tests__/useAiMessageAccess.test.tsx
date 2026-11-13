@@ -1,7 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Hooks of the AI message access feature (issue #172): the calls they make, and
-// the rule that the chat switch is NOT optimistic (the cache changes only after
-// the server answers). Run through a tiny harness component (no extra libs).
+// that the cache changes only after the server answers. Run through a tiny harness component (no extra libs).
 // ─────────────────────────────────────────────────────────────────────────────
 
 jest.mock('@/services/api.service', () => ({
@@ -25,10 +24,8 @@ import {
 } from '@jest/globals';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
-  conversationKey,
   useApproveAiAccess,
   useSetAccountWideOff,
-  useSetChatAiAccess,
   useWithdrawAiAccess,
   AI_ACCESS_KEY,
 } from '../useAiMessageAccess';
@@ -63,11 +60,6 @@ function mount<T>(useHook: () => T, qc: QueryClient) {
   return ref as { current: T };
 }
 
-const conv = (off: boolean) => ({
-  id: 'c1',
-  aiAccess: { myAiAccess: off ? 'off' : 'on' },
-});
-
 let qc: QueryClient;
 afterEach(() => {
   act(() => renderers.splice(0).forEach((r) => r.unmount()));
@@ -79,49 +71,6 @@ beforeEach(() => {
       queries: { gcTime: Infinity },
       mutations: { retry: false, gcTime: Infinity },
     },
-  });
-});
-
-describe('useSetChatAiAccess', () => {
-  it('PUTs { off } and caches the returned conversation only AFTER the call returns', async () => {
-    qc.setQueryData(conversationKey('c1'), conv(false));
-    let resolve!: (v: unknown) => void;
-    api.put.mockReturnValue(new Promise((r) => (resolve = r)));
-
-    const h = mount(() => useSetChatAiAccess('c1'), qc);
-    await act(async () => {
-      h.current.mutate(true);
-    });
-
-    expect(api.put).toHaveBeenCalledWith('/conversations/c1/ai-access', {
-      off: true,
-    });
-    // Still the OLD value while the call is in flight: not optimistic.
-    expect(
-      qc.getQueryData<ReturnType<typeof conv>>(conversationKey('c1'))?.aiAccess
-        .myAiAccess,
-    ).toBe('on');
-
-    await act(async () => {
-      resolve({ success: true, data: conv(true) });
-    });
-    expect(
-      qc.getQueryData<ReturnType<typeof conv>>(conversationKey('c1'))?.aiAccess
-        .myAiAccess,
-    ).toBe('off');
-  });
-
-  it('on failure the cache keeps the old value', async () => {
-    qc.setQueryData(conversationKey('c1'), conv(false));
-    api.put.mockRejectedValue({ code: 'INTERNAL_ERROR', status: 500 });
-    const h = mount(() => useSetChatAiAccess('c1'), qc);
-    await act(async () => {
-      h.current.mutate(true, { onError: () => {} });
-    });
-    expect(
-      qc.getQueryData<ReturnType<typeof conv>>(conversationKey('c1'))?.aiAccess
-        .myAiAccess,
-    ).toBe('on');
   });
 });
 

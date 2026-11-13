@@ -230,11 +230,7 @@ export default function ChatView() {
   // Pick up changes made elsewhere (e.g. the settings screen) on coming back.
   useRefetchOnFocus(aiConv.refetch, isLive && !!convId);
   const aiIcon = chatAiIconView(aiConv.data?.aiAccess);
-  const openAiSettings = () =>
-    router.push({
-      pathname: '/ai-message-access',
-      params: { conversationId: convId },
-    });
+  const openAiSettings = () => router.push('/ai-message-access');
 
   const hasText = draft.trim().length > 0;
   // Show a spinner only when a live thread is still loading its first page.

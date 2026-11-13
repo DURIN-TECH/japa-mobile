@@ -9,10 +9,8 @@ import {
   AI_COPY,
   approvalMode,
   chatAiIconView,
-  chatSwitchView,
   settingsRowValue,
   withdrawConfirmBody,
-  type ChatSwitchInput,
 } from '../aiMessageAccessLogic';
 import type {
   AiMessageAccessState,
@@ -86,90 +84,6 @@ describe('chatAiIconView', () => {
       otherSwitchedOff: false,
     } as unknown as ConversationAiAccess;
     expect(chatAiIconView(partial).highlighted).toBe(false);
-  });
-});
-
-describe('chatSwitchView ("This chat" row)', () => {
-  const v = (o: Partial<ChatSwitchInput> = {}) =>
-    chatSwitchView({
-      aiAccess: access(),
-      saving: null,
-      offline: false,
-      saveError: null,
-      ...o,
-    });
-
-  it('unknown aiAccess gives no switch', () => {
-    expect(v({ aiAccess: null })).toBeNull();
-    expect(v({ aiAccess: undefined })).toBeNull();
-  });
-
-  it('on and off, no helper in the plain states; works for non-qualifying people', () => {
-    expect(v()).toMatchObject({
-      value: true,
-      nextOff: true,
-      helper: null,
-      disabled: false,
-    });
-    const off = v({
-      aiAccess: access({
-        myAiAccess: 'off',
-        myChatSwitchOff: true,
-        qualifies: false,
-      }),
-    });
-    expect(off).toMatchObject({
-      value: false,
-      nextOff: false,
-      helper: null,
-      disabled: false,
-    });
-  });
-
-  it('one short line when the other person has switched it off', () => {
-    expect(v({ aiAccess: access({ otherSwitchedOff: true }) })?.helper).toBe(
-      'The other person has switched it off.',
-    );
-    expect(
-      v({ aiAccess: access({ otherSwitchedOff: true, myAiAccess: 'off' }) })
-        ?.helper,
-    ).toBe('The other person has switched it off too.');
-  });
-
-  it('saving keeps the OLD value (not optimistic), disabled and busy', () => {
-    expect(v({ saving: { off: true } })).toMatchObject({
-      value: true,
-      disabled: true,
-      busy: true,
-      helper: 'Switching off…',
-    });
-  });
-
-  it('offline disables the switch with the offline line and hides the repeated error', () => {
-    const r = v({ offline: true, saveError: { off: true, status: 0 } });
-    expect(r).toMatchObject({
-      disabled: true,
-      helper: 'You’re offline. Reconnect to change this.',
-      error: null,
-    });
-  });
-
-  it('account-wide off keeps the switch off and disabled', () => {
-    expect(
-      v({ aiAccess: access({ accountWideOff: true, myAiAccess: 'off' }) }),
-    ).toMatchObject({ value: false, disabled: true });
-  });
-
-  it('errors name the state it is still in; 403 wins', () => {
-    expect(v({ saveError: { off: true } })?.error).toBe(
-      'We couldn’t switch AI access off. It’s still on. Try again.',
-    );
-    expect(v({ saveError: { off: false } })?.error).toBe(
-      'We couldn’t switch AI access on. It’s still off. Try again.',
-    );
-    expect(v({ saveError: { off: true, status: 403 } })?.error).toBe(
-      'You can’t change AI access for this chat.',
-    );
   });
 });
 

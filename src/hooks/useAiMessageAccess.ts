@@ -2,15 +2,14 @@
  * useAiMessageAccess hooks (issue #172)
  *
  * React Query hooks for the AI message access gate: the signed-in person's
- * approval and account-wide setting, the one-time notice, and the per-chat
- * switch on a conversation.
+ * approval and account-wide setting, and a conversation's effective `aiAccess`
+ * (read-only: it drives the chat header icon).
  *
  * Backend endpoints used:
  * - GET    /users/me/ai-message-access                      → state
  * - POST   /users/me/ai-message-access/approval             → approve
  * - DELETE /users/me/ai-message-access/approval             → withdraw
  * - PUT    /users/me/ai-message-access/account-wide-off     → "keep AI out of all my chats"
- * - POST   /users/me/ai-message-access/notice-dismissed     → one-time notice seen
  * - GET    /conversations/:id                               → conversation + aiAccess
  * - PUT    /conversations/:id/ai-access                     → my side of the chat switch
  *
@@ -31,7 +30,7 @@ export const AI_ACCESS_KEY = ['ai-message-access'] as const;
 export const conversationKey = (id: string) => ['conversation', id] as const;
 
 // ─────────────────────────────────────────────
-// USER STATE (approval, plan, account-wide setting, notice)
+// USER STATE (approval, plan, account-wide setting)
 // ─────────────────────────────────────────────
 
 /** The caller's AI message access state, plus the wording an approval would record now. */
@@ -121,7 +120,7 @@ export function useSetAccountWideOff() {
 }
 
 // ─────────────────────────────────────────────
-// PER-CHAT SWITCH
+// CONVERSATION (read-only, for the chat header icon)
 // ─────────────────────────────────────────────
 
 /**
@@ -142,29 +141,5 @@ export function useConversation(conversationId: string) {
     },
     enabled: !!conversationId,
     refetchInterval: offline ? 10_000 : false,
-  });
-}
-
-/**
- * Switch MY side of the chat off or on. `off: true` = AI kept out. Any
- * participant may do this, qualifying or not. Returns the updated conversation,
- * which we cache; the switch only moves once that comes back.
- */
-export function useSetChatAiAccess(conversationId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (off: boolean) => {
-      const res = await tracked(() =>
-        apiService.put<Conversation>(
-          `/conversations/${conversationId}/ai-access`,
-          { off },
-        ),
-      );
-      return res.data;
-    },
-    onSuccess: (conv) => {
-      if (conv) qc.setQueryData(conversationKey(conversationId), conv);
-      qc.invalidateQueries({ queryKey: ['conversations'] });
-    },
   });
 }

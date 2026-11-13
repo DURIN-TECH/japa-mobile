@@ -4,7 +4,6 @@
 // Everything that DECIDES what the screens show lives here as plain functions,
 // so it can be unit-tested without rendering anything:
 //   - chatAiIconView: the chat header icon (highlighted or gray) and its label
-//   - chatSwitchView: the "This chat" switch on the AI settings screen
 //   - settingsRowValue / withdrawConfirmBody / approvalMode: settings + approval
 //
 // Copy is the design spec's wording, verbatim (curly apostrophes). All approval
@@ -26,17 +25,6 @@ export const AI_COPY = {
   iconOn: 'AI access on for this chat',
   iconOff: 'AI access off for this chat',
 
-  // "This chat" row on the AI settings screen (shown only when opened from a chat)
-  thisChat: 'This chat',
-  chatSwitchTitle: 'AI access in this chat',
-  chatOtherOff: 'The other person has switched it off.',
-  chatOtherOffBoth: 'The other person has switched it off too.',
-  errSwitchOff: 'We couldn’t switch AI access off. It’s still on. Try again.',
-  errSwitchOn: 'We couldn’t switch AI access on. It’s still off. Try again.',
-  errForbidden: 'You can’t change AI access for this chat.',
-  errChatLoad: 'We couldn’t load AI access for this chat.',
-  switchingOff: 'Switching off…',
-  switchingOn: 'Switching on…',
   offline: 'You’re offline. Reconnect to change this.',
   tryAgain: 'Try again',
 
@@ -53,13 +41,13 @@ export const AI_COPY = {
   introDefault:
     'Seli’s AI only reads your messages if you say so. Read the wording below, then approve it if you’re happy.',
   planNote:
-    'The plan you’re on includes AI, so Seli’s AI can read the messages you send without a separate approval. You can switch it off in any chat, or for all your chats below.',
+    'The plan you’re on includes AI, so Seli’s AI can read the messages you send without a separate approval. You can switch it off for all your chats below.',
   introPlan:
     'You can also approve it yourself. Your approval stays in place if your plan changes.',
   cardApproving: 'What you’re approving',
   cardApproved: 'What you approved',
   infoNote:
-    'You stay in control. Switch AI access off in any chat, keep AI out of all your chats, or withdraw your approval here, whenever you like.',
+    'You stay in control. Keep AI out of all your chats, or withdraw your approval here, whenever you like.',
   approveButton: 'Approve AI access',
   approvedHeading: 'You’ve approved AI message access',
   withdrawButton: 'Withdraw approval',
@@ -78,9 +66,10 @@ export const AI_COPY = {
   // Account-wide setting
   allChats: 'All chats',
   allChatsTitle: 'Keep AI out of all my chats',
-  allChatsOff: 'AI access follows each chat’s own switch.',
+  allChatsOff:
+    'Seli’s AI reads your messages only if you’ve approved it or your plan includes it.',
   allChatsOn:
-    'Seli’s AI reads none of your messages, and every chat you’re in counts as switched off by you. This covers new chats too.',
+    'Seli’s AI reads none of your messages. This covers new chats too.',
   saving: 'Saving…',
   errAllChatsOn: 'We couldn’t turn this on. Nothing has changed. Try again.',
   errAllChatsOff:
@@ -108,59 +97,6 @@ export function chatAiIconView(
   return {
     highlighted,
     label: highlighted ? AI_COPY.iconOn : AI_COPY.iconOff,
-  };
-}
-
-// ── "This chat" row on the settings screen ───────────────────────────────────
-
-export interface ChatSwitchInput {
-  aiAccess: ConversationAiAccess | null | undefined;
-  /** A switch call is in flight: the `off` it is trying to set. */
-  saving: { off: boolean } | null;
-  offline: boolean;
-  /** The last switch call failed: the `off` it tried, and the HTTP status. */
-  saveError: { off: boolean; status?: number } | null;
-}
-
-export interface ChatSwitchView {
-  /** Shown position: MY side (the OLD value while saving: not optimistic). */
-  value: boolean;
-  disabled: boolean;
-  busy: boolean;
-  /** One short line under the title; null when there is nothing to say. */
-  helper: string | null;
-  error: string | null;
-  /** The `off` to send when toggled. */
-  nextOff: boolean;
-}
-
-/** State of the per-chat switch; null while `aiAccess` is unknown. */
-export function chatSwitchView(i: ChatSwitchInput): ChatSwitchView | null {
-  const a = i.aiAccess;
-  if (!a) return null;
-  const on = a.myAiAccess === 'on';
-  let helper: string | null = null;
-  if (i.saving)
-    helper = i.saving.off ? AI_COPY.switchingOff : AI_COPY.switchingOn;
-  else if (i.offline) helper = AI_COPY.offline;
-  else if (a.otherSwitchedOff)
-    helper = on ? AI_COPY.chatOtherOff : AI_COPY.chatOtherOffBoth;
-  let error: string | null = null;
-  if (i.saveError && !i.offline)
-    error =
-      i.saveError.status === 403
-        ? AI_COPY.errForbidden
-        : i.saveError.off
-          ? AI_COPY.errSwitchOff
-          : AI_COPY.errSwitchOn;
-  return {
-    value: on,
-    // The all-chats setting owns the state while it is on (switch lives below).
-    disabled: !!i.saving || i.offline || a.accountWideOff,
-    busy: !!i.saving,
-    helper,
-    error,
-    nextOff: on,
   };
 }
 
