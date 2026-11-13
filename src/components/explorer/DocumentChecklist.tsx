@@ -42,6 +42,12 @@ export interface ChecksProps {
   retryingDocId: string | null;
 }
 
+/** A failed checklist-item upload (japa#174): which request it was and what to say. */
+export interface UploadFailure {
+  documentRequestId?: string;
+  message: string;
+}
+
 /** The `requirementId` the backend gives an upload made against a request. */
 export const checklistRequirementId = (documentRequestId: string) =>
   `docreq:${documentRequestId}`;
@@ -104,6 +110,7 @@ function ChecklistRow({
   uploading,
   onUpload,
   checksProps,
+  uploadError,
 }: {
   item: ChecklistItem;
   docs: Document[];
@@ -111,6 +118,8 @@ function ChecklistRow({
   uploading: boolean;
   onUpload: (item: ChecklistItem) => void;
   checksProps: ChecksProps;
+  /** japa#174: message of a failed upload made from THIS item (shown in its card). */
+  uploadError?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const state = itemState(item, docs);
@@ -252,6 +261,13 @@ function ChecklistRow({
         />
       ) : null}
 
+      {/* Failed upload from this item: error above its button (#174). */}
+      {uploadError ? (
+        <View style={{ marginTop: 10 }}>
+          <InlineError message={uploadError} />
+        </View>
+      ) : null}
+
       {canUpload ? (
         <PressableStatic
           onPress={() => onUpload(item)}
@@ -276,9 +292,11 @@ function ChecklistRow({
           <Text style={{ color: '#fff', fontSize: 13.5, fontWeight: '700' }}>
             {uploading
               ? 'Uploading…'
-              : state === 'needs_another'
-                ? 'Upload another'
-                : 'Upload'}
+              : uploadError
+                ? 'Try again'
+                : state === 'needs_another'
+                  ? 'Upload another'
+                  : 'Upload'}
           </Text>
         </PressableStatic>
       ) : null}
@@ -300,6 +318,7 @@ function Group({
   uploadingId: string | null;
   onUpload: (item: ChecklistItem) => void;
   checksProps: ChecksProps;
+  uploadFailure?: UploadFailure | null;
 }) {
   // Hidden when empty (the sponsor group in particular).
   if (items.length === 0) return null;
@@ -340,6 +359,12 @@ function Group({
             uploading={rest.uploadingId === item.documentRequestId}
             onUpload={rest.onUpload}
             checksProps={rest.checksProps}
+            uploadError={
+              rest.uploadFailure &&
+              rest.uploadFailure.documentRequestId === item.documentRequestId
+                ? rest.uploadFailure.message
+                : null
+            }
           />
         ))}
       </View>
@@ -407,6 +432,7 @@ export function DocumentChecklist({
   onUpload,
   onOpenIntake,
   checksProps,
+  uploadFailure,
 }: {
   checklist?: Checklist | null;
   loading: boolean;
@@ -423,6 +449,8 @@ export function DocumentChecklist({
   onOpenIntake?: () => void;
   /** Per-upload check data and actions (#115). */
   checksProps: ChecksProps;
+  /** The last failed upload; shown inside the item it came from (#174). */
+  uploadFailure?: UploadFailure | null;
 }) {
   let body: React.ReactNode;
   if (loading) {
@@ -482,6 +510,7 @@ export function DocumentChecklist({
           uploadingId={uploadingId}
           onUpload={onUpload}
           checksProps={checksProps}
+          uploadFailure={uploadFailure}
         />
         <Group
           title="Your sponsor's"
@@ -491,6 +520,7 @@ export function DocumentChecklist({
           uploadingId={uploadingId}
           onUpload={onUpload}
           checksProps={checksProps}
+          uploadFailure={uploadFailure}
         />
       </>
     );

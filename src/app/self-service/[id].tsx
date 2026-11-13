@@ -116,6 +116,13 @@ import {
   useStatement,
 } from '@/hooks/useStatement';
 
+// japa#174: requirement key for an upload tied to no requirement or checklist
+// item (the "upload what you already have" buttons). The backend only needs a
+// requirementId to be present (it does not check it against the visa), and the
+// screen's "Other documents" card shows every document whose requirementId is
+// not a listed requirement and not a checklist item, so these land there.
+const GENERAL_REQUIREMENT_ID = 'general';
+
 // japa#174: the one upload-failure line (replaces the old Alert).
 const uploadErrorCopy = (fileName: string) =>
   `We couldn’t upload ${fileName}. Check your connection and try again.`;
@@ -630,7 +637,7 @@ export default function SelfServiceView() {
           // the request and derives the requirement id (`docreq:<id>`).
           ...(documentRequestId
             ? { documentRequestId }
-            : { requirementId: requirementId ?? undefined }),
+            : { requirementId: requirementId ?? GENERAL_REQUIREMENT_ID }),
           fileName: f.name,
           fileType: contentType,
           fileSizeMb: (f.size ?? 0) / 1e6,
@@ -1211,6 +1218,16 @@ export default function SelfServiceView() {
                   onRetry={() => checklistQ.refetch()}
                   docs={docs}
                   uploadingId={uploadingItemId}
+                  // A failed item upload shows inside that item's card (#174);
+                  // its button becomes Try again.
+                  uploadFailure={
+                    uploadFailure?.documentRequestId
+                      ? {
+                          documentRequestId: uploadFailure.documentRequestId,
+                          message: uploadErrorCopy(uploadFailure.fileName),
+                        }
+                      : null
+                  }
                   // Before the visit questions are answered the list points at them.
                   onOpenIntake={
                     intakeStep
@@ -1234,20 +1251,6 @@ export default function SelfServiceView() {
                       : undefined
                   }
                 />
-                {/* A failed upload from a checklist item: shown under the list. */}
-                {uploadFailure?.documentRequestId ? (
-                  <View style={{ marginTop: 10, gap: 8 }}>
-                    <InlineError
-                      message={uploadErrorCopy(uploadFailure.fileName)}
-                    />
-                    <OutlineButton
-                      label="Try again"
-                      onPress={() =>
-                        handleUpload(null, uploadFailure.documentRequestId)
-                      }
-                    />
-                  </View>
-                ) : null}
                 {/* Waiting on the visit details with no requirements: uploading
                     what you already have must still be possible. */}
                 {intakeWaiting ? (
