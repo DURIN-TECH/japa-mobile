@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
+// japa#106: a 404 is final (show the not-found state), so don't retry it.
 import {
   Application,
   ApplicationTimeline,
@@ -38,6 +40,9 @@ export function useApplication(applicationId: string) {
     },
     enabled: !!applicationId,
     staleTime: 1000 * 60 * 2,
+    // japa#106: a 404 (not yours / gone) never succeeds on retry; fail fast
+    // so the screen shows its not-found state instead of a long spinner.
+    retry: retryUnlessNotFound,
   });
 }
 
