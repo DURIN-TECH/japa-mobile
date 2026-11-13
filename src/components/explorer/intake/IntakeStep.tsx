@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import type { UseQueryResult } from '@tanstack/react-query';
 import {
   displayAnswer,
@@ -20,6 +20,7 @@ import {
   toIsoDate,
   visibleIds,
 } from './intakeLogic';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Progress, SectionTitle } from '@/components/explorer/primitives';
@@ -50,7 +51,7 @@ function CardButton({
 }) {
   const coral = variant === 'coral';
   return (
-    <Pressable
+    <PressableStatic
       onPress={onPress}
       accessibilityRole="button"
       style={({ pressed }) => ({
@@ -76,7 +77,7 @@ function CardButton({
         {label}
       </Text>
       {arrow ? <Ic.arrow size={16} color="#fff" strokeWidth={2} /> : null}
-    </Pressable>
+    </PressableStatic>
   );
 }
 

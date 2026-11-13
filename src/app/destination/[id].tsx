@@ -4,16 +4,9 @@
 // CTA. Reanimated drives the hero parallax/zoom from the sheet's scroll offset.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  Text,
-  View,
-  ScrollView,
-} from 'react-native';
+import React, { useMemo } from 'react';
+import { Pressable, Text, View, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
-import { BlurView } from 'expo-blur';
 import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -32,11 +25,14 @@ import {
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { useTopAgents } from '@/hooks/useAgents';
-import { useCreateApplication } from '@/hooks/useApplications';
+import { useStartApplication } from '@/hooks/useStartApplication';
+import {
+  StartApplicationBar,
+  startBarExtraHeight,
+} from '@/components/explorer/StartApplicationBar';
 import { isNotFoundError } from '@/hooks/queryErrors';
 // japa#145: shared states; no demo destination, requirements or agents.
 import { CenteredState } from '@/components/explorer/CenteredState';
-import { InlineError } from '@/components/explorer/AccountForm';
 import {
   StateEmpty,
   StateLoading,
@@ -96,6 +92,7 @@ function PathCard({
   accent = EX.color.ink,
   dark = false,
   onPress,
+  disabled = false,
 }: {
   icon: React.ElementType;
   title: string;
@@ -104,11 +101,15 @@ function PathCard({
   accent?: string;
   dark?: boolean;
   onPress?: () => void;
+  /** japa#174: dimmed like the sticky CTA when the visa can't be started. */
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       style={{
+        opacity: disabled ? 0.6 : 1,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 14,
@@ -254,9 +255,11 @@ export default function DestinationDetail() {
   // this visa, then opens self-service with that application id. A failure
   // shows an InlineError above the CTA (the CTA is the retry); it never opens
   // a checklist for an application that doesn't exist.
-  const createApp = useCreateApplication();
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
+  // japa#174: shared start flow (402 → upgrade, 404/403 → unavailable, other → retry).
+  const startApp = useStartApplication(
+    d?.id ?? id ?? '',
+    code ?? d?.flag ?? '',
+  );
 
   // ── First load, nothing cached: coral spinner ────────────────────────────
   if (liveQ.isLoading) {
@@ -294,29 +297,6 @@ export default function DestinationDetail() {
       />
     );
   }
-
-  // Start the self-service application: creates a real Application (mode
-  // 'self') and opens self-service with its id.
-  const startSelfService = async () => {
-    if (creating) return;
-    setCreateError(null);
-    try {
-      setCreating(true);
-      const app = await createApp.mutateAsync({
-        visaTypeId: d.id,
-        countryCode: (code ?? d.flag).toUpperCase(),
-        mode: 'self',
-      });
-      if (!app?.id) throw new Error('No application id');
-      router.push(`/self-service/${app.id}`);
-    } catch {
-      setCreateError(
-        'We couldn’t start your application. Try again in a moment.',
-      );
-    } finally {
-      setCreating(false);
-    }
-  };
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -423,7 +403,7 @@ export default function DestinationDetail() {
             minHeight: 540,
             paddingTop: 8,
             paddingHorizontal: 20,
-            paddingBottom: 130,
+            paddingBottom: 130 + startBarExtraHeight(startApp.failure),
             shadowColor: '#171326',
             shadowOpacity: 0.28,
             shadowRadius: 30,
@@ -525,7 +505,8 @@ export default function DestinationDetail() {
               icon={Ic.docs}
               title="Self-service"
               sub="Step-by-step DIY application"
-              onPress={startSelfService}
+              onPress={startApp.start}
+              disabled={startApp.failure === 'unavailable'}
             />
           </View>
 
@@ -875,84 +856,14 @@ export default function DestinationDetail() {
       </Animated.ScrollView>
 
       {/* Sticky glass CTA */}
-      <BlurView
-        intensity={30}
-        tint="light"
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          paddingTop: 16,
-          paddingHorizontal: 20,
-          paddingBottom: Math.max(insets.bottom, 16) + 6,
-          backgroundColor: EX.color.glassWarmSoft,
-          borderTopWidth: 1,
-          borderTopColor: EX.color.line06,
-        }}
-      >
-        {/* Create failure: InlineError above the CTA (the CTA retries). */}
-        {createError ? (
-          <View style={{ marginBottom: 10 }}>
-            <InlineError message={createError} />
-          </View>
-        ) : null}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View>
-            <Text
-              style={{
-                fontSize: 11.5,
-                color: EX.color.muted,
-                fontWeight: '500',
-              }}
-            >
-              Starting at
-            </Text>
-            <Text
-              style={{
-                fontSize: 21,
-                fontWeight: '700',
-                color: EX.color.ink,
-                letterSpacing: -0.21,
-              }}
-            >
-              ${d.price.toLocaleString()}
-            </Text>
-          </View>
-          <Pressable
-            onPress={startSelfService}
-            disabled={creating}
-            style={{
-              flex: 1,
-              height: 54,
-              borderRadius: 16,
-              backgroundColor: EX.color.primary,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              shadowColor: EX.color.primary,
-              shadowOpacity: 0.45,
-              shadowRadius: 16,
-              shadowOffset: { width: 0, height: 10 },
-              elevation: 6,
-            }}
-          >
-            {creating ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Text
-                  style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
-                >
-                  Start application
-                </Text>
-                <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-              </>
-            )}
-          </Pressable>
-        </View>
-      </BlurView>
+      {/* Sticky CTA + start-failure states (japa#174) */}
+      <StartApplicationBar
+        price={d.price}
+        creating={startApp.creating}
+        failure={startApp.failure}
+        onStart={startApp.start}
+        onDismissUpgrade={startApp.dismissUpgrade}
+      />
     </View>
   );
 }

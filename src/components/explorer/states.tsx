@@ -35,7 +35,6 @@
 import React from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   Text,
   View,
   type StyleProp,
@@ -43,6 +42,7 @@ import {
 } from 'react-native';
 import { EX, EXShadow } from './theme';
 import { InlineError } from './AccountForm';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 
 /** Any lucide / `Ic` icon component. */
 export type StateIcon = React.ComponentType<{
@@ -81,7 +81,7 @@ export function OutlineButton({
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <Pressable
+    <PressableStatic
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
@@ -103,7 +103,7 @@ export function OutlineButton({
       <Text style={{ color: EX.color.ink, fontSize: 15, fontWeight: '700' }}>
         {label}
       </Text>
-    </Pressable>
+    </PressableStatic>
   );
 }
 
@@ -122,7 +122,7 @@ export function CoralButton({
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <Pressable
+    <PressableStatic
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -143,7 +143,7 @@ export function CoralButton({
       <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
         {label}
       </Text>
-    </Pressable>
+    </PressableStatic>
   );
 }
 

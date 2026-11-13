@@ -11,12 +11,17 @@
 // the visa breakdown's "Start application", or from the case's next step).
 // The hero + sheet come from the backend: `useApplication` → `useVisaType`
 // (requirements) → `useApplicationDocuments`, with real document upload.
-// States (#145 design spec, self-service row):
+// States (#145 + #174 design spec, self-service rows):
 //   • loading      → coral spinner
-//   • unknown id   → CenteredState "We couldn’t find this checklist" → Tracker
-//     (a 404 or any non-application id; never the old Canada demo checklist)
+//   • not found    → CenteredState "We couldn’t find this application" → Tracker
+//     (404 OR 403: an unknown id, a visa id, someone else's application; the
+//     same screen so it never confirms another account's application exists)
 //   • load error   → CenteredState with InlineError + Outline "Try again"
-//   • no items     → `docs` "Nothing to upload yet" in the upload step
+//   • Step 1       → official link only when the visa has an `applicationUrl`;
+//     otherwise a plain "we don't have the link yet" body (never a guessed host)
+//   • Step 2       → no requirements and no checklist → ONE empty state with an
+//     "Upload a document" button; a failed upload → InlineError + Try again
+// Nothing here is ever drawn from a fixture (no IRCC, no Canada, no demo rows).
 //
 // Every measurement below is quoted from the prototype (flows.jsx). All hooks are
 // called unconditionally before any early return; the mode branch happens in the
@@ -24,26 +29,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import Animated, {
   useAnimatedScrollHandler,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { countryArt } from '@/components/explorer/liveExplore';
 import { Ic } from '@/components/explorer/icons';
@@ -59,6 +59,7 @@ import { useApplication } from '@/hooks/useApplications';
 import { isNotFoundError } from '@/hooks/queryErrors';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import {
+  OutlineButton,
   StateEmpty,
   StateError,
   StateLoading,
@@ -115,6 +116,17 @@ import {
   isStatementLocked,
   useStatement,
 } from '@/hooks/useStatement';
+
+// japa#174: requirement key for an upload tied to no requirement or checklist
+// item (the "upload what you already have" buttons). The backend only needs a
+// requirementId to be present (it does not check it against the visa), and the
+// screen's "Other documents" card shows every document whose requirementId is
+// not a listed requirement and not a checklist item, so these land there.
+const GENERAL_REQUIREMENT_ID = 'general';
+
+// japa#174: the one upload-failure line (replaces the old Alert).
+const uploadErrorCopy = (fileName: string) =>
+  `We couldn’t upload ${fileName}. Check your connection and try again.`;
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -350,11 +362,16 @@ function LiveRequirementCard({
   docs,
   uploading,
   onUpload,
+  uploadError,
+  onRetryUpload,
 }: {
   req: VisaRequirement;
   docs: Document[];
   uploading: boolean;
   onUpload: (requirementId: string) => void;
+  /** japa#174: message of the last failed upload made from THIS card. */
+  uploadError?: string | null;
+  onRetryUpload?: () => void;
 }) {
   // Done when every uploaded doc has reached verified / in-review (and at least
   // one exists) — "every verified || uploaded" heuristic.
@@ -447,8 +464,18 @@ function LiveRequirementCard({
         </View>
       ) : null}
 
+      {/* Failed upload from this card: InlineError + outline Try again (#174) */}
+      {uploadError ? (
+        <View style={{ marginTop: 12, gap: 8 }}>
+          <InlineError message={uploadError} />
+          {onRetryUpload ? (
+            <OutlineButton label="Try again" onPress={onRetryUpload} />
+          ) : null}
+        </View>
+      ) : null}
+
       {/* Coral Upload button (per-requirement) with in-flight spinner */}
-      <Pressable
+      <PressableStatic
         onPress={() => onUpload(req.id)}
         disabled={uploading}
         style={{
@@ -471,10 +498,150 @@ function LiveRequirementCard({
         <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>
           {uploading ? 'Uploading…' : 'Upload document'}
         </Text>
-      </Pressable>
+      </PressableStatic>
     </View>
   );
 }
+
+// ── SelfServiceHero — the fixed, parallaxing photo behind the sheet ───────────
+// japa#174: lives in its own memoized component that owns its animated style
+// and only receives the scroll shared value. The screen re-renders often
+// (review / document-check polling, focus refetches) and a long application
+// re-renders most; before, every render rebuilt the hero's animated style
+// array next to the screen's scroll handler and the parallax stopped tracking
+// on long applications. Memoized, the hero never re-renders unless its own
+// props change, so its animated style is created once and stays attached.
+const SelfServiceHero = React.memo(function SelfServiceHero({
+  scrollY,
+  img,
+  tone,
+  flag,
+  country,
+  refCode,
+  visa,
+}: {
+  scrollY: SharedValue<number>;
+  img: string;
+  tone: string;
+  flag: string;
+  country: string;
+  refCode: string;
+  visa: string;
+}) {
+  // The prototype translated the hero at `py * -0.3` (no image zoom).
+  const heroStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: scrollY.value * -0.3 }],
+  }));
+  return (
+    <Animated.View
+      style={[
+        {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: HERO,
+          overflow: 'hidden',
+          backgroundColor: tone,
+        },
+        heroStyle,
+      ]}
+    >
+      <Image
+        source={{ uri: img }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+        }}
+        contentFit="cover"
+        transition={200}
+      />
+      {/* Scrim — prototype: .82 → .2 @55% → .34, bottom→top */}
+      <LinearGradient
+        colors={[
+          'rgba(12,10,8,0.82)',
+          'rgba(12,10,8,0.2)',
+          'rgba(12,10,8,0.34)',
+        ]}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.5, y: 1 }}
+        end={{ x: 0.5, y: 0 }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+        }}
+      />
+
+      {/* Bottom hero content: glass "Self-service" badge · flag+country·ref · visa */}
+      <View style={{ position: 'absolute', left: 22, right: 22, bottom: 42 }}>
+        <BlurView
+          intensity={20}
+          tint="light"
+          style={{
+            alignSelf: 'flex-start',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            borderRadius: 999,
+            overflow: 'hidden',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.26)',
+            backgroundColor: 'rgba(255,255,255,0.16)',
+            paddingHorizontal: 11,
+            paddingVertical: 5,
+            marginBottom: 8,
+          }}
+        >
+          <Ic.docs size={13} color="#fff" strokeWidth={2} />
+          <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}>
+            Self-service
+          </Text>
+        </BlurView>
+
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 4,
+          }}
+        >
+          <Flag code={flag} size={18} radius={5} />
+          <Text
+            style={{
+              color: '#fff',
+              fontSize: 12.5,
+              fontWeight: '600',
+              opacity: 0.95,
+            }}
+          >
+            {country} · Ref {refCode}
+          </Text>
+        </View>
+        <Text
+          style={{
+            color: '#fff',
+            fontFamily: EX.font.display.semibold,
+            fontSize: 26,
+            lineHeight: 28,
+            letterSpacing: -0.26,
+            textShadowColor: 'rgba(0,0,0,0.3)',
+            textShadowOffset: { width: 0, height: 2 },
+            textShadowRadius: 14,
+          }}
+        >
+          {visa}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+});
 
 export default function SelfServiceView() {
   const router = useRouter();
@@ -541,6 +708,16 @@ export default function SelfServiceView() {
 
   // Per-requirement upload-in-flight tracking (holds the requirement id).
   const [uploadingReqId, setUploadingReqId] = useState<string | null>(null);
+  // Uploading from the Step 2 empty state (no requirement, no checklist item).
+  const [uploadingGeneral, setUploadingGeneral] = useState(false);
+  // japa#174: the last failed upload, replacing the old Alert. `key` says which
+  // card it came from: a requirement id, a checklist request id, or 'general'.
+  const [uploadFailure, setUploadFailure] = useState<{
+    key: string;
+    requirementId: string | null;
+    documentRequestId?: string;
+    fileName: string;
+  } | null>(null);
 
   // Parallax driven by the sheet's scroll offset. The prototype translated the
   // hero at `py * -0.3` (no image zoom) — matched exactly here.
@@ -548,9 +725,6 @@ export default function SelfServiceView() {
   const onScroll = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
   });
-  const heroStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: scrollY.value * -0.3 }],
-  }));
 
   // ── Upload flow (pick → signed URL → PUT to storage → register doc) ──────────
   // `uploadToStorage(uploadUrl, { uri, type, name })` fetches the file as a blob
@@ -559,6 +733,11 @@ export default function SelfServiceView() {
   const handleUpload = useCallback(
     async (requirementId: string | null, documentRequestId?: string) => {
       if (!app) return;
+      // Where the upload comes from (for the in-card error) and the file's name
+      // once it is known.
+      const failureKey = documentRequestId ?? requirementId ?? 'general';
+      let fileName = 'your file';
+      setUploadFailure(null);
       try {
         const res = await DocumentPicker.getDocumentAsync({
           type: ['application/pdf', 'image/*'],
@@ -566,11 +745,13 @@ export default function SelfServiceView() {
         });
         if (res.canceled) return;
         const f = res.assets[0];
+        fileName = f.name;
         const contentType = f.mimeType ?? 'application/octet-stream';
 
         // Checklist uploads track the request id; requirement uploads the req id.
         if (documentRequestId) setUploadingItemId(documentRequestId);
-        else setUploadingReqId(requirementId);
+        else if (requirementId) setUploadingReqId(requirementId);
+        else setUploadingGeneral(true);
 
         // 1) Signed upload URL for this file.
         const up = await getUploadUrl.mutateAsync({
@@ -594,7 +775,7 @@ export default function SelfServiceView() {
           // the request and derives the requirement id (`docreq:<id>`).
           ...(documentRequestId
             ? { documentRequestId }
-            : { requirementId: requirementId ?? undefined }),
+            : { requirementId: requirementId ?? GENERAL_REQUIREMENT_ID }),
           fileName: f.name,
           fileType: contentType,
           fileSizeMb: (f.size ?? 0) / 1e6,
@@ -603,14 +784,19 @@ export default function SelfServiceView() {
         // A new document changes the review's inputs: refresh the review state
         // so the card can show it as out of date.
         queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
-      } catch (e) {
-        Alert.alert(
-          'Upload failed',
-          e instanceof Error ? e.message : 'Please try again.',
-        );
+      } catch {
+        // Signed URL, storage PUT or register failed: show it in the card the
+        // upload came from (never an Alert), with a retry for the same target.
+        setUploadFailure({
+          key: failureKey,
+          requirementId,
+          documentRequestId,
+          fileName,
+        });
       } finally {
         setUploadingReqId(null);
         setUploadingItemId(null);
+        setUploadingGeneral(false);
       }
     },
     [app, getUploadUrl, createDoc, queryClient],
@@ -642,8 +828,8 @@ export default function SelfServiceView() {
     return (
       <CenteredState
         icon={Ic.docs}
-        title="We couldn’t load your checklist"
-        errorMessage={loadErrorCopy('your checklist')}
+        title="We couldn’t load your application"
+        errorMessage={loadErrorCopy('your application')}
         onRetry={() => appQ.refetch()}
         retrying={appQ.isRefetching}
         actionLabel="Back to your journey"
@@ -692,6 +878,35 @@ export default function SelfServiceView() {
       ? orderedReqs.filter((r) => docs.some((d) => d.requirementId === r.id))
       : orderedReqs;
 
+    // ── Step 2 states (japa#174) ─────────────────────────────────────────────
+    // Requirements (or documents) still loading / failed with nothing cached.
+    const reqsLoading =
+      (vtQ.isLoading && !vtQ.data) || (docsQ.isLoading && !docsQ.data);
+    const reqsError =
+      (vtQ.isError && !vtQ.data) || (docsQ.isError && !docsQ.data);
+    // The checklist has settled (not loading, not failed) for self-service.
+    const checklistSettled = !checklistQ.isLoading && !checklistQ.isError;
+    // Waiting on the visit details: the checklist keeps its own prompt.
+    const intakeWaiting =
+      orderedReqs.length === 0 && checklist?.state === 'intake_needed';
+    // Nothing published at all: no requirements and no personal checklist items.
+    const noRequirements =
+      orderedReqs.length === 0 &&
+      !hasChecklist &&
+      !intakeWaiting &&
+      (app.mode !== 'self' || checklistSettled);
+
+    // japa#174: when the visa lists requirements but the personal checklist is
+    // empty (e.g. "There is no document list for this visa yet."), showing that
+    // line above the requirement cards contradicts them. Hide the checklist
+    // section then; keep it while loading / failed / waiting on intake / filled.
+    const showChecklist =
+      checklistQ.isLoading ||
+      checklistQ.isError ||
+      hasChecklist ||
+      checklist?.state === 'intake_needed' ||
+      orderedReqs.length === 0;
+
     // ── Review state (issue #43) ─────────────────────────────────────────────
     const submitted = SUBMITTED_STATUSES.includes(app.status as string);
     const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError);
@@ -734,125 +949,23 @@ export default function SelfServiceView() {
     };
 
     // Official application URL → button host label (strip protocol + path).
-    const officialUrl = visaType?.applicationUrl;
+    // japa#174: no URL → no button and no guessed host (never a search link).
+    const officialUrl = visaType?.applicationUrl?.trim() || undefined;
     const officialHost = officialUrl
       ? officialUrl.replace(/^https?:\/\//, '').split('/')[0]
       : '';
 
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
-        {/* HERO — fixed behind, parallaxes as the sheet scrolls over it */}
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: HERO,
-              overflow: 'hidden',
-              backgroundColor: art.tone,
-            },
-            heroStyle,
-          ]}
-        >
-          <Image
-            source={{ uri: art.img }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-            }}
-            contentFit="cover"
-            transition={200}
-          />
-          {/* Scrim — prototype: .82 → .2 @55% → .34, bottom→top */}
-          <LinearGradient
-            colors={[
-              'rgba(12,10,8,0.82)',
-              'rgba(12,10,8,0.2)',
-              'rgba(12,10,8,0.34)',
-            ]}
-            locations={[0, 0.55, 1]}
-            start={{ x: 0.5, y: 1 }}
-            end={{ x: 0.5, y: 0 }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-            }}
-          />
-
-          {/* Bottom hero content: glass "Self-service" badge · flag+country·ref · visa */}
-          <View
-            style={{ position: 'absolute', left: 22, right: 22, bottom: 42 }}
-          >
-            <BlurView
-              intensity={20}
-              tint="light"
-              style={{
-                alignSelf: 'flex-start',
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                borderRadius: 999,
-                overflow: 'hidden',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.26)',
-                backgroundColor: 'rgba(255,255,255,0.16)',
-                paddingHorizontal: 11,
-                paddingVertical: 5,
-                marginBottom: 8,
-              }}
-            >
-              <Ic.docs size={13} color="#fff" strokeWidth={2} />
-              <Text
-                style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}
-              >
-                Self-service
-              </Text>
-            </BlurView>
-
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 4,
-              }}
-            >
-              <Flag code={flag} size={18} radius={5} />
-              <Text
-                style={{
-                  color: '#fff',
-                  fontSize: 12.5,
-                  fontWeight: '600',
-                  opacity: 0.95,
-                }}
-              >
-                {country} · Ref {ref}
-              </Text>
-            </View>
-            <Text
-              style={{
-                color: '#fff',
-                fontFamily: EX.font.display.semibold,
-                fontSize: 26,
-                lineHeight: 28,
-                letterSpacing: -0.26,
-                textShadowColor: 'rgba(0,0,0,0.3)',
-                textShadowOffset: { width: 0, height: 2 },
-                textShadowRadius: 14,
-              }}
-            >
-              {visa}
-            </Text>
-          </View>
-        </Animated.View>
+        <SelfServiceHero
+          scrollY={scrollY}
+          img={art.img}
+          tone={art.tone}
+          flag={flag}
+          country={country}
+          refCode={ref}
+          visa={visa}
+        />
 
         {/* Top glass back control (prototype top:54 → safe-area inset + 6) */}
         <View
@@ -1056,14 +1169,15 @@ export default function SelfServiceView() {
                       marginTop: 2,
                     }}
                   >
-                    Fill in your application on the official government portal
-                    before uploading documents here.
+                    {officialUrl
+                      ? 'Fill in your application on the official government portal before uploading documents here.'
+                      : `Fill in your application on the ${country} government’s official site, then upload your documents here. We don’t have the link for this visa yet.`}
                   </Text>
                 </View>
               </View>
               {/* Only render the open-portal button when the backend supplies a URL */}
               {officialUrl ? (
-                <Pressable
+                <PressableStatic
                   onPress={() => Linking.openURL(officialUrl)}
                   style={{
                     flexDirection: 'row',
@@ -1082,55 +1196,17 @@ export default function SelfServiceView() {
                   >
                     Open {officialHost}
                   </Text>
-                </Pressable>
+                </PressableStatic>
               ) : null}
             </View>
 
             {/* ── Upload documents: the personal checklist (#114) with each item's
-                upload-check result (#115), then any leftover requirement cards ── */}
+                upload-check result (#115), then any leftover requirement cards.
+                japa#174: the empty / loading / error states of this step. ── */}
             <SectionTitle>{`Step ${stepNo('documents')} · Upload documents`}</SectionTitle>
-            {/* Personal checklist (#114): self-service applications only. */}
-            {app.mode === 'self' ? (
-              <DocumentChecklist
-                checklist={checklist}
-                loading={checklistQ.isLoading}
-                error={checklistQ.isError}
-                onRetry={() => checklistQ.refetch()}
-                docs={docs}
-                uploadingId={uploadingItemId}
-                // Before the visit questions are answered the list points at them.
-                onOpenIntake={
-                  intakeStep
-                    ? () => router.push(`/self-service/${app.id}/intake`)
-                    : undefined
-                }
-                checksProps={{
-                  checks: checksQ.data,
-                  checksLoading: checksQ.isLoading,
-                  checksError: checksQ.isError,
-                  onReloadChecks: () => checksQ.refetch(),
-                  onRetryCheck: (documentId: string) =>
-                    retryCheck.mutate(documentId),
-                  retryingDocId: retryCheck.isPending
-                    ? (retryCheck.variables ?? null)
-                    : null,
-                }}
-                onUpload={(item: ChecklistItem) =>
-                  item.documentRequestId
-                    ? handleUpload(null, item.documentRequestId)
-                    : undefined
-                }
-              />
-            ) : null}
-            {/* japa#145 states for the checklist: requirements (or documents)
-                still loading → section spinner; a failed load → section
-                error with retry; nothing at all (no personal checklist #114,
-                no requirement cards, no other documents) → "Nothing to
-                upload yet". */}
-            {(vtQ.isLoading && !vtQ.data) ||
-            (docsQ.isLoading && !docsQ.data) ? (
+            {reqsLoading ? (
               <StateLoading section />
-            ) : (vtQ.isError && !vtQ.data) || (docsQ.isError && !docsQ.data) ? (
+            ) : reqsError ? (
               <StateError
                 section
                 message={loadErrorCopy('your checklist')}
@@ -1140,9 +1216,9 @@ export default function SelfServiceView() {
                 }}
                 retrying={vtQ.isRefetching || docsQ.isRefetching}
               />
-            ) : !hasChecklist &&
-              shownReqs.length === 0 &&
-              otherDocs.length === 0 ? (
+            ) : noRequirements ? (
+              // ONE empty state (replaces both "Nothing to upload yet" and the
+              // checklist's own "no document list" line). Uploads still work.
               <View
                 style={{
                   backgroundColor: EX.color.cardWhite,
@@ -1154,10 +1230,98 @@ export default function SelfServiceView() {
                 <StateEmpty
                   section
                   icon={Ic.docs}
-                  title="Nothing to upload yet"
-                  body="Your checklist fills in once your visa’s requirements are published."
+                  title="No requirements published for this visa yet."
+                  body="You can still upload documents you already have."
                 />
+                <View
+                  style={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}
+                >
+                  {uploadFailure?.key === 'general' ? (
+                    <InlineError
+                      message={uploadErrorCopy(uploadFailure.fileName)}
+                    />
+                  ) : null}
+                  {uploadingGeneral ? (
+                    <ActivityIndicator color={EX.color.primary} />
+                  ) : (
+                    <OutlineButton
+                      label={
+                        uploadFailure?.key === 'general'
+                          ? 'Try again'
+                          : 'Upload a document'
+                      }
+                      onPress={() => handleUpload(null)}
+                    />
+                  )}
+                </View>
               </View>
+            ) : app.mode === 'self' && showChecklist ? (
+              <>
+                <DocumentChecklist
+                  checklist={checklist}
+                  loading={checklistQ.isLoading}
+                  error={checklistQ.isError}
+                  onRetry={() => checklistQ.refetch()}
+                  docs={docs}
+                  uploadingId={uploadingItemId}
+                  // A failed item upload shows inside that item's card (#174);
+                  // its button becomes Try again.
+                  uploadFailure={
+                    uploadFailure?.documentRequestId
+                      ? {
+                          documentRequestId: uploadFailure.documentRequestId,
+                          message: uploadErrorCopy(uploadFailure.fileName),
+                        }
+                      : null
+                  }
+                  // Before the visit questions are answered the list points at them.
+                  onOpenIntake={
+                    intakeStep
+                      ? () => router.push(`/self-service/${app.id}/intake`)
+                      : undefined
+                  }
+                  checksProps={{
+                    checks: checksQ.data,
+                    checksLoading: checksQ.isLoading,
+                    checksError: checksQ.isError,
+                    onReloadChecks: () => checksQ.refetch(),
+                    onRetryCheck: (documentId: string) =>
+                      retryCheck.mutate(documentId),
+                    retryingDocId: retryCheck.isPending
+                      ? (retryCheck.variables ?? null)
+                      : null,
+                  }}
+                  onUpload={(item: ChecklistItem) =>
+                    item.documentRequestId
+                      ? handleUpload(null, item.documentRequestId)
+                      : undefined
+                  }
+                />
+                {/* Waiting on the visit details with no requirements: uploading
+                    what you already have must still be possible. */}
+                {intakeWaiting ? (
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    {/* Error above the button; label becomes Try again (#174). */}
+                    {uploadFailure?.key === 'general' ? (
+                      <InlineError
+                        message={uploadErrorCopy(uploadFailure.fileName)}
+                      />
+                    ) : null}
+                    {uploadingGeneral ? (
+                      <ActivityIndicator color={EX.color.primary} />
+                    ) : (
+                      <OutlineButton
+                        label={
+                          uploadFailure?.key === 'general'
+                            ? 'Try again'
+                            : 'Upload a document'
+                        }
+                        onPress={() => handleUpload(null)}
+                      />
+                    )}
+                  </View>
+                ) : null}
+              </>
             ) : null}
             {shownReqs.map((req) => (
               <LiveRequirementCard
@@ -1166,6 +1330,12 @@ export default function SelfServiceView() {
                 docs={docs.filter((d) => d.requirementId === req.id)}
                 uploading={uploadingReqId === req.id}
                 onUpload={handleUpload}
+                uploadError={
+                  uploadFailure?.key === req.id
+                    ? uploadErrorCopy(uploadFailure.fileName)
+                    : null
+                }
+                onRetryUpload={() => handleUpload(req.id)}
               />
             ))}
 
@@ -1198,10 +1368,9 @@ export default function SelfServiceView() {
               onRetryLoad={() => reviewQ.refetch()}
             />
             {/* ── Ask about your review (issue #45) ─────────────────────────────
-                A clearly separated entry to the ask-anywhere chat. Live path only,
-                so demo mode never reaches the chat (and makes no request). */}
+                A clearly separated entry to the ask-anywhere chat. */}
             <SectionTitle>Questions?</SectionTitle>
-            <Pressable
+            <PressableStatic
               onPress={() => router.push(`/ai-chat/${app.id}`)}
               style={{
                 flexDirection: 'row',
@@ -1230,14 +1399,14 @@ export default function SelfServiceView() {
                 </Text>
               </View>
               <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
-            </Pressable>
+            </PressableStatic>
 
             {/* ── Been refused before? (issue #122) ─────────────────────────────
                 Entry to the refusal-letter analysis. Opens the static route
                 `self-service/refusal-letter`, which uploads the letter and shows
                 the mapped reasons, the checklist and the disclosure notice. */}
             <SectionTitle>Been refused before?</SectionTitle>
-            <Pressable
+            <PressableStatic
               onPress={() =>
                 router.push({
                   pathname: '/self-service/refusal-letter',
@@ -1278,7 +1447,7 @@ export default function SelfServiceView() {
                 </Text>
               </View>
               <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
-            </Pressable>
+            </PressableStatic>
           </View>
         </Animated.ScrollView>
 
@@ -1308,7 +1477,7 @@ export default function SelfServiceView() {
                 <InlineError message={ctaError} />
               </View>
             ) : null}
-            <Pressable
+            <PressableStatic
               onPress={onReviewCta}
               disabled={reviewCta.disabled || isStarting}
               accessibilityRole="button"
@@ -1345,7 +1514,7 @@ export default function SelfServiceView() {
               {reviewCta.withArrow && !isStarting ? (
                 <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
               ) : null}
-            </Pressable>
+            </PressableStatic>
           </BlurView>
         ) : null}
       </View>
@@ -1353,11 +1522,12 @@ export default function SelfServiceView() {
   }
 
   // ── Not found: unknown id, a non-application id, or another account's ──────
-  // japa#145: never the static demo checklist.
+  // japa#145/#174: 404 and 403 both land here; never the static demo checklist.
   return (
     <CenteredState
       icon={Ic.docs}
-      title="We couldn’t find this checklist"
+      title="We couldn’t find this application"
+      body="Check the link, or open it from your journey."
       actionLabel="Back to your journey"
       onAction={() => router.replace('/(tabs)/tracker')}
     />

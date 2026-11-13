@@ -15,9 +15,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Card } from '@/components/explorer/primitives';
@@ -132,7 +133,7 @@ export function UpgradePrompt({ message }: { message: string }) {
 export function UpgradeLink({ label = 'See plans' }: { label?: string }) {
   const openPlans = useOpenPlans();
   return (
-    <Pressable
+    <PressableStatic
       onPress={openPlans}
       hitSlop={6}
       accessibilityRole="link"
@@ -143,6 +144,6 @@ export function UpgradeLink({ label = 'See plans' }: { label?: string }) {
       >
         {label}
       </Text>
-    </Pressable>
+    </PressableStatic>
   );
 }

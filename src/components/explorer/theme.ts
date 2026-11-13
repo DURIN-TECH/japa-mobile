@@ -72,6 +72,8 @@ export const EX = {
 
   // ── Status color maps (fg on bg) ──────────────────────────────────────────
   status: {
+    // japa#174: a started, unsubmitted application is a Draft, not "Under review".
+    draft: { label: 'Draft', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
     documents: { label: 'Documents required', fg: '#B26A14', bg: '#FCEAC8' },
     review: { label: 'Under review', fg: '#2F62A0', bg: '#DCEBF7' },
     interview: { label: 'Interview scheduled', fg: '#5A49C4', bg: '#ECE9FB' },

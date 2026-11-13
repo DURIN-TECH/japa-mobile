@@ -10,17 +10,23 @@
  * Pure (no imports), so it's unit-tested directly.
  */
 
-/** True when `error` is the backend's 404 (`ApiError.status === 404`). */
+/**
+ * True when `error` is the backend's 404 OR 403 (`ApiError.status`).
+ * japa#174: a record that belongs to someone else (another account's
+ * application, a visa id passed as an application id) answers 403, and the
+ * screen must show the same not-found state as for a 404 so it never confirms
+ * the record exists. Retrying either can never succeed.
+ */
 export function isNotFoundError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { status?: unknown }).status === 404
-  );
+  const status =
+    typeof error === 'object' && error !== null
+      ? (error as { status?: unknown }).status
+      : undefined;
+  return status === 404 || status === 403;
 }
 
 /**
- * React Query `retry` option: never retry a 404, otherwise retry up to
+ * React Query `retry` option: never retry a 404 or 403, otherwise retry up to
  * twice (the app default in src/providers/QueryProvider.tsx).
  */
 export function retryUnlessNotFound(
@@ -31,25 +37,21 @@ export function retryUnlessNotFound(
   return failureCount < 2;
 }
 
-/**
- * True when the backend answered 404 OR 403 (`ApiError.status`). For records
- * that belong to someone else (an eligibility check, a conversation) the
- * backend says 403; retrying can never succeed and the screen must not
- * confirm the record exists, so it shows the same not-found state as a 404.
- */
-export function isUnavailableError(error: unknown): boolean {
+/** Same check, kept under its earlier name (eligibility, messages). */
+export const isUnavailableError = isNotFoundError;
+
+/** React Query `retry` option: never retry a 404 or 403, else up to twice. */
+export const retryUnlessUnavailable = retryUnlessNotFound;
+
+export type StartFailure = 'upgrade' | 'unavailable' | 'retry';
+
+/** Pure: map a rejected create call (an `ApiError` with `status`) to a state. */
+export function classifyStartError(error: unknown): StartFailure {
   const status =
     typeof error === 'object' && error !== null
       ? (error as { status?: unknown }).status
       : undefined;
-  return status === 404 || status === 403;
-}
-
-/** React Query `retry` option: never retry a 404 or 403, else up to twice. */
-export function retryUnlessUnavailable(
-  failureCount: number,
-  error: unknown,
-): boolean {
-  if (isUnavailableError(error)) return false;
-  return failureCount < 2;
+  if (status === 402) return 'upgrade';
+  if (isNotFoundError(error)) return 'unavailable';
+  return 'retry';
 }
