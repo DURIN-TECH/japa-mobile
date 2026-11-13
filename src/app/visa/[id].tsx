@@ -43,7 +43,11 @@ import {
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { useTopAgents } from '@/hooks/useAgents';
-import { useCreateApplication } from '@/hooks/useApplications';
+import { useStartApplication } from '@/hooks/useStartApplication';
+import {
+  StartApplicationBar,
+  startBarExtraHeight,
+} from '@/components/explorer/StartApplicationBar';
 import { Ic } from '@/components/explorer/icons';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { isNotFoundError } from '@/hooks/queryErrors';
@@ -128,9 +132,11 @@ export default function VisaBreakdown() {
   // stable). For a live visa the "Start application" CTA mints a real
   // Application, then opens self-service with that id. A failure shows an
   // InlineError above the CTA (the CTA is the retry).
-  const createApp = useCreateApplication();
-  const [creating, setCreating] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
+  // japa#174: shared start flow (402 → upgrade, 404/403 → unavailable, other → retry).
+  const startApp = useStartApplication(
+    d?.id ?? id ?? '',
+    code ?? d?.flag ?? '',
+  );
 
   // Live fetch still in flight.
   if (liveQ.isLoading) {
@@ -175,31 +181,6 @@ export default function VisaBreakdown() {
       />
     );
   }
-
-  // Start (or continue to) the self-service application. For a live visa this
-  // creates a real Application (mode 'self') and opens self-service with its
-  // id. self-service/[id] only accepts a real application id, so a failure
-  // stays here with an InlineError (never a demo checklist).
-  const startSelfService = async () => {
-    if (creating) return;
-    setStartError(null);
-    try {
-      setCreating(true);
-      const app = await createApp.mutateAsync({
-        visaTypeId: d.id,
-        countryCode: (code ?? d.flag).toUpperCase(),
-        mode: 'self',
-      });
-      if (!app?.id) throw new Error('No application id');
-      router.push(`/self-service/${app.id}`);
-    } catch {
-      setStartError(
-        'We couldn’t start your application. Try again in a moment.',
-      );
-    } finally {
-      setCreating(false);
-    }
-  };
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -295,7 +276,7 @@ export default function VisaBreakdown() {
             minHeight: 560,
             paddingTop: 8,
             paddingHorizontal: 20,
-            paddingBottom: EX.space.ctaClear,
+            paddingBottom: EX.space.ctaClear + startBarExtraHeight(startApp.failure),
             shadowColor: '#171326',
             shadowOpacity: 0.28,
             shadowRadius: 30,
@@ -552,86 +533,15 @@ export default function VisaBreakdown() {
         </View>
       </ScrollView>
 
-      {/* ── Sticky glass CTA — Starting at $price / Start application ────────── */}
-      <BlurView
-        intensity={30}
-        tint="light"
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          paddingTop: 16,
-          paddingHorizontal: 20,
-          paddingBottom: Math.max(insets.bottom, 16) + 6,
-          backgroundColor: EX.color.glassWarmSoft,
-          borderTopWidth: 1,
-          borderTopColor: EX.color.line06,
-        }}
-      >
-        {/* Mutation error above the CTA (the CTA is the retry). */}
-        {startError ? (
-          <View style={{ marginBottom: 12 }}>
-            <InlineError message={startError} />
-          </View>
-        ) : null}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View>
-            <Text
-              style={{
-                fontSize: 11.5,
-                color: EX.color.muted,
-                fontWeight: '500',
-              }}
-            >
-              Starting at
-            </Text>
-            <Text
-              style={{
-                fontSize: 21,
-                fontWeight: '700',
-                color: EX.color.ink,
-                letterSpacing: -0.21,
-              }}
-            >
-              ${d.price.toLocaleString()}
-            </Text>
-          </View>
-          <Pressable
-            onPress={startSelfService}
-            disabled={creating}
-            style={{
-              flex: 1,
-              height: 54,
-              borderRadius: 16,
-              backgroundColor: EX.color.primary,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              opacity: creating ? 0.7 : 1,
-              shadowColor: EX.color.primary,
-              shadowOpacity: 0.45,
-              shadowRadius: 16,
-              shadowOffset: { width: 0, height: 10 },
-              elevation: 6,
-            }}
-          >
-            {creating ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Text
-                  style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
-                >
-                  Start application
-                </Text>
-                <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-              </>
-            )}
-          </Pressable>
-        </View>
-      </BlurView>
+      {/* ── Sticky CTA: Starting at $price / Start application, plus the
+          start-failure states (japa#174) ──────────────────────────────────── */}
+      <StartApplicationBar
+        price={d.price}
+        creating={startApp.creating}
+        failure={startApp.failure}
+        onStart={startApp.start}
+        onDismissUpgrade={startApp.dismissUpgrade}
+      />
     </View>
   );
 }
