@@ -11,7 +11,7 @@
 // Agency-level rating/reviews/success are NOT on the model (all 0 here); the
 // detail screen computes them live from the agency's agents instead.
 //
-// Consultation fees are in kobo/cents on the backend (not needed by `Agency`).
+// Consultation fees are whole naira on the backend (#144/#148) (not needed by `Agency`).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { NAIRA } from './content';

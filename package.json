@@ -32,7 +32,10 @@
     "prepare": "[[ -f .git/hooks/pre-commit ]] && pre-commit install || true"
   },
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1"
+    }
   },
   "dependencies": {
     "@durin-tech/authz": "^0.1.0",
