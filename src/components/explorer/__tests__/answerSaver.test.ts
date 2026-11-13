@@ -161,7 +161,10 @@ describe('classifySaveError', () => {
     expect(classifySaveError({ code: 'NETWORK_ERROR', status: 0 }, 'a')).toBe(
       'offline',
     );
-    expect(classifySaveError({ status: 403 }, 'a')).toBe('read_only_plan');
+    expect(
+      classifySaveError({ status: 402, code: 'UPGRADE_REQUIRED' }, 'a'),
+    ).toBe('read_only_plan');
+    expect(classifySaveError({ status: 403 }, 'a')).toBe('other');
     expect(
       classifySaveError({ status: 400, code: 'VALIDATION_ERROR' }, 'a'),
     ).toBe('list_changed');

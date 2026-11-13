@@ -148,7 +148,7 @@ async function removeEntry(applicationId: string, itemId: string) {
 }
 
 /** Write one draft (replaces the previous one for the same item). */
-export async function saveDraft(
+async function saveImpl(
   applicationId: string,
   itemId: string,
   text: string,
@@ -174,7 +174,7 @@ export async function saveDraft(
 }
 
 /** Delete one draft (after a successful save). */
-export async function deleteDraft(
+async function deleteImpl(
   applicationId: string,
   itemId: string,
 ): Promise<void> {
@@ -186,7 +186,7 @@ export async function deleteDraft(
 }
 
 /** Delete every draft (sign-out). */
-export async function clearAllDrafts(): Promise<void> {
+async function clearAllImpl(): Promise<void> {
   const index = await readIndex();
   for (const e of index) await removeEntry(e.a, e.i);
   await writeIndex([]);
@@ -196,7 +196,7 @@ export async function clearAllDrafts(): Promise<void> {
  * Read every stored draft, reassembling chunks. Drafts older than 7 days (or
  * unreadable / incomplete) are deleted and not returned.
  */
-export async function loadDrafts(now = Date.now()): Promise<StoredDraft[]> {
+async function loadImpl(now = Date.now()): Promise<StoredDraft[]> {
   const index = await readIndex();
   const out: StoredDraft[] = [];
   for (const e of index) {
@@ -212,7 +212,7 @@ export async function loadDrafts(now = Date.now()): Promise<StoredDraft[]> {
         typeof meta.chunks !== 'number' ||
         now - meta.updatedAt > DRAFT_MAX_AGE_MS
       ) {
-        await deleteDraft(e.a, e.i);
+        await deleteImpl(e.a, e.i);
         continue;
       }
       let text = '';
@@ -226,7 +226,7 @@ export async function loadDrafts(now = Date.now()): Promise<StoredDraft[]> {
         text += part;
       }
       if (!complete) {
-        await deleteDraft(e.a, e.i);
+        await deleteImpl(e.a, e.i);
         continue;
       }
       out.push({
@@ -241,6 +241,30 @@ export async function loadDrafts(now = Date.now()): Promise<StoredDraft[]> {
   }
   return out;
 }
+
+// ── One queue for every operation ─────────────────────────────────────────────
+// save / delete / clearAll / load all read-modify-write the index entry, so two
+// running at once could lose an update (a save's index write undoing a clear's).
+// Every public call is chained onto one promise: they run strictly in the order
+// they were made, so a clearAll queued behind an in-flight save still clears that
+// draft. A failed operation never blocks the queue (each impl is best effort).
+let queue: Promise<unknown> = Promise.resolve();
+function enqueue<T>(op: () => Promise<T>): Promise<T> {
+  const run = queue.then(op, op);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+export const saveDraft = (
+  applicationId: string,
+  itemId: string,
+  text: string,
+  updatedAt = Date.now(),
+) => enqueue(() => saveImpl(applicationId, itemId, text, updatedAt));
+export const deleteDraft = (applicationId: string, itemId: string) =>
+  enqueue(() => deleteImpl(applicationId, itemId));
+export const clearAllDrafts = () => enqueue(clearAllImpl);
+export const loadDrafts = (now = Date.now()) => enqueue(() => loadImpl(now));
 
 /** The SecureStore-backed implementation of `DraftVault`. */
 export const secureStoreVault: DraftVault = {

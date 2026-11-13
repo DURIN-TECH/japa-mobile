@@ -7,7 +7,7 @@ import {
   ConfirmationResult,
 } from '@/services/auth.service';
 import { apiService } from '@/services/api.service';
-// #187: unsaved answer text is in-memory only and must not outlive the session.
+// #187: unsaved answer text (memory + encrypted vault) must not outlive the session.
 import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
 import { pushNotificationService } from '@/services/push-notification.service';
 import {
@@ -434,7 +434,7 @@ export const useAuthStore = create<AuthState>()(
 
 // #187: forget every unsaved answer the moment the user signs out (any path:
 // logout, account deletion, a session that ended). The drafts are personal
-// details held only in memory; the next person on this device must never see them.
+// details (in memory and in the encrypted device vault); the next person on this device must never see them.
 useAuthStore.subscribe((state, prev) => {
   if (prev.isAuthenticated && !state.isAuthenticated)
     useAnswerDraftsStore.getState().clearAll();

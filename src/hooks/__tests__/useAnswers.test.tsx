@@ -16,7 +16,12 @@ import {
   afterEach,
 } from '@jest/globals';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { answersKey, useAnswers, useSaveAnswer } from '../useAnswers';
+import {
+  answersKey,
+  classifySaveError,
+  useAnswers,
+  useSaveAnswer,
+} from '../useAnswers';
 import { apiService } from '@/services/api.service';
 
 const api = apiService as unknown as Record<
@@ -116,5 +121,23 @@ describe('useSaveAnswer', () => {
       await h.current.mutateAsync({ itemId: 'i1', text: 'x' }).catch(() => {});
     });
     expect(qc.getQueryData(answersKey('app1'))).toEqual({});
+  });
+});
+
+describe('classifySaveError', () => {
+  it('402 UPGRADE_REQUIRED is the read-only plan; 403 is a generic failure', () => {
+    expect(
+      classifySaveError({ status: 402, code: 'UPGRADE_REQUIRED' }, 'a'),
+    ).toBe('read_only_plan');
+    expect(classifySaveError({ status: 402 }, 'a')).toBe('read_only_plan');
+    expect(classifySaveError({ status: 403 }, 'a')).toBe('other');
+  });
+  it('409 ANSWERS_LOCKED is locked; a network error is offline', () => {
+    expect(
+      classifySaveError({ status: 409, code: 'ANSWERS_LOCKED' }, 'a'),
+    ).toBe('locked');
+    expect(classifySaveError({ status: 0, code: 'NETWORK_ERROR' }, 'a')).toBe(
+      'offline',
+    );
   });
 });

@@ -90,6 +90,33 @@ describe('expiry', () => {
   });
 });
 
+describe('serialised operations', () => {
+  it('a clearAll queued behind in-flight saves still clears them (no index race)', async () => {
+    // Fired without awaiting: overlapping calls, then the clear.
+    const ops = [
+      saveDraft('app1', 'i1', 'a'),
+      saveDraft('app1', 'i2', 'b'.repeat(4000)),
+      saveDraft('app2', 'i1', 'c'),
+      clearAllDrafts(),
+    ];
+    await Promise.all(ops);
+    expect(mockMem.size).toBe(0);
+    expect(await loadDrafts()).toEqual([]);
+  });
+  it('overlapping saves all land in the index', async () => {
+    await Promise.all([
+      saveDraft('app1', 'i1', 'a'),
+      saveDraft('app1', 'i2', 'b'),
+      saveDraft('app1', 'i3', 'c'),
+    ]);
+    expect((await loadDrafts()).map((d) => d.itemId).sort()).toEqual([
+      'i1',
+      'i2',
+      'i3',
+    ]);
+  });
+});
+
 describe('delete', () => {
   it('deleteDraft removes one; clearAllDrafts removes everything', async () => {
     await saveDraft('app1', 'i1', 'a');

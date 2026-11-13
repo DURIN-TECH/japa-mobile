@@ -6,7 +6,8 @@
 //   PUT /applications/:id/answers/:itemId  body { text }  (trimmed, <= 2000, "" clears)
 //                                          -> { itemId, text, updatedAt }
 //   400 VALIDATION_ERROR  not a string / too long / unknown item / a document item
-//   403                   read-only plan (auth middleware)
+//   402 UPGRADE_REQUIRED  read-only plan (auth middleware)
+//   403                   no access to the application (treated as a generic failure)
 //   409 ANSWERS_LOCKED    application under review or later: read-only (GET unaffected)
 // The answer text is personal: it is never logged here.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,7 +103,9 @@ export function classifySaveError(error: unknown, text: string): SaveErrorKind {
   const e = (error ?? {}) as { code?: string; status?: number };
   if (e.status === 409 && e.code === 'ANSWERS_LOCKED') return 'locked';
   if (e.code === 'NETWORK_ERROR' || e.status === 0) return 'offline';
-  if (e.status === 403) return 'read_only_plan';
+  // The read-only-plan block answers 402 UPGRADE_REQUIRED; a 403 is no access.
+  if (e.status === 402 || e.code === 'UPGRADE_REQUIRED')
+    return 'read_only_plan';
   if (e.status === 400)
     return text.length > ANSWER_MAX_LENGTH ? 'too_long' : 'list_changed';
   return 'other';
