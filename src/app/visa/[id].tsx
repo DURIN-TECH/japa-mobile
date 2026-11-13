@@ -22,7 +22,7 @@
 // application" shows an InlineError above the CTA instead of a demo checklist.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -31,7 +31,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
@@ -51,7 +50,6 @@ import {
 import { Ic } from '@/components/explorer/icons';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { isNotFoundError } from '@/hooks/queryErrors';
-import { InlineError } from '@/components/explorer/AccountForm';
 import { StateEmpty } from '@/components/explorer/states';
 import { Flag, GlassButton, Scrim } from '@/components/explorer/primitives';
 
@@ -276,7 +274,8 @@ export default function VisaBreakdown() {
             minHeight: 560,
             paddingTop: 8,
             paddingHorizontal: 20,
-            paddingBottom: EX.space.ctaClear + startBarExtraHeight(startApp.failure),
+            paddingBottom:
+              EX.space.ctaClear + startBarExtraHeight(startApp.failure),
             shadowColor: '#171326',
             shadowOpacity: 0.28,
             shadowRadius: 30,

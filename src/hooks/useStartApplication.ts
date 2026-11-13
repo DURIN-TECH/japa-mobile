@@ -15,20 +15,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useCreateApplication } from '@/hooks/useApplications';
-import { isUnavailableError } from '@/hooks/queryErrors';
+import { classifyStartError, type StartFailure } from '@/hooks/queryErrors';
 
-export type StartFailure = 'upgrade' | 'unavailable' | 'retry';
-
-/** Pure: map a rejected create call (an `ApiError` with `status`) to a state. */
-export function classifyStartError(error: unknown): StartFailure {
-  const status =
-    typeof error === 'object' && error !== null
-      ? (error as { status?: unknown }).status
-      : undefined;
-  if (status === 402) return 'upgrade';
-  if (isUnavailableError(error)) return 'unavailable';
-  return 'retry';
-}
+export type { StartFailure };
 
 export function useStartApplication(visaTypeId: string, countryCode: string) {
   const router = useRouter();

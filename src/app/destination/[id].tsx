@@ -4,16 +4,9 @@
 // CTA. Reanimated drives the hero parallax/zoom from the sheet's scroll offset.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  Text,
-  View,
-  ScrollView,
-} from 'react-native';
+import React, { useMemo } from 'react';
+import { Pressable, Text, View, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
-import { BlurView } from 'expo-blur';
 import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -40,7 +33,6 @@ import {
 import { isNotFoundError } from '@/hooks/queryErrors';
 // japa#145: shared states; no demo destination, requirements or agents.
 import { CenteredState } from '@/components/explorer/CenteredState';
-import { InlineError } from '@/components/explorer/AccountForm';
 import {
   StateEmpty,
   StateLoading,
@@ -259,7 +251,10 @@ export default function DestinationDetail() {
   // shows an InlineError above the CTA (the CTA is the retry); it never opens
   // a checklist for an application that doesn't exist.
   // japa#174: shared start flow (402 → upgrade, 404/403 → unavailable, other → retry).
-  const startApp = useStartApplication(d?.id ?? id ?? '', code ?? d?.flag ?? '');
+  const startApp = useStartApplication(
+    d?.id ?? id ?? '',
+    code ?? d?.flag ?? '',
+  );
 
   // ── First load, nothing cached: coral spinner ────────────────────────────
   if (liveQ.isLoading) {

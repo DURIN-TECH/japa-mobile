@@ -22,7 +22,8 @@ export const START_COPY = {
   upgrade:
     'Your plan doesn’t cover another application right now. See plans to start this one.',
   unavailable: 'This visa isn’t available to start right now.',
-  retry: 'We couldn’t start your application. Check your connection and try again.',
+  retry:
+    'We couldn’t start your application. Check your connection and try again.',
 } as const;
 
 /** Rough height of the bar's extra content, so screens can pad their scroll area. */

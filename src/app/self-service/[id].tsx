@@ -11,12 +11,17 @@
 // the visa breakdown's "Start application", or from the case's next step).
 // The hero + sheet come from the backend: `useApplication` → `useVisaType`
 // (requirements) → `useApplicationDocuments`, with real document upload.
-// States (#145 design spec, self-service row):
+// States (#145 + #174 design spec, self-service rows):
 //   • loading      → coral spinner
-//   • unknown id   → CenteredState "We couldn’t find this checklist" → Tracker
-//     (a 404 or any non-application id; never the old Canada demo checklist)
+//   • not found    → CenteredState "We couldn’t find this application" → Tracker
+//     (404 OR 403: an unknown id, a visa id, someone else's application; the
+//     same screen so it never confirms another account's application exists)
 //   • load error   → CenteredState with InlineError + Outline "Try again"
-//   • no items     → `docs` "Nothing to upload yet" in the upload step
+//   • Step 1       → official link only when the visa has an `applicationUrl`;
+//     otherwise a plain "we don't have the link yet" body (never a guessed host)
+//   • Step 2       → no requirements and no checklist → ONE empty state with an
+//     "Upload a document" button; a failed upload → InlineError + Try again
+// Nothing here is ever drawn from a fixture (no IRCC, no Canada, no demo rows).
 //
 // Every measurement below is quoted from the prototype (flows.jsx). All hooks are
 // called unconditionally before any early return; the mode branch happens in the
@@ -26,7 +31,6 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Pressable,
   Text,
@@ -59,6 +63,7 @@ import { useApplication } from '@/hooks/useApplications';
 import { isNotFoundError } from '@/hooks/queryErrors';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import {
+  OutlineButton,
   StateEmpty,
   StateError,
   StateLoading,
@@ -115,6 +120,10 @@ import {
   isStatementLocked,
   useStatement,
 } from '@/hooks/useStatement';
+
+// japa#174: the one upload-failure line (replaces the old Alert).
+const uploadErrorCopy = (fileName: string) =>
+  `We couldn’t upload ${fileName}. Check your connection and try again.`;
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -350,11 +359,16 @@ function LiveRequirementCard({
   docs,
   uploading,
   onUpload,
+  uploadError,
+  onRetryUpload,
 }: {
   req: VisaRequirement;
   docs: Document[];
   uploading: boolean;
   onUpload: (requirementId: string) => void;
+  /** japa#174: message of the last failed upload made from THIS card. */
+  uploadError?: string | null;
+  onRetryUpload?: () => void;
 }) {
   // Done when every uploaded doc has reached verified / in-review (and at least
   // one exists) — "every verified || uploaded" heuristic.
@@ -444,6 +458,16 @@ function LiveRequirementCard({
           {docs.map((doc, i) => (
             <LiveDocRow key={doc.id} doc={doc} first={i === 0} />
           ))}
+        </View>
+      ) : null}
+
+      {/* Failed upload from this card: InlineError + outline Try again (#174) */}
+      {uploadError ? (
+        <View style={{ marginTop: 12, gap: 8 }}>
+          <InlineError message={uploadError} />
+          {onRetryUpload ? (
+            <OutlineButton label="Try again" onPress={onRetryUpload} />
+          ) : null}
         </View>
       ) : null}
 
@@ -541,6 +565,16 @@ export default function SelfServiceView() {
 
   // Per-requirement upload-in-flight tracking (holds the requirement id).
   const [uploadingReqId, setUploadingReqId] = useState<string | null>(null);
+  // Uploading from the Step 2 empty state (no requirement, no checklist item).
+  const [uploadingGeneral, setUploadingGeneral] = useState(false);
+  // japa#174: the last failed upload, replacing the old Alert. `key` says which
+  // card it came from: a requirement id, a checklist request id, or 'general'.
+  const [uploadFailure, setUploadFailure] = useState<{
+    key: string;
+    requirementId: string | null;
+    documentRequestId?: string;
+    fileName: string;
+  } | null>(null);
 
   // Parallax driven by the sheet's scroll offset. The prototype translated the
   // hero at `py * -0.3` (no image zoom) — matched exactly here.
@@ -559,6 +593,11 @@ export default function SelfServiceView() {
   const handleUpload = useCallback(
     async (requirementId: string | null, documentRequestId?: string) => {
       if (!app) return;
+      // Where the upload comes from (for the in-card error) and the file's name
+      // once it is known.
+      const failureKey = documentRequestId ?? requirementId ?? 'general';
+      let fileName = 'your file';
+      setUploadFailure(null);
       try {
         const res = await DocumentPicker.getDocumentAsync({
           type: ['application/pdf', 'image/*'],
@@ -566,11 +605,13 @@ export default function SelfServiceView() {
         });
         if (res.canceled) return;
         const f = res.assets[0];
+        fileName = f.name;
         const contentType = f.mimeType ?? 'application/octet-stream';
 
         // Checklist uploads track the request id; requirement uploads the req id.
         if (documentRequestId) setUploadingItemId(documentRequestId);
-        else setUploadingReqId(requirementId);
+        else if (requirementId) setUploadingReqId(requirementId);
+        else setUploadingGeneral(true);
 
         // 1) Signed upload URL for this file.
         const up = await getUploadUrl.mutateAsync({
@@ -603,14 +644,19 @@ export default function SelfServiceView() {
         // A new document changes the review's inputs: refresh the review state
         // so the card can show it as out of date.
         queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
-      } catch (e) {
-        Alert.alert(
-          'Upload failed',
-          e instanceof Error ? e.message : 'Please try again.',
-        );
+      } catch {
+        // Signed URL, storage PUT or register failed: show it in the card the
+        // upload came from (never an Alert), with a retry for the same target.
+        setUploadFailure({
+          key: failureKey,
+          requirementId,
+          documentRequestId,
+          fileName,
+        });
       } finally {
         setUploadingReqId(null);
         setUploadingItemId(null);
+        setUploadingGeneral(false);
       }
     },
     [app, getUploadUrl, createDoc, queryClient],
@@ -642,8 +688,8 @@ export default function SelfServiceView() {
     return (
       <CenteredState
         icon={Ic.docs}
-        title="We couldn’t load your checklist"
-        errorMessage={loadErrorCopy('your checklist')}
+        title="We couldn’t load your application"
+        errorMessage={loadErrorCopy('your application')}
         onRetry={() => appQ.refetch()}
         retrying={appQ.isRefetching}
         actionLabel="Back to your journey"
@@ -692,6 +738,24 @@ export default function SelfServiceView() {
       ? orderedReqs.filter((r) => docs.some((d) => d.requirementId === r.id))
       : orderedReqs;
 
+    // ── Step 2 states (japa#174) ─────────────────────────────────────────────
+    // Requirements (or documents) still loading / failed with nothing cached.
+    const reqsLoading =
+      (vtQ.isLoading && !vtQ.data) || (docsQ.isLoading && !docsQ.data);
+    const reqsError =
+      (vtQ.isError && !vtQ.data) || (docsQ.isError && !docsQ.data);
+    // The checklist has settled (not loading, not failed) for self-service.
+    const checklistSettled = !checklistQ.isLoading && !checklistQ.isError;
+    // Waiting on the visit details: the checklist keeps its own prompt.
+    const intakeWaiting =
+      orderedReqs.length === 0 && checklist?.state === 'intake_needed';
+    // Nothing published at all: no requirements and no personal checklist items.
+    const noRequirements =
+      orderedReqs.length === 0 &&
+      !hasChecklist &&
+      !intakeWaiting &&
+      (app.mode !== 'self' || checklistSettled);
+
     // ── Review state (issue #43) ─────────────────────────────────────────────
     const submitted = SUBMITTED_STATUSES.includes(app.status as string);
     const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError);
@@ -734,7 +798,8 @@ export default function SelfServiceView() {
     };
 
     // Official application URL → button host label (strip protocol + path).
-    const officialUrl = visaType?.applicationUrl;
+    // japa#174: no URL → no button and no guessed host (never a search link).
+    const officialUrl = visaType?.applicationUrl?.trim() || undefined;
     const officialHost = officialUrl
       ? officialUrl.replace(/^https?:\/\//, '').split('/')[0]
       : '';
@@ -1056,8 +1121,9 @@ export default function SelfServiceView() {
                       marginTop: 2,
                     }}
                   >
-                    Fill in your application on the official government portal
-                    before uploading documents here.
+                    {officialUrl
+                      ? 'Fill in your application on the official government portal before uploading documents here.'
+                      : `Fill in your application on the ${country} government’s official site, then upload your documents here. We don’t have the link for this visa yet.`}
                   </Text>
                 </View>
               </View>
@@ -1087,40 +1153,128 @@ export default function SelfServiceView() {
             </View>
 
             {/* ── Upload documents: the personal checklist (#114) with each item's
-                upload-check result (#115), then any leftover requirement cards ── */}
+                upload-check result (#115), then any leftover requirement cards.
+                japa#174: the empty / loading / error states of this step. ── */}
             <SectionTitle>{`Step ${stepNo('documents')} · Upload documents`}</SectionTitle>
-            {/* Personal checklist (#114): self-service applications only. */}
-            {app.mode === 'self' ? (
-              <DocumentChecklist
-                checklist={checklist}
-                loading={checklistQ.isLoading}
-                error={checklistQ.isError}
-                onRetry={() => checklistQ.refetch()}
-                docs={docs}
-                uploadingId={uploadingItemId}
-                // Before the visit questions are answered the list points at them.
-                onOpenIntake={
-                  intakeStep
-                    ? () => router.push(`/self-service/${app.id}/intake`)
-                    : undefined
-                }
-                checksProps={{
-                  checks: checksQ.data,
-                  checksLoading: checksQ.isLoading,
-                  checksError: checksQ.isError,
-                  onReloadChecks: () => checksQ.refetch(),
-                  onRetryCheck: (documentId: string) =>
-                    retryCheck.mutate(documentId),
-                  retryingDocId: retryCheck.isPending
-                    ? (retryCheck.variables ?? null)
-                    : null,
+            {reqsLoading ? (
+              <StateLoading section />
+            ) : reqsError ? (
+              <StateError
+                section
+                message={loadErrorCopy('your checklist')}
+                onRetry={() => {
+                  vtQ.refetch();
+                  docsQ.refetch();
                 }}
-                onUpload={(item: ChecklistItem) =>
-                  item.documentRequestId
-                    ? handleUpload(null, item.documentRequestId)
-                    : undefined
-                }
+                retrying={vtQ.isRefetching || docsQ.isRefetching}
               />
+            ) : noRequirements ? (
+              // ONE empty state (replaces both "Nothing to upload yet" and the
+              // checklist's own "no document list" line). Uploads still work.
+              <View
+                style={{
+                  backgroundColor: EX.color.cardWhite,
+                  borderRadius: EX.radius.card,
+                  borderWidth: 1,
+                  borderColor: EX.color.line06,
+                }}
+              >
+                <StateEmpty
+                  section
+                  icon={Ic.docs}
+                  title="No requirements published for this visa yet."
+                  body="You can still upload documents you already have."
+                />
+                <View
+                  style={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}
+                >
+                  {uploadFailure?.key === 'general' ? (
+                    <InlineError
+                      message={uploadErrorCopy(uploadFailure.fileName)}
+                    />
+                  ) : null}
+                  {uploadingGeneral ? (
+                    <ActivityIndicator color={EX.color.primary} />
+                  ) : (
+                    <OutlineButton
+                      label={
+                        uploadFailure?.key === 'general'
+                          ? 'Try again'
+                          : 'Upload a document'
+                      }
+                      onPress={() => handleUpload(null)}
+                    />
+                  )}
+                </View>
+              </View>
+            ) : app.mode === 'self' ? (
+              <>
+                <DocumentChecklist
+                  checklist={checklist}
+                  loading={checklistQ.isLoading}
+                  error={checklistQ.isError}
+                  onRetry={() => checklistQ.refetch()}
+                  docs={docs}
+                  uploadingId={uploadingItemId}
+                  // Before the visit questions are answered the list points at them.
+                  onOpenIntake={
+                    intakeStep
+                      ? () => router.push(`/self-service/${app.id}/intake`)
+                      : undefined
+                  }
+                  checksProps={{
+                    checks: checksQ.data,
+                    checksLoading: checksQ.isLoading,
+                    checksError: checksQ.isError,
+                    onReloadChecks: () => checksQ.refetch(),
+                    onRetryCheck: (documentId: string) =>
+                      retryCheck.mutate(documentId),
+                    retryingDocId: retryCheck.isPending
+                      ? (retryCheck.variables ?? null)
+                      : null,
+                  }}
+                  onUpload={(item: ChecklistItem) =>
+                    item.documentRequestId
+                      ? handleUpload(null, item.documentRequestId)
+                      : undefined
+                  }
+                />
+                {/* A failed upload from a checklist item: shown under the list. */}
+                {uploadFailure?.documentRequestId ? (
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    <InlineError
+                      message={uploadErrorCopy(uploadFailure.fileName)}
+                    />
+                    <OutlineButton
+                      label="Try again"
+                      onPress={() =>
+                        handleUpload(null, uploadFailure.documentRequestId)
+                      }
+                    />
+                  </View>
+                ) : null}
+                {/* Waiting on the visit details with no requirements: uploading
+                    what you already have must still be possible. */}
+                {intakeWaiting ? (
+                  <View style={{ marginTop: 10 }}>
+                    {uploadingGeneral ? (
+                      <ActivityIndicator color={EX.color.primary} />
+                    ) : (
+                      <OutlineButton
+                        label="Upload a document"
+                        onPress={() => handleUpload(null)}
+                      />
+                    )}
+                    {uploadFailure?.key === 'general' ? (
+                      <View style={{ marginTop: 8 }}>
+                        <InlineError
+                          message={uploadErrorCopy(uploadFailure.fileName)}
+                        />
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </>
             ) : null}
             {shownReqs.map((req) => (
               <LiveRequirementCard
@@ -1129,6 +1283,12 @@ export default function SelfServiceView() {
                 docs={docs.filter((d) => d.requirementId === req.id)}
                 uploading={uploadingReqId === req.id}
                 onUpload={handleUpload}
+                uploadError={
+                  uploadFailure?.key === req.id
+                    ? uploadErrorCopy(uploadFailure.fileName)
+                    : null
+                }
+                onRetryUpload={() => handleUpload(req.id)}
               />
             ))}
 
@@ -1315,11 +1475,12 @@ export default function SelfServiceView() {
   }
 
   // ── Not found: unknown id, a non-application id, or another account's ──────
-  // japa#145: never the static demo checklist.
+  // japa#145/#174: 404 and 403 both land here; never the static demo checklist.
   return (
     <CenteredState
       icon={Ic.docs}
-      title="We couldn’t find this checklist"
+      title="We couldn’t find this application"
+      body="Check the link, or open it from your journey."
       actionLabel="Back to your journey"
       onAction={() => router.replace('/(tabs)/tracker')}
     />

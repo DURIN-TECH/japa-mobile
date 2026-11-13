@@ -146,9 +146,7 @@ export default function AiChatScreen() {
 
   const trimmed = draft.trim();
   const canSend =
-    !send.isPending &&
-    trimmed.length > 0 &&
-    trimmed.length <= MAX_CHARS;
+    !send.isPending && trimmed.length > 0 && trimmed.length <= MAX_CHARS;
 
   const onSend = async () => {
     if (!canSend) return;
