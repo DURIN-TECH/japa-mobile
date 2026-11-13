@@ -56,6 +56,18 @@ const SEND_ERROR = 'Your message didn’t send. Tap send to try again.';
 
 // An optimistic bubble, tagged so it can be dropped once the send settles.
 type PendingMsg = Msg & { key: number };
+// AI message access (#172): pinned bar, one-time notice, and the pure rule for
+// when the notice shows.
+import {
+  AiAccessBar,
+  useAiAccessControl,
+} from '@/components/explorer/AiAccessBar';
+import { AiNoticeSheet } from '@/components/explorer/AiNoticeSheet';
+import { shouldShowNotice } from '@/components/explorer/aiMessageAccessLogic';
+import {
+  useAiMessageAccessState,
+  useDismissAiNotice,
+} from '@/hooks/useAiMessageAccess';
 
 // ── Single message row (bubble + timestamp) ──────────────────────────────────
 function Bubble({ m }: { m: Msg }) {
@@ -242,6 +254,23 @@ export default function ChatView() {
     );
   };
 
+  // ── AI message access (#172) ───────────────────────────────────────────────
+  // Every thread is a real server conversation (no demo threads since #145).
+  // The bar's conversation query is disabled for an empty id.
+  const aiControl = useAiAccessControl(convId);
+  const aiState = useAiMessageAccessState(!!convId);
+  const dismissNotice = useDismissAiNotice();
+  // Closed this session (covers the gap before the server answers, and a failed
+  // record: the server still says "not dismissed", so it returns next open).
+  const [noticeClosed, setNoticeClosed] = useState(false);
+  const noticeOpen = shouldShowNotice(aiState.data, noticeClosed, !!convId);
+  const closeNotice = () => {
+    setNoticeClosed(true);
+    // Fire and forget: a failure shows nothing and is retried on the next open.
+    dismissNotice.mutate();
+  };
+  const openAiSettings = () => router.push('/ai-message-access');
+
   const hasText = draft.trim().length > 0;
   const headerH = insets.top + 62; // approx header height for keyboard offset
 
@@ -389,6 +418,26 @@ export default function ChatView() {
           <Ic.phone size={18} color={EX.color.primary} strokeWidth={1.8} />
         </Pressable>
       </BlurView>
+
+      {/* ── AI access bar (pinned; does not scroll with messages) ───────────── */}
+      {convId ? (
+        <AiAccessBar control={aiControl} onOpenSettings={openAiSettings} />
+      ) : null}
+
+      {/* ── One-time AI notice (plan-only people, until dismissed) ──────────── */}
+      {aiState.data ? (
+        <AiNoticeSheet
+          visible={noticeOpen}
+          wording={aiState.data.noticeWording}
+          control={aiControl}
+          onClose={closeNotice}
+          onOpenSettings={() => {
+            // Close the sheet (recording the dismissal), then open the screen.
+            closeNotice();
+            openAiSettings();
+          }}
+        />
+      ) : null}
 
       {/* ── Shared files sheet ────────────────────────────────────────────── */}
       <Modal

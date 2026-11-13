@@ -103,7 +103,8 @@ export default function AiChatScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // japa#145/#174: there is no demo data; the id is always a real application.
+  // The route id is a real application id (there is no demo path since
+  // #145); an empty id makes no request.
   const appId = id ?? '';
 
   const historyQ = useAiChatHistory(appId, !!appId);
@@ -146,7 +147,10 @@ export default function AiChatScreen() {
 
   const trimmed = draft.trim();
   const canSend =
-    !send.isPending && trimmed.length > 0 && trimmed.length <= MAX_CHARS;
+    !!appId &&
+    !send.isPending &&
+    trimmed.length > 0 &&
+    trimmed.length <= MAX_CHARS;
 
   const onSend = async () => {
     if (!canSend) return;
@@ -292,6 +296,7 @@ export default function AiChatScreen() {
             placeholderTextColor={EX.color.muted}
             multiline
             maxLength={MAX_CHARS}
+            editable={!!appId}
             style={{
               flex: 1,
               maxHeight: 110,

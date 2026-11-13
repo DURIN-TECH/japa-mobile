@@ -6,6 +6,8 @@
  * is rejected, allowing the client and agent to discuss the issue.
  */
 
+import type { ConversationAiAccess } from './ai-message-access.type';
+
 // A conversation between a client and an agent
 export interface Conversation {
   id: string;
@@ -20,6 +22,9 @@ export interface Conversation {
   userName?: string;
   userEmail?: string;
   agentName?: string;
+  // AI message access for the signed-in person (#172). `null` = the server could
+  // not compute it (treat as unknown, never "on"); absent = older backend.
+  aiAccess?: ConversationAiAccess | null;
   createdAt: string;
   updatedAt: string;
 }

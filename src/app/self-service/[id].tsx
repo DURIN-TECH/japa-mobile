@@ -663,12 +663,12 @@ export default function SelfServiceView() {
   const docs = docsQ.data ?? [];
 
   // Intake questions (#113). Enabled as soon as the application resolves and
-  // never on the demo path, so demo mode makes no request and shows no card.
+  // (there is no demo path since #145).
   const intakeQ = useIntake(app ? app.id : '', !!app);
   // When the route has an intake it is the first step and shifts the others
   // down by one (see `stepNo` in the render below).
   const intakeStep = intakeOccupiesStep(intakeQ);
-  // Checklist (#114): self-service applications only; off on the demo path.
+  // Checklist (#114): self-service applications only.
   const checklistQ = useChecklist(
     app ? app.id : '',
     !!app && app.mode === 'self',
@@ -682,7 +682,7 @@ export default function SelfServiceView() {
   const retryCheck = useRetryDocumentCheck(app?.id ?? '');
   // documentRequestId currently uploading from a checklist item.
   const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
-  // ── Review + statement (issue #43). Disabled on the demo path (empty id). ────
+  // ── Review + statement (issue #43). Disabled until the application loads. ──
   // The review query polls itself while a job is queued/running and refetches on
   // app foreground, so a run survives backgrounding. The tier it carries comes
   // from the server response.
