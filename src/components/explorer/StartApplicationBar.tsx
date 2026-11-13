@@ -8,7 +8,7 @@
 //   retry        InlineError, CTA enabled (it is the retry)
 // ─────────────────────────────────────────────────────────────────────────────
 import React from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableStatic } from '@/components/explorer/PressableStatic';

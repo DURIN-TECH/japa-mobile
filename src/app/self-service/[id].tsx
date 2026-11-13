@@ -29,13 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Linking,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';

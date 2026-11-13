@@ -17,13 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  Linking,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
