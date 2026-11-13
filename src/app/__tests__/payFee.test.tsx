@@ -8,6 +8,14 @@ const mockMutateAsync = jest.fn<(input: unknown) => Promise<object>>(
   async () => ({}),
 );
 
+// The explorer primitives import reanimated, whose native worklets part does
+// not exist under Jest: use the library's own JS mock (japa#174).
+jest.mock('react-native-reanimated', () =>
+  require('react-native-reanimated/mock'),
+);
+jest.mock('react-native-worklets', () =>
+  require('react-native-worklets/lib/module/mock'),
+);
 jest.mock('expo-blur', () => ({
   BlurView: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -25,6 +33,11 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+// pay.tsx also verifies Paystack returns; stub that hook so the Firebase-backed
+// api client is never loaded under Jest.
+jest.mock('@/hooks/usePaymentRequests', () => ({
+  useVerifyPaymentRequest: () => ({ mutateAsync: jest.fn(), isPending: false }),
 }));
 jest.mock('@/hooks/useConsultations', () => ({
   useCreateConsultation: () => ({ mutateAsync: mockMutateAsync }),
