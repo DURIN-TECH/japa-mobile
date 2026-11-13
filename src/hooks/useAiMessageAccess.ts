@@ -11,7 +11,6 @@
  * - DELETE /users/me/ai-message-access/approval             → withdraw
  * - PUT    /users/me/ai-message-access/account-wide-off     → "keep AI out of all my chats"
  * - GET    /conversations/:id                               → conversation + aiAccess
- * - PUT    /conversations/:id/ai-access                     → my side of the chat switch
  *
  * Rules (from the issue and the contract):
  * - NOT optimistic: every switch moves only after the server answers, and the
