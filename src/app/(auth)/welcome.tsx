@@ -22,7 +22,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
-import { ONBOARD } from '@/components/explorer/data';
+import { ONBOARD } from '@/components/explorer/content';
 import { Ic } from '@/components/explorer/icons';
 import { PINK } from '@/components/explorer/AuthShell';
 import { SeliMark } from '@/components/explorer/SeliMark';

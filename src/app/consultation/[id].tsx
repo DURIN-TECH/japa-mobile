@@ -1,15 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Consultation detail (prototype messaging.jsx ConsultationDetailView).
 //
-// Reads the `:id` route param → `consultById` → resolves the booking's agent via
-// `agentById`. Renders a back header ("Consultation") over a ScrollView with:
+// Reads the `:id` route param → GET /consultations/:id → the booking's agent via
+// GET /agents/:id (japa#145: no demo CONSULTS / AGENTS lookups). Renders a back header ("Consultation") over a ScrollView with:
 //   1. a status pill (upcoming / completed / cancelled),
 //   2. a "When" card (date · time·dur · mode) styled like the list screen band,
 //   3. a "Topic" card,
 //   4. an agent card (Pressable → agent page) with a Message shortcut,
 //   5. contextual actions (Join call / Reschedule / Cancel · Message / Rebook),
 //   6. optional "Your note" and "Session summary" cards.
-// A centered "not found" state shows when the id resolves to nothing.
+// Loading → coral spinner; a failed load → CenteredState with retry; a 404 /
+// unknown id → CenteredState "We couldn’t find this consultation".
 //
 // Native primitives only; matches the (explorer) coral/cream design system and
 // the card/pill styling of consultations.tsx.
@@ -28,15 +29,18 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import {
-  agentById,
-  consultById,
-  convoForAgent,
-  type Consult,
-} from '@/components/explorer/data';
+import type { Consult } from '@/types/explorer.type';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { loadErrorCopy } from '@/components/explorer/states';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import { useAgent } from '@/hooks/useAgents';
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useConversations } from '@/hooks/useMessaging';
+import { useCancelConsultation } from '@/hooks/useConsultations';
+import { hashString } from '@/assets/countries';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Pill, Verified } from '@/components/explorer/primitives';
-// Live data: fetch a real consultation when the id isn't a demo record.
+// Live data: the consultation itself.
 import { useConsultation } from '@/hooks/useConsultations';
 import { mapConsult } from '@/components/explorer/liveConsultations';
 
@@ -179,19 +183,21 @@ export default function ConsultationDetailView() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // Resolve demo-first, then fall back to the backend. The live query is
-  // disabled (id undefined) when a demo record matched, so we only hit the
-  // network for real consultation ids.
-  const demo = consultById(id);
-  const liveQ = useConsultation(demo ? undefined : id);
-  const c = demo ?? (liveQ.data ? mapConsult(liveQ.data) : undefined);
-  const a = c ? agentById(c.agentId) : undefined;
-  // Agent portrait/name fallback for live consultations (not in demo AGENTS).
+  // The consultation (GET /consultations/:id; a 404 is not retried).
+  const liveQ = useConsultation(id || undefined);
+  const c = liveQ.data ? mapConsult(liveQ.data) : undefined;
+  // The agent (GET /agents/:id) for the card's portrait / specialisation.
+  const agentQ = useAgent(c?.agentId || undefined);
+  const a = agentQ.data ? mapAgent(agentQ.data) : undefined;
+  // Name: the agent record, else the name denormalised on the booking.
   const agentName = a?.n ?? c?.agentName ?? 'Agent';
-  const agentSeed = a?.seed ?? 0;
+  const agentSeed = a?.seed ?? hashString(c?.agentId ?? '') % 6;
+  // Live conversations (Message shortcut) + the cancel mutation.
+  const { data: conversations } = useConversations();
+  const cancelQ = useCancelConsultation();
 
-  // ── Loading state — initial live fetch in flight, no demo match. ────────────
-  if (!demo && liveQ.isLoading) {
+  // ── Loading state — first fetch in flight, nothing cached. ─────────────────
+  if (liveQ.isLoading) {
     return (
       <View
         style={{
@@ -206,23 +212,30 @@ export default function ConsultationDetailView() {
     );
   }
 
-  // ── Not-found state ─────────────────────────────────────────────────────────
+  // ── Load failed (not a 404) with nothing cached → error + retry ────────────
+  if (liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
+    return (
+      <CenteredState
+        icon={Ic.cal}
+        title="We couldn’t load this consultation"
+        errorMessage={loadErrorCopy('this consultation')}
+        onRetry={() => liveQ.refetch()}
+        retrying={liveQ.isRefetching}
+        actionLabel="Back to consultations"
+        onAction={() => router.replace('/consultations')}
+      />
+    );
+  }
+
+  // ── Not-found state (404 or no id) ────────────────────────────────────────
   if (!c) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: 40,
-        }}
-      >
-        <Ic.cal size={38} color={EX.color.muted} strokeWidth={1.8} />
-        <Text style={{ fontSize: 15, color: EX.color.muted, marginTop: 12 }}>
-          Consultation not found.
-        </Text>
-      </View>
+      <CenteredState
+        icon={Ic.cal}
+        title="We couldn’t find this consultation"
+        actionLabel="Back to consultations"
+        onAction={() => router.replace('/consultations')}
+      />
     );
   }
 
@@ -232,12 +245,13 @@ export default function ConsultationDetailView() {
   // Message action: open the existing conversation with this agent if one
   // exists, else fall back to the agent's profile page.
   const openChat = () => {
-    const convo = convoForAgent(c.agentId);
+    const convo = conversations?.find((x) => x.agentId === c.agentId);
     if (convo) router.push(`/messages/${convo.id}`);
     else router.push(`/agent/${c.agentId}`);
   };
 
-  // Join call → open a meeting link (demo). Guarded in case the link can't open.
+  // Join call → open a meeting link. The consultation model carries no link
+  // yet, so this opens Google Meet. Guarded in case the link can't open.
   const joinCall = async () => {
     try {
       await Linking.openURL('https://meet.google.com/');
@@ -246,7 +260,7 @@ export default function ConsultationDetailView() {
     }
   };
 
-  // Cancel → confirm before (demo) dismissing the booking.
+  // Cancel → confirm, then PUT /consultations/:id/status { cancelled }.
   const confirmCancel = () => {
     Alert.alert(
       'Cancel consultation?',
@@ -256,7 +270,14 @@ export default function ConsultationDetailView() {
         {
           text: 'Cancel consultation',
           style: 'destructive',
-          onPress: () => router.back(),
+          onPress: () =>
+            cancelQ.mutate(c.id, {
+              onSuccess: () => router.back(),
+              onError: () =>
+                Alert.alert(
+                  'We couldn’t cancel your consultation. Try again in a moment.',
+                ),
+            }),
         },
       ],
     );

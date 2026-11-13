@@ -45,9 +45,23 @@ export interface PaymentRequest {
   approvedAt?: string;
   rejectedAt?: string;
   rejectionReason?: string;
+  // Paystack reference minted at approve time (japa#145); needed to verify.
+  paystackReference?: string;
   createdAt: string;
   updatedAt: string;
 }
+
+// PUT /payment-requests/:id/approve response: the approved request plus the
+// Paystack checkout to open (backend approvePaymentRequest).
+export type ApprovePaymentRequestResult = PaymentRequest & {
+  authorizationUrl?: string;
+};
+
+// POST /payment-requests/:id/verify response: the request (status 'paid' once
+// settled), or the request plus Paystack's `paymentStatus` when not paid yet.
+export type VerifyPaymentRequestResult = PaymentRequest & {
+  paymentStatus?: string;
+};
 
 // Human-readable labels for each category
 export const CATEGORY_LABELS: Record<PaymentRequestCategory, string> = {

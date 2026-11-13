@@ -16,14 +16,20 @@ import { Portrait, Verified } from '@/components/explorer/primitives';
 // Real Firebase sign-out — clears auth state, then returns to the auth entry.
 import { authService } from '@/services/auth.service';
 // ── Live data sources ────────────────────────────────────────────────────────
-// Signed-in user profile (name/location) + React Query hooks for the live
-// counts shown in the floating stats and menu rows. All fall back to the
-// original demo values when a field/query is unavailable.
-import { useAuthStore } from '@/stores/auth.store';
+// Signed-in user profile (GET /users/me) + React Query hooks for the live
+// counts shown in the floating stats and menu rows. japa#145: no demo persona —
+// a count that hasn't loaded shows "–" (never a fabricated number), and the
+// header shows the real name (plus the city only when the profile has one).
 import { useApplications } from '@/hooks/useApplications';
 import { useConsultations } from '@/hooks/useConsultations';
 import { useConversations } from '@/hooks/useMessaging';
 import { useIdentityVerification } from '@/hooks/useVerification';
+import { useMe } from '@/hooks/useMe';
+import {
+  profileName,
+  profileCity,
+  profileSeed,
+} from '@/components/explorer/liveProfile';
 
 // ── One settings/menu row ────────────────────────────────────────────────────
 function ProfileRow({
@@ -91,34 +97,35 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
 
   // ── Live data (hooks called unconditionally, before any early return) ───────
-  // Signed-in user profile from the auth store, and the three list queries that
-  // back the live counts. List hooks always return a bare array (never
-  // undefined) once loaded; we guard with `?? demo` so an empty/pending fetch
-  // preserves the original demo values.
-  const profile = useAuthStore((s) => s.profile);
-  const applications = useApplications().data;
-  const consultations = useConsultations().data;
-  const conversations = useConversations().data;
+  // Signed-in user profile and the three list queries that back the live
+  // counts. A count whose query hasn't answered shows "–" (spec: never a
+  // fabricated number for a failed/unknown count).
+  const { data: me } = useMe();
+  const applicationsQ = useApplications();
+  const applications = applicationsQ.data;
+  const consultationsQ = useConsultations();
+  const consultations = consultationsQ.data;
+  const conversationsQ = useConversations();
+  const conversations = conversationsQ.data;
   // Live identity-verification (KYC) status — powers the short hint shown on the
   // "Verify identity" row. Falls back to the profile's embedded field if present.
   const idVerification = useIdentityVerification().data;
 
-  // Header — real full name; fall back to the demo name when unavailable.
-  const fullName =
-    [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
-    'Alex Kayode';
-  // Location line — backend has no city string, so use the residential country
-  // (nearest available field); else keep the demo "Lagos, Nigeria".
-  const location = profile?.residentialCountry || 'Lagos, Nigeria';
+  // Header — real full name and city from GET /users/me. With no city, the
+  // name shows alone (the pin row hides entirely — no dangling separator).
+  const fullName = profileName(me);
+  const location = profileCity(me);
 
   // Floating stats ───────────────────────────────────────────────────────────
-  // Active = number of applications; Saved = demo (no saved endpoint);
-  // Agents = distinct agents the user has consultations with.
-  const activeCount = applications?.length ?? 3;
-  const savedCount = 7; // demo — no saved-destinations endpoint
-  const agentsCount = consultations
-    ? new Set(consultations.map((c) => c.agentId)).size || 2
-    : 2;
+  // Active = number of applications; Saved = 0 until real saving ships (#146,
+  // keeps the three-stat layout); Agents = distinct agents the user has
+  // consultations with. Unknown (query pending/failed) renders "–".
+  const activeCount = applications != null ? String(applications.length) : '–';
+  const savedCount = '0';
+  const agentsCount =
+    consultations != null
+      ? String(new Set(consultations.map((c) => c.agentId)).size)
+      : '–';
 
   // "My consultations" value — count of upcoming (not-yet-happened) bookings.
   const upcomingConsults = consultations
@@ -129,22 +136,20 @@ export default function ProfileScreen() {
       ).length
     : null;
   const consultsValue =
-    upcomingConsults != null ? `${upcomingConsults} upcoming` : '2 upcoming';
+    upcomingConsults != null ? `${upcomingConsults} upcoming` : '–';
 
   // "Messages" value — total unread messages for this user across conversations.
   const unreadMessages = conversations
     ? conversations.reduce((sum, c) => sum + (c.unreadCountUser ?? 0), 0)
     : null;
-  const messagesValue =
-    unreadMessages != null ? `${unreadMessages} new` : '2 new';
+  const messagesValue = unreadMessages != null ? `${unreadMessages} new` : '–';
 
   // "Verify identity" value — a short status hint. Prefer the live verification
   // query, falling back to the profile's embedded `identityVerification`.
   // NOTE: ProfileRow renders `value` in a single muted tone (no per-row color
   // prop), so the "Verified" hint can't be tinted teal without adding a prop —
   // we render the plain text hint only.
-  const idStatus =
-    idVerification?.status ?? profile?.identityVerification?.status;
+  const idStatus = idVerification?.status ?? me?.identityVerification?.status;
   const identityValue =
     idStatus === 'verified'
       ? 'Verified'
@@ -192,7 +197,8 @@ export default function ProfileScreen() {
         />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
           <Portrait
-            seed={3}
+            // Seed from the user id; initials from the real name ('' → none).
+            seed={profileSeed(me)}
             size={70}
             name={fullName}
             style={{ borderWidth: 3, borderColor: 'rgba(255,255,255,0.18)' }}
@@ -201,34 +207,41 @@ export default function ProfileScreen() {
             <View
               style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
             >
-              <Text style={[displayText(23, 'semibold'), { color: '#fff' }]}>
+              <Text
+                numberOfLines={1}
+                style={[displayText(23, 'semibold'), { color: '#fff' }]}
+              >
                 {fullName}
               </Text>
-              <Verified size={17} />
+              {/* japa#145: the badge is a claim, so only for a verified ID. */}
+              {idStatus === 'verified' ? <Verified size={17} /> : null}
             </View>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                marginTop: 4,
-              }}
-            >
-              <Ic.pin
-                size={14}
-                color="rgba(255,255,255,0.8)"
-                strokeWidth={1.8}
-              />
-              <Text
+            {/* City row only when the profile has a city (name alone otherwise). */}
+            {location ? (
+              <View
                 style={{
-                  fontSize: 13,
-                  fontWeight: '600',
-                  color: 'rgba(255,255,255,0.8)',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 4,
                 }}
               >
-                {location}
-              </Text>
-            </View>
+                <Ic.pin
+                  size={14}
+                  color="rgba(255,255,255,0.8)"
+                  strokeWidth={1.8}
+                />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '600',
+                    color: 'rgba(255,255,255,0.8)',
+                  }}
+                >
+                  {location}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
       </LinearGradient>

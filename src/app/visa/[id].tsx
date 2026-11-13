@@ -4,7 +4,7 @@
 // A leaner sibling of destination/[id].tsx: a COMPACT FIXED photo header (~200,
 // NOT parallax — a plain image behind a rounded content sheet) + rounded sheet
 // + sticky glass CTA. The sheet holds a stat strip (approval / processing /
-// applicants), the requirements checklist, a "common reasons for refusal" list,
+// applicants), the requirements checklist
 // and a dark "boost your chances" nudge toward a specialist.
 //
 // Style, sizes, radii and colours are lifted directly from destination/[id].tsx
@@ -14,6 +14,12 @@
 // (#102). The 404 shows the not-found EmptyState, with the same copy for an
 // unknown and a hidden visa (it must not confirm the visa exists). Other
 // load failures show an InlineError with "Try again".
+//
+// japa#145: live data only. The demo DESTS branch, the static REQS fallback
+// and the static "Common reasons for refusal" list (REJECTIONS, no backend
+// source) are gone. No published requirements → "No requirements published
+// yet"; no top agent → the specialist nudge is hidden; a failed "Start
+// application" shows an InlineError above the CTA instead of a demo checklist.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
@@ -29,14 +35,7 @@ import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import {
-  AGENTS,
-  REQS,
-  REJECTIONS,
-  destById,
-  Dest,
-  Req,
-} from '@/components/explorer/data';
+import type { Dest, Req } from '@/types/explorer.type';
 import {
   mapRequirements,
   visaTypeToDest,
@@ -48,6 +47,8 @@ import { useCreateApplication } from '@/hooks/useApplications';
 import { Ic } from '@/components/explorer/icons';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { isNotFoundError } from '@/hooks/queryErrors';
+import { InlineError } from '@/components/explorer/AccountForm';
+import { StateEmpty } from '@/components/explorer/states';
 import { Flag, GlassButton, Scrim } from '@/components/explorer/primitives';
 
 // Compact fixed header height (destination hero is 376; this breakdown uses ~200).
@@ -93,47 +94,46 @@ export default function VisaBreakdown() {
   const insets = useSafeAreaInsets();
   const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
 
-  // Demo tiles resolve from static DESTS; live tiles (reached from the backend
-  // Explore grid via destination/[id]) carry a country `code` and are fetched
-  // by (countryCode, visaId) — mirroring destination/[id].tsx exactly.
-  const demo = destById(id);
-  const liveQ = useVisaType(demo ? '' : (code ?? ''), demo ? '' : id);
+  // Tiles (reached from the Explore grid via destination/[id]) carry a
+  // country `code`; the visa is fetched by (countryCode, visaId), mirroring
+  // destination/[id].tsx. No code → the query stays off → not-found.
+  const liveQ = useVisaType(code ?? '', id ?? '');
   const { data: countries } = useCountriesWithVisas();
 
-  // Effective destination (demo or live-mapped from the visa type).
+  // Effective destination, live-mapped from the visa type.
   const d: Dest | undefined = useMemo(() => {
-    if (demo) return demo;
     const vt = liveQ.data?.visaType;
     if (!vt) return undefined;
     const name = countries?.find(
       (c) => c.code.toLowerCase() === (code ?? '').toLowerCase(),
     )?.name;
     return visaTypeToDest(vt, name);
-  }, [demo, liveQ.data, countries, code]);
+  }, [liveQ.data, countries, code]);
 
-  // Requirements checklist — live requirements when present, else the demo set.
-  const reqs: Req[] = useMemo(() => {
-    if (demo) return REQS;
-    const rq = liveQ.data?.requirements;
-    return rq && rq.length ? mapRequirements(rq) : REQS;
-  }, [demo, liveQ.data]);
+  // Requirements checklist — the live requirements only ([] → empty state).
+  const reqs: Req[] = useMemo(
+    () => mapRequirements(liveQ.data?.requirements ?? []),
+    [liveQ.data],
+  );
 
-  // "Boost your chances" nudge — feature the real #1 top agent (GET /agents/top)
-  // with the demo specialist as fallback.
+  // "Boost your chances" nudge — the real #1 top agent (GET /agents/top).
+  // None (or not loaded) → the nudge section is hidden, never a named demo.
   const topAgentsQ = useTopAgents(1);
-  const specialist = useMemo(() => {
-    const live = (topAgentsQ.data ?? []).map(mapAgent);
-    return live[0] ?? AGENTS[0];
-  }, [topAgentsQ.data]);
+  const specialist = useMemo(
+    () => (topAgentsQ.data ?? []).map(mapAgent)[0] ?? null,
+    [topAgentsQ.data],
+  );
 
   // Create-application (declared before any early return to keep hook order
   // stable). For a live visa the "Start application" CTA mints a real
-  // Application, then opens self-service with that id; demo/failure fall back.
+  // Application, then opens self-service with that id. A failure shows an
+  // InlineError above the CTA (the CTA is the retry).
   const createApp = useCreateApplication();
   const [creating, setCreating] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Live fetch still in flight.
-  if (!demo && liveQ.isLoading) {
+  if (liveQ.isLoading) {
     return (
       <View
         style={{
@@ -149,7 +149,7 @@ export default function VisaBreakdown() {
   }
 
   // Load failure that isn't a 404 (offline, server error), nothing cached.
-  if (!demo && liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
+  if (liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
     return (
       <CenteredState
         icon={Ic.globe}
@@ -177,14 +177,12 @@ export default function VisaBreakdown() {
   }
 
   // Start (or continue to) the self-service application. For a live visa this
-  // creates a real Application (mode 'self') and opens self-service with its id;
-  // demo dests and any failure fall back to the demo self-service view.
+  // creates a real Application (mode 'self') and opens self-service with its
+  // id. self-service/[id] only accepts a real application id, so a failure
+  // stays here with an InlineError (never a demo checklist).
   const startSelfService = async () => {
     if (creating) return;
-    if (demo) {
-      router.push(`/self-service/${d.id}`);
-      return;
-    }
+    setStartError(null);
     try {
       setCreating(true);
       const app = await createApp.mutateAsync({
@@ -192,9 +190,12 @@ export default function VisaBreakdown() {
         countryCode: (code ?? d.flag).toUpperCase(),
         mode: 'self',
       });
-      router.push(`/self-service/${app?.id ?? d.id}`);
+      if (!app?.id) throw new Error('No application id');
+      router.push(`/self-service/${app.id}`);
     } catch {
-      router.push(`/self-service/${d.id}`);
+      setStartError(
+        'We couldn’t start your application. Try again in a moment.',
+      );
     } finally {
       setCreating(false);
     }
@@ -359,7 +360,7 @@ export default function VisaBreakdown() {
             {d.blurb}
           </Text>
 
-          {/* ── What you'll need (REQS — same as destination detail) ────────── */}
+          {/* ── What you'll need (live requirements, as destination detail) ───── */}
           <Text
             style={{
               fontSize: 18,
@@ -387,9 +388,18 @@ export default function VisaBreakdown() {
               elevation: 1,
             }}
           >
+            {reqs.length === 0 ? (
+              // japa#145: nothing published yet — say so, never a static list.
+              <StateEmpty
+                section
+                icon={Ic.docs}
+                title="No requirements published yet"
+                body="We’ll list every document you need here as soon as it’s published."
+              />
+            ) : null}
             {reqs.map((r, i) => (
               <View
-                key={r.t}
+                key={`${r.t}-${i}`}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -464,135 +474,81 @@ export default function VisaBreakdown() {
             ))}
           </View>
 
-          {/* ── Common reasons for refusal (REJECTIONS) ─────────────────────── */}
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            Common reasons for refusal
-          </Text>
-          <View style={{ gap: 10 }}>
-            {REJECTIONS.map((reason) => (
-              <View
-                key={reason}
+          {/* ── Boost your chances (dark specialist nudge) ──────────────────── */}
+          {/* Only with a real top agent (GET /agents/top). */}
+          {specialist ? (
+            <>
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                  marginTop: 26,
+                  marginBottom: 12,
+                  marginHorizontal: 2,
+                }}
+              >
+                Boost your chances
+              </Text>
+              <Pressable
+                onPress={() => router.push(`/agent/${specialist.id}`)}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  gap: 12,
-                  backgroundColor: '#fff',
-                  borderWidth: 1,
-                  borderColor: EX.color.line08,
-                  borderRadius: 16,
-                  paddingVertical: 13,
-                  paddingHorizontal: 14,
+                  gap: 14,
+                  padding: 16,
+                  borderRadius: 20,
+                  backgroundColor: EX.color.ink,
                   shadowColor: '#171326',
-                  shadowOpacity: 0.04,
-                  shadowRadius: 2,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 1,
+                  shadowOpacity: 0.4,
+                  shadowRadius: 20,
+                  shadowOffset: { width: 0, height: 12 },
+                  elevation: 6,
                 }}
               >
-                {/* 26px rejected-tint circle with a coral-red X (docStatus.rejected colours) */}
                 <View
                   style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 13,
-                    backgroundColor: '#FBE3E1',
+                    width: 46,
+                    height: 46,
+                    borderRadius: 14,
                     alignItems: 'center',
                     justifyContent: 'center',
+                    backgroundColor: 'rgba(255,255,255,0.12)',
                   }}
                 >
-                  <Ic.x size={14} color="#C0453C" strokeWidth={2.2} />
+                  <Ic.spark size={21} color={EX.color.bg} strokeWidth={1.8} />
                 </View>
-                <Text
-                  style={{
-                    flex: 1,
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: '#9E3630',
-                    lineHeight: 19,
-                  }}
-                >
-                  {reason}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* ── Boost your chances (dark specialist nudge) ──────────────────── */}
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            Boost your chances
-          </Text>
-          <Pressable
-            onPress={() => router.push(`/agent/${specialist.id}`)}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              padding: 16,
-              borderRadius: 20,
-              backgroundColor: EX.color.ink,
-              shadowColor: '#171326',
-              shadowOpacity: 0.4,
-              shadowRadius: 20,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 6,
-            }}
-          >
-            <View
-              style={{
-                width: 46,
-                height: 46,
-                borderRadius: 14,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: 'rgba(255,255,255,0.12)',
-              }}
-            >
-              <Ic.spark size={21} color={EX.color.bg} strokeWidth={1.8} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text
-                style={{
-                  fontSize: 15.5,
-                  fontWeight: '700',
-                  color: EX.color.bg,
-                }}
-                numberOfLines={1}
-              >
-                Work with a specialist
-              </Text>
-              <Text
-                style={{
-                  fontSize: 12.5,
-                  marginTop: 2,
-                  color: 'rgba(255,251,245,0.72)',
-                }}
-                numberOfLines={1}
-              >
-                {specialist.n} · {specialist.succ}% success
-              </Text>
-            </View>
-            <Ic.chevR size={20} color={EX.color.primary} strokeWidth={1.8} />
-          </Pressable>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={{
+                      fontSize: 15.5,
+                      fontWeight: '700',
+                      color: EX.color.bg,
+                    }}
+                    numberOfLines={1}
+                  >
+                    Work with a specialist
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      marginTop: 2,
+                      color: 'rgba(255,251,245,0.72)',
+                    }}
+                    numberOfLines={1}
+                  >
+                    {specialist.n} · {specialist.succ}% success
+                  </Text>
+                </View>
+                <Ic.chevR
+                  size={20}
+                  color={EX.color.primary}
+                  strokeWidth={1.8}
+                />
+              </Pressable>
+            </>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -613,6 +569,12 @@ export default function VisaBreakdown() {
           borderTopColor: EX.color.line06,
         }}
       >
+        {/* Mutation error above the CTA (the CTA is the retry). */}
+        {startError ? (
+          <View style={{ marginBottom: 12 }}>
+            <InlineError message={startError} />
+          </View>
+        ) : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <View>
             <Text

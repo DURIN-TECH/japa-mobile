@@ -8,6 +8,11 @@
 //
 // Every measurement below is quoted 1:1 from the prototype source (agents.jsx →
 // AgencyCard / AgentRow / AgentsView / SectionTitleWrap).
+//
+// japa#145: live data only. Agencies come from GET /agencies/browse (#144),
+// agents from GET /agents. Each section has its own loading / error / empty
+// state (design spec, "Agents" row); when BOTH sources are empty the screen
+// shows one full empty state instead of two empty sections.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
@@ -17,7 +22,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import { AGENCIES, AGENTS, agencyById } from '@/components/explorer/data';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { mapAgency } from '@/components/explorer/liveAgencies';
 import { useAgents } from '@/hooks/useAgents';
@@ -29,13 +33,19 @@ import {
   SectionTitle,
   Verified,
 } from '@/components/explorer/primitives';
-import type { Agent, Agency } from '@/components/explorer/data';
+import type { Agent, Agency } from '@/types/explorer.type';
+import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 
 // ── AgencyCard — 248×158 cover media card with bottom-scrim overlay ───────────
 // Source: minWidth 248, height 158, radius 22, bg tone; scrim (to top)
 // rgba(12,10,8,.82) 0% → .2 55% → .1 100%.
-// Accepts the mapped `Agency` object directly (not an id lookup) so live
-// agencies from the backend render without a demo `agencyById()` lookup.
+// Accepts the mapped `Agency` object directly (not an id lookup).
 function AgencyCard({ a }: { a: Agency }) {
   const router = useRouter();
   return (
@@ -178,9 +188,11 @@ function AgencyCard({ a }: { a: Agency }) {
 // gap 13; Portrait 52 + 13px teal dot (2.5px white border); name 15.5/700;
 // spec · agency 12.5; single gold star + rating 12.5/700, "(rev)" 11.5, and a
 // "{succ}% success" pill 11/700 #1E8E55 on #D6F2E2 (padding 3/8).
-export function AgentRow({ a }: { a: Agent }) {
+//
+// `agencyName` (japa#145): the agent's agency name, resolved by the caller from
+// the live agencies list; omitted for independents or an agency not listed.
+export function AgentRow({ a, agencyName }: { a: Agent; agencyName?: string }) {
   const router = useRouter();
-  const agency = agencyById(a.agencyId);
   return (
     <Pressable
       onPress={() => router.push(`/agent/${a.id}`)}
@@ -236,7 +248,7 @@ export function AgentRow({ a }: { a: Agent }) {
           numberOfLines={1}
         >
           {a.spec}
-          {agency ? ` · ${agency.name}` : ''}
+          {agencyName ? ` · ${agencyName}` : ''}
         </Text>
         <View
           style={{
@@ -290,17 +302,27 @@ export function AgentRow({ a }: { a: Agent }) {
 export default function AgentsScreen() {
   const insets = useSafeAreaInsets();
 
-  // Live agents (GET /agents, verified + available) with a demo fallback.
+  // ── Live sources (japa#145: live only) ─────────────────────────────
+  // Agents: GET /agents (verified + available). Agencies: GET /agencies/browse.
   const agentsQ = useAgents();
-  const liveAgents = (agentsQ.data ?? []).map(mapAgent);
-  const agentList = liveAgents.length ? liveAgents : AGENTS;
-
-  // Live agencies (GET /agencies/browse) with a demo fallback. When the backend
-  // returns rows we render those; otherwise we keep the demo AGENCIES so the
-  // carousel is never empty.
   const agenciesQ = useBrowseAgencies();
-  const liveAgencies = (agenciesQ.data ?? []).map(mapAgency);
-  const agencies = liveAgencies.length ? liveAgencies : AGENCIES;
+  const agentList = (agentsQ.data ?? []).map(mapAgent);
+  const agencies = (agenciesQ.data ?? []).map(mapAgency);
+
+  // Per-section state: 'loading' (first load, nothing cached), 'error'
+  // (failed, nothing cached) or 'ready' (data present, possibly empty).
+  const agentsState = queryState(agentsQ);
+  const agenciesState = queryState(agenciesQ);
+
+  // Both sources loaded and both empty → one full-screen empty state.
+  const bothEmpty =
+    agentsState === 'ready' &&
+    agenciesState === 'ready' &&
+    agentList.length === 0 &&
+    agencies.length === 0;
+
+  // Agency id → name, so each agent row can show " · {agency}".
+  const agencyNameById = new Map(agencies.map((ag) => [ag.id, ag.name]));
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -316,33 +338,81 @@ export default function AgentsScreen() {
           sub="Real specialists who’ve walked this path hundreds of times."
         />
 
-        {/* ── Top agencies (horizontal media carousel) ──────────────────────── */}
-        <View style={{ paddingHorizontal: EX.space.screenX }}>
-          <SectionTitle action="See all">Top agencies</SectionTitle>
-        </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{
-            gap: 13,
-            paddingHorizontal: EX.space.screenX,
-            paddingBottom: 4,
-          }}
-        >
-          {agencies.map((ag) => (
-            <AgencyCard key={ag.id} a={ag} />
-          ))}
-        </ScrollView>
+        {bothEmpty ? (
+          // ── Nothing to show at all (spec: full `users` empty state) ───────
+          <StateEmpty
+            icon={Ic.users}
+            title="No agents available yet"
+            body="We’re vetting new agents and agencies. Check back soon."
+          />
+        ) : (
+          <>
+            {/* ── Top agencies (horizontal media carousel) ─────────────────── */}
+            <View style={{ paddingHorizontal: EX.space.screenX }}>
+              {/* "See all" only when there are agencies to see. */}
+              <SectionTitle action={agencies.length ? 'See all' : undefined}>
+                Top agencies
+              </SectionTitle>
+              {agenciesState === 'loading' ? (
+                <StateLoading section />
+              ) : agenciesState === 'error' ? (
+                <StateError
+                  section
+                  message={loadErrorCopy('agencies')}
+                  onRetry={() => agenciesQ.refetch()}
+                  retrying={agenciesQ.isFetching}
+                />
+              ) : agencies.length === 0 ? (
+                <StateEmpty section icon={Ic.users} title="No agencies yet" />
+              ) : null}
+            </View>
+            {agencies.length ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{
+                  gap: 13,
+                  paddingHorizontal: EX.space.screenX,
+                  paddingBottom: 4,
+                }}
+              >
+                {agencies.map((ag) => (
+                  <AgencyCard key={ag.id} a={ag} />
+                ))}
+              </ScrollView>
+            ) : null}
 
-        {/* ── Top agents (vertical list) ────────────────────────────────────── */}
-        <View style={{ paddingHorizontal: EX.space.screenX }}>
-          <SectionTitle action="Filters">Top agents</SectionTitle>
-          <View style={{ gap: 12 }}>
-            {agentList.map((a) => (
-              <AgentRow key={a.id} a={a} />
-            ))}
-          </View>
-        </View>
+            {/* ── Top agents (vertical list) ───────────────────────────────── */}
+            <View style={{ paddingHorizontal: EX.space.screenX }}>
+              {/* "Filters" only when there are agents to filter. */}
+              <SectionTitle action={agentList.length ? 'Filters' : undefined}>
+                Top agents
+              </SectionTitle>
+              {agentsState === 'loading' ? (
+                <StateLoading section />
+              ) : agentsState === 'error' ? (
+                <StateError
+                  section
+                  message={loadErrorCopy('agents')}
+                  onRetry={() => agentsQ.refetch()}
+                  retrying={agentsQ.isFetching}
+                />
+              ) : agentList.length === 0 ? (
+                <StateEmpty section icon={Ic.users} title="No agents yet" />
+              ) : (
+                <View style={{ gap: 12 }}>
+                  {agentList.map((a) => (
+                    <AgentRow
+                      key={a.id}
+                      a={a}
+                      agencyName={agencyNameById.get(a.agencyId)}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );

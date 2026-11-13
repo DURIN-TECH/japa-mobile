@@ -9,10 +9,15 @@
 // anchors the base.
 //
 // Every measurement is quoted 1:1 from the prototype source.
+//
+// japa#145: live data only (no demo agencies). The agency, its visas and its
+// agents come from the #144 browse endpoints (GET /agencies/browse/:id and
+// /browse/:id/agents). A 404 shows the not-found state; each section has its
+// own loading / error / empty state, and retries use the Outline button.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,7 +31,6 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow } from '@/components/explorer/theme';
-import { agencyById, agentsForAgency } from '@/components/explorer/data';
 import {
   AGENCY_ONLY_CHIP,
   mapAgency,
@@ -41,7 +45,15 @@ import {
 } from '@/hooks/useAgencies';
 import { useCountriesWithVisas } from '@/hooks/useVisaTypes';
 import { Ic } from '@/components/explorer/icons';
-import { InlineError } from '@/components/explorer/AccountForm';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
 import {
   Chip,
   Flag,
@@ -50,7 +62,7 @@ import {
   SectionTitle,
   Verified,
 } from '@/components/explorer/primitives';
-import type { Agent } from '@/components/explorer/data';
+import type { Agent } from '@/types/explorer.type';
 
 const HERO = 256;
 
@@ -119,9 +131,9 @@ function MiniDiv() {
 // Duplicated here per the prototype's per-screen "local component" convention.
 // Source shows spec · agencyName, single gold star + rating 12.5/700, "(rev)"
 // 11.5, and a "{succ}% success" pill 11/700 #1E8E55 on #D6F2E2 (padding 3/8).
-function AgentRow({ a }: { a: Agent }) {
+// `agencyName` is this screen's agency (every row here works at it).
+function AgentRow({ a, agencyName }: { a: Agent; agencyName: string }) {
   const router = useRouter();
-  const agency = agencyById(a.agencyId);
   return (
     <Pressable
       onPress={() => router.push(`/agent/${a.id}`)}
@@ -174,7 +186,7 @@ function AgentRow({ a }: { a: Agent }) {
           numberOfLines={1}
         >
           {a.spec}
-          {agency ? ` · ${agency.name}` : ''}
+          {agencyName ? ` · ${agencyName}` : ''}
         </Text>
         <View
           style={{
@@ -363,81 +375,31 @@ function AgencyVisasSection({
   const { data: countries } = useCountriesWithVisas();
   const rows = mapAgencyVisaRows(visasQ.data ?? [], countries);
 
-  // Coral spinner, used for the first load and while "Try again" refetches.
-  const spinner = (
-    <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-      <ActivityIndicator size="small" color={EX.color.primary} />
-    </View>
-  );
-
+  // japa#145: the shared section states (Outline "Try again", one retry
+  // style app-wide; #106's coral text link failed contrast).
   let body: React.ReactNode;
   if (visasQ.isLoading) {
-    body = spinner;
+    body = <StateLoading section />;
   } else if (visasQ.isError && !visasQ.data) {
     // Error with no cached data (offline with a cold cache, server error).
     body = (
-      <View>
-        <InlineError message="We couldn’t load this agency’s visas. Check your connection and try again." />
-        {visasQ.isRefetching ? (
-          spinner
-        ) : (
-          <Pressable
-            onPress={() => visasQ.refetch()}
-            style={{ marginTop: 10, alignSelf: 'flex-start' }}
-            accessibilityRole="button"
-          >
-            <Text
-              style={{
-                fontSize: 13.5,
-                fontWeight: '600',
-                color: EX.color.primary,
-              }}
-            >
-              Try again
-            </Text>
-          </Pressable>
-        )}
-      </View>
+      <StateError
+        section
+        message={loadErrorCopy('this agency’s visas')}
+        onRetry={() => visasQ.refetch()}
+        retrying={visasQ.isRefetching}
+      />
     );
   } else if (rows.length === 0) {
-    // Empty: compact EmptyState pattern (it sits mid-sheet). No button; the
+    // Empty: compact section state (it sits mid-sheet). No button; the
     // sticky "Contact {name}" CTA is the next step.
     body = (
-      <View
-        style={{
-          alignItems: 'center',
-          paddingVertical: 28,
-          paddingHorizontal: 20,
-          gap: 10,
-        }}
-      >
-        <Ic.globe
-          size={38}
-          color={EX.color.muted}
-          strokeWidth={1.8}
-          style={{ opacity: 0.5 }}
-        />
-        <Text
-          style={{
-            fontSize: 15,
-            fontWeight: '600',
-            color: EX.color.ink,
-            textAlign: 'center',
-          }}
-        >
-          No visas listed yet
-        </Text>
-        <Text
-          style={{
-            fontSize: 13,
-            lineHeight: 19,
-            color: EX.color.inkMuted,
-            textAlign: 'center',
-          }}
-        >
-          Message {agencyName} to ask which visas they can help with.
-        </Text>
-      </View>
+      <StateEmpty
+        section
+        icon={Ic.globe}
+        title="No visas listed yet"
+        body={`Message ${agencyName} to ask which visas they can help with.`}
+      />
     );
   } else {
     body = (
@@ -476,13 +438,10 @@ export default function AgencyDetail() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // Resolve demo-or-live. If the id matches a demo agency we render that and
-  // disable the network queries; otherwise we fetch the public agency (and its
-  // agents) from the backend. Both queries are disabled on the demo path.
-  const demo = agencyById(id);
-  const agQ = usePublicAgency(demo ? undefined : id);
-  const agentsQ = usePublicAgencyAgents(demo ? undefined : id);
-  const a = demo ?? (agQ.data ? mapAgency(agQ.data) : undefined);
+  // ── Live sources (japa#145: no demo agencies) ────────────────────────────
+  const agQ = usePublicAgency(id);
+  const agentsQ = usePublicAgencyAgents(id);
+  const a = agQ.data ? mapAgency(agQ.data) : undefined;
 
   // Hero parallax driven by the sheet's scroll offset (source py * -0.3).
   const scrollY = useSharedValue(0);
@@ -505,58 +464,68 @@ export default function AgencyDetail() {
     ],
   }));
 
-  // Loading — only on the live path while the single-agency fetch is in flight.
-  if (!demo && agQ.isLoading) {
+  // First load: coral spinner, with the back button reachable.
+  if (agQ.isLoading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <ActivityIndicator color={EX.color.primary} />
+      <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: insets.top + 6,
+            left: 18,
+            zIndex: 50,
+          }}
+        >
+          <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
+        </View>
+        <StateLoading />
       </View>
     );
   }
 
+  // Load failed (not a 404) with nothing cached: error + retry.
+  if (!a && agQ.isError && !isNotFoundError(agQ.error)) {
+    return (
+      <CenteredState
+        icon={Ic.users}
+        title="We couldn’t load this agency"
+        errorMessage="Check your connection and try again."
+        onRetry={() => agQ.refetch()}
+        retrying={agQ.isRefetching}
+        actionLabel="Back to agents"
+        onAction={() => router.replace('/(tabs)/agents')}
+      />
+    );
+  }
+
+  // Not found (404 / not public / no id). Copy never confirms it exists.
   if (!a) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Agency not found.</Text>
-      </View>
+      <CenteredState
+        icon={Ic.users}
+        title="We couldn’t find this agency"
+        actionLabel="Back to agents"
+        onAction={() => router.replace('/(tabs)/agents')}
+      />
     );
   }
 
-  // Agents list — demo lookup, or live agents mapped from the backend.
-  const agents = demo
-    ? agentsForAgency(a.id)
-    : (agentsQ.data ?? []).map(mapAgent);
+  // The agency's agents, mapped from GET /agencies/browse/:id/agents.
+  const agents = (agentsQ.data ?? []).map(mapAgent);
+  const agentsState = queryState(agentsQ);
 
-  // MiniStat strip stats. Live agencies carry no agency-level rating/reviews/
+  // MiniStat strip stats. Agencies carry no agency-level rating/reviews/
   // success, so we COMPUTE them from the agency's agents: rating = avg (1dp),
-  // reviews = sum, success = avg (rounded). Fall back to the agency's own
-  // values when demo, or when a live agency has no agents yet.
-  const isLive = !demo;
+  // reviews = sum, success = avg (rounded). With no agents they stay at the
+  // agency's own (zero) values.
   const hasAgents = agents.length > 0;
-  const statR =
-    isLive && hasAgents
-      ? Number((agents.reduce((s, x) => s + x.r, 0) / agents.length).toFixed(1))
-      : a.r;
-  const statRev =
-    isLive && hasAgents ? agents.reduce((s, x) => s + x.rev, 0) : a.rev;
-  const statSucc =
-    isLive && hasAgents
-      ? Math.round(agents.reduce((s, x) => s + x.succ, 0) / agents.length)
-      : a.succ;
+  const statR = hasAgents
+    ? Number((agents.reduce((s, x) => s + x.r, 0) / agents.length).toFixed(1))
+    : a.r;
+  const statRev = hasAgents ? agents.reduce((s, x) => s + x.rev, 0) : a.rev;
+  const statSucc = hasAgents
+    ? Math.round(agents.reduce((s, x) => s + x.succ, 0) / agents.length)
+    : a.succ;
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -638,7 +607,8 @@ export default function AgencyDetail() {
                   fontWeight: '600',
                 }}
               >
-                {a.city}, Nigeria
+                {/* No leading comma when the agency has no city. */}
+                {a.city ? `${a.city}, Nigeria` : 'Nigeria'}
               </Text>
             </View>
             {/* "Since {year}" only when we actually have a founding year
@@ -804,13 +774,10 @@ export default function AgencyDetail() {
             ))}
           </View>
 
-          {/* Visas they handle (japa#106) — live agencies only; the demo
-              fixtures carry no visas, so the section is skipped for them. */}
-          {!demo && id ? (
-            <AgencyVisasSection agencyId={id} agencyName={a.name} />
-          ) : null}
+          {/* Visas they handle (japa#106). */}
+          <AgencyVisasSection agencyId={a.id} agencyName={a.name} />
 
-          {/* Agents here */}
+          {/* Agents here — count only once the list is loaded with rows. */}
           <Text
             style={{
               fontSize: 18,
@@ -822,13 +789,26 @@ export default function AgencyDetail() {
               marginHorizontal: 2,
             }}
           >
-            {agents.length} agents here
+            {hasAgents ? `${agents.length} agents here` : 'Agents here'}
           </Text>
-          <View style={{ gap: 12 }}>
-            {agents.map((ag) => (
-              <AgentRow key={ag.id} a={ag} />
-            ))}
-          </View>
+          {agentsState === 'loading' ? (
+            <StateLoading section />
+          ) : agentsState === 'error' ? (
+            <StateError
+              section
+              message={loadErrorCopy('this agency’s agents')}
+              onRetry={() => agentsQ.refetch()}
+              retrying={agentsQ.isFetching}
+            />
+          ) : !hasAgents ? (
+            <StateEmpty section icon={Ic.users} title="No agents listed yet" />
+          ) : (
+            <View style={{ gap: 12 }}>
+              {agents.map((ag) => (
+                <AgentRow key={ag.id} a={ag} agencyName={a.name} />
+              ))}
+            </View>
+          )}
         </View>
       </Animated.ScrollView>
 

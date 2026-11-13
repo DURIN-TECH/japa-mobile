@@ -36,7 +36,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { EX, EXShadow, displayText } from './theme';
-import { ONBOARD } from './data';
+import { ONBOARD } from './content';
 import { Ic } from './icons';
 import { GlassButton } from './primitives';
 

@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { agoFrom } from './liveDate';
-import { Review } from './data';
+import { Review } from '@/types/explorer.type';
 import { ApiReview } from '@/hooks/useAgents';
 
 // Stable string → non-negative 32-bit hash (matches liveAgents.ts). Used to

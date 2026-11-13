@@ -24,13 +24,7 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-import {
-  AGENTS,
-  REQS,
-  destById,
-  type Dest,
-  type Req,
-} from '@/components/explorer/data';
+import type { Dest, Req } from '@/types/explorer.type';
 import {
   mapRequirements,
   visaTypeToDest,
@@ -39,6 +33,15 @@ import { mapAgent } from '@/components/explorer/liveAgents';
 import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { useTopAgents } from '@/hooks/useAgents';
 import { useCreateApplication } from '@/hooks/useApplications';
+import { isNotFoundError } from '@/hooks/queryErrors';
+// japa#145: shared states; no demo destination, requirements or agents.
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  StateEmpty,
+  StateLoading,
+  loadErrorCopy,
+} from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
 import {
   Flag,
@@ -194,10 +197,10 @@ export default function DestinationDetail() {
   const insets = useSafeAreaInsets();
   const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
 
-  // Demo tiles resolve from static DESTS; live tiles (from the backend Explore
-  // grid) carry a country `code` and are fetched via (countryCode, visaId).
-  const demo = destById(id);
-  const liveQ = useVisaType(demo ? '' : (code ?? ''), demo ? '' : id);
+  // Every tile from the Explore grid carries a country `code`; the visa is
+  // fetched via (countryCode, visaId). japa#145: there is no static fallback,
+  // so a missing code or id simply finds nothing (not-found state below).
+  const liveQ = useVisaType(code ?? '', id ?? '');
   const { data: countries } = useCountriesWithVisas();
 
   const scrollY = useSharedValue(0);
@@ -222,76 +225,81 @@ export default function DestinationDetail() {
     ],
   }));
 
-  // Effective destination + requirements (demo or live-mapped).
+  // Destination + requirements, mapped from the backend response.
   const d: Dest | undefined = useMemo(() => {
-    if (demo) return demo;
     const vt = liveQ.data?.visaType;
     if (!vt) return undefined;
     const name = countries?.find(
       (c) => c.code.toLowerCase() === (code ?? '').toLowerCase(),
     )?.name;
     return visaTypeToDest(vt, name);
-  }, [demo, liveQ.data, countries, code]);
+  }, [liveQ.data, countries, code]);
 
-  const reqs: Req[] = useMemo(() => {
-    if (demo) return REQS;
-    const rq = liveQ.data?.requirements;
-    return rq && rq.length ? mapRequirements(rq) : REQS;
-  }, [demo, liveQ.data]);
+  // japa#145: requirements come only from the backend. An empty list shows
+  // the "No requirements published yet" section state, never static rows.
+  const reqs: Req[] = useMemo(
+    () => mapRequirements(liveQ.data?.requirements ?? []),
+    [liveQ.data],
+  );
 
-  // Top agents rail — live (GET /agents/top) with a demo fallback.
+  // Top agents rail (GET /agents/top). japa#145: no demo agents; the rail is
+  // hidden when the backend has none (or the call failed).
   const topAgentsQ = useTopAgents(3);
-  const topAgents = useMemo(() => {
-    const live = (topAgentsQ.data ?? []).map(mapAgent);
-    return live.length ? live : AGENTS;
-  }, [topAgentsQ.data]);
+  const topAgents = useMemo(
+    () => (topAgentsQ.data ?? []).map(mapAgent),
+    [topAgentsQ.data],
+  );
 
-  // Create-application: the self-service path creates a real application for a
-  // live visa, then opens self-service with that application id (which unlocks
-  // live document upload). Demo dests / failures fall back to the demo flow.
+  // Create-application: the self-service path creates a real application for
+  // this visa, then opens self-service with that application id. A failure
+  // shows an InlineError above the CTA (the CTA is the retry); it never opens
+  // a checklist for an application that doesn't exist.
   const createApp = useCreateApplication();
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  // Live fetch still in flight.
-  if (!demo && liveQ.isLoading) {
+  // ── First load, nothing cached: coral spinner ────────────────────────────
+  if (liveQ.isLoading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <ActivityIndicator color={EX.color.primary} />
+      <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+        <StateLoading />
       </View>
     );
   }
 
+  // ── Load failed (not a 404), nothing cached: error + retry ───────────────
+  if (!d && liveQ.isError && !isNotFoundError(liveQ.error)) {
+    return (
+      <CenteredState
+        icon={Ic.globe}
+        title="We couldn’t load this destination"
+        errorMessage={loadErrorCopy('this destination')}
+        onRetry={() => liveQ.refetch()}
+        retrying={liveQ.isRefetching}
+        actionLabel="Back to explore"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
+    );
+  }
+
+  // ── Not found (404, or no code/id to look up). Copy never confirms the
+  //    item exists. ─────────────────────────────────────────────────────────
   if (!d) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Destination not found.</Text>
-      </View>
+      <CenteredState
+        icon={Ic.globe}
+        title="We couldn’t find this destination"
+        actionLabel="Back to explore"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
     );
   }
 
-  // Start (or continue to) the self-service application. For a live visa this
-  // creates a real Application (mode 'self') and opens self-service with its id;
-  // demo dests and any failure fall back to the demo self-service view.
+  // Start the self-service application: creates a real Application (mode
+  // 'self') and opens self-service with its id.
   const startSelfService = async () => {
     if (creating) return;
-    if (demo) {
-      router.push(`/self-service/${d.id}`);
-      return;
-    }
+    setCreateError(null);
     try {
       setCreating(true);
       const app = await createApp.mutateAsync({
@@ -299,9 +307,12 @@ export default function DestinationDetail() {
         countryCode: (code ?? d.flag).toUpperCase(),
         mode: 'self',
       });
-      router.push(`/self-service/${app?.id ?? d.id}`);
+      if (!app?.id) throw new Error('No application id');
+      router.push(`/self-service/${app.id}`);
     } catch {
-      router.push(`/self-service/${d.id}`);
+      setCreateError(
+        'We couldn’t start your application. Try again in a moment.',
+      );
     } finally {
       setCreating(false);
     }
@@ -500,9 +511,15 @@ export default function DestinationDetail() {
               dark
               icon={Ic.users}
               title="Work with an agent"
-              sub="Guided by 12 verified experts"
+              // japa#145: no invented expert count; open the top agent when
+              // there is one, else the Agents tab.
+              sub="Guided by a verified expert"
               badge="Popular"
-              onPress={() => router.push(`/agent/${topAgents[0].id}`)}
+              onPress={() =>
+                topAgents[0]
+                  ? router.push(`/agent/${topAgents[0].id}`)
+                  : router.push('/(tabs)/agents')
+              }
             />
             <PathCard
               icon={Ic.docs}
@@ -557,7 +574,7 @@ export default function DestinationDetail() {
                   marginTop: 1,
                 }}
               >
-                Answer 5 quick questions · 2 min
+                Answer a few quick questions · 2 min
               </Text>
             </View>
             <Ic.chevR size={20} color={EX.color.success} strokeWidth={1.8} />
@@ -591,6 +608,15 @@ export default function DestinationDetail() {
               elevation: 1,
             }}
           >
+            {/* japa#145: nothing published yet → section empty state. */}
+            {reqs.length === 0 ? (
+              <StateEmpty
+                section
+                icon={Ic.docs}
+                title="No requirements published yet"
+                body="We’ll list every document you need here as soon as it’s published."
+              />
+            ) : null}
             {reqs.map((r, i) => (
               <View
                 key={`${r.t}-${i}`}
@@ -719,128 +745,132 @@ export default function DestinationDetail() {
             <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />
           </Pressable>
 
-          {/* Top agents */}
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            Top agents for {d.country}
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginHorizontal: -20 }}
-            contentContainerStyle={{
-              gap: 11,
-              paddingHorizontal: 20,
-              paddingVertical: 2,
-            }}
-          >
-            {topAgents.map((a) => (
-              <Pressable
-                key={a.id}
-                onPress={() => router.push(`/agent/${a.id}`)}
+          {/* Top agents (hidden when the backend has none, japa#145) */}
+          {topAgents.length ? (
+            <>
+              <Text
                 style={{
-                  width: 184,
-                  backgroundColor: '#fff',
-                  borderWidth: 1,
-                  borderColor: EX.color.line08,
-                  borderRadius: 18,
-                  padding: 14,
-                  shadowColor: '#171326',
-                  shadowOpacity: 0.04,
-                  shadowRadius: 2,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 1,
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                  marginTop: 26,
+                  marginBottom: 12,
+                  marginHorizontal: 2,
                 }}
               >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 10,
-                    marginBottom: 10,
-                  }}
-                >
-                  <Portrait seed={a.seed} size={42} name={a.n} />
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text
-                      style={{
-                        fontSize: 14,
-                        fontWeight: '700',
-                        color: EX.color.ink,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {a.n}
-                    </Text>
-                    <Text
-                      style={{ fontSize: 11.5, color: EX.color.muted }}
-                      numberOfLines={1}
-                    >
-                      {a.spec}
-                    </Text>
-                  </View>
-                </View>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <View
+                Top agents for {d.country}
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginHorizontal: -20 }}
+                contentContainerStyle={{
+                  gap: 11,
+                  paddingHorizontal: 20,
+                  paddingVertical: 2,
+                }}
+              >
+                {topAgents.map((a) => (
+                  <Pressable
+                    key={a.id}
+                    onPress={() => router.push(`/agent/${a.id}`)}
                     style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 4,
+                      width: 184,
+                      backgroundColor: '#fff',
+                      borderWidth: 1,
+                      borderColor: EX.color.line08,
+                      borderRadius: 18,
+                      padding: 14,
+                      shadowColor: '#171326',
+                      shadowOpacity: 0.04,
+                      shadowRadius: 2,
+                      shadowOffset: { width: 0, height: 1 },
+                      elevation: 1,
                     }}
                   >
-                    <Ic.star
-                      size={13}
-                      color={EX.color.gold}
-                      fill={EX.color.gold}
-                      strokeWidth={0}
-                    />
-                    <Text
+                    <View
                       style={{
-                        fontSize: 13,
-                        fontWeight: '600',
-                        color: EX.color.ink,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 10,
+                        marginBottom: 10,
                       }}
                     >
-                      {a.r}
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      backgroundColor: EX.color.tealTint10,
-                      borderRadius: 999,
-                      paddingHorizontal: 8,
-                      paddingVertical: 3,
-                    }}
-                  >
-                    <Text
+                      <Portrait seed={a.seed} size={42} name={a.n} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text
+                          style={{
+                            fontSize: 14,
+                            fontWeight: '700',
+                            color: EX.color.ink,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {a.n}
+                        </Text>
+                        <Text
+                          style={{ fontSize: 11.5, color: EX.color.muted }}
+                          numberOfLines={1}
+                        >
+                          {a.spec}
+                        </Text>
+                      </View>
+                    </View>
+                    <View
                       style={{
-                        fontSize: 11,
-                        fontWeight: '700',
-                        color: EX.color.tealDeep,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
                       }}
                     >
-                      {a.succ}%
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                      >
+                        <Ic.star
+                          size={13}
+                          color={EX.color.gold}
+                          fill={EX.color.gold}
+                          strokeWidth={0}
+                        />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: '600',
+                            color: EX.color.ink,
+                          }}
+                        >
+                          {a.r}
+                        </Text>
+                      </View>
+                      <View
+                        style={{
+                          backgroundColor: EX.color.tealTint10,
+                          borderRadius: 999,
+                          paddingHorizontal: 8,
+                          paddingVertical: 3,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: '700',
+                            color: EX.color.tealDeep,
+                          }}
+                        >
+                          {a.succ}%
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
         </View>
       </Animated.ScrollView>
 
@@ -861,6 +891,12 @@ export default function DestinationDetail() {
           borderTopColor: EX.color.line06,
         }}
       >
+        {/* Create failure: InlineError above the CTA (the CTA retries). */}
+        {createError ? (
+          <View style={{ marginBottom: 10 }}>
+            <InlineError message={createError} />
+          </View>
+        ) : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <View>
             <Text

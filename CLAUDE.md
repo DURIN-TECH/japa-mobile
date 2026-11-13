@@ -44,8 +44,9 @@ npx tsc --noEmit           # Typecheck (no dedicated script)
 development build (`npm run build:dev`) or a local prebuild
 (`npm run ios` / `npm run android`).
 
-`npm test` exists but there are currently **no test files**
-in the repo.
+`npm test` runs jest (`jest-expo`); tests live in
+`__tests__/` folders next to the code (mappers, assets,
+query helpers).
 
 ## Environment Configuration
 
@@ -141,9 +142,16 @@ on them.
 
 `components/explorer/live*.ts` convert backend types into the
 shapes the Explorer screens render (`liveApplications`,
-`liveDocuments`, `liveMessaging`, `liveAgencies`, …). Screens
-fall back to the demo fixtures in `data.ts` when a query is
-empty or failing, so the UI is never blank.
+`liveDocuments`, `liveMessaging`, `liveAgencies`, …). There
+are **no demo fixtures** (japa#145): a screen renders backend
+data or one of the shared states in `explorer/states.tsx`
+(`StateLoading`, `StateEmpty`, `StateError`, plus
+`CenteredState` for detail not-found). View-model types live in
+`src/types/explorer.type.ts`, static product copy (status maps,
+`NAIRA`, onboarding slides, plan feature copy) in
+`explorer/content.ts`, and country / location imagery in
+`src/assets/countries.ts` (`countryImage`, `countryFlag`,
+`countryCity`, `countryTone`).
 
 **Consequence to watch:** a screen that filters mapped data
 can silently drop records. Documents whose `requirementId`

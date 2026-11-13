@@ -32,7 +32,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
-import { destById } from '@/components/explorer/data';
 import { BackHeader, InlineError } from '@/components/explorer/AccountForm';
 import {
   describeChatError,
@@ -104,11 +103,11 @@ export default function AiChatScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // Demo destination ids are not real applications → no request, ever.
-  const isDemo = !!destById(id);
-  const appId = isDemo ? '' : (id ?? '');
+  // The route id is a real application id (there is no demo path since
+  // #145); an empty id makes no request.
+  const appId = id ?? '';
 
-  const historyQ = useAiChatHistory(appId, !isDemo);
+  const historyQ = useAiChatHistory(appId, !!appId);
   const send = useSendAiChat(appId);
   const clear = useClearAiChat(appId);
   // "Run your review" (the server's `offerAssessment`): the same start the
@@ -148,7 +147,7 @@ export default function AiChatScreen() {
 
   const trimmed = draft.trim();
   const canSend =
-    !isDemo &&
+    !!appId &&
     !send.isPending &&
     trimmed.length > 0 &&
     trimmed.length <= MAX_CHARS;
@@ -218,10 +217,7 @@ export default function AiChatScreen() {
         contentContainerStyle={{ padding: 18, gap: 10 }}
         keyboardShouldPersistTaps="handled"
       >
-        {isDemo ? (
-          // Demo mode: explain, make no request.
-          <EmptyLine text="Chat is available on your own application." />
-        ) : historyQ.isLoading ? (
+        {historyQ.isLoading ? (
           <ActivityIndicator color={EX.color.primary} />
         ) : historyQ.isError ? (
           // History failure: same mapping as a send failure (402 → upgrade).
@@ -285,7 +281,7 @@ export default function AiChatScreen() {
           gap: 6,
         }}
       >
-        {bubbles.length > 0 && !isDemo ? (
+        {bubbles.length > 0 ? (
           <Pressable onPress={onClear} disabled={clear.isPending} hitSlop={6}>
             <Text style={{ fontSize: 12, color: EX.color.muted }}>
               Clear conversation
@@ -300,7 +296,7 @@ export default function AiChatScreen() {
             placeholderTextColor={EX.color.muted}
             multiline
             maxLength={MAX_CHARS}
-            editable={!isDemo}
+            editable={!!appId}
             style={{
               flex: 1,
               maxHeight: 110,

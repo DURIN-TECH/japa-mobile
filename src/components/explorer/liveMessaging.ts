@@ -1,17 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Messaging — live backend adapter.
 //
-// Maps the backend's Conversation/Message records onto the Explorer's demo
+// Maps the backend's Conversation/Message records onto the Explorer's
 // `Convo`/`Msg` shapes so the coral/cream conversations list + chat thread can
 // render real data from GET /conversations and GET /conversations/:id/messages.
 //
 // The backend has no presence signal, so `online` is always false. Relative
-// times are rendered compactly (e.g. "3h", "2d") to match the demo's `ago`
+// times are rendered compactly (e.g. "3h", "2d") to match the design's `ago`
 // strings; message timestamps use a "h:mm a" clock format.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { agoShort, fmtDate } from './liveDate';
-import { Convo, Msg } from './data';
+import { Convo, Msg } from '@/types/explorer.type';
 import { Conversation, Message } from '@/types/messaging.type';
 
 // Compact relative time ("3h", "2d"). Kept as a named export for compatibility;
