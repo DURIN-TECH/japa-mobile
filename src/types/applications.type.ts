@@ -62,6 +62,17 @@ export interface Application {
   clientEmail?: string;
   agentName?: string;
 
+  // japa#237: shared-route applications only (absent on every ordinary one).
+  /** The shared route's name. `countryName` stays the country applied through. */
+  routeName?: string;
+  throughCountryCode?: string;
+  /** Present on a shared-route application (the confirmed choice). */
+  throughCountry?: { sharedRouteId?: string; countryCode?: string };
+  /** The backend's answer to "may the country still be changed?" (never computed here). */
+  canChangeThroughCountry?: boolean;
+  /** Rulebook keys the application runs on. */
+  routeStack?: string[];
+
   // Notes
   userNotes?: string;
   agentNotes?: string;
@@ -84,8 +95,13 @@ export interface ApplicationTimeline {
 }
 
 export interface CreateApplicationInput {
-  visaTypeId: string;
-  countryCode: string;
+  /** Ordinary start. Omitted when starting through a shared route. */
+  visaTypeId?: string;
+  countryCode?: string;
+  /** japa#237: start through a shared route (send these INSTEAD of the two above). */
+  sharedRouteId?: string;
+  throughCountryCode?: string;
+  competenceAnswers?: Record<string, unknown>;
   mode: ApplicationMode;
   agentId?: string;
   userNotes?: string;

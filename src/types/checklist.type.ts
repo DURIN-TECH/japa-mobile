@@ -1,6 +1,8 @@
 // Types for the personal document checklist (issue #114). Mirrors the backend's
 // ChecklistView (functions/src/services/ai/checklist.service.ts).
 
+import type { StackLayer } from '@/types/sharedRoute.type';
+
 /** Lifecycle of the stored request behind an item (null = not generated yet). */
 export type ChecklistRequestStatus =
   | 'pending'
@@ -54,6 +56,8 @@ export interface ChecklistItem {
   fulfilledDocumentId?: string;
   /** False = fulfilled earlier, no longer asked for after an answer changed. */
   current: boolean;
+  /** japa#237: the rulebook layer this item came from (stacks only). */
+  layerKey?: string;
 }
 
 export type ChecklistState = 'ready' | 'intake_needed' | 'no_checklist';
@@ -63,4 +67,6 @@ export interface Checklist {
   emptyReason?: string;
   rubricVersion: number | null;
   items: ChecklistItem[];
+  /** japa#237: the rulebook layers (omitted for a single-layer route). */
+  stackLayers?: StackLayer[];
 }

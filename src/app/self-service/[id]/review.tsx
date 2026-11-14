@@ -58,6 +58,14 @@ import {
   SolidButton,
 } from '@/components/explorer/review/ReviewParts';
 import { StickyBar } from '@/components/explorer/StickyBar';
+import { LayerPill } from '@/components/explorer/SharedRouteParts';
+import {
+  SHARED_COPY,
+  hasMissingLayer,
+  layerLabel,
+  missingLayerNote,
+} from '@/components/explorer/sharedRouteLogic';
+import type { StackLayer } from '@/types/sharedRoute.type';
 import { PLANS_ROUTE, UpgradePanel } from '@/components/explorer/UpgradePrompt';
 import {
   BAND_SUMMARY,
@@ -468,6 +476,11 @@ export default function ReviewScreen() {
         <Animated.View entering={FadeIn.duration(300)}>
           <ReviewHero
             band={band}
+            caption={
+              hasMissingLayer(meta.stackLayers)
+                ? SHARED_COPY.notCheckedCaption
+                : undefined
+            }
             reviewedAt={meta.finishedAt}
             stale={stale}
             offline={offline}
@@ -535,6 +548,14 @@ export default function ReviewScreen() {
             ) : (
               <>
                 {staleNote}
+                {/* japa#237: part of the stack has no rules yet. */}
+                {missingLayerNote(meta.stackLayers) ? (
+                  <View style={{ marginTop: 20 }}>
+                    <InfoNote icon={Ic.clock}>
+                      {missingLayerNote(meta.stackLayers)}
+                    </InfoNote>
+                  </View>
+                ) : null}
                 {/* Summary sentence by band */}
                 {band ? (
                   <Text
@@ -595,6 +616,7 @@ export default function ReviewScreen() {
             {full && !fullBlocked ? (
               <FullSections
                 d={full}
+                layers={meta.stackLayers}
                 onRuleOpened={() =>
                   analyticsService.trackReviewEvent(
                     'review_rule_source_opened',
@@ -640,10 +662,13 @@ export default function ReviewScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 function FullSections({
   d,
+  layers,
   onRuleOpened,
   onEditStatement,
 }: {
   d: FullAssessmentData;
+  /** japa#237: the stack's layers, for the pill on each finding. */
+  layers?: StackLayer[];
   onRuleOpened: () => void;
   onEditStatement: () => void;
 }) {
@@ -662,6 +687,7 @@ function FullSections({
             <FindingCard
               key={g.criterionId}
               kind="rule"
+              layer={<LayerPill label={layerLabel(layers, g.layerKey)} />}
               title={g.title}
               body={g.detail}
               // Slot B (#44): per-item action goes in `footer`; nothing renders yet.
@@ -690,6 +716,7 @@ function FullSections({
               <FindingCard
                 key={f.criterionId}
                 kind="question"
+                layer={<LayerPill label={layerLabel(layers, f.layerKey)} />}
                 title={f.title}
                 parts={[
                   { label: 'Why it may come up', text: f.detail },
@@ -711,6 +738,7 @@ function FullSections({
               <FindingCard
                 key={`${s.criterionId}:${i}`}
                 kind="statement"
+                layer={<LayerPill label={layerLabel(layers, s.layerKey)} />}
                 title={s.title}
                 body={s.comment || s.detail}
               />
@@ -737,6 +765,7 @@ function FullSections({
               <FindingCard
                 key={i.criterionId}
                 kind="unknown"
+                layer={<LayerPill label={layerLabel(layers, i.layerKey)} />}
                 title={i.title}
                 body={i.reason}
               />

@@ -60,6 +60,12 @@ import {
   useApplication,
   useApplicationTimeline,
 } from '@/hooks/useApplications';
+import { ThroughRow } from '@/components/explorer/SharedRouteParts';
+import {
+  canShowChangeCountry,
+  showRoutePill,
+  showThroughChip,
+} from '@/components/explorer/sharedRouteLogic';
 import { isNotFoundError } from '@/hooks/queryErrors';
 import { useVisaType } from '@/hooks/useVisaTypes';
 import { CenteredState } from '@/components/explorer/CenteredState';
@@ -662,6 +668,32 @@ export default function AppDetail() {
             shadowOffset: { width: 0, height: -8 },
           }}
         >
+          {/* ── japa#237: shared-route applications say which country they go
+              through. Ordinary applications look exactly as before. "Change
+              country" shows only when the backend says it can still change. */}
+          {liveQ.data && showThroughChip(liveQ.data) ? (
+            <ThroughRow
+              countryCode={
+                liveQ.data.throughCountryCode ?? liveQ.data.countryCode
+              }
+              countryName={liveQ.data.countryName ?? dest.country}
+              routeName={liveQ.data.routeName}
+              showRoutePill={showRoutePill(liveQ.data, liveQ.data.visaTypeName)}
+              canChange={canShowChangeCountry(liveQ.data)}
+              onChange={() =>
+                router.push({
+                  pathname: '/apply-through/[visaId]',
+                  params: {
+                    visaId: liveQ.data!.visaTypeId,
+                    code: liveQ.data!.countryCode,
+                    mode: 'change',
+                    applicationId: liveQ.data!.id,
+                  },
+                })
+              }
+            />
+          ) : null}
+
           {/* ── Dark "Next step" card (only when actionable) ────────────────── */}
           {actionable ? (
             <View

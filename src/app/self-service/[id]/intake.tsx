@@ -53,6 +53,12 @@ import { useApplication } from '@/hooks/useApplications';
 import { useIntake, useSaveIntake } from '@/hooks/useIntake';
 import { lastReviewFinishedAt, useAssessment } from '@/hooks/useCaseOfficer';
 import type { IntakeAnswer, IntakeAnswers } from '@/types/intake.type';
+import { Ic } from '@/components/explorer/icons';
+import {
+  SHARED_COPY,
+  hasLayers,
+  hasMissingLayer,
+} from '@/components/explorer/sharedRouteLogic';
 
 // Copy fallbacks used when the rubric carries no intake-level strings.
 const FALLBACK_TITLE = 'Your details';
@@ -349,6 +355,14 @@ export default function IntakeScreen() {
         }}
       >
         <InfoNote>{data.meta.intro ?? FALLBACK_INTRO}</InfoNote>
+
+        {/* japa#237: a stack's questions arrive merged, each once. */}
+        {hasLayers(data.stackLayers) ? (
+          <InfoNote>{SHARED_COPY.intakeOnce}</InfoNote>
+        ) : null}
+        {hasMissingLayer(data.stackLayers) ? (
+          <InfoNote icon={Ic.clock}>{SHARED_COPY.intakeMissing}</InfoNote>
+        ) : null}
 
         {questionsChanged ? (
           <InfoNote>

@@ -60,6 +60,11 @@ export interface VisaType {
   quotaLimit?: number;
   currentQuotaUsed?: number;
   agentIds: string[];
+  /**
+   * japa#237: set when this visa is one route shared by several countries
+   * (null / absent for an ordinary visa). Names come from the backend.
+   */
+  sharedRoute?: import('@/types/sharedRoute.type').PublicSharedRoute | null;
 }
 
 export interface RequiredDocument {

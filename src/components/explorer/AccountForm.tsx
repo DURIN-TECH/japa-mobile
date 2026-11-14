@@ -233,7 +233,14 @@ export function InlineError({ message }: { message?: string | null }) {
 }
 
 // ── InfoNote — soft cream panel for reassurance / "what happens next" copy ────
-export function InfoNote({ children }: { children: React.ReactNode }) {
+export function InfoNote({
+  children,
+  icon: IconCmp = Ic.shield,
+}: {
+  children: React.ReactNode;
+  /** Leading glyph (default: shield). japa#237 uses a clock for "not ready yet". */
+  icon?: React.ElementType;
+}) {
   return (
     <View
       style={{
@@ -246,7 +253,7 @@ export function InfoNote({ children }: { children: React.ReactNode }) {
         padding: 14,
       }}
     >
-      <Ic.shield size={17} color={EX.color.primary} strokeWidth={1.9} />
+      <IconCmp size={17} color={EX.color.primary} strokeWidth={1.9} />
       <Text
         style={{ flex: 1, fontSize: 13, lineHeight: 19, color: EX.color.ink2 }}
       >

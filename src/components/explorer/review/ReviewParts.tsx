@@ -211,7 +211,10 @@ export function ReviewHero({
   offline,
   insetTop,
   onBack,
+  caption,
 }: {
+  /** japa#237: a line under the date pill, e.g. "Doesn't include everything yet". */
+  caption?: string;
   band: ReadinessBand | null;
   reviewedAt: string | null;
   stale: boolean;
@@ -277,6 +280,18 @@ export function ReviewHero({
           {pill}
         </Text>
       </View>
+      {caption ? (
+        <Text
+          style={{
+            color: 'rgba(255,255,255,0.85)',
+            fontSize: 12.5,
+            fontWeight: '600',
+            marginTop: 8,
+          }}
+        >
+          {caption}
+        </Text>
+      ) : null}
       {offline ? (
         <Text
           style={{
@@ -401,7 +416,10 @@ export function FindingCard({
   parts,
   children,
   footer,
+  layer,
 }: {
+  /** japa#237: the layer pill (shared rules / a country's own); none on a one-layer rulebook. */
+  layer?: React.ReactNode;
   kind: FindingKind;
   title: string;
   body?: string;
@@ -450,6 +468,7 @@ export function FindingCard({
           {title}
         </Text>
       </View>
+      {layer ? <View style={{ marginTop: 8 }}>{layer}</View> : null}
       {body ? (
         <Text
           style={{

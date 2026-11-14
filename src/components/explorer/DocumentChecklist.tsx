@@ -53,6 +53,11 @@ import {
   type ItemState,
 } from '@/components/explorer/checklistLogic';
 import { Document } from '@/types/documents.type';
+// japa#237: layer pill on a row of a stacked (shared-route) rulebook.
+import {
+  LayerPillFor,
+  StackLayersProvider,
+} from '@/components/explorer/SharedRouteParts';
 // Per-upload document check (#115): shown on the item once a document is uploaded.
 import { DocumentCheckNotice } from '@/components/explorer/DocumentCheckNotice';
 import type { DocumentChecksResponse } from '@/types/documentCheck.type';
@@ -437,6 +442,13 @@ function ItemRow({
           >
             {statusLine(item, state, info)}
           </Text>
+          {/* Which rules the item comes from (nothing on a one-layer rulebook).
+              The existing holder x kind grouping is kept; layers don't regroup. */}
+          {item.layerKey ? (
+            <View style={{ marginTop: 6 }}>
+              <LayerPillFor layerKey={item.layerKey} />
+            </View>
+          ) : null}
           {clause ? (
             <Text
               style={{
@@ -859,19 +871,21 @@ export function DocumentChecklist({
           </View>
         ) : null}
         {/* #256: one card per holder x kind; empty cards are left out. */}
-        {groups.map((g) => (
-          <GroupCard
-            key={g.id}
-            groupId={g.id}
-            items={g.items}
-            docs={docs}
-            uploadingId={uploadingId}
-            onUpload={onUpload}
-            checksProps={checksProps}
-            uploadFailure={uploadFailure}
-            answersProps={answersProps}
-          />
-        ))}
+        <StackLayersProvider layers={checklist.stackLayers}>
+          {groups.map((g) => (
+            <GroupCard
+              key={g.id}
+              groupId={g.id}
+              items={g.items}
+              docs={docs}
+              uploadingId={uploadingId}
+              onUpload={onUpload}
+              checksProps={checksProps}
+              uploadFailure={uploadFailure}
+              answersProps={answersProps}
+            />
+          ))}
+        </StackLayersProvider>
       </>
     );
   }

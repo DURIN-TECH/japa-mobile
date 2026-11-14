@@ -25,7 +25,8 @@ import {
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { useTopAgents } from '@/hooks/useAgents';
-import { useStartApplication } from '@/hooks/useStartApplication';
+import { useStartVisa } from '@/hooks/useStartVisa';
+import { AlsoCoversPill } from '@/components/explorer/SharedRouteParts';
 import {
   StartApplicationBar,
   startBarExtraHeight,
@@ -256,9 +257,10 @@ export default function DestinationDetail() {
   // shows an InlineError above the CTA (the CTA is the retry); it never opens
   // a checklist for an application that doesn't exist.
   // japa#174: shared start flow (402 → upgrade, 404/403 → unavailable, other → retry).
-  const startApp = useStartApplication(
+  const startApp = useStartVisa(
     d?.id ?? id ?? '',
     code ?? d?.flag ?? '',
+    liveQ.data?.visaType.sharedRoute,
   );
 
   // ── First load, nothing cached: coral spinner ────────────────────────────
@@ -722,6 +724,8 @@ export default function DestinationDetail() {
               >
                 Cost, timeline, eligibility &amp; official requirements
               </Text>
+              {/* japa#237: "Also covers {n} other countries" on a shared route */}
+              <AlsoCoversPill route={liveQ.data?.visaType.sharedRoute} />
             </View>
             <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />
           </Pressable>
