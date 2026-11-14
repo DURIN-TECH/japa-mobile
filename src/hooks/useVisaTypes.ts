@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
 import {
@@ -115,6 +115,33 @@ export function useVisaSearch(query: string) {
     },
     enabled: query.length >= 2,
     staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Visas of several countries at once (japa#254: the Explore search shows the
+ * visas of any country the query resolves to). Uses the same query key and
+ * endpoint as `useVisaTypesByCountry`, so results share its cache.
+ *
+ * A country that fails or has no visas simply contributes nothing — it must
+ * show the empty state, never an error.
+ */
+export function useVisasForCountries(countryCodes: string[]) {
+  return useQueries({
+    queries: countryCodes.map((code) => ({
+      queryKey: ['visaTypes', 'country', code],
+      queryFn: async () => {
+        const response = await apiService.get<VisaType[]>(
+          `/countries/${code}/visas`,
+        );
+        return response.data ?? [];
+      },
+      staleTime: 1000 * 60 * 5,
+    })),
+    combine: (results) => ({
+      visas: results.flatMap((r) => r.data ?? []),
+      isFetching: results.some((r) => r.isFetching),
+    }),
   });
 }
 
