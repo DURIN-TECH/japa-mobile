@@ -95,6 +95,7 @@ import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
 import { useAuthStore } from '@/stores/auth.store';
 // Information items (#187): typed answers, saved on the server.
 import { useAnswers, useSaveAnswer } from '@/hooks/useAnswers';
+import type { AnswerValue } from '@/components/explorer/answerTypes';
 import {
   computeProgress,
   isInformationItem,
@@ -1382,12 +1383,15 @@ export default function SelfServiceView() {
                   }
                   answersProps={{
                     applicationId: app.id,
+                    countryCode: app.countryCode,
                     answers: answersQ.data,
                     answersLoading: answersQ.isLoading,
                     answersError: answersQ.isError,
                     onRetryAnswers: () => answersQ.refetch(),
-                    saveAnswer: (itemId: string, text: string) =>
-                      saveAnswerM.mutateAsync({ itemId, text }),
+                    saveAnswer: (
+                      itemId: string,
+                      value: AnswerValue | '' | null,
+                    ) => saveAnswerM.mutateAsync({ itemId, value }),
                     locked: answersLocked,
                     onLocked: () => setAnswersLockedByServer(true),
                     onSeePlans: () => router.push(PLANS_ROUTE),

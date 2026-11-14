@@ -64,14 +64,14 @@ describe('useAnswers', () => {
   it('GETs /applications/:id/answers and unwraps the answers map', async () => {
     api.get.mockResolvedValue({
       success: true,
-      data: { answers: { i1: { text: 'hi', updatedAt: 't' } } },
+      data: { answers: { i1: { value: 'hi', updatedAt: 't' } } },
     });
     const h = mount(() => useAnswers('app1'), qc);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
     expect(api.get).toHaveBeenCalledWith('/applications/app1/answers');
-    expect(h.current.data).toEqual({ i1: { text: 'hi', updatedAt: 't' } });
+    expect(h.current.data).toEqual({ i1: { value: 'hi', updatedAt: 't' } });
   });
 
   it('does not fetch while disabled', async () => {
@@ -84,32 +84,32 @@ describe('useAnswers', () => {
 describe('useSaveAnswer', () => {
   it('PUTs the text and merges the saved answer into the cache; "" removes it', async () => {
     qc.setQueryData(answersKey('app1'), {
-      i2: { text: 'keep', updatedAt: 't' },
+      i2: { value: 'keep', updatedAt: 't' },
     });
     const h = mount(() => useSaveAnswer('app1'), qc);
     api.put.mockResolvedValueOnce({
       success: true,
-      data: { itemId: 'i1', text: 'dates', updatedAt: 'u1' },
+      data: { itemId: 'i1', value: 'dates', updatedAt: 'u1' },
     });
     await act(async () => {
-      await h.current.mutateAsync({ itemId: 'i1', text: 'dates' });
+      await h.current.mutateAsync({ itemId: 'i1', value: 'dates' });
     });
     expect(api.put).toHaveBeenCalledWith('/applications/app1/answers/i1', {
-      text: 'dates',
+      value: 'dates',
     });
     expect(qc.getQueryData(answersKey('app1'))).toEqual({
-      i2: { text: 'keep', updatedAt: 't' },
-      i1: { text: 'dates', updatedAt: 'u1' },
+      i2: { value: 'keep', updatedAt: 't' },
+      i1: { value: 'dates', updatedAt: 'u1' },
     });
     api.put.mockResolvedValueOnce({
       success: true,
-      data: { itemId: 'i1', text: '', updatedAt: 'u2' },
+      data: { itemId: 'i1', value: '', updatedAt: 'u2' },
     });
     await act(async () => {
-      await h.current.mutateAsync({ itemId: 'i1', text: '' });
+      await h.current.mutateAsync({ itemId: 'i1', value: '' });
     });
     expect(qc.getQueryData(answersKey('app1'))).toEqual({
-      i2: { text: 'keep', updatedAt: 't' },
+      i2: { value: 'keep', updatedAt: 't' },
     });
   });
 
@@ -118,7 +118,7 @@ describe('useSaveAnswer', () => {
     const h = mount(() => useSaveAnswer('app1'), qc);
     api.put.mockRejectedValueOnce({ code: 'NETWORK_ERROR', status: 0 });
     await act(async () => {
-      await h.current.mutateAsync({ itemId: 'i1', text: 'x' }).catch(() => {});
+      await h.current.mutateAsync({ itemId: 'i1', value: 'x' }).catch(() => {});
     });
     expect(qc.getQueryData(answersKey('app1'))).toEqual({});
   });
@@ -139,5 +139,94 @@ describe('classifySaveError', () => {
     expect(classifySaveError({ status: 0, code: 'NETWORK_ERROR' }, 'a')).toBe(
       'offline',
     );
+  });
+});
+
+describe('typed values and server 400s', () => {
+  it('PUTs { value } as given and caches the typed value', async () => {
+    qc.setQueryData(answersKey('app1'), {});
+    const h = mount(() => useSaveAnswer('app1'), qc);
+    api.put.mockResolvedValueOnce({
+      success: true,
+      data: { itemId: 'i9', updatedAt: 'u1' },
+    });
+    const value = { from: '2027-03-01', to: '2027-03-10' };
+    await act(async () => {
+      await h.current.mutateAsync({ itemId: 'i9', value });
+    });
+    expect(api.put).toHaveBeenCalledWith('/applications/app1/answers/i9', {
+      value,
+    });
+    expect(qc.getQueryData(answersKey('app1'))).toEqual({
+      i9: { value, updatedAt: 'u1' },
+    });
+  });
+  it('classifies our own validation and a server 400 that names a field', () => {
+    expect(
+      classifySaveError({ code: 'INVALID_ANSWER', message: 'x' }, '{}'),
+    ).toBe('invalid');
+    expect(
+      classifySaveError(
+        { status: 400, message: 'address.city is required' },
+        '{}',
+      ),
+    ).toBe('invalid');
+    expect(
+      classifySaveError(
+        { status: 400, message: 'Unknown checklist item' },
+        'a',
+      ),
+    ).toBe('list_changed');
+  });
+});
+
+describe('server normalised value', () => {
+  it('prefers the value in the PUT response for the cache', async () => {
+    qc.setQueryData(answersKey('app1'), {});
+    const h = mount(() => useSaveAnswer('app1'), qc);
+    api.put.mockResolvedValueOnce({
+      success: true,
+      data: { itemId: 'i1', value: 'Trimmed', updatedAt: 'u1' },
+    });
+    await act(async () => {
+      await h.current.mutateAsync({ itemId: 'i1', value: ' Trimmed ' });
+    });
+    expect(qc.getQueryData(answersKey('app1'))).toEqual({
+      i1: { value: 'Trimmed', updatedAt: 'u1' },
+    });
+  });
+});
+
+describe('clearing a structured answer', () => {
+  it('PUTs value null and removes the cached answer', async () => {
+    qc.setQueryData(answersKey('app1'), {
+      i1: { value: { amount: 5, currency: 'GBP' }, updatedAt: 't' },
+    });
+    const h = mount(() => useSaveAnswer('app1'), qc);
+    api.put.mockResolvedValueOnce({
+      success: true,
+      data: { itemId: 'i1', updatedAt: 'u2' },
+    });
+    await act(async () => {
+      await h.current.mutateAsync({ itemId: 'i1', value: null });
+    });
+    expect(api.put).toHaveBeenCalledWith('/applications/app1/answers/i1', {
+      value: null,
+    });
+    expect(qc.getQueryData(answersKey('app1'))).toEqual({});
+  });
+});
+
+describe('2,000 limit is for text only', () => {
+  it('a long structured wire with a 400 is not "too long"', () => {
+    const long = 'x'.repeat(2500);
+    expect(
+      classifySaveError(
+        { status: 400, message: 'Unknown checklist item' },
+        long,
+        'list',
+      ),
+    ).toBe('list_changed');
+    expect(classifySaveError({ status: 400 }, long, 'text')).toBe('too_long');
   });
 });
