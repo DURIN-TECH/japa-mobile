@@ -12,7 +12,9 @@
  * 3. On foreground notification → show in-app alert
  * 4. On notification tap (background) → deep-link to relevant screen
  * 5. On notification tap (cold start) → deep-link after app loads
- * 6. On logout → unregisterToken()
+ * 6. On sign-out (logout, account deletion, a session that ended on its own,
+ *    or the signed-in account changing) → unregisterToken(). Wired up in
+ *    auth.store.ts (#263).
  */
 
 import { Platform, Alert } from 'react-native';
@@ -42,6 +44,32 @@ interface NotificationData {
 }
 
 // ─────────────────────────────────────────────
+// TEARDOWN TIMEOUT (#263, review round 1)
+// ─────────────────────────────────────────────
+
+/**
+ * Upper bound, per step, on the network-bound push teardown calls (getToken,
+ * the backend DELETE, deleteToken). The signed-out cold start and the
+ * session-ended bounce to /welcome await the teardown, so on a slow or captive
+ * network they must not hang on these calls (the splash stays up until it
+ * finishes). A step that times out keeps running in the background; we just
+ * stop waiting for it.
+ */
+export const PUSH_TEARDOWN_TIMEOUT_MS = 3000;
+
+/** Reject with a timeout error if `promise` hasn't settled within `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms} ms`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// ─────────────────────────────────────────────
 // SERVICE
 // ─────────────────────────────────────────────
 
@@ -50,6 +78,11 @@ class PushNotificationService {
   // before the native Firebase module is ready.
   private _messaging: ReturnType<typeof getMessaging> | null = null;
   private unsubscribers: (() => void)[] = [];
+  // #263: the last local deleteToken() call, possibly still running after its
+  // teardown timeout. registerToken() waits for it first, so a slow delete
+  // from the PREVIOUS user's teardown can't kill the token just fetched for
+  // the next user.
+  private pendingLocalDelete: Promise<unknown> | null = null;
 
   private get messaging() {
     if (!this._messaging) {
@@ -92,6 +125,11 @@ class PushNotificationService {
    */
   async registerToken(): Promise<void> {
     try {
+      // #263: let a previous user's slow local delete finish first (see
+      // pendingLocalDelete). initialize() is fire-and-forget, so this wait
+      // never blocks the UI.
+      if (this.pendingLocalDelete) await this.pendingLocalDelete;
+
       const token = await getToken(this.messaging);
       if (!token) return;
 
@@ -108,23 +146,75 @@ class PushNotificationService {
   }
 
   /**
-   * Unregister the FCM token on logout.
+   * Unregister the FCM token on sign-out (#263: EVERY sign-out path).
    * Prevents push notifications from being sent to a logged-out device.
+   *
+   * Three independent steps, each with its own error handling, so one failing
+   * never skips the others:
+   *
+   *   1. Backend removal (DELETE /users/fcm-token). Best-effort, and only
+   *      useful while the departing user still holds the Firebase session
+   *      (logout, account deletion). Skipped with `{ notifyBackend: false }`,
+   *      which the auth listener always passes: when it sees a session end or
+   *      an account change, the departing user's session is already gone, so
+   *      the call could only 401 or, worse, run with the NEXT user's ID token.
+   *   2. Local deletion (deleteToken). This is what actually stops the device
+   *      receiving the previous user's pushes: FCM invalidates the token, so a
+   *      send to it fails even if the backend still lists it on that user's
+   *      doc. The next sign-in gets a NEW token and registers it to the new
+   *      user only.
+   *   3. Listener cleanup, so no foreground alert / tap handler from the old
+   *      session survives.
+   *
+   * Every network-bound step is capped at PUSH_TEARDOWN_TIMEOUT_MS, so the
+   * whole call settles within a few seconds even on a bad network.
+   * Never throws.
    */
-  async unregisterToken(): Promise<void> {
-    try {
-      const token = await getToken(this.messaging);
-      if (token) {
-        // Tell backend to remove this token — DELETE /users/fcm-token
-        await apiService.delete('/users/fcm-token', { token });
+  async unregisterToken(
+    options: { notifyBackend?: boolean } = {},
+  ): Promise<void> {
+    const { notifyBackend = true } = options;
+
+    // 1. Backend: forget this device's token for the (current) user.
+    //    Each network call is capped at PUSH_TEARDOWN_TIMEOUT_MS.
+    if (notifyBackend) {
+      try {
+        const token = await withTimeout(
+          getToken(this.messaging),
+          PUSH_TEARDOWN_TIMEOUT_MS,
+          'getToken',
+        );
+        if (token) {
+          // Tell backend to remove this token — DELETE /users/fcm-token
+          await withTimeout(
+            apiService.delete('/users/fcm-token', { token }),
+            PUSH_TEARDOWN_TIMEOUT_MS,
+            'DELETE /users/fcm-token',
+          );
+        }
+      } catch (error) {
+        if (__DEV__) console.warn('FCM token backend unregister error:', error);
       }
-      // Delete the token locally so Firebase generates a new one next time
-      await deleteToken(this.messaging);
-    } catch (error) {
-      if (__DEV__) console.warn('FCM token unregister error:', error);
     }
 
-    // Clean up listeners
+    // 2. Local: delete the token so Firebase generates a new one next time.
+    //    Runs even when step 1 failed (the session-ended case). Remembered in
+    //    pendingLocalDelete (errors swallowed) in case it outlives the timeout.
+    const localDelete = deleteToken(this.messaging).catch((error) => {
+      if (__DEV__) console.warn('FCM token local delete error:', error);
+    });
+    this.pendingLocalDelete = localDelete;
+    void localDelete.finally(() => {
+      if (this.pendingLocalDelete === localDelete)
+        this.pendingLocalDelete = null;
+    });
+    try {
+      await withTimeout(localDelete, PUSH_TEARDOWN_TIMEOUT_MS, 'deleteToken');
+    } catch (error) {
+      if (__DEV__) console.warn('FCM token local delete error:', error);
+    }
+
+    // 3. Clean up listeners
     this.cleanup();
   }
 

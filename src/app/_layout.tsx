@@ -52,7 +52,7 @@ function useProtectedRoute() {
     isAuthenticated,
     profile,
     isInitialized,
-    setUser,
+    syncAuthUser,
     setInitialized,
     fetchProfile,
   } = useAuthStore();
@@ -60,7 +60,12 @@ function useProtectedRoute() {
   // Listen to Firebase auth state changes
   useEffect(() => {
     const unsubscribe = authService.onAuthStateChanged(async (user) => {
-      setUser(user);
+      // #263: syncAuthUser (not a bare setUser) also tears the previous user's
+      // session down — push token, React Query cache, per-user stores and
+      // device keys — when the session ended on its own (user → null) or the
+      // account changed (uid A → uid B). It resolves after that teardown, so
+      // the profile fetch and push registration below are for the NEW user.
+      await syncAuthUser(user);
       if (user) {
         await fetchProfile();
         // Initialize push notifications for returning authenticated users
@@ -70,7 +75,7 @@ function useProtectedRoute() {
     });
 
     return unsubscribe;
-  }, [setUser, setInitialized, fetchProfile]);
+  }, [syncAuthUser, setInitialized, fetchProfile]);
 
   // Handle navigation based on auth state
   useEffect(() => {
