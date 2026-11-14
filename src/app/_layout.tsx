@@ -18,6 +18,8 @@ import { ThemeSync } from '@/providers/ThemeSync';
 // Must wrap the entire app tree to be effective.
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { EX } from '@/components/explorer/theme';
+// Floating feedback button + sheet (issue #257), mounted once for the whole app.
+import { FeedbackHost } from '@/components/feedback/FeedbackHost';
 import {
   useSettingsStore,
   useSettingsHydration,
@@ -188,6 +190,10 @@ function RootLayoutContent() {
         <Stack.Screen name="visa/[id]" />
         <Stack.Screen name="+not-found" />
       </Stack>
+      {/* Feedback button + sheet. Renders nothing when signed out, on auth /
+          onboarding / not-found screens, when hidden in Settings, or when the
+          build sets EXPO_PUBLIC_FEEDBACK_ENABLED=false. */}
+      <FeedbackHost />
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </OnboardingProvider>
   );

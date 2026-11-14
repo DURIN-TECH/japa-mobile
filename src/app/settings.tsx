@@ -36,6 +36,10 @@ import { authService } from '@/services/auth.service';
 // Notification channel prefs are read from the cached profile + persisted through
 // the auth store (PATCH /users/me/notification-preferences).
 import { useAuthStore } from '@/stores/auth.store';
+// Feedback button toggle (issue #257).
+import { FEEDBACK_ENABLED } from '@/config/feedback';
+import { FEEDBACK_COPY } from '@/components/feedback/feedbackLogic';
+import { useSettingsStore } from '@/stores/settings.store';
 // Privacy row value (#172): approved / included in plan / not approved / off for all.
 import { useAiMessageAccessState } from '@/hooks/useAiMessageAccess';
 import {
@@ -206,6 +210,10 @@ export default function SettingsScreen() {
       );
     }
   };
+
+  // Feedback button toggle (default on, persisted on the device).
+  const feedbackOn = useSettingsStore((s) => s.feedbackButtonEnabled);
+  const setFeedbackOn = useSettingsStore((s) => s.setFeedbackButtonEnabled);
 
   // AI message access state for the Privacy row. No value while loading or when
   // loading failed: the row still opens the screen, which shows the error.
@@ -442,7 +450,37 @@ export default function SettingsScreen() {
             divider
             onPress={() => openUrl('mailto:support@weareseli.com')}
           />
+          {/* Shown unless the build removed the feature (EXPO_PUBLIC_FEEDBACK_ENABLED=false). */}
+          {FEEDBACK_ENABLED ? (
+            <SettingsRow
+              icon={Ic.spark}
+              label={FEEDBACK_COPY.settingsLabel}
+              divider
+              right={
+                <Switch
+                  value={feedbackOn}
+                  onValueChange={setFeedbackOn}
+                  trackColor={switchTrack}
+                  thumbColor="#fff"
+                  ios_backgroundColor={EX.color.line10}
+                />
+              }
+            />
+          ) : null}
         </Card>
+        {FEEDBACK_ENABLED ? (
+          <Text
+            style={{
+              fontSize: 12.5,
+              lineHeight: 18,
+              color: EX.color.inkMuted,
+              marginTop: 8,
+              marginHorizontal: 4,
+            }}
+          >
+            {FEEDBACK_COPY.settingsCaption}
+          </Text>
+        ) : null}
 
         {/* ── 6. Security ────────────────────────────────────────────────── */}
         {/* Self-service account-security actions. Change password/email only make
