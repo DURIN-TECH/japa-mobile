@@ -52,10 +52,31 @@
         "APP_ENV": "production",
         "CI": "true"
       }
+    },
+    "tester": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "channel": "tester",
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "APP_ENV": "staging",
+        "CI": "true"
+      }
     }
   },
   "submit": {
     "production": {
+      "android": {
+        "serviceAccountKeyPath": "./play-service-account.json",
+        "track": "internal"
+      }
+    },
+    "tester": {
       "android": {
         "serviceAccountKeyPath": "./play-service-account.json",
         "track": "internal"

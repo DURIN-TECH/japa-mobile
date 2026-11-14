@@ -37,6 +37,7 @@
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-firebase/crashlytics",
+      "@react-native-firebase/messaging",
       "expo-router",
       "expo-document-picker",
       "expo-secure-store",
@@ -49,7 +50,8 @@
             "forceStaticLinking": [
               "RNFBApp",
               "RNFBAuth",
-              "RNFBCrashlytics"
+              "RNFBCrashlytics",
+              "RNFBMessaging"
             ]
           }
         }
@@ -65,7 +67,8 @@
       ],
       "expo-image",
       "expo-web-browser",
-      "./plugins/withPodsDeploymentTarget"
+      "./plugins/withPodsDeploymentTarget",
+      "./plugins/withAndroidPushSetup"
     ],
     "experiments": {
       "typedRoutes": true
