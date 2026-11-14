@@ -170,3 +170,98 @@ export function computeProgress(
     hasInformation: counted.some(isInformationItem),
   };
 }
+
+// ── Group cards and status lines (issue #256) ────────────────────────────────
+
+/** The four group cards, in display order. */
+export type GroupId =
+  | 'your_documents'
+  | 'your_details'
+  | 'sponsor_documents'
+  | 'sponsor_details';
+
+/** Card title and description per group (copy from the design spec, rev 2). */
+export const GROUP_COPY: Record<GroupId, { title: string; note: string }> = {
+  your_documents: { title: 'Your documents', note: 'Upload each one here.' },
+  your_details: {
+    title: 'Your details',
+    note: 'Type these in. They save as you go.',
+  },
+  sponsor_documents: {
+    title: 'Your sponsor’s documents',
+    note: 'Your sponsor has no account here. You upload their documents for them.',
+  },
+  sponsor_details: {
+    title: 'Your sponsor’s details',
+    note: 'Type these in. They save as you go.',
+  },
+};
+
+/**
+ * Splits the checklist into the four group cards by holder x kind, in display
+ * order. Empty groups are left out. `detailsAsAnswers` is false on a screen with
+ * no answers support: information items are then shown as documents (as before).
+ */
+export function groupChecklistItems(
+  items: ChecklistItem[],
+  detailsAsAnswers: boolean,
+): { id: GroupId; items: ChecklistItem[] }[] {
+  const isDetail = (i: ChecklistItem) =>
+    detailsAsAnswers && isInformationItem(i);
+  const groups: { id: GroupId; items: ChecklistItem[] }[] = [
+    {
+      id: 'your_documents',
+      items: items.filter((i) => i.holder === 'applicant' && !isDetail(i)),
+    },
+    {
+      id: 'your_details',
+      items: items.filter((i) => i.holder === 'applicant' && isDetail(i)),
+    },
+    {
+      id: 'sponsor_documents',
+      items: items.filter((i) => i.holder === 'sponsor' && !isDetail(i)),
+    },
+    {
+      id: 'sponsor_details',
+      items: items.filter((i) => i.holder === 'sponsor' && isDetail(i)),
+    },
+  ];
+  return groups.filter((g) => g.items.length > 0);
+}
+
+/** States that count as done in a card's "2 of 3 done". */
+export function isDoneState(state: ItemState): boolean {
+  return state === 'accepted' || state === 'answered' || state === 'not_needed';
+}
+
+/** The state word of a status line: "Not uploaded", "Needs another file"... */
+export function stateWord(state: ItemState, info: boolean): string {
+  switch (state) {
+    case 'waiting':
+      return info ? 'Not answered' : 'Not uploaded';
+    case 'uploaded':
+      return 'Uploaded';
+    case 'accepted':
+      return 'Accepted';
+    case 'needs_another':
+      return 'Needs another file';
+    case 'answered':
+      return 'Answered';
+    case 'not_needed':
+      return 'Not needed';
+  }
+}
+
+/**
+ * The line under an item's title: need label first (it carries the condition),
+ * state second, e.g. "Required · Not uploaded". A waived item is just
+ * "Not needed".
+ */
+export function statusLine(
+  item: ChecklistItem,
+  state: ItemState,
+  info: boolean,
+): string {
+  if (state === 'not_needed') return stateWord(state, info);
+  return `${needLabel(needOf(item))} · ${stateWord(state, info)}`;
+}

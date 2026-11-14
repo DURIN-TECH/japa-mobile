@@ -2,12 +2,15 @@
 // DocumentChecklist (issue #114) — the applicant's personal document list on
 // the live self-service screen.
 //
-// The list is decided on the server, in code, from the approved visa rubric and
-// the applicant's visit details; this component only RENDERS it. Items are
-// split into "Yours" and "Your sponsor's" (the sponsor group is hidden when
-// empty). Each item shows: title, required/optional, state, a reason, an upload
-// action, and a "Where this comes from" toggle that reveals the verbatim quote
-// and a link to the official page.
+// The list is decided on the server, in code, from the approved visa rubric
+// and the applicant's visit details; this component only RENDERS it.
+//
+// Issue #256: items are grouped into white cards by holder x kind ("Your
+// documents", "Your details", "Your sponsor's documents/details"; empty cards
+// are hidden). Inside a card each item is a ROW: icon tile, title, a status line
+// ("Required · Not uploaded"), then a coral Upload button (replaces the Waiting
+// pill) or a state pill. Every row has a collapsed "Official requirement" with
+// the verbatim quote and a link to the official page. The reason line is not shown.
 //
 // Issue #187: an item is either a document (upload) or INFORMATION (a typed
 // answer that saves itself, see InformationAnswer). Every item shows one of three
@@ -23,10 +26,10 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
-import { EX } from '@/components/explorer/theme';
+import { EX, EXShadow } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Pill, SectionTitle } from '@/components/explorer/primitives';
-import { InlineError, InfoNote } from '@/components/explorer/AccountForm';
+import { InlineError } from '@/components/explorer/AccountForm';
 import { Checklist, ChecklistItem } from '@/types/checklist.type';
 import type { SavedAnswer } from '@/types/answers.type';
 import {
@@ -39,11 +42,14 @@ import { useAnswerDraftsStore, draftKey } from '@/stores/answerDrafts.store';
 import {
   appliesWhenText,
   checklistRequirementId,
+  groupChecklistItems,
+  GROUP_COPY,
+  isDoneState,
   isInformationItem,
   itemState,
   latestDocFor,
-  needLabel,
-  needOf,
+  statusLine,
+  type GroupId,
   type ItemState,
 } from '@/components/explorer/checklistLogic';
 import { Document } from '@/types/documents.type';
@@ -116,20 +122,211 @@ export function isChecklistDocument(
   );
 }
 
+// State pill colours, from the system's status maps (no hard-coded hex).
 const STATE_STYLE: Record<
   ItemState,
   { label: string; fg: string; bg: string }
 > = {
-  answered: { label: 'Answered', fg: '#1E8E55', bg: '#D6F2E2' },
-  waiting: { label: 'Waiting', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
-  uploaded: { label: 'Uploaded', fg: '#B26A14', bg: '#FCEAC8' },
-  accepted: { label: 'Accepted', fg: '#1E8E55', bg: '#D6F2E2' },
-  needs_another: { label: 'Needs another', fg: '#C0453C', bg: '#FBE3E1' },
-  not_needed: { label: 'Not needed', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
+  answered: {
+    label: 'Answered',
+    fg: EX.status.approved.fg,
+    bg: EX.status.approved.bg,
+  },
+  waiting: { label: 'Waiting', fg: EX.status.draft.fg, bg: EX.status.draft.bg },
+  uploaded: {
+    label: 'Uploaded',
+    fg: EX.status.documents.fg,
+    bg: EX.status.documents.bg,
+  },
+  accepted: {
+    label: 'Accepted',
+    fg: EX.status.approved.fg,
+    bg: EX.status.approved.bg,
+  },
+  needs_another: {
+    label: 'Needs another',
+    fg: EX.docStatus.rejected.fg,
+    bg: EX.docStatus.rejected.bg,
+  },
+  not_needed: {
+    label: 'Not needed',
+    fg: EX.status.draft.fg,
+    bg: EX.status.draft.bg,
+  },
 };
 
-// ── One item ──────────────────────────────────────────────────────────────────
-function ChecklistRow({
+/**
+ * Tile colours per state (#256): neutral states are quiet, the others borrow
+ * the state's status pair. `tone` colours the status line text; neutral uses
+ * ink-muted (never `muted`, 3.5:1).
+ */
+// Status-line TEXT colours that reach AA (4.5:1) on white at 12.5px. The pill/tile
+// fg values are ~4.2:1, so the line uses a deeper shade of the same hue.
+const TONE_WARNING = '#8A5210';
+
+function tileStyle(state: ItemState): { bg: string; fg: string; tone: string } {
+  switch (state) {
+    case 'uploaded':
+      return { ...STATE_STYLE.uploaded, tone: TONE_WARNING };
+    case 'accepted':
+    case 'answered':
+      return { ...STATE_STYLE.accepted, tone: EX.color.successDeep };
+    case 'needs_another':
+      return {
+        ...STATE_STYLE.needs_another,
+        tone: STATE_STYLE.needs_another.fg,
+      };
+    default:
+      return {
+        bg: EX.color.line06,
+        fg: EX.color.inkMuted,
+        tone: EX.color.inkMuted,
+      };
+  }
+}
+
+// ── Official requirement (footer of every item) ──────────────────────────────
+// Collapsed by default; reveals the verbatim quote, the rule reference and a
+// link to the official page. No animation (reduced motion; LayoutAnimation can't
+// use the system curve). Text is ink-2, only the chevron is coral (contrast).
+function OfficialRequirement({ item }: { item: ChecklistItem }) {
+  const [open, setOpen] = useState(false);
+  const { quote, ruleRef, url } = item.citation;
+  return (
+    <View>
+      <PressableStatic
+        onPress={() => setOpen((o) => !o)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`Official requirement for ${item.title}`}
+        accessibilityHint="Shows the official wording"
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          alignSelf: 'flex-start',
+          gap: 4,
+          minHeight: 44,
+        }}
+      >
+        <Text
+          style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.ink2 }}
+        >
+          Official requirement
+        </Text>
+        <View style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
+          <Ic.chevR size={14} color={EX.color.primary} strokeWidth={2} />
+        </View>
+      </PressableStatic>
+      {open ? (
+        <View
+          style={{
+            marginBottom: 4,
+            padding: 12,
+            borderRadius: 12,
+            backgroundColor: EX.color.cream,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 13,
+              lineHeight: 19,
+              color: EX.color.ink,
+              fontStyle: 'italic',
+            }}
+          >
+            “{quote}”
+          </Text>
+          {ruleRef ? (
+            <Text
+              style={{ fontSize: 12, color: EX.color.inkMuted, marginTop: 4 }}
+            >
+              {ruleRef}
+            </Text>
+          ) : null}
+          {/* Link row only when there is a page: no empty gap otherwise. */}
+          {url ? (
+            <PressableStatic
+              onPress={() => Linking.openURL(url)}
+              accessibilityRole="link"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                alignSelf: 'flex-start',
+                gap: 4,
+                minHeight: 44,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  textDecorationLine: 'underline',
+                }}
+              >
+                Read the official page
+              </Text>
+              <Ic.arrowUR size={14} color={EX.color.primary} strokeWidth={2} />
+            </PressableStatic>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// ── Coral upload button (38px) ────────────────────────────────────────────────
+function UploadButton({
+  label,
+  itemTitle,
+  uploading,
+  onPress,
+}: {
+  label: string;
+  /** The item title, so a screen reader can tell the buttons apart. */
+  itemTitle: string;
+  uploading: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <PressableStatic
+      onPress={onPress}
+      disabled={uploading}
+      accessibilityRole="button"
+      accessibilityLabel={`${label} ${itemTitle}`}
+      // 38px tall: hitSlop brings the touch target to 44px.
+      hitSlop={3}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        backgroundColor: EX.color.primary,
+        borderRadius: 13,
+        height: 38,
+        paddingHorizontal: 14,
+        opacity: uploading ? 0.7 : 1,
+      }}
+    >
+      {uploading ? (
+        <ActivityIndicator color={EX.color.cardWhite} size="small" />
+      ) : (
+        <Ic.upload size={15} color={EX.color.cardWhite} strokeWidth={2} />
+      )}
+      <Text
+        style={{ color: EX.color.cardWhite, fontSize: 13.5, fontWeight: '700' }}
+      >
+        {label}
+      </Text>
+    </PressableStatic>
+  );
+}
+
+// ── One item row inside a group card ─────────────────────────────────────────
+// Header: tile, text column (title, status line, clause, notice, buttons),
+// right slot (Upload button while waiting, else the state pill). A detail's
+// answer field sits under the header at full card width.
+function ItemRow({
   item,
   docs,
   first,
@@ -145,12 +342,11 @@ function ChecklistRow({
   uploading: boolean;
   onUpload: (item: ChecklistItem) => void;
   checksProps: ChecksProps;
-  /** japa#174: message of a failed upload made from THIS item (shown in its card). */
+  /** japa#174: message of a failed upload made from THIS item (shown in its row). */
   uploadError?: string | null;
   /** #187: answers data for information items. */
   answersProps?: AnswersProps;
 }) {
-  const [open, setOpen] = useState(false);
   // #187: a typed-detail item has no upload; a `kindReview` item is a document.
   const info = isInformationItem(item) && !!answersProps;
   const answers = answersProps?.answers;
@@ -163,12 +359,17 @@ function ChecklistRow({
       draftKey(answersProps.applicationId, item.checklistItemId) in st.drafts,
   );
   const s = STATE_STYLE[state];
+  const tile = tileStyle(state);
   // Upload is offered while waiting or when another file is needed. A request
   // not yet stored (no id) cannot be uploaded against.
   const canUpload =
     !info &&
     !!item.documentRequestId &&
     (state === 'waiting' || state === 'needs_another');
+  // Plain "Upload" sits in the right slot (it replaces the Waiting pill). A retry
+  // or "Upload another" is longer, so it goes under the status line instead.
+  const uploadInSlot = canUpload && state === 'waiting' && !uploadError;
+  const uploadBelow = canUpload && !uploadInSlot;
   // The latest document uploaded against this item (#115): the check is about it.
   const latestDoc = info ? undefined : latestDocFor(item, docs);
   // The check for THAT document; a check of an older file is not shown for it.
@@ -180,33 +381,61 @@ function ChecklistRow({
             c.documentId === latestDoc.id,
         )
       : undefined;
+  const waived = state === 'not_needed';
+  // Neutral tile icon by kind; accepted / needs-another swap in a check / X.
+  const TileIcon =
+    state === 'accepted' || state === 'answered'
+      ? Ic.check
+      : state === 'needs_another'
+        ? Ic.x
+        : info
+          ? Ic.edit
+          : Ic.docs;
 
   return (
     <View
       style={{
         borderTopWidth: first ? 0 : 1,
         borderTopColor: EX.color.line06,
-        paddingVertical: 13,
+        paddingVertical: 14,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+        {/* Leading tile: decorative, the status line carries the meaning. */}
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: tile.bg,
+          }}
+        >
+          <TileIcon size={20} color={tile.fg} strokeWidth={1.8} />
+        </View>
+
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text
-            style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}
+            style={{
+              fontSize: 15,
+              fontWeight: '600',
+              color: waived ? EX.color.inkMuted : EX.color.ink,
+            }}
           >
             {sentenceCase(item.title)}
           </Text>
-          {/* Need label (#187): ink-muted, because it can carry a condition the
-              person must read (`muted` is 3.58:1 on white). */}
+          {/* Status line: need label first (it carries the condition), state
+              second. Neutral = ink-muted, never `muted` (3.58:1 on white). */}
           <Text
             style={{
-              fontSize: 12,
+              fontSize: 12.5,
               fontWeight: '600',
-              color: EX.color.inkMuted,
-              marginTop: 1,
+              color: tile.tone,
+              marginTop: 2,
             }}
           >
-            {needLabel(needOf(item))}
+            {statusLine(item, state, info)}
           </Text>
           {clause ? (
             <Text
@@ -221,85 +450,65 @@ function ChecklistRow({
               “{clause}”
             </Text>
           ) : null}
+
+          {/* Document check result (#115): only once a document is uploaded. */}
+          {latestDoc ? (
+            <DocumentCheckNotice
+              check={itemCheck}
+              loading={checksProps.checksLoading && !checksProps.checks}
+              error={checksProps.checksError && !checksProps.checks}
+              upgradeRequired={checksProps.checks?.tier === 'free'}
+              onReload={checksProps.onReloadChecks}
+              onRetryCheck={() => checksProps.onRetryCheck(latestDoc.id)}
+              retrying={checksProps.retryingDocId === latestDoc.id}
+            />
+          ) : null}
+
+          {/* Failed upload from this item: error above its button (#174). */}
+          {uploadError ? (
+            <View style={{ marginTop: 10 }}>
+              <InlineError message={uploadError} />
+            </View>
+          ) : null}
+
+          {uploadBelow ? (
+            <View style={{ marginTop: 10, alignSelf: 'flex-start' }}>
+              <UploadButton
+                itemTitle={item.title}
+                label={
+                  uploading
+                    ? 'Uploading…'
+                    : uploadError
+                      ? 'Try again'
+                      : 'Upload another'
+                }
+                uploading={uploading}
+                onPress={() => onUpload(item)}
+              />
+            </View>
+          ) : null}
+
+          {/* Documents: the official wording sits in the text column. */}
+          {!info ? <OfficialRequirement item={item} /> : null}
         </View>
-        <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+
+        {/* Right slot: never shrinks below its content. */}
+        <View style={{ flexShrink: 0 }}>
+          {uploadInSlot ? (
+            <UploadButton
+              itemTitle={item.title}
+              label={uploading ? 'Uploading…' : 'Upload'}
+              uploading={uploading}
+              onPress={() => onUpload(item)}
+            />
+          ) : (
+            <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+          )}
+        </View>
       </View>
 
-      {/* Reason: always present (a template filled from the published rule). */}
-      {item.reason ? (
-        <Text
-          style={{
-            fontSize: 13,
-            lineHeight: 19,
-            color: EX.color.inkMuted,
-            marginTop: 6,
-          }}
-        >
-          {item.reason}
-        </Text>
-      ) : null}
-
-      {/* Source: the verbatim quote and a link to the official page. */}
-      <PressableStatic
-        onPress={() => setOpen((o) => !o)}
-        accessibilityRole="button"
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 4,
-          marginTop: 6,
-        }}
-      >
-        <Text
-          style={{ fontSize: 12.5, fontWeight: '700', color: EX.color.primary }}
-        >
-          {open ? 'Hide source' : 'Where this comes from'}
-        </Text>
-        <Ic.chevR size={13} color={EX.color.primary} strokeWidth={2} />
-      </PressableStatic>
-      {open ? (
-        <View
-          style={{
-            marginTop: 8,
-            padding: 12,
-            borderRadius: 12,
-            backgroundColor: EX.color.cream,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 13,
-              lineHeight: 19,
-              color: EX.color.ink,
-              fontStyle: 'italic',
-            }}
-          >
-            “{item.citation.quote}”
-          </Text>
-          {item.citation.ruleRef ? (
-            <Text style={{ fontSize: 12, color: EX.color.muted, marginTop: 4 }}>
-              {item.citation.ruleRef}
-            </Text>
-          ) : null}
-          <PressableStatic
-            onPress={() => Linking.openURL(item.citation.url)}
-            style={{ marginTop: 8 }}
-          >
-            <Text
-              style={{
-                fontSize: 12.5,
-                fontWeight: '700',
-                color: EX.color.primary,
-              }}
-            >
-              Read the official page
-            </Text>
-          </PressableStatic>
-        </View>
-      ) : null}
-
-      {/* Information item (#187): the answer field, in place of upload. */}
-      {info && answersProps && item.status !== 'waived' ? (
+      {/* Information item (#187): the answer field, full card width. */}
+      {info && answersProps && !waived ? (
         answersProps.answers || hasDraft ? (
           <InformationAnswer
             applicationId={answersProps.applicationId}
@@ -321,14 +530,14 @@ function ChecklistRow({
           // Same size as the field, not editable, so nothing jumps when it loads.
           <View
             style={{
-              marginTop: 10,
+              marginTop: 12,
               minHeight: 92,
               alignItems: 'center',
               justifyContent: 'center',
               backgroundColor: EX.color.cardWhite,
               borderWidth: 1,
               borderColor: EX.color.line10,
-              borderRadius: 18,
+              borderRadius: EX.radius.cardSm,
             }}
           >
             <ActivityIndicator size="small" color={EX.color.primary} />
@@ -340,7 +549,7 @@ function ChecklistRow({
               fontSize: 13,
               lineHeight: 19,
               color: EX.color.inkMuted,
-              marginTop: 10,
+              marginTop: 12,
             }}
           >
             Your answer will show here once it loads.
@@ -348,71 +557,19 @@ function ChecklistRow({
         )
       ) : null}
 
-      {/* Document check result (#115): only once a document is uploaded. */}
-      {latestDoc ? (
-        <DocumentCheckNotice
-          check={itemCheck}
-          loading={checksProps.checksLoading && !checksProps.checks}
-          error={checksProps.checksError && !checksProps.checks}
-          upgradeRequired={checksProps.checks?.tier === 'free'}
-          onReload={checksProps.onReloadChecks}
-          onRetryCheck={() => checksProps.onRetryCheck(latestDoc.id)}
-          retrying={checksProps.retryingDocId === latestDoc.id}
-        />
-      ) : null}
-
-      {/* Failed upload from this item: error above its button (#174). */}
-      {uploadError ? (
-        <View style={{ marginTop: 10 }}>
-          <InlineError message={uploadError} />
-        </View>
-      ) : null}
-
-      {canUpload ? (
-        <PressableStatic
-          onPress={() => onUpload(item)}
-          disabled={uploading}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 7,
-            backgroundColor: EX.color.primary,
-            borderRadius: 13,
-            height: 42,
-            marginTop: 10,
-            opacity: uploading ? 0.7 : 1,
-          }}
-        >
-          {uploading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Ic.upload size={15} color="#fff" strokeWidth={2} />
-          )}
-          <Text style={{ color: '#fff', fontSize: 13.5, fontWeight: '700' }}>
-            {uploading
-              ? 'Uploading…'
-              : uploadError
-                ? 'Try again'
-                : state === 'needs_another'
-                  ? 'Upload another'
-                  : 'Upload'}
-          </Text>
-        </PressableStatic>
-      ) : null}
+      {/* Details: the official wording sits under the field, full width. */}
+      {info ? <OfficialRequirement item={item} /> : null}
     </View>
   );
 }
 
-// ── One group card ("Yours" / "Your sponsor's") ───────────────────────────────
-function Group({
-  title,
-  note,
+// ── One group card ("Your documents", "Your details", ...) ───────────────────
+function GroupCard({
+  groupId,
   items,
   ...rest
 }: {
-  title: string;
-  note?: string;
+  groupId: GroupId;
   items: ChecklistItem[];
   docs: Document[];
   uploadingId: string | null;
@@ -421,38 +578,89 @@ function Group({
   uploadFailure?: UploadFailure | null;
   answersProps?: AnswersProps;
 }) {
-  // Hidden when empty (the sponsor group in particular).
+  // Hidden when empty (the caller already drops empty groups).
   if (items.length === 0) return null;
+  const { title, note } = GROUP_COPY[groupId];
+  // "2 of 3 done": accepted / answered / not needed count as done.
+  // Like computeProgress: items no longer asked for (current: false) are not counted.
+  const counted = items.filter((i) => i.current);
+  const done = counted.filter((i) =>
+    isDoneState(
+      itemState(
+        i,
+        rest.docs,
+        isInformationItem(i) && rest.answersProps
+          ? rest.answersProps.answers
+          : null,
+      ),
+    ),
+  ).length;
+  const allDone = done === counted.length;
   return (
     <View
       style={{
-        backgroundColor: '#fff',
+        backgroundColor: EX.color.cardWhite,
         borderRadius: EX.radius.card,
         borderWidth: 1,
-        borderColor: 'rgba(23,19,38,0.07)',
+        borderColor: EX.color.line08,
         paddingHorizontal: 16,
-        paddingVertical: 15,
+        paddingTop: 16,
+        paddingBottom: 6,
         marginBottom: 13,
+        ...EXShadow.card,
       }}
     >
-      <Text style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}>
-        {title}
-      </Text>
-      {note ? (
+      {/* Header: status circle (decorative), title, count (the accessible text). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: allDone ? EX.color.teal : EX.color.line06,
+          }}
+        >
+          {allDone ? (
+            <Ic.check size={13} color={EX.color.cardWhite} strokeWidth={2.4} />
+          ) : null}
+        </View>
+        <Text
+          accessibilityRole="header"
+          style={{
+            flex: 1,
+            fontSize: 18,
+            fontWeight: '700',
+            color: EX.color.ink,
+          }}
+        >
+          {title}
+        </Text>
         <Text
           style={{
             fontSize: 12.5,
-            lineHeight: 18,
-            color: EX.color.muted,
-            marginTop: 3,
+            fontWeight: '600',
+            color: EX.color.inkMuted,
           }}
         >
-          {note}
+          {`${done} of ${counted.length} done`}
         </Text>
-      ) : null}
-      <View style={{ marginTop: 6 }}>
+      </View>
+      <Text
+        style={{
+          fontSize: 13.5,
+          lineHeight: 20,
+          color: EX.color.inkMuted,
+          marginTop: 4,
+          marginBottom: 8,
+        }}
+      >
+        {note}
+      </Text>
+      <View>
         {items.map((item, i) => (
-          <ChecklistRow
+          <ItemRow
             key={item.checklistItemId}
             item={item}
             docs={rest.docs}
@@ -604,18 +812,17 @@ export function DocumentChecklist({
       />
     );
   } else {
-    const yours = checklist.items.filter((i) => i.holder === 'applicant');
-    const sponsors = checklist.items.filter((i) => i.holder === 'sponsor');
+    const groups = groupChecklistItems(checklist.items, !!answersProps);
     // #187: the list holds typed details as well as documents.
-    const hasInfo = !!answersProps && checklist.items.some(isInformationItem);
+    // Only the answers-load error / locked line need this block (no empty gap).
+    const hasInfo =
+      !!answersProps &&
+      ((!!answersProps.answersError && !answersProps.answers) ||
+        answersProps.locked);
     body = (
       <>
         {hasInfo ? (
           <View style={{ gap: 10, marginBottom: 13 }}>
-            <InfoNote>
-              Some items are details, not documents. Type them here so they’re
-              ready when you fill in the official application.
-            </InfoNote>
             {/* Answers could not be loaded: one error for the list; documents
                 still render and upload normally. */}
             {answersProps?.answersError && !answersProps.answers ? (
@@ -651,27 +858,20 @@ export function DocumentChecklist({
             ) : null}
           </View>
         ) : null}
-        <Group
-          title="Yours"
-          items={yours}
-          docs={docs}
-          uploadingId={uploadingId}
-          onUpload={onUpload}
-          checksProps={checksProps}
-          uploadFailure={uploadFailure}
-          answersProps={answersProps}
-        />
-        <Group
-          title="Your sponsor's"
-          note="Your sponsor has no account here. You upload their documents for them."
-          items={sponsors}
-          docs={docs}
-          uploadingId={uploadingId}
-          onUpload={onUpload}
-          checksProps={checksProps}
-          uploadFailure={uploadFailure}
-          answersProps={answersProps}
-        />
+        {/* #256: one card per holder x kind; empty cards are left out. */}
+        {groups.map((g) => (
+          <GroupCard
+            key={g.id}
+            groupId={g.id}
+            items={g.items}
+            docs={docs}
+            uploadingId={uploadingId}
+            onUpload={onUpload}
+            checksProps={checksProps}
+            uploadFailure={uploadFailure}
+            answersProps={answersProps}
+          />
+        ))}
       </>
     );
   }

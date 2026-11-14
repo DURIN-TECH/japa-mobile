@@ -3,10 +3,13 @@ import { describe, expect, it } from '@jest/globals';
 import {
   appliesWhenText,
   computeProgress,
+  groupChecklistItems,
+  isDoneState,
   isInformationItem,
   itemState,
   needLabel,
   needOf,
+  statusLine,
 } from '../checklistLogic';
 import type { Checklist, ChecklistItem } from '@/types/checklist.type';
 import type { Document } from '@/types/documents.type';
@@ -190,5 +193,55 @@ describe('progress counting', () => {
     );
     expect(p.required).toBe(0);
     expect(p.fraction).toBe(0);
+  });
+});
+
+// ── Group cards and status lines (#256) ──────────────────────────────────────
+describe('groupChecklistItems', () => {
+  const doc = item({ checklistItemId: 'd', kind: 'document' } as never);
+  const detail = item({
+    checklistItemId: 'n',
+    kind: 'information',
+    documentRequestId: undefined,
+  } as never);
+  const sponsorDoc = item({ checklistItemId: 's', holder: 'sponsor' });
+
+  it('groups by holder x kind in display order and hides empty cards', () => {
+    const g = groupChecklistItems([sponsorDoc, detail, doc], true);
+    expect(g.map((x) => x.id)).toEqual([
+      'your_documents',
+      'your_details',
+      'sponsor_documents',
+    ]);
+  });
+  it('without answers support, details are listed as documents', () => {
+    const g = groupChecklistItems([doc, detail], false);
+    expect(g).toHaveLength(1);
+    expect(g[0].items).toHaveLength(2);
+  });
+});
+
+describe('statusLine', () => {
+  it('puts the need label first, then the state', () => {
+    expect(statusLine(item(), 'waiting', false)).toBe(
+      'Required · Not uploaded',
+    );
+    expect(statusLine(item(), 'needs_another', false)).toBe(
+      'Required · Needs another file',
+    );
+    expect(statusLine(item({ required: false }), 'waiting', false)).toBe(
+      'Optional · Not uploaded',
+    );
+    expect(statusLine(item(), 'waiting', true)).toBe('Required · Not answered');
+  });
+  it('a waived item is just "Not needed"', () => {
+    expect(statusLine(item(), 'not_needed', false)).toBe('Not needed');
+  });
+  it('counts accepted / answered / not needed as done', () => {
+    expect(isDoneState('accepted')).toBe(true);
+    expect(isDoneState('answered')).toBe(true);
+    expect(isDoneState('not_needed')).toBe(true);
+    expect(isDoneState('uploaded')).toBe(false);
+    expect(isDoneState('waiting')).toBe(false);
   });
 });
