@@ -176,6 +176,17 @@ function RootLayoutContent() {
         />
         <Stack.Screen name="consultation/[id]" />
         <Stack.Screen name="settings" />
+        {/* What you already hold (#234): the screen pushes from the right; the
+            country picker and add-document sheet slide up. */}
+        <Stack.Screen name="holdings" />
+        <Stack.Screen
+          name="holdings/pick-country"
+          options={{ animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="holdings/add-document"
+          options={{ animation: 'slide_from_bottom' }}
+        />
         {/* Account security / self-service (reached from Settings) */}
         <Stack.Screen name="verify-email" />
         <Stack.Screen name="ai-message-access" />

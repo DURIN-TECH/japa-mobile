@@ -14,31 +14,57 @@
 // an Outline "Try again" when the load fails with nothing cached.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from 'react';
+// ─────────────────────────────────────────────────────────────────────────────
+// Onboarding — Step 2 of 4 · Nationalities (japa#234)
+//
+// A searchable MULTI-select (max 5) of the countries the person is a citizen
+// of, from GET /countries (shared list: CountryPickerList). A tap toggles a row;
+// a counter line under the search reads "0 chosen" … "5 of 5 chosen. Remove one
+// to pick another." and at 5 the unchosen rows fade and ignore taps.
+//
+//   • Preselects from GET /users/me/holdings (someone signing back in mid-flow).
+//   • Continue (needs at least one) saves `nationalities` with
+//     PUT /users/me/holdings, then pushes to personal-info as before.
+//   • The FIRST country picked is forwarded as `country`, which complete.tsx
+//     submits as residentialCountry (decision 1; correctable later in
+//     Settings → What you already hold).
+//   • Save fails: InlineError + Continue stays enabled for a retry. Offline: the
+//     offline line replaces it. "Skip for now" carries on without blocking
+//     onboarding; the picks travel as `pendingNationalities` and complete.tsx
+//     retries the save. A 404 (profile not created yet) takes the same path.
+//
+// Wrapped in KeyboardAvoidingView so the search keyboard never covers the CTA.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
-// Countries come from the backend. `includeUnsupported` = every country, not
-// just destinations with visas: this is the user's NATIONALITY.
-import { useCountries } from '@/hooks/useCountries';
-import {
-  StateError,
-  StateLoading,
-  loadErrorCopy,
-  queryState,
-} from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
-import { Flag } from '@/components/explorer/primitives';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  CountryPickerList,
+  Caption,
+} from '@/components/explorer/HoldingsParts';
+import {
+  HOLDINGS_COPY,
+  MAX_NATIONALITIES,
+  counterLine,
+  isNotFound,
+  saveErrorMessage,
+  toggleSelection,
+} from '@/components/explorer/holdingsLogic';
+import { useHoldings, useSaveHoldings } from '@/hooks/useHoldings';
+import { useIsOffline } from '@/utils/networkStatus';
 
 // ── OnboardTopBar — 4-segment progress bar + back button (see passport step) ──
 function OnboardTopBar({
@@ -101,27 +127,47 @@ export default function CountryStep() {
   // forward them unchanged so the final step can submit the full body.
   const params = useLocalSearchParams<{ hasPassport?: string }>();
 
-  const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<string | null>(null); // ISO2 code
+  // Chosen countries, UPPERCASE ISO2, in the order picked (first = "home").
+  const [selected, setSelected] = useState<string[]>([]);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const offline = useIsOffline();
 
-  // Live country list (GET /countries?includeUnsupported=true). Codes are
-  // normalised to lowercase here (Flag + selection key); the CTA uppercases.
-  const countriesQ = useCountries(true);
-  const state = queryState(countriesQ);
-  const countries = useMemo(
-    () =>
-      (countriesQ.data ?? [])
-        .map((c) => ({ code: c.code.toLowerCase(), name: c.name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [countriesQ.data],
-  );
+  // Preselect once from what is already saved. `touched` stops a late reply
+  // from overwriting what the person has already tapped.
+  const holdingsQ = useHoldings();
+  const touched = useRef(false);
+  useEffect(() => {
+    const saved = holdingsQ.data?.nationalities;
+    if (!touched.current && saved && saved.length > 0) setSelected(saved);
+  }, [holdingsQ.data]);
 
-  // Case-insensitive name filter over the country list.
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return countries;
-    return countries.filter((c) => c.name.toLowerCase().includes(q));
-  }, [query, countries]);
+  const save = useSaveHoldings();
+  const atCap = selected.length >= MAX_NATIONALITIES;
+
+  // Move on to personal-info. `pending` = the save did not happen: hand the
+  // picks forward so complete.tsx can retry it. `country` is the first pick.
+  const goNext = (pending: boolean) =>
+    router.push({
+      pathname: '/(onboard)/personal-info',
+      params: {
+        ...params,
+        country: (selected[0] ?? '').toUpperCase(),
+        ...(pending ? { pendingNationalities: selected.join(',') } : {}),
+      },
+    });
+
+  const onContinue = async () => {
+    if (selected.length === 0 || save.isPending) return;
+    setSaveError(null);
+    try {
+      await save.mutateAsync({ nationalities: selected });
+      goNext(false);
+    } catch (e) {
+      // No profile yet (404): not an error the person can fix; carry on.
+      if (isNotFound(e)) return goNext(true);
+      setSaveError(saveErrorMessage(e, 'nationalities'));
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -131,7 +177,7 @@ export default function CountryStep() {
       {/* ── Progress + back ─────────────────────────────────────────────────── */}
       <OnboardTopBar step={2} insets={insets} onBack={() => router.back()} />
 
-      {/* ── Heading + search (fixed above the scrolling list) ───────────────── */}
+      {/* ── Heading ─────────────────────────────────────────────────────────── */}
       <View
         style={{
           paddingHorizontal: EX.space.screenX,
@@ -139,131 +185,40 @@ export default function CountryStep() {
           paddingBottom: 12,
         }}
       >
-        <Text style={displayText(27)}>Where are you from?</Text>
+        <Text style={displayText(27)}>{HOLDINGS_COPY.onbTitle}</Text>
         <Text
           style={{
             fontSize: 14.5,
             lineHeight: 21,
             color: EX.color.inkMuted,
             marginTop: 10,
-            maxWidth: 300,
           }}
         >
-          We&apos;ll tailor visa routes and eligibility to your nationality.
+          {HOLDINGS_COPY.onbSubtitle}
         </Text>
-
-        {/* Pill search input — white, with a leading search icon. */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
-            marginTop: 18,
-            height: 48,
-            borderRadius: 999,
-            paddingHorizontal: 16,
-            backgroundColor: EX.color.cardWhite,
-            borderWidth: 1,
-            borderColor: EX.color.line10,
-          }}
-        >
-          <Ic.search size={18} color={EX.color.muted} strokeWidth={1.8} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search countries"
-            placeholderTextColor={EX.color.muted}
-            autoCorrect={false}
-            style={{
-              flex: 1,
-              fontSize: 15,
-              color: EX.color.ink,
-              paddingVertical: 0,
-            }}
-          />
-        </View>
       </View>
 
-      {/* ── Scrollable single-select list ───────────────────────────────────── */}
-      <ScrollView
-        style={{ flex: 1 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingHorizontal: EX.space.screenX,
-          paddingTop: 4,
-          paddingBottom: 20,
-          gap: 8,
+      {/* ── Search + counter + scrolling multi-select list ──────────────────── */}
+      <CountryPickerList
+        selected={selected}
+        capped={atCap}
+        disabled={save.isPending}
+        onPick={(code) => {
+          touched.current = true;
+          setSelected((cur) => toggleSelection(cur, code));
         }}
-      >
-        {state === 'loading' ? (
-          // First load: coral spinner where the rows go.
-          <StateLoading section />
-        ) : state === 'error' ? (
-          <StateError
-            section
-            message={loadErrorCopy('countries')}
-            onRetry={() => countriesQ.refetch()}
-            retrying={countriesQ.isRefetching}
-          />
-        ) : results.length === 0 ? (
-          <View style={{ alignItems: 'center', paddingVertical: 40, gap: 10 }}>
-            <Ic.globe
-              size={34}
-              color={EX.color.muted}
-              strokeWidth={1.8}
-              style={{ opacity: 0.5 }}
-            />
-            <Text style={{ fontSize: 14, color: EX.color.inkMuted }}>
-              No countries match “{query.trim()}”
-            </Text>
+        belowSearch={
+          <View accessibilityLiveRegion="polite" style={{ marginTop: 10 }}>
+            <Caption>{counterLine(selected.length)}</Caption>
           </View>
-        ) : (
-          results.map((c) => {
-            const on = selected === c.code;
-            return (
-              <Pressable
-                key={c.code}
-                onPress={() => setSelected(c.code)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 13,
-                  paddingVertical: 12,
-                  paddingHorizontal: 14,
-                  borderRadius: 16,
-                  borderWidth: on ? 1.5 : 1,
-                  borderColor: on ? EX.color.primary : EX.color.line08,
-                  backgroundColor: on
-                    ? EX.color.primaryTint07
-                    : EX.color.cardWhite,
-                }}
-              >
-                <Flag code={c.code} size={28} />
-                <Text
-                  style={{
-                    flex: 1,
-                    fontSize: 15,
-                    fontWeight: '600',
-                    color: EX.color.ink,
-                  }}
-                  numberOfLines={1}
-                >
-                  {c.name}
-                </Text>
-                {/* Coral check appears only for the selected row. */}
-                {on ? (
-                  <Ic.check
-                    size={20}
-                    color={EX.color.primary}
-                    strokeWidth={2.6}
-                  />
-                ) : null}
-              </Pressable>
-            );
-          })
-        )}
-      </ScrollView>
+        }
+        footer={
+          // Points to the full screen, which is not part of onboarding.
+          <View style={{ paddingTop: 10 }}>
+            <Caption>{HOLDINGS_COPY.onbHint}</Caption>
+          </View>
+        }
+      />
 
       {/* ── Sticky glass CTA — Continue (rides above the keyboard) ──────────── */}
       <BlurView
@@ -276,41 +231,68 @@ export default function CountryStep() {
           backgroundColor: EX.color.glassWarmSoft,
           borderTopWidth: 1,
           borderTopColor: EX.color.line06,
+          gap: 10,
         }}
       >
+        {/* The offline line replaces the save error. */}
+        {offline ? (
+          <InlineError message={HOLDINGS_COPY.offline} />
+        ) : (
+          <InlineError message={saveError} />
+        )}
         <Pressable
-          // Forward prior params + the selected country. The backend stores
-          // residentialCountry as an UPPERCASE ISO2 code (e.g. "NG"), while the
-          // list keys are lowercase codes — so uppercase here.
-          onPress={() =>
-            router.push({
-              pathname: '/(onboard)/personal-info',
-              params: {
-                ...params,
-                country: (selected ?? '').toUpperCase(),
-              },
-            })
-          }
-          disabled={!selected}
+          onPress={onContinue}
+          disabled={selected.length === 0 || save.isPending || offline}
+          accessibilityRole="button"
+          accessibilityLabel={HOLDINGS_COPY.onbContinue}
           style={{
             height: 54,
             borderRadius: 16,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: selected
-              ? EX.color.primary
-              : 'rgba(244,81,108,0.35)',
+            backgroundColor:
+              selected.length > 0 && !offline
+                ? EX.color.primary
+                : 'rgba(244,81,108,0.35)',
             shadowColor: EX.color.primary,
-            shadowOpacity: selected ? 0.45 : 0,
+            shadowOpacity: selected.length > 0 && !offline ? 0.45 : 0,
             shadowRadius: 16,
             shadowOffset: { width: 0, height: 10 },
-            elevation: selected ? 6 : 0,
+            elevation: selected.length > 0 ? 6 : 0,
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-            Continue
-          </Text>
+          {save.isPending ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+              {HOLDINGS_COPY.onbContinue}
+            </Text>
+          )}
         </Pressable>
+        {/* Never block onboarding on a network drop (needs a pick to carry). */}
+        {selected.length > 0 ? (
+          <Pressable
+            onPress={() => goNext(true)}
+            disabled={save.isPending}
+            accessibilityRole="button"
+            accessibilityLabel={HOLDINGS_COPY.onbSkip}
+            style={{
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 44,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 15,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+              }}
+            >
+              {HOLDINGS_COPY.onbSkip}
+            </Text>
+          </Pressable>
+        ) : null}
       </BlurView>
     </KeyboardAvoidingView>
   );
