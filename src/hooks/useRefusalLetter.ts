@@ -108,9 +108,32 @@ export function useRefusalAnalysis(analysisId: string | null) {
   });
 }
 
+/**
+ * Prefix of every AsyncStorage key this hook writes. The value is the id of an
+ * analysis of the signed-in user's own refusal letter, so it is PER-USER data
+ * and is removed on sign-out (see clearStoredAnalysisIds, #263).
+ */
+const STORAGE_PREFIX = 'refusal-analysis:';
+
 /** AsyncStorage key for the analysis running for one application. */
 const storageKey = (applicationId: string) =>
-  `refusal-analysis:${applicationId}`;
+  `${STORAGE_PREFIX}${applicationId}`;
+
+/**
+ * Sign-out (#263): remove every remembered analysis id from the device, for all
+ * applications. The keys are not tied to a uid, so we can't keep "only this
+ * user's" ones; the next user must never resume the previous user's analysis.
+ * Storage failures are swallowed (never blocks sign-out).
+ */
+export async function clearStoredAnalysisIds(): Promise<void> {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const ours = keys.filter((k) => k.startsWith(STORAGE_PREFIX));
+    if (ours.length > 0) await AsyncStorage.multiRemove(ours);
+  } catch {
+    // Best-effort: nothing else to do if the device storage is unavailable.
+  }
+}
 
 /**
  * The analysis id remembered for an application: `[id, setId, ready]`.

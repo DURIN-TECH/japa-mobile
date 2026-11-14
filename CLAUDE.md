@@ -253,8 +253,11 @@ Backend route gotchas (they bite every time):
 - **Firebase** uses the modular API: `getApp()`, `getAuth()`,
   `getAnalytics()`, `getMessaging()`.
 - **Push notifications**: `push-notification.service.ts`,
-  initialized by `auth.store` after login and cleaned up on
-  logout.
+  initialized in ONE place, the `_layout.tsx` auth listener (it fires on
+  every sign-in; `auth.store` does not call it). `initialize()` is
+  idempotent and `unregisterToken()` (every sign-out) cleans up and lets
+  the next sign-in set up again. Taps and the inbox route through the
+  shared pure `services/notification-router.ts`.
 - **Analytics**: `services/analytics.service.ts`.
 - **Path alias**: `@/*` → `./src/*`.
 - **Dates**: `date-fns`, plus `explorer/liveDate.ts` for the
