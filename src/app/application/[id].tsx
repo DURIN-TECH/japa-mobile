@@ -309,9 +309,9 @@ export default function AppDetail() {
   const [reqError, setReqError] = useState<Record<string, string>>({});
   // Request currently being approved (disables a second tap mid-flight).
   const [approvingId, setApprovingId] = useState<string | null>(null);
-  // Reject-reason modal: which request is being declined, + the picked reason.
   // japa#274: Timeline "Show all (N)" / "Show less" (collapsed by default).
   const [timelineOpen, setTimelineOpen] = useState(false);
+  // Reject-reason modal: which request is being declined, + the picked reason.
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [reasonSel, setReasonSel] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
@@ -1330,6 +1330,10 @@ export default function AppDetail() {
               <PressableStatic
                 onPress={() => setTimelineOpen((o) => !o)}
                 accessibilityRole="button"
+                // Announce expanded / collapsed to VoiceOver (japa#274 review).
+                accessibilityState={{ expanded: timelineOpen }}
+                // ~30pt tall visually; hitSlop lifts the tap area past 44pt.
+                hitSlop={8}
                 accessibilityLabel={
                   timelineOpen
                     ? 'Show fewer timeline entries'
