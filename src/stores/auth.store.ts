@@ -10,6 +10,9 @@ import { apiService } from '@/services/api.service';
 // #187: unsaved answer text (memory + encrypted vault) must not outlive the session.
 import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
 import { pushNotificationService } from '@/services/push-notification.service';
+// #263: empties every per-user cache outside this store (React Query, onboarding
+// answers, per-user device keys) on every sign-out path.
+import { clearUserSession } from '@/services/session.service';
 import {
   UserProfile,
   OnboardingData,
@@ -70,12 +73,68 @@ interface AuthState {
 
   // Internal
   setUser: (user: FirebaseUser | null) => void;
+  // #263: the Firebase onAuthStateChanged handler (src/app/_layout.tsx). Applies
+  // the new user AND tears the previous user's session down when the session
+  // ended on its own (user → null) or the account changed (uid A → uid B).
+  // Resolves once the teardown is done, so callers can then safely fetch the
+  // new user's profile and register push for them.
+  syncAuthUser: (user: FirebaseUser | null) => Promise<void>;
   setLoading: (loading: boolean) => void;
   setInitialized: (initialized: boolean) => void;
 
   // Hydration
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session tracking + teardown (issue #263)
+//
+// Every per-user field of this store. Reset on EVERY sign-out path (logout,
+// account deletion, a session that ended on its own). `isAuthenticated` is
+// handled by the callers (the account-change path keeps it true so the route
+// guard doesn't bounce through /welcome).
+// ─────────────────────────────────────────────────────────────────────────────
+const SIGNED_OUT_USER_STATE = {
+  user: null,
+  profile: null,
+  isAuthenticated: false,
+  confirmationResult: null,
+  phoneNumber: null,
+  error: null,
+} as const;
+
+/**
+ * The Firebase uid whose data the caches currently hold, as last seen by
+ * `syncAuthUser` (or set by logout / deleteAccount).
+ *   undefined → no auth event yet (app just started)
+ *   null      → signed out, caches already cleared
+ *   'uid'     → that user's session is live
+ *
+ * Kept OUTSIDE the zustand state on purpose: `loginWithEmail` writes `user`
+ * into the store before Firebase's listener fires, so the store's `user` can't
+ * tell us whose data is in the cache; this variable can.
+ */
+let sessionUid: string | null | undefined;
+
+/** Test-only: forget the tracked session (fresh app start). */
+export const __resetSessionTrackingForTests = () => {
+  sessionUid = undefined;
+};
+
+/**
+ * Tear the previous user's session down on this device: stop their pushes,
+ * then empty every per-user cache. Never throws.
+ *
+ * @param notifyBackend whether to ask the backend to drop this device's FCM
+ *   token. False only on a cold start that finds no signed-in user (there is no
+ *   session to call the API with); the local token is deleted either way.
+ */
+async function tearDownUserSession(notifyBackend = true): Promise<void> {
+  // unregisterToken() never throws: the backend call may fail (session already
+  // gone → 401) but the local token is still deleted and listeners cleaned up.
+  await pushNotificationService.unregisterToken({ notifyBackend });
+  await clearUserSession();
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -248,15 +307,16 @@ export const useAuthStore = create<AuthState>()(
           }
           // Stop push delivery, then sign out locally. The server-side Auth user is
           // already gone, so this just tears down the client session/state.
-          await pushNotificationService.unregisterToken().catch(() => {});
+          // #263: mark the session as ended FIRST, so the listener's null event
+          // (fired by authService.logout) doesn't run the teardown a second time.
+          sessionUid = null;
+          await pushNotificationService.unregisterToken();
           await authService.logout().catch(() => {});
-          set({
-            user: null,
-            profile: null,
-            isAuthenticated: false,
-            confirmationResult: null,
-            phoneNumber: null,
-          });
+          // #263: empty the React Query cache + per-user stores/device keys
+          // AFTER the Firebase sign-out, so nothing refetched in between can be
+          // fetched with this user's token.
+          await clearUserSession();
+          set({ ...SIGNED_OUT_USER_STATE });
           return true;
         } catch (error) {
           set({ error: authService.getErrorMessage(error) });
@@ -344,19 +404,26 @@ export const useAuthStore = create<AuthState>()(
       // Common actions
       logout: async () => {
         set({ isLoading: true });
+        // #263: remember whose session this was (to restore it if the sign-out
+        // fails), then mark it ended so the onAuthStateChanged null event that
+        // authService.logout() fires doesn't tear down a second time.
+        const previousUid = sessionUid;
+        sessionUid = null;
         try {
           // Unregister FCM token before signing out so the device
-          // stops receiving push notifications for this user
-          await pushNotificationService.unregisterToken().catch(() => {});
+          // stops receiving push notifications for this user (needs the
+          // still-valid session for the backend call). Never throws.
+          await pushNotificationService.unregisterToken();
           await authService.logout();
-          set({
-            user: null,
-            profile: null,
-            isAuthenticated: false,
-            confirmationResult: null,
-            phoneNumber: null,
-          });
+          // #263: now that requests can no longer carry this user's token,
+          // cancel in-flight queries and empty every per-user cache, then reset
+          // the store (which sends the route guard to /(auth)/welcome).
+          await clearUserSession();
+          set({ ...SIGNED_OUT_USER_STATE });
         } catch (error) {
+          // Firebase sign-out failed: the user is still signed in, so the
+          // session is still theirs.
+          sessionUid = previousUid;
           console.error('Logout error:', error);
         } finally {
           set({ isLoading: false });
@@ -411,6 +478,54 @@ export const useAuthStore = create<AuthState>()(
 
       // Internal setters
       setUser: (user) => set({ user, isAuthenticated: !!user }),
+
+      // #263: Firebase auth state listener. Decides, from the uid the caches
+      // belong to (`sessionUid`) and the new user, which case this is:
+      syncAuthUser: async (user) => {
+        const previousUid = sessionUid;
+        // Record the new owner synchronously, before any await, so a second
+        // event arriving mid-teardown compares against the right uid.
+        sessionUid = user?.uid ?? null;
+
+        if (!user) {
+          if (previousUid === undefined) {
+            // (a) Cold start, nobody signed in. A previous session may have
+            //     ended while the app was closed (revoked, deleted elsewhere),
+            //     leaving its push token and device keys behind. Clean up
+            //     locally; there's no session to call the backend with.
+            await tearDownUserSession(false);
+          } else if (previousUid !== null) {
+            // (b) The session ended on its own: expired / revoked token, the
+            //     401 handler's signOut, signed out on another device. The
+            //     backend push call will likely fail; the local token is still
+            //     deleted (see unregisterToken).
+            await tearDownUserSession(true);
+          }
+          // (c) previousUid === null: logout()/deleteAccount() already tore
+          //     down. Either way, make sure NO per-user field survives (the
+          //     old handler left `profile` set here).
+          set({ ...SIGNED_OUT_USER_STATE });
+          return;
+        }
+
+        if (previousUid && previousUid !== user.uid) {
+          // (d) The account changed without a sign-out in between (uid A →
+          //     uid B). Drop A's push token, caches and profile before B's
+          //     data loads. `isAuthenticated` stays true so the route guard
+          //     doesn't bounce through /welcome.
+          await tearDownUserSession(true);
+          set({
+            profile: null,
+            confirmationResult: null,
+            phoneNumber: null,
+            error: null,
+          });
+        }
+
+        // (e) Sign-in, a relaunch with a valid session (cache untouched, so
+        //     cached data still shows fast), or the tail of case (d).
+        set({ user, isAuthenticated: true });
+      },
       setLoading: (isLoading) => set({ isLoading }),
       setInitialized: (isInitialized) => set({ isInitialized }),
 
@@ -437,11 +552,25 @@ export const useAuthStore = create<AuthState>()(
 // details (in memory and in the encrypted device vault); the next person on this device must never see them.
 // On sign-in, load THIS user's drafts and remove any other user's (a session that
 // ended while the app was closed never fired the sign-out above).
+// #263: also when the signed-in account changes with no sign-out in between
+// (uid A → uid B while authenticated): forget A's drafts, load B's.
 useAuthStore.subscribe((state, prev) => {
+  const uid = state.user?.uid;
+  const prevUid = prev.user?.uid;
   if (prev.isAuthenticated && !state.isAuthenticated)
     useAnswerDraftsStore.getState().clearAll();
-  else if (!prev.isAuthenticated && state.isAuthenticated && state.user?.uid)
-    void useAnswerDraftsStore.getState().loadFromVault(state.user.uid);
+  else if (!prev.isAuthenticated && state.isAuthenticated && uid)
+    void useAnswerDraftsStore.getState().loadFromVault(uid);
+  else if (
+    prev.isAuthenticated &&
+    state.isAuthenticated &&
+    uid &&
+    prevUid &&
+    uid !== prevUid
+  ) {
+    useAnswerDraftsStore.getState().clearAll();
+    void useAnswerDraftsStore.getState().loadFromVault(uid);
+  }
 });
 
 // Hook to check if auth store is hydrated
