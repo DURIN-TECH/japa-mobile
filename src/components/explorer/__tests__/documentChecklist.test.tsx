@@ -124,7 +124,9 @@ describe('DocumentChecklist cards', () => {
 
   it('the Upload button calls onUpload with the item', async () => {
     const { r, onUpload } = await render([item()]);
-    const upload = r.root.findByProps({ accessibilityLabel: 'Upload' });
+    const upload = r.root.findByProps({
+      accessibilityLabel: 'Upload bank statement',
+    });
     await act(async () => upload.props.onPress());
     expect(onUpload).toHaveBeenCalledTimes(1);
   });
@@ -135,5 +137,13 @@ describe('DocumentChecklist cards', () => {
     expect(t).toContain('Not needed');
     expect(t).not.toContain('Required · ');
     expect(t).not.toContain('"Upload"');
+  });
+
+  it('the count leaves out items that are no longer current', async () => {
+    const { r } = await render([
+      item(),
+      item({ checklistItemId: 'i2', current: false }),
+    ]);
+    expect(texts(r)).toContain('0 of 1 done');
   });
 });

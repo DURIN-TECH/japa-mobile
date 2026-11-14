@@ -160,13 +160,17 @@ const STATE_STYLE: Record<
  * the state's status pair. `tone` colours the status line text; neutral uses
  * ink-muted (never `muted`, 3.5:1).
  */
+// Status-line TEXT colours that reach AA (4.5:1) on white at 12.5px. The pill/tile
+// fg values are ~4.2:1, so the line uses a deeper shade of the same hue.
+const TONE_WARNING = '#8A5210';
+
 function tileStyle(state: ItemState): { bg: string; fg: string; tone: string } {
   switch (state) {
     case 'uploaded':
-      return { ...STATE_STYLE.uploaded, tone: STATE_STYLE.uploaded.fg };
+      return { ...STATE_STYLE.uploaded, tone: TONE_WARNING };
     case 'accepted':
     case 'answered':
-      return { ...STATE_STYLE.accepted, tone: STATE_STYLE.accepted.fg };
+      return { ...STATE_STYLE.accepted, tone: EX.color.successDeep };
     case 'needs_another':
       return {
         ...STATE_STYLE.needs_another,
@@ -274,10 +278,13 @@ function OfficialRequirement({ item }: { item: ChecklistItem }) {
 // ── Coral upload button (38px) ────────────────────────────────────────────────
 function UploadButton({
   label,
+  itemTitle,
   uploading,
   onPress,
 }: {
   label: string;
+  /** The item title, so a screen reader can tell the buttons apart. */
+  itemTitle: string;
   uploading: boolean;
   onPress: () => void;
 }) {
@@ -286,7 +293,9 @@ function UploadButton({
       onPress={onPress}
       disabled={uploading}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={`${label} ${itemTitle}`}
+      // 38px tall: hitSlop brings the touch target to 44px.
+      hitSlop={3}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -300,11 +309,13 @@ function UploadButton({
       }}
     >
       {uploading ? (
-        <ActivityIndicator color="#fff" size="small" />
+        <ActivityIndicator color={EX.color.cardWhite} size="small" />
       ) : (
-        <Ic.upload size={15} color="#fff" strokeWidth={2} />
+        <Ic.upload size={15} color={EX.color.cardWhite} strokeWidth={2} />
       )}
-      <Text style={{ color: '#fff', fontSize: 13.5, fontWeight: '700' }}>
+      <Text
+        style={{ color: EX.color.cardWhite, fontSize: 13.5, fontWeight: '700' }}
+      >
         {label}
       </Text>
     </PressableStatic>
@@ -463,6 +474,7 @@ function ItemRow({
           {uploadBelow ? (
             <View style={{ marginTop: 10, alignSelf: 'flex-start' }}>
               <UploadButton
+                itemTitle={item.title}
                 label={
                   uploading
                     ? 'Uploading…'
@@ -484,6 +496,7 @@ function ItemRow({
         <View style={{ flexShrink: 0 }}>
           {uploadInSlot ? (
             <UploadButton
+              itemTitle={item.title}
               label={uploading ? 'Uploading…' : 'Upload'}
               uploading={uploading}
               onPress={() => onUpload(item)}
@@ -569,7 +582,9 @@ function GroupCard({
   if (items.length === 0) return null;
   const { title, note } = GROUP_COPY[groupId];
   // "2 of 3 done": accepted / answered / not needed count as done.
-  const done = items.filter((i) =>
+  // Like computeProgress: items no longer asked for (current: false) are not counted.
+  const counted = items.filter((i) => i.current);
+  const done = counted.filter((i) =>
     isDoneState(
       itemState(
         i,
@@ -580,7 +595,7 @@ function GroupCard({
       ),
     ),
   ).length;
-  const allDone = done === items.length;
+  const allDone = done === counted.length;
   return (
     <View
       style={{
@@ -608,7 +623,7 @@ function GroupCard({
           }}
         >
           {allDone ? (
-            <Ic.check size={13} color="#fff" strokeWidth={2.4} />
+            <Ic.check size={13} color={EX.color.cardWhite} strokeWidth={2.4} />
           ) : null}
         </View>
         <Text
@@ -629,7 +644,7 @@ function GroupCard({
             color: EX.color.inkMuted,
           }}
         >
-          {`${done} of ${items.length} done`}
+          {`${done} of ${counted.length} done`}
         </Text>
       </View>
       <Text
@@ -799,7 +814,11 @@ export function DocumentChecklist({
   } else {
     const groups = groupChecklistItems(checklist.items, !!answersProps);
     // #187: the list holds typed details as well as documents.
-    const hasInfo = !!answersProps && checklist.items.some(isInformationItem);
+    // Only the answers-load error / locked line need this block (no empty gap).
+    const hasInfo =
+      !!answersProps &&
+      ((!!answersProps.answersError && !answersProps.answers) ||
+        answersProps.locked);
     body = (
       <>
         {hasInfo ? (
