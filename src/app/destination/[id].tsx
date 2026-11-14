@@ -720,7 +720,7 @@ export default function DestinationDetail() {
                   marginTop: 1,
                 }}
               >
-                Success rates &amp; common reasons for refusal
+                Cost, timeline, eligibility &amp; official requirements
               </Text>
             </View>
             <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />

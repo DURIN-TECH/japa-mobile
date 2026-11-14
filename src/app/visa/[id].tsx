@@ -4,7 +4,8 @@
 // A leaner sibling of destination/[id].tsx: a COMPACT FIXED photo header (~200,
 // NOT parallax — a plain image behind a rounded content sheet) + rounded sheet
 // + sticky glass CTA. The sheet holds a stat strip (approval / processing /
-// applicants), the requirements checklist
+// applicants), japa#255's Cost & timeline / Eligibility cards, the requirements
+// checklist, the Official source link
 // and a dark "boost your chances" nudge toward a specialist.
 //
 // Style, sizes, radii and colours are lifted directly from destination/[id].tsx
@@ -52,6 +53,11 @@ import { CenteredState } from '@/components/explorer/CenteredState';
 import { isNotFoundError } from '@/hooks/queryErrors';
 import { StateEmpty } from '@/components/explorer/states';
 import { Flag, GlassButton, Scrim } from '@/components/explorer/primitives';
+import {
+  CostTimelineSection,
+  EligibilitySection,
+  OfficialSourceSection,
+} from '@/components/explorer/VisaBreakdownSections';
 
 // Compact fixed header height (destination hero is 376; this breakdown uses ~200).
 const HERO = 200;
@@ -340,6 +346,18 @@ export default function VisaBreakdown() {
             {d.blurb}
           </Text>
 
+          {/* japa#255: real VisaType data. Each section hides itself when its
+              fields are empty and owns its own top margin (no gap). */}
+          {liveQ.data?.visaType ? (
+            <>
+              <CostTimelineSection
+                visa={liveQ.data.visaType}
+                statStripProcessing={d.processing}
+              />
+              <EligibilitySection visa={liveQ.data.visaType} />
+            </>
+          ) : null}
+
           {/* ── What you'll need (live requirements, as destination detail) ───── */}
           <Text
             style={{
@@ -423,7 +441,7 @@ export default function VisaBreakdown() {
                   <Text
                     style={{
                       fontSize: 12.5,
-                      color: EX.color.muted,
+                      color: EX.color.inkMuted,
                       marginTop: 1,
                     }}
                   >
@@ -453,6 +471,11 @@ export default function VisaBreakdown() {
               </View>
             ))}
           </View>
+
+          {/* japa#255: link to the official application page (only with a URL). */}
+          {liveQ.data?.visaType ? (
+            <OfficialSourceSection visa={liveQ.data.visaType} />
+          ) : null}
 
           {/* ── Boost your chances (dark specialist nudge) ──────────────────── */}
           {/* Only with a real top agent (GET /agents/top). */}
