@@ -82,6 +82,8 @@ import {
   PaymentRequestStatus,
 } from '@/types/payment-requests.type';
 import { Ic } from '@/components/explorer/icons';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
+import { dedupeSteps, trimSteps } from '@/components/explorer/timelineTrim';
 import {
   Flag,
   GlassButton,
@@ -308,6 +310,8 @@ export default function AppDetail() {
   // Request currently being approved (disables a second tap mid-flight).
   const [approvingId, setApprovingId] = useState<string | null>(null);
   // Reject-reason modal: which request is being declined, + the picked reason.
+  // japa#274: Timeline "Show all (N)" / "Show less" (collapsed by default).
+  const [timelineOpen, setTimelineOpen] = useState(false);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [reasonSel, setReasonSel] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
@@ -398,7 +402,16 @@ export default function AppDetail() {
   }
 
   // Timeline: the case's live events ([] while loading or when none).
-  const steps: AppStep[] = tl.data?.length ? mapTimeline(tl.data) : app.steps;
+  // japa#274: identical consecutive entries collapse, then only the newest 3
+  // show until the user taps "Show all (N)".
+  const steps: AppStep[] = dedupeSteps(
+    tl.data?.length ? mapTimeline(tl.data) : app.steps,
+  );
+  const {
+    visible: shownSteps,
+    total: totalSteps,
+    canToggle,
+  } = trimSteps(steps, timelineOpen);
 
   const pct = Math.round(app.progress * 100);
   const actionable = app.next.cta != null;
@@ -705,7 +718,7 @@ export default function AppDetail() {
               the visa breakdown, which works for an agency-only visa because
               the user has a case on it (#102). */}
           {dest.id ? (
-            <Pressable
+            <PressableStatic
               onPress={() =>
                 router.push({
                   pathname: '/visa/[id]',
@@ -759,54 +772,8 @@ export default function AppDetail() {
                 </Text>
               </View>
               <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />
-            </Pressable>
+            </PressableStatic>
           ) : null}
-
-          {/* ── Progress header (marginBottom 14) ───────────────────────────── */}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 14,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: '700',
-                color: EX.color.ink,
-                letterSpacing: -0.18,
-              }}
-            >
-              Timeline
-            </Text>
-            <Text
-              style={{
-                fontSize: 13,
-                fontWeight: '700',
-                color: EX.color.primary,
-              }}
-            >
-              {pct}% complete
-            </Text>
-          </View>
-
-          {/* ── Timeline card (radius 22, padding 20, border rgba(23,19,38,0.07)) ── */}
-          <View
-            style={[
-              {
-                backgroundColor: '#fff',
-                borderWidth: 1,
-                borderColor: 'rgba(23,19,38,0.07)',
-                borderRadius: 22,
-                padding: 20,
-              },
-              EXShadow.card,
-            ]}
-          >
-            <Timeline steps={steps} />
-          </View>
 
           {/* ── Payment requests (only when the agent has raised one) ────────── */}
           {payReqs.length > 0 ? (
@@ -1311,6 +1278,82 @@ export default function AppDetail() {
               </Pressable>
             </>
           ) : null}
+
+          {/* ── Timeline: LAST section, below everything else (japa#274) ───── */}
+          {/* ── Progress header (marginBottom 14) ───────────────────────────── */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 14,
+              marginTop: 26,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: EX.color.ink,
+                letterSpacing: -0.18,
+              }}
+            >
+              Timeline
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '700',
+                color: EX.color.primary,
+              }}
+            >
+              {pct}% complete
+            </Text>
+          </View>
+
+          {/* ── Timeline card (radius 22, padding 20, border rgba(23,19,38,0.07)) ── */}
+          <View
+            style={[
+              {
+                backgroundColor: '#fff',
+                borderWidth: 1,
+                borderColor: 'rgba(23,19,38,0.07)',
+                borderRadius: 22,
+                padding: 20,
+              },
+              EXShadow.card,
+            ]}
+          >
+            <Timeline steps={shownSteps} />
+            {/* Show all (N) / Show less — only when entries are hidden (japa#274) */}
+            {canToggle ? (
+              <PressableStatic
+                onPress={() => setTimelineOpen((o) => !o)}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  timelineOpen
+                    ? 'Show fewer timeline entries'
+                    : `Show all ${totalSteps} timeline entries`
+                }
+                style={({ pressed }) => ({
+                  alignSelf: 'flex-start',
+                  marginTop: 16,
+                  paddingVertical: 6,
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '700',
+                    color: EX.color.primary,
+                  }}
+                >
+                  {timelineOpen ? 'Show less' : `Show all (${totalSteps})`}
+                </Text>
+              </PressableStatic>
+            ) : null}
+          </View>
         </View>
       </Animated.ScrollView>
 
