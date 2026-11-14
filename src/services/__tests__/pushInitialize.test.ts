@@ -49,6 +49,7 @@ let mockAlert: ReturnType<typeof jest.spyOn>;
 beforeEach(() => {
   jest.clearAllMocks();
   mockAlert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.spyOn(console, 'warn').mockImplementation(() => {});
   mockPermission.mockResolvedValue(1);
   mockInitial.mockResolvedValue(null);
