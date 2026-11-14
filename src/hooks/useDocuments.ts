@@ -281,11 +281,13 @@ export function useSharedDocument(documentId: string) {
 export async function uploadToStorage(
   uploadUrl: string,
   file: { uri: string; type: string; name: string },
+  // Extra headers the signed URL requires (e.g. a size-limit header).
+  extraHeaders: Record<string, string> = {},
 ): Promise<void> {
   const result = await uploadAsync(uploadUrl, file.uri, {
     httpMethod: 'PUT',
     uploadType: FileSystemUploadType.BINARY_CONTENT,
-    headers: { 'Content-Type': file.type },
+    headers: { ...extraHeaders, 'Content-Type': file.type },
   });
   if (result.status < 200 || result.status >= 300) {
     throw new Error(`Storage upload failed with status ${result.status}`);

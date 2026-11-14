@@ -21,6 +21,10 @@ interface SettingsState {
   language: string;
   setLanguage: (language: string) => void;
 
+  // Floating feedback button (issue #257): testers can hide it from Settings.
+  feedbackButtonEnabled: boolean;
+  setFeedbackButtonEnabled: (enabled: boolean) => void;
+
   // First-run intro
   hasSeenIntro: boolean;
   setHasSeenIntro: (seen: boolean) => void;
@@ -52,6 +56,11 @@ export const useSettingsStore = create<SettingsState>()(
       language: 'en',
       setLanguage: (language) => set({ language }),
 
+      // Feedback button: on by default, persisted on the device.
+      feedbackButtonEnabled: true,
+      setFeedbackButtonEnabled: (enabled) =>
+        set({ feedbackButtonEnabled: enabled }),
+
       // First-run intro
       hasSeenIntro: false,
       setHasSeenIntro: (seen) => set({ hasSeenIntro: seen }),
@@ -77,6 +86,7 @@ export const useSettingsStore = create<SettingsState>()(
         themePreference: state.themePreference,
         notificationsEnabled: state.notificationsEnabled,
         language: state.language,
+        feedbackButtonEnabled: state.feedbackButtonEnabled,
         hasSeenIntro: state.hasSeenIntro,
       }),
       onRehydrateStorage: () => (state) => {
