@@ -57,7 +57,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     infoPlist: {
       ...config.ios?.infoPlist,
       // Lets a silent/data push wake the app in the background (japa#264).
-      UIBackgroundModes: ['remote-notification'],
+      UIBackgroundModes: Array.from(
+        new Set([
+          ...((config.ios?.infoPlist?.UIBackgroundModes as
+            | string[]
+            | undefined) ?? []),
+          'remote-notification',
+        ]),
+      ),
     },
     entitlements: {
       ...config.ios?.entitlements,

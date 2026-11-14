@@ -57,47 +57,54 @@ const KOTLIN_IMPORTS = [
 const KOTLIN_BODY = `    ${MARKER}
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val manager = getSystemService(NotificationManager::class.java)
-      manager.createNotificationChannel(
+      manager?.createNotificationChannel(
         NotificationChannel("${CHANNEL_ID}", "${CHANNEL_NAME}", NotificationManager.IMPORTANCE_HIGH)
       )
     }
 `;
 
-/** Adds or replaces one <meta-data> entry on <application>. */
-function setMeta(application, name, resource) {
+/**
+ * Adds or replaces one <meta-data> entry on <application>.
+ * `attr` is 'android:resource' or 'android:value'; the entry is rebuilt so it
+ * never carries both. `tools:replace` makes the app entry win over the same
+ * key declared by a library manifest (RNFB messaging declares both of ours;
+ * without it the Gradle manifest merge fails).
+ */
+function setMeta(application, name, attr, val) {
   application['meta-data'] ??= [];
   const list = application['meta-data'];
-  const existing = list.find((m) => m.$['android:name'] === name);
-  const attrs = { 'android:name': name, 'android:resource': resource };
-  if (existing) {
-    existing.$ = { ...existing.$, ...attrs };
-  } else {
-    list.push({ $: attrs });
-  }
+  const entry = {
+    $: { 'android:name': name, [attr]: val, 'tools:replace': attr },
+  };
+  const i = list.findIndex((m) => m.$['android:name'] === name);
+  if (i >= 0) list[i] = entry;
+  else list.push(entry);
 }
 
 /** Steps 1 + 2: manifest meta-data. */
 function withManifestMeta(config) {
   return withAndroidManifest(config, (cfg) => {
+    // tools:replace needs the `tools` namespace on the manifest root.
+    cfg.modResults.manifest.$ = {
+      ...cfg.modResults.manifest.$,
+      'xmlns:tools': 'http://schemas.android.com/tools',
+    };
     const application = AndroidConfig.Manifest.getMainApplicationOrThrow(
       cfg.modResults,
     );
     setMeta(
       application,
       'com.google.firebase.messaging.default_notification_icon',
+      'android:resource',
       '@drawable/notification_icon',
     );
     // default_notification_channel_id takes a string value, not a resource.
-    application['meta-data'] ??= [];
-    const key = 'com.google.firebase.messaging.default_notification_channel_id';
-    const found = application['meta-data'].find(
-      (m) => m.$['android:name'] === key,
+    setMeta(
+      application,
+      'com.google.firebase.messaging.default_notification_channel_id',
+      'android:value',
+      CHANNEL_ID,
     );
-    if (found) found.$['android:value'] = CHANNEL_ID;
-    else
-      application['meta-data'].push({
-        $: { 'android:name': key, 'android:value': CHANNEL_ID },
-      });
     return cfg;
   });
 }
