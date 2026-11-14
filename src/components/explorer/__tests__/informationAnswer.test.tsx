@@ -2,13 +2,14 @@
 // back and save, invalid input is blocked before the PUT and kept, an unreadable
 // draft is never sent as empty, and one saver survives a remount.
 
-jest.mock('expo-router', () => {
-  const R = require('react');
-  return {
-    useFocusEffect: (cb: () => void | (() => void)) =>
-      R.useEffect(() => cb(), [cb]),
-  };
-});
+jest.mock('expo-router', () => ({
+  // Runs the focus callback once on mount (its cleanup on unmount).
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const R = require('react') as typeof import('react');
+    R.useEffect(() => cb(), [cb]);
+  },
+}));
 jest.mock('expo-secure-store', () => ({}));
 jest.mock('@/services/api.service', () => ({
   apiService: { get: jest.fn(), put: jest.fn() },
