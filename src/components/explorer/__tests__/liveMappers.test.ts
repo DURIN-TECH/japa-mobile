@@ -236,7 +236,7 @@ describe('liveExplore', () => {
     ).toBe(1);
     // None scraped: falls back to the whole list.
     expect(
-      lead([visa({ id: 'a' }), visa({ id: 'b', totalApplications: 3 })]),
+      lead([visa({ id: 'a' }), visa({ id: 'b', totalApplications: 99999 })]),
     ).toBe(1);
   });
 
