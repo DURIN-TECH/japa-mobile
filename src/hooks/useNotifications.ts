@@ -40,6 +40,11 @@ export interface ApiNotification {
     | 'payment_request'
     | 'payment_request_rejected'
     | 'message_received'
+    | 'rule_change_alert'
+    | 'readiness_review_ready'
+    | 'document_check_problems'
+    | 'document_check_could_not_check'
+    | 'document_check_passed'
     | 'system';
   title: string;
   /** Notification body text — matches backend field name */
