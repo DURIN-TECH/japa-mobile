@@ -7,7 +7,9 @@
 // data.
 //
 // Key conversions:
-//   • amount: backend is in kobo/cents → divide by 100 for the ₦ value.
+//   • amount (japa#183): kept as Money (minor units + its own currency, the
+//     amount actually charged), never flattened to a naira number; the
+//     dollar price comes from `priceUsdCents` when the backend sent it.
 //   • date: Firestore Timestamps are serialized inconsistently → normalize via
 //     liveDate.ts `fmtDate` (`toDate`-safe).
 //   • status: collapse the 7 backend statuses into the 3 Payment states.
@@ -16,6 +18,7 @@
 import type { Payment } from '@/types/explorer.type';
 import type { ApiTransaction } from '@/hooks/useTransactions';
 import { fmtDate } from '@/components/explorer/liveDate';
+import { usdCents } from '@/components/explorer/content';
 
 // Human-readable label for each transaction `type` — used to derive a title
 // when the backend `description` is empty.
@@ -63,8 +66,10 @@ export function mapTransaction(t: ApiTransaction): Payment {
     // Counterparty / context detail — visa type if denormalized, else the
     // transaction category label.
     sub: t.visaTypeName || TYPE_LABEL[t.type] || '',
-    // kobo → naira.
-    amount: Math.round(t.amount / 100),
+    // What was charged, in its own currency (₦50,000 = 5,000,000 kobo).
+    amount: { amountMinor: t.amount, currency: t.currency || 'NGN' },
+    // Its dollar price, when the charge was priced from one.
+    usd: usdCents(t.priceUsdCents),
     date: fmtDate(t.createdAt, 'MMM d'),
     status: mapStatus(t.status),
     method: METHOD_LABEL[t.paymentProvider] || '—',

@@ -44,7 +44,9 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
-import { NAIRA } from '@/components/explorer/content';
+import { priceInline, type PriceParts } from '@/components/explorer/content';
+import type { Money } from '@/types/money.type';
+import { analyticsService } from '@/services/analytics.service';
 import type { AppStep } from '@/types/explorer.type';
 // japa#145: the case's agent and their conversation come from the backend
 // (GET /agents/:id, GET /conversations), never the demo AGENTS / CONVOS.
@@ -72,8 +74,10 @@ import { CenteredState } from '@/components/explorer/CenteredState';
 import { InlineError } from '@/components/explorer/AccountForm';
 import {
   PAYMENT_ERROR_MESSAGE,
+  REQUEST_NOT_PAYABLE_MESSAGE,
   getAuthorizationUrl,
   getPaystackReference,
+  paymentRequestParts,
 } from '@/hooks/paymentRequestFlow';
 // Live payment-request read + approve/reject mutations (client side of the flow).
 // Approve starts a Paystack charge; the pay screen verifies it (japa#145).
@@ -117,11 +121,15 @@ function omitKey<T>(rec: Record<string, T>, key: string): Record<string, T> {
 
 // ── Unified payment-request row ──────────────────────────────────────────────
 // Backend payment requests (GET /payment-requests) mapped to the card's shape.
-// `amount` is the display value in whole naira (pre-divided from kobo).
+// japa#183: `price` is the request's display price (`paymentRequestParts`):
+// dollars while pending, "₦… · about $…" once approve priced it, exact once
+// paid, its own amount + currency on a legacy row. `money` is the request's
+// own amount + currency (analytics only). The app never converts.
 type PayReqRow = {
   id: string;
   title: string;
-  amount: number;
+  price: PriceParts;
+  money: Money;
   agentId: string;
   agentName?: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -346,8 +354,8 @@ export default function AppDetail() {
         .map<PayReqRow>((r) => ({
           id: r.id,
           title: CATEGORY_LABELS[r.category] ?? 'Payment request',
-          // Backend amount is in kobo → divide by 100 for the ₦ display value.
-          amount: Math.round(r.amount / 100),
+          price: paymentRequestParts(r),
+          money: { amountMinor: r.amount, currency: r.currency },
           agentId: r.agentId,
           // Backend request carries no agent name; card falls back gracefully.
           agentName: undefined,
@@ -462,6 +470,13 @@ export default function AppDetail() {
     try {
       // Reject on the backend (auto-creates a chat with the reason).
       await rejectReq.mutateAsync({ requestId: reqId, reason });
+      const row = payReqs.find((r) => r.id === reqId);
+      if (row) {
+        void analyticsService.trackPaymentRequestRejected({
+          requestId: reqId,
+          amount: row.money,
+        });
+      }
     } catch {
       rollbackReq(
         reqId,
@@ -483,15 +498,26 @@ export default function AppDetail() {
     let result: Awaited<ReturnType<typeof approveReq.mutateAsync>>;
     try {
       result = await approveReq.mutateAsync(req.id);
-    } catch {
+    } catch (err) {
       setApprovingId(null);
+      // 409 REQUEST_NOT_PAYABLE: the agent cancelled it meanwhile. Say so
+      // and refresh the list so the row shows its real state.
+      const notPayable =
+        (err as { code?: unknown } | null)?.code === 'REQUEST_NOT_PAYABLE';
       rollbackReq(
         req.id,
-        'We couldn’t approve this request. Nothing changed. Try again.',
+        notPayable
+          ? REQUEST_NOT_PAYABLE_MESSAGE
+          : 'We couldn’t approve this request. Nothing changed. Try again.',
       );
+      if (notPayable) void payReqQ.refetch();
       return;
     }
     setApprovingId(null);
+    void analyticsService.trackPaymentRequestApproved({
+      requestId: req.id,
+      amount: req.money,
+    });
     const url = getAuthorizationUrl(result);
     const reference = getPaystackReference(result);
     // The server DID approve, so the row stays Approved. Without a checkout
@@ -529,7 +555,9 @@ export default function AppDetail() {
         topic: req.title,
         mode: '',
         dur: '',
-        fee: String(req.amount),
+        // japa#183: no `fee` param; /pay reads the amount from the request
+        // itself (this application's payment-request list).
+        applicationId: app.id,
       },
     });
 
@@ -870,16 +898,31 @@ export default function AppDetail() {
                       >
                         {req.title}
                       </Text>
-                      <Text
-                        style={{
-                          fontSize: 16,
-                          fontWeight: '700',
-                          color: EX.color.ink,
-                          letterSpacing: -0.16,
-                        }}
-                      >
-                        {NAIRA(req.amount)}
-                      </Text>
+                      {/* Amount right-aligned: primary + dollar line. */}
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text
+                          style={{
+                            fontSize: 16,
+                            fontWeight: '700',
+                            color: EX.color.ink,
+                            letterSpacing: -0.16,
+                          }}
+                        >
+                          {req.price.primary}
+                        </Text>
+                        {req.price.secondary ? (
+                          <Text
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: '600',
+                              color: EX.color.inkMuted,
+                              marginTop: 2,
+                            }}
+                          >
+                            {req.price.secondary}
+                          </Text>
+                        ) : null}
+                      </View>
                     </View>
 
                     {/* Attribution — this is an agent-raised request awaiting the client's approval */}
@@ -999,7 +1042,7 @@ export default function AppDetail() {
                               onPress={() =>
                                 Alert.alert(
                                   'Approve request',
-                                  `Approve ${NAIRA(req.amount)} for “${req.title}”?`,
+                                  `Approve ${priceInline(req.price)} for “${req.title}”?`,
                                   [
                                     { text: 'Cancel', style: 'cancel' },
                                     {

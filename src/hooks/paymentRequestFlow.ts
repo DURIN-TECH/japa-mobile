@@ -13,6 +13,9 @@
  * unit-tested directly.
  */
 
+import { formatMoney, priceParts, type PriceParts } from '@/components/explorer/content';
+import type { PaymentRequest } from '@/types/payment-requests.type';
+
 /** The Paystack checkout URL from an approve response, or null if unusable. */
 export function getAuthorizationUrl(data: unknown): string | null {
   const url = (data as { authorizationUrl?: unknown } | null | undefined)
@@ -40,3 +43,34 @@ export const NOT_PAID_MESSAGE =
 /** User-facing copy when a payment-request call itself failed. */
 export const PAYMENT_ERROR_MESSAGE =
   'We couldn’t complete that. Nothing was charged. Try again.';
+
+/** Copy when approve answers 409 REQUEST_NOT_PAYABLE (the agent cancelled it). */
+export const REQUEST_NOT_PAYABLE_MESSAGE =
+  'This request can’t be paid any more. Your agent may have cancelled it.';
+
+/**
+ * A payment request's price for display (japa#183):
+ *  - pending (no `charge` yet): the dollar price only, "$100.00"; the app
+ *    never converts, the local amount comes with approve;
+ *  - approved (priced, not paid): "₦150,000 · about $100";
+ *  - paid: exact, "₦150,000.00 · $100.00";
+ *  - legacy (`legacy: true`, or no dollar price): its own `amount` +
+ *    `currency` through the same formatter.
+ */
+export function paymentRequestParts(
+  r: Pick<
+    PaymentRequest,
+    'amount' | 'currency' | 'priceUsd' | 'legacy' | 'charge' | 'status'
+  >,
+): PriceParts {
+  const own: PriceParts = {
+    primary: formatMoney({ amountMinor: r.amount, currency: r.currency }),
+    secondary: null,
+    free: false,
+    localUnavailable: false,
+  };
+  if (r.legacy || !r.priceUsd) return own;
+  return priceParts(r.charge ?? null, r.priceUsd, {
+    locked: r.status === 'paid',
+  });
+}

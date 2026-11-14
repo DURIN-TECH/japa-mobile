@@ -10,6 +10,7 @@
 
 import { agoFrom, fmtDate } from './liveDate';
 import { countryArt } from './liveExplore';
+import { minorUnitFactor } from './content';
 import { App, AppStep, Dest } from '@/types/explorer.type';
 import {
   Application,
@@ -84,7 +85,12 @@ export function mapApplication(
     img: art.img,
     tone: art.tone,
     processing: '',
-    price: Math.round(app.totalCost ?? 0),
+    // japa#183: `totalCost` is minor units (US cents) of `costCurrency`
+    // (absent = USD); `Dest.price` is whole dollars, so divide by the
+    // currency's own factor (never a literal 100): 5,000,000 → 50,000.
+    price: Math.round(
+      (app.totalCost ?? 0) / minorUnitFactor(app.costCurrency ?? 'USD'),
+    ),
     approval: '',
     applied: 0,
   };

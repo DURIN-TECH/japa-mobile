@@ -7,6 +7,12 @@
 // outline "Back to home" (→ home tab). A small top-right close (X) also returns
 // home. No back header — this ends the flow, so both routes use router.replace.
 //
+// japa#183: no `fee` param. The amount shown is the one the pay screen
+// LOCKED (the booking / request's stored charge), passed through as
+// `paidAmountMinor` + `paidCurrency` with the dollar price `priceUsdCents`;
+// never refetched or recomputed. Status row: "Paid · ₦47,389.40 · Card",
+// then "$35.00 consultation price" in ink-muted. `free=1` → "Free booking".
+//
 // Design system: coral/cream Explorer tokens (EX), Space Grotesk display font.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -17,7 +23,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, parseISO } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
-import { NAIRA } from '@/components/explorer/content';
+import { formatMoney, usdCents } from '@/components/explorer/content';
 import { Ic } from '@/components/explorer/icons';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
@@ -58,21 +64,53 @@ export default function ConfirmationScreen() {
   const insets = useSafeAreaInsets();
 
   // Same param shape as the pay screen, plus `method`.
-  const { type, dateIso, time, topic, mode, dur, fee, method } =
-    useLocalSearchParams<{
-      type?: string;
-      agentId: string;
-      dateIso: string;
-      time: string;
-      topic: string;
-      mode: string;
-      dur: string;
-      fee: string;
-      method: string;
-    }>();
+  const {
+    type,
+    dateIso,
+    time,
+    topic,
+    mode,
+    dur,
+    method,
+    paidAmountMinor,
+    paidCurrency,
+    priceUsdCents,
+    free,
+  } = useLocalSearchParams<{
+    type?: string;
+    agentId: string;
+    dateIso: string;
+    time: string;
+    topic: string;
+    mode: string;
+    dur: string;
+    method: string;
+    /** The locked charge, minor units of `paidCurrency` (from /pay). */
+    paidAmountMinor?: string;
+    paidCurrency?: string;
+    /** The dollar price in US cents (from /pay). */
+    priceUsdCents?: string;
+    /** '1' = a free booking (no Paystack). */
+    free?: string;
+  }>();
 
   const isApp = type === 'application';
-  const feeNum = Number(fee) || 0;
+  const isFree = free === '1';
+  // The locked / paid amount exactly as the pay screen held it.
+  const paidText = formatMoney(
+    paidCurrency && Number.isFinite(Number(paidAmountMinor))
+      ? { amountMinor: Number(paidAmountMinor), currency: paidCurrency }
+      : null,
+  );
+  // "$35.00 consultation price" — only for a non-USD charge (a USD charge
+  // already says it) and only when the dollar price is known.
+  const usdText =
+    priceUsdCents && (paidCurrency ?? '').toUpperCase() !== 'USD'
+      ? formatMoney(usdCents(Number(priceUsdCents)))
+      : '';
+  const statusLabel = isFree
+    ? 'Free booking'
+    : ['Paid', paidText, method].filter(Boolean).join(' · ');
   const isVideo = (mode ?? '').toLowerCase().includes('video');
   const dateLabel = dateIso
     ? format(parseISO(dateIso), 'EEEE, MMMM d, yyyy')
@@ -192,10 +230,23 @@ export default function ConfirmationScreen() {
               <DetailRow icon={isVideo ? Ic.video : Ic.phone} label={mode} />
             </>
           )}
-          <DetailRow
-            icon={Ic.check2}
-            label={`Paid · ${NAIRA(feeNum)} · ${method}`}
-          />
+          <View>
+            <DetailRow icon={Ic.check2} label={statusLabel} />
+            {/* The dollar price under the paid amount (label, ink-muted). */}
+            {!isFree && usdText ? (
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: '600',
+                  color: EX.color.inkMuted,
+                  marginTop: 4,
+                  marginLeft: 28,
+                }}
+              >
+                {`${usdText} ${isApp ? 'price' : 'consultation price'}`}
+              </Text>
+            ) : null}
+          </View>
         </View>
 
         {/* ── CTAs ───────────────────────────────────────────────────────────── */}

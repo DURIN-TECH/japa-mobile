@@ -57,3 +57,23 @@ describe('mapApplication', () => {
     ).toBe('Fetched');
   });
 });
+
+// japa#183: case cost is integer US cents in `costCurrency` (absent = USD);
+// the dest price is whole dollars, so a 5,000,000-cent case is $50,000.
+describe('mapApplication case cost units', () => {
+  it('reads totalCost as US cents, not dollars', () => {
+    expect(mapApplication(app({ totalCost: 5_000_000 })).dest?.price).toBe(
+      50_000,
+    );
+    expect(
+      mapApplication(app({ totalCost: 5_000_000, costCurrency: 'USD' })).dest
+        ?.price,
+    ).toBe(50_000);
+  });
+  it('a missing cost is 0', () => {
+    expect(
+      mapApplication(app({ totalCost: undefined as unknown as number })).dest
+        ?.price,
+    ).toBe(0);
+  });
+});
