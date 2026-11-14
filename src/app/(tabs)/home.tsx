@@ -265,9 +265,10 @@ function RecoCard({ d, onPress }: { d: Dest; onPress: () => void }) {
   );
 }
 
-// Small circular header button (message / bell) with unread dot.
-// `showDot` gates the coral unread indicator: the message button keeps it always
-// on (default true); the bell passes the live unread-notification count.
+// Small circular header button (message / bell).
+// The message button keeps the coral dot (`showDot`, default true). The bell
+// passes `badgeCount` (the live unread-notification count, #269): a number
+// badge replaces the dot, and its `accessibilityLabel` carries the count.
 function HeaderButton({
   icon: IconCmp,
   onPress,
@@ -422,6 +423,7 @@ export default function HomeScreen() {
           <HeaderButton
             icon={Ic.msg}
             onPress={() => router.push('/messages')}
+            accessibilityLabel="Messages"
           />
           <HeaderButton
             icon={Ic.bell}

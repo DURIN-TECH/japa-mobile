@@ -32,8 +32,10 @@ import { apiService } from '@/services/api.service';
  * - payment_request, payment_request_rejected, payment_received → /payments
  * - message_received → /messages/:conversationId (or /messages)
  * - identity_verified, identity_verification_failed → /verify-identity
- * - visa_news, system, unknown types → nothing opens (row just marks read),
- *   unless a related entity the router knows is attached
+ * - visa_news → nothing opens, ever (the app has no news screen); the row
+ *   just marks itself read
+ * - system and unknown types → the related entity's screen when the router
+ *   knows the entity type, else nothing opens (row just marks read)
  */
 export interface ApiNotification {
   id: string;
