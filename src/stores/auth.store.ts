@@ -249,8 +249,8 @@ export const useAuthStore = create<AuthState>()(
             const user = await authService.loginWithEmail(email, password);
             set({ user, isAuthenticated: true });
             await get().fetchProfile();
-            // Register for push notifications after successful login
-            pushNotificationService.initialize().catch(() => {});
+            // Push registration is owned by the auth listener in _layout.tsx
+            // (it fires on every sign-in); not repeated here (#265).
             return true;
           } catch (error) {
             set({ error: authService.getErrorMessage(error) });
@@ -485,8 +485,8 @@ export const useAuthStore = create<AuthState>()(
               phoneNumber: null,
             });
             await get().fetchProfile();
-            // Register for push notifications after successful phone auth
-            pushNotificationService.initialize().catch(() => {});
+            // Push registration is owned by the auth listener in _layout.tsx
+            // (it fires on every sign-in); not repeated here (#265).
             return true;
           } catch (error) {
             set({ error: authService.getErrorMessage(error) });

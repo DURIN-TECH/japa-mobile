@@ -38,6 +38,7 @@ import {
   useMarkAllNotificationsRead,
 } from '@/hooks/useNotifications';
 import { mapNotif } from '@/components/explorer/liveNotifications';
+import { routeForNotification } from '@/services/notification-router';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -104,24 +105,11 @@ export default function NotificationsView() {
     });
   };
 
-  // Route by the related entity on the raw backend record.
+  // Route by the shared router (same one the push handler uses, #265), on
+  // the raw backend record. Inbox mode: null when there is nothing to open.
   const routeFor = (id: string) => {
     const r = raw.find((x) => x.id === id);
-    const target = r?.relatedEntityId ?? r?.referenceId;
-    switch (r?.relatedEntityType) {
-      case 'application':
-        return target ? `/application/${target}` : null;
-      case 'consultation':
-        return target ? `/consultation/${target}` : '/consultations';
-      case 'document':
-        return '/documents';
-      case 'payment_request':
-        return '/payments';
-      case 'message':
-        return '/messages';
-      default:
-        return null;
-    }
+    return r ? routeForNotification(r, 'inbox') : null;
   };
 
   // Mark read on the backend (if unread), then route.
