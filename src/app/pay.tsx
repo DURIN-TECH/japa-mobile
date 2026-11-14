@@ -28,7 +28,13 @@
 //     (re-prices the SAME booking through the checkout route);
 //   • 503 PRICING_UNAVAILABLE → dollar price only, "We can’t price this
 //     booking right now…", CTA "Pay" disabled, "Try again" link. 400 / 404
-//     / 409 / 502 never crash: a message + the retry.
+//     / 409 / 502 never crash: a message + the retry;
+//   • errors are mapped by the backend's CODE, per call (never by a bare
+//     status): a refused booking says "couldn’t book"; only a genuinely
+//     unpaid checkout says "we haven’t received your payment yet"; a 400
+//     PAYMENT_MISMATCH (they PAID, the amount is wrong) and the 402 monthly
+//     plan limit END the screen ('blocked': message only, no Pay, no retry),
+//     so nobody who paid is ever asked to pay again.
 // Coming back to this screen (back, then Continue again) books a new quote.
 //
 // TODO(japa#183, backend gap 1): consultation checkouts cannot return to the
@@ -100,10 +106,13 @@ import {
   chargeChanged,
   classifyConsultationPayError,
   formatCountdown,
+  isBookingPaidResult,
   lockedQuoteFrom,
   lockedRateLine,
   quoteSecondsLeft,
   type LockedQuote,
+  type PayErrorVerdict,
+  type PayStage,
 } from '@/hooks/consultationPayFlow';
 import { analyticsService } from '@/services/analytics.service';
 import type { Money } from '@/types/money.type';
@@ -240,8 +249,30 @@ function SummaryLine({
   );
 }
 
-/** Where the booking quote stands (consultation path only). */
-type QuotePhase = 'loading' | 'locked' | 'unavailable' | 'failed';
+/**
+ * Where the booking quote stands (consultation path only):
+ *  - `loading`     the booking / re-price call is running;
+ *  - `locked`      a quote is on screen and can be paid;
+ *  - `unavailable` the server could not price it: dollars only + "Try again";
+ *  - `failed`      no usable booking: message + "Try again" (books anew);
+ *  - `blocked`     terminal: message only, NO Pay and NO "Try again" (a
+ *                  mismatched payment under review, or the plan's monthly
+ *                  limit). Retrying could only charge someone twice or fail.
+ */
+type QuotePhase = 'loading' | 'locked' | 'unavailable' | 'failed' | 'blocked';
+
+/**
+ * Verify verdicts after which the checkout that was just open is NOT the
+ * thing to reopen, so the CTA must not become "Open checkout": the server
+ * issued a new one, the booking closed, or the screen is in a terminal state.
+ */
+const VERIFY_ENDS_CHECKOUT: ReadonlySet<PayErrorVerdict['kind']> = new Set([
+  'new_checkout',
+  'not_payable',
+  'payment_review',
+  'limit_reached',
+  'pricing_unavailable',
+]);
 
 export default function PayScreen() {
   const router = useRouter();
@@ -336,6 +367,9 @@ export default function PayScreen() {
   const resumeRef = useRef(false);
   // Side results of a verify call (read after runPaystackCheckout returns).
   const verifyNoteRef = useRef<string | null>(null);
+  // How the last verify failed (null = it did not fail, or was not paid on
+  // a 2xx): decides whether "Open checkout" is offered afterwards.
+  const verifyKindRef = useRef<PayErrorVerdict['kind'] | null>(null);
   const paidSummaryRef = useRef<BookingSummary | null>(null);
   const paidRequestRef = useRef<VerifyPaymentRequestResult | null>(null);
 
@@ -357,6 +391,21 @@ export default function PayScreen() {
     setAttempted(false);
   };
 
+  /**
+   * End the flow on this screen (terminal `blocked` phase): drop the quote
+   * so nothing can be opened or paid, and show no retry. Used when a
+   * payment that does not match is under review (paying again would charge
+   * twice) and when the plan's monthly limit is reached (a retry can never
+   * succeed).
+   */
+  const blockBooking = () => {
+    quoteRef.current = null;
+    resumeRef.current = false;
+    setQuote(null);
+    setAttempted(false);
+    setPhase('blocked');
+  };
+
   // Seconds left on the lock (null before a quote / without an expiry).
   const secondsLeft = quote ? quoteSecondsLeft(quote, now) : null;
   const expired = phase === 'locked' && secondsLeft === 0;
@@ -371,13 +420,17 @@ export default function PayScreen() {
   // ── Confirmation ──────────────────────────────────────────────────────────
   // Advance with the slot params, the chosen method and the amount that was
   // LOCKED / paid (display only; confirmation never refetches it).
+  // `replace: true` swaps this screen out of the stack instead of pushing
+  // on top of it (free bookings: there is nothing left to do here, so going
+  // back from the confirmation must not land on a dead pay screen).
   const goToConfirmation = (paid: {
     charged?: Money | null;
     usdCents?: number | null;
     free?: boolean;
+    replace?: boolean;
   }) => {
-    router.push({
-      pathname: '/confirmation',
+    const target = {
+      pathname: '/confirmation' as const,
       params: {
         type: type ?? 'consultation',
         agentId,
@@ -393,7 +446,9 @@ export default function PayScreen() {
           typeof paid.usdCents === 'number' ? String(paid.usdCents) : '',
         free: paid.free ? '1' : '',
       },
-    });
+    };
+    if (paid.replace) router.replace(target);
+    else router.push(target);
   };
 
   /** A booking the server confirmed as paid: analytics + confirmation. */
@@ -428,15 +483,22 @@ export default function PayScreen() {
       type: mapTopicToConsultationType(topic),
       charged: { amountMinor: 0, currency: 'USD' },
     });
-    goToConfirmation({ free: true, usdCents: 0 });
+    // REPLACE, not push: the booking is already made and there is nothing
+    // to pay, so this screen (still in its "Getting your price…" state) must
+    // not stay under the confirmation. Back from there returns to the slot
+    // picker instead of an endless spinner.
+    goToConfirmation({ free: true, usdCents: 0, replace: true });
   };
 
   /**
    * React to a failed create / checkout / verify. Never throws. A quote that
    * is still on screen stays there unless the error says the booking is gone.
+   *
+   * @param stage which call failed: the same backend code (VALIDATION_ERROR)
+   *              means "couldn’t book" on create and something else on verify.
    */
-  const handleFlowError = (err: unknown) => {
-    const v = classifyConsultationPayError(err);
+  const handleFlowError = (err: unknown, stage: PayStage) => {
+    const v = classifyConsultationPayError(err, stage);
     const prev = quoteRef.current;
     switch (v.kind) {
       case 'pricing_unavailable':
@@ -463,8 +525,14 @@ export default function PayScreen() {
         resetBooking();
         setPhase('failed');
         break;
+      case 'payment_review':
+      case 'limit_reached':
+        // Terminal: a mismatched payment is being checked (never ask to pay
+        // again), or the plan limit is reached (a retry cannot succeed).
+        blockBooking();
+        break;
       default:
-        // In progress / opening / not completed / any other failure: keep
+        // In progress / opening / booking refused / any other failure: keep
         // the quote on screen when there is one, else offer the retry.
         setPhase(prev ? 'locked' : 'failed');
     }
@@ -478,6 +546,8 @@ export default function PayScreen() {
     setPayError(null);
     setPhase('loading');
     const prev = quoteRef.current;
+    // Which call is about to run, for the error mapping in the catch.
+    const stage: PayStage = bookingIdRef.current ? 'checkout' : 'create';
     try {
       if (!bookingIdRef.current) {
         const input: CreateConsultationInput = {
@@ -514,7 +584,10 @@ export default function PayScreen() {
 
       const res = await checkoutConsultation.mutateAsync(bookingIdRef.current);
       if (!res.requiresPayment) {
-        // Paid meanwhile (e.g. a late webhook): it's done.
+        // Paid meanwhile (e.g. a late webhook): it's done. Leave 'loading'
+        // first, so going back from the confirmation never shows "Getting
+        // your price…" forever.
+        setPhase(prev ? 'locked' : 'unavailable');
         bookingPaid(res.consultation, prev);
         return;
       }
@@ -533,7 +606,7 @@ export default function PayScreen() {
       resumeRef.current = false;
       setAttempted(false);
     } catch (err) {
-      handleFlowError(err);
+      handleFlowError(err, stage);
     }
   };
 
@@ -547,17 +620,28 @@ export default function PayScreen() {
   }, []);
 
   // ── Verify a booking's checkout (consultation path) ────────────────────────
-  // 'paid' only on `{ verified: true }`. A 400 / 409 is "not paid" with a
-  // note for the screen (a 409 QUOTE_EXPIRED / CHECKOUT_REPLACED also hands
-  // over the new checkout, shown at once); anything else throws → error.
+  // 'paid' ONLY when the response body says so (`isBookingPaidResult`), never
+  // on a bare 2xx. A classified 4xx is "not paid" with a note for the screen:
+  //  - 409 QUOTE_EXPIRED / CHECKOUT_REPLACED hand over the new checkout,
+  //    shown at once;
+  //  - 409 BOOKING_NOT_PAYABLE closes the booking → 'failed' + "Try again";
+  //  - 400 PAYMENT_MISMATCH → 'blocked' (they paid; never "pay again").
+  // Anything unclassified throws → the generic error.
   const verifyBooking = async (q: LockedQuote): Promise<VerifyVerdict> => {
     if (!q.reference) throw new Error('No payment reference');
     try {
       const r = await verifyConsultation.mutateAsync(q.reference);
+      if (!isBookingPaidResult(r)) {
+        // A 2xx that does not say "paid" must never reach the confirmation.
+        verifyKindRef.current = 'not_completed';
+        verifyNoteRef.current = PAY_COPY.notCompleted;
+        return 'not_paid';
+      }
       paidSummaryRef.current = r.consultation ?? null;
       return 'paid';
     } catch (err) {
-      const v = classifyConsultationPayError(err);
+      const v = classifyConsultationPayError(err, 'verify');
+      verifyKindRef.current = v.kind;
       if (v.kind === 'error') throw err;
       verifyNoteRef.current = v.message;
       if (v.kind === 'new_checkout') {
@@ -574,7 +658,17 @@ export default function PayScreen() {
           return 'not_paid';
         }
       }
-      if (v.kind === 'not_payable') resetBooking();
+      if (v.kind === 'not_payable') {
+        // The booking closed while Paystack was open (e.g. cancelled). Drop
+        // it AND leave 'locked': in 'failed' the dead "Pay" is disabled and
+        // "Try again" books a new slot. (Staying 'locked' with no quote left
+        // a live-looking "Pay" that did nothing.)
+        resetBooking();
+        setPhase('failed');
+      }
+      if (v.kind === 'payment_review' || v.kind === 'limit_reached') {
+        blockBooking();
+      }
       if (v.kind === 'pricing_unavailable') setPhase('unavailable');
       return 'not_paid';
     }
@@ -628,12 +722,13 @@ export default function PayScreen() {
         q = nq;
       } catch (err) {
         setProcessing(false);
-        handleFlowError(err);
+        handleFlowError(err, 'checkout');
         return;
       }
     }
 
     verifyNoteRef.current = null;
+    verifyKindRef.current = null;
     paidSummaryRef.current = null;
     resumeRef.current = true; // whatever happens next, reopen via /checkout
     const outcome = await runPaystackCheckout({
@@ -650,9 +745,12 @@ export default function PayScreen() {
       setPayError(OPEN_CHECKOUT_ERROR_MESSAGE);
       return;
     }
-    // Not paid: stay, with "Open checkout" as the retry (unless verify just
-    // handed over a new price, which reads "Pay {new amount}" instead).
-    setAttempted(verifyNoteRef.current !== PAY_COPY.newPrice);
+    // Not paid: stay, with "Open checkout" as the retry. NOT when verify
+    // ended that checkout (a new price reads "Pay {new amount}"; a closed
+    // booking shows "Try again"; a blocked screen shows no control): setting
+    // `attempted` there would mislabel the CTA for the next quote.
+    const verifyKind = verifyKindRef.current;
+    setAttempted(!(verifyKind && VERIFY_ENDS_CHECKOUT.has(verifyKind)));
     setPayError(
       outcome.kind === 'error'
         ? PAY_COPY.error

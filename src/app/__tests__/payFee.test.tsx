@@ -16,6 +16,7 @@ const mockOpenAuth =
     (url: string, redirect: string) => Promise<{ type: string; url?: string }>
   >();
 const mockPush = jest.fn();
+const mockReplace = jest.fn();
 const mockTrackBooked = jest.fn();
 
 jest.mock('react-native-reanimated', () =>
@@ -41,7 +42,11 @@ jest.mock('expo-router', () => ({
     mode: 'Video call',
     dur: '30 min',
   }),
-  useRouter: () => ({ push: mockPush, back: jest.fn() }),
+  useRouter: () => ({
+    push: mockPush,
+    replace: mockReplace,
+    back: jest.fn(),
+  }),
 }));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -166,6 +171,7 @@ beforeEach(() => {
   mockVerify.mockReset();
   mockOpenAuth.mockReset();
   mockPush.mockReset();
+  mockReplace.mockReset();
   mockTrackBooked.mockReset();
   // Device clock = 2 minutes after the server locked the quote.
   jest
@@ -216,8 +222,11 @@ describe('pay.tsx booking (japa#183)', () => {
     });
     await render();
     expect(mockOpenAuth).not.toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledTimes(1);
-    const arg = mockPush.mock.calls[0][0] as {
+    // REPLACED, not pushed: the pay screen (still "Getting your price…")
+    // leaves the stack, so back from the confirmation cannot land on it.
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    const arg = mockReplace.mock.calls[0][0] as {
       pathname: string;
       params: Record<string, string>;
     };
@@ -390,6 +399,196 @@ describe('pay.tsx booking (japa#183)', () => {
       await cta(tree).props.onPress();
     });
     expect(mockCheckout).toHaveBeenCalledWith('cons-1');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Fix round 1 (review of japa#183) ─────────────────────────────────────────
+// How the SCREEN wires each verify / create verdict (the pure classifier is
+// covered in consultationPayFlow.test.ts).
+describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => {
+  /** The "Try again" link under the CTA, if it is on screen. */
+  const tryAgain = (tree: TestRenderer.ReactTestRenderer) =>
+    pressables(tree).find(
+      (n) => n.findAll((c) => c.props.children === 'Try again').length > 0,
+    );
+
+  /** Mount with a locked quote, pick a method, pay, and let verify answer. */
+  async function payThenVerify(verifyAnswer: () => void) {
+    mockCreate.mockResolvedValue(paidBooking());
+    mockOpenAuth.mockResolvedValue({ type: 'cancel' });
+    verifyAnswer();
+    const tree = await render();
+    await chooseMethod(tree);
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    return tree;
+  }
+
+  it('verify 409 BOOKING_NOT_PAYABLE: no dead Pay button, "Try again" books a new slot', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockRejectedValue({
+        code: 'BOOKING_NOT_PAYABLE',
+        status: 409,
+        message: 'This booking is no longer awaiting payment',
+      }),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(text(tree)).toContain(PAY_COPY.notPayable);
+    // The CTA is the plain, DISABLED "Pay" (not a live button that does
+    // nothing, and not "Open checkout" for a closed booking).
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay');
+    expect(cta(tree).props.disabled).toBe(true);
+    // "Try again" is there and books a NEW booking (create, not /checkout).
+    const retry = tryAgain(tree);
+    expect(retry).toBeDefined();
+    mockCreate.mockResolvedValue(
+      paidBooking({ id: 'cons-2', reference: 'cons-ref-9' }),
+    );
+    await act(async () => {
+      await retry!.props.onPress();
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockCheckout).not.toHaveBeenCalled();
+    // The new quote is payable again, labelled as a fresh "Pay ₦…".
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦47,389.40');
+    expect(cta(tree).props.disabled).toBe(false);
+  });
+
+  for (const code of ['QUOTE_EXPIRED', 'CHECKOUT_REPLACED']) {
+    it(`verify 409 ${code}: shows the new quote, and the next Pay opens it directly`, async () => {
+      const NEW_URL = 'https://checkout.paystack.com/new';
+      const tree = await payThenVerify(() =>
+        mockVerify.mockRejectedValue({
+          code,
+          status: 409,
+          data: {
+            authorizationUrl: NEW_URL,
+            reference: 'cons-ref-2',
+            consultation: {
+              ...paidBooking(),
+              chargedAmountMinor: 4_900_000,
+              quoteExpiresAt: '2026-11-14T11:00:00.000Z',
+            },
+          },
+        }),
+      );
+      // The new amount is on screen before anything else opens.
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(text(tree)).toContain('₦49,000.00');
+      expect(text(tree)).toContain(PAY_COPY.newPrice);
+      expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦49,000.00');
+      // Next Pay: straight to the NEW checkout, verified with the NEW
+      // reference, without another /checkout round trip.
+      mockOpenAuth.mockClear();
+      mockVerify.mockReset();
+      mockVerify.mockResolvedValue({
+        verified: true,
+        consultation: {
+          ...paidBooking(),
+          chargedAmountMinor: 4_900_000,
+          paymentStatus: 'paid',
+        },
+      });
+      await act(async () => {
+        await cta(tree).props.onPress();
+      });
+      expect(mockCheckout).not.toHaveBeenCalled();
+      expect(mockOpenAuth).toHaveBeenCalledWith(
+        NEW_URL,
+        'durintech://payment-return',
+      );
+      expect(mockVerify).toHaveBeenCalledWith('cons-ref-2');
+      const arg = mockPush.mock.calls[0][0] as {
+        params: Record<string, string>;
+      };
+      expect(arg.params.paidAmountMinor).toBe('4900000');
+    });
+  }
+
+  it('verify 2xx that does not say "paid" never reaches the confirmation', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockResolvedValue({
+        consultation: { ...paidBooking(), paymentStatus: 'pending' },
+      }),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockTrackBooked).not.toHaveBeenCalled();
+    expect(text(tree)).toContain(PAY_COPY.notCompleted);
+    expect(cta(tree).props.accessibilityLabel).toBe('Open checkout');
+  });
+
+  it('verify 2xx in the { requiresPayment: false } shape with a paid summary is paid', async () => {
+    await payThenVerify(() =>
+      mockVerify.mockResolvedValue({
+        requiresPayment: false,
+        consultation: { ...paidBooking(), paymentStatus: 'paid' },
+      }),
+    );
+    expect(mockPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('verify 400 PAYMENT_MISMATCH: says we are checking it, and offers NO way to pay again', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockRejectedValue({
+        code: 'PAYMENT_MISMATCH',
+        status: 400,
+        message: "The payment does not match the booking's price",
+      }),
+    );
+    const t = text(tree);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(t).toContain(PAY_COPY.paymentReview);
+    expect(t).not.toContain(PAY_COPY.notCompleted);
+    // No pay control of any kind: the CTA is disabled and there is no retry.
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay');
+    expect(cta(tree).props.disabled).toBe(true);
+    expect(tryAgain(tree)).toBeUndefined();
+    // Even a forced press opens nothing.
+    mockOpenAuth.mockClear();
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockOpenAuth).not.toHaveBeenCalled();
+    expect(mockCheckout).not.toHaveBeenCalled();
+  });
+
+  it('verify 400 for a reference problem is not called "unpaid"', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockRejectedValue({
+        code: 'VALIDATION_ERROR',
+        status: 400,
+        message: 'This payment reference does not belong to this booking',
+      }),
+    );
+    expect(text(tree)).toContain(PAY_COPY.unconfirmed);
+    expect(text(tree)).not.toContain(PAY_COPY.notCompleted);
+  });
+
+  it('create 400 VALIDATION_ERROR: "couldn’t book", never "haven’t received your payment"', async () => {
+    mockCreate.mockRejectedValue({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      message: 'The client has no email address to pay with',
+    });
+    const tree = await render();
+    const t = text(tree);
+    expect(t).toContain(PAY_COPY.bookingInvalid);
+    expect(t).not.toContain(PAY_COPY.notCompleted);
+    expect(tryAgain(tree)).toBeDefined();
+  });
+
+  it('create 402 monthly limit: its own message, no retry, Pay disabled', async () => {
+    mockCreate.mockRejectedValue({
+      code: 'UPGRADE_REQUIRED',
+      status: 402,
+      message: "You've reached your plan's monthly consultation limit.",
+    });
+    const tree = await render();
+    expect(text(tree)).toContain(PAY_COPY.limitReached);
+    expect(tryAgain(tree)).toBeUndefined();
+    expect(cta(tree).props.disabled).toBe(true);
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });

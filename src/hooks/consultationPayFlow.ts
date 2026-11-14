@@ -171,11 +171,35 @@ export const PAY_COPY = {
     'This booking can’t be paid any more. Try again to book a new slot.',
   opening: 'Your checkout is being prepared. Try again in a moment.',
   newPrice: 'Your price was refreshed. Check the new amount, then pay.',
+  // ONLY for a checkout the backend says is genuinely unpaid.
   notCompleted:
     'We haven’t received your payment yet. Open checkout to finish paying.',
   expired: 'Your price has expired. Refresh to see today’s price.',
+  // The booking call itself was refused (create 400): nothing exists to pay.
+  bookingInvalid:
+    'We couldn’t book this consultation. Nothing was charged. Go back and check your details, then try again.',
+  // A payment landed that does not match the booking: NEVER ask to pay again.
+  paymentReview:
+    'We received a payment that doesn’t match this booking. Please don’t pay again. We’re checking it, and our support team will sort it out.',
+  // The plan's monthly consultation limit (create 402): a retry cannot work.
+  limitReached:
+    'You’ve reached your plan’s monthly consultation limit. Upgrade your plan to book more.',
+  // Verify was refused for a reason other than "not paid yet".
+  unconfirmed:
+    'We couldn’t confirm this payment. If you’ve already paid, don’t pay again: contact support and we’ll sort it out.',
   error: 'We couldn’t complete that. Nothing was charged. Try again.',
 } as const;
+
+/**
+ * Which call failed. The backend reuses `VALIDATION_ERROR` (400) for very
+ * different things, so the same code means something else per call:
+ *  - `create`   POST /consultations: the booking was refused (e.g. the
+ *               client has no email). No checkout exists yet;
+ *  - `checkout` POST /consultations/:id/checkout (resume / re-price);
+ *  - `verify`   POST /consultations/public/verify: "Payment has not been
+ *               completed" (genuinely unpaid), or a reference problem.
+ */
+export type PayStage = 'create' | 'checkout' | 'verify';
 
 /** How the screen should react to a failed create / checkout / verify. */
 export type PayErrorVerdict =
@@ -195,22 +219,55 @@ export type PayErrorVerdict =
   | { kind: 'not_payable'; message: string }
   /** 409 CHECKOUT_OPENING: another request is opening it; retry shortly. */
   | { kind: 'opening'; message: string }
-  /** 400 on verify ("Payment has not been completed"): not paid yet. */
+  /** Verify 400 "Payment has not been completed": genuinely not paid yet. */
   | { kind: 'not_completed'; message: string }
+  /** Create 400 VALIDATION_ERROR: the booking was refused; nothing to pay. */
+  | { kind: 'booking_invalid'; message: string }
+  /**
+   * 400 PAYMENT_MISMATCH: the client PAID, but the amount / currency does
+   * not match the stored charge. Terminal: no pay / retry control at all.
+   */
+  | { kind: 'payment_review'; message: string }
+  /** Create 402 UPGRADE_REQUIRED: monthly plan limit. Terminal: no retry. */
+  | { kind: 'limit_reached'; message: string }
+  /**
+   * Verify 400 for any other reason (e.g. the reference is not one of this
+   * booking's checkouts, which can also be money we cannot place): we do
+   * not know it is unpaid, so we never say "we haven't received it".
+   */
+  | { kind: 'unconfirmed'; message: string }
   /** Anything else (404, 502 BILLING_PROVIDER_ERROR, network, 5xx). */
   | { kind: 'error'; message: string };
 
 /**
- * Classify an `ApiError` (`{ code, message, status, data }`, api.service)
- * from any of the three calls. Never throws, whatever it is given.
+ * The backend's wording for a genuinely unpaid checkout on verify. It shares
+ * the `VALIDATION_ERROR` code with the reference errors, so the message is
+ * the only thing that tells them apart (follow-up: a code of its own).
  */
-export function classifyConsultationPayError(error: unknown): PayErrorVerdict {
+const UNPAID_MESSAGE = /has not been completed/i;
+
+/**
+ * Classify an `ApiError` (`{ code, message, status, data }`, api.service)
+ * from one of the three calls. Matches on the backend's `code` (plus the
+ * call it came from), never on a bare HTTP status, so a 400 that is not
+ * "unpaid" can never show the "we haven't received your payment" copy.
+ * Never throws, whatever it is given.
+ *
+ * @param error the thrown value
+ * @param stage which call failed (see `PayStage`)
+ */
+export function classifyConsultationPayError(
+  error: unknown,
+  stage: PayStage,
+): PayErrorVerdict {
   const e = (typeof error === 'object' && error !== null ? error : {}) as {
     code?: unknown;
+    message?: unknown;
     status?: unknown;
     data?: unknown;
   };
   const code = typeof e.code === 'string' ? e.code : '';
+  const message = typeof e.message === 'string' ? e.message : '';
   const status = typeof e.status === 'number' ? e.status : 0;
 
   if (code === 'PRICING_UNAVAILABLE' || status === 503) {
@@ -218,6 +275,16 @@ export function classifyConsultationPayError(error: unknown): PayErrorVerdict {
       kind: 'pricing_unavailable',
       message: PAY_COPY.pricingUnavailable,
     };
+  }
+  // The client paid something we will not accept: checked BEFORE any other
+  // 400 so it can never fall into a "pay again" message.
+  if (code === 'PAYMENT_MISMATCH') {
+    return { kind: 'payment_review', message: PAY_COPY.paymentReview };
+  }
+  // Plan limit (`paymentRequired` → 402 UPGRADE_REQUIRED). Only create
+  // checks the limit; a retry cannot succeed until the plan changes.
+  if (code === 'UPGRADE_REQUIRED' || status === 402) {
+    return { kind: 'limit_reached', message: PAY_COPY.limitReached };
   }
   if (code === 'PAYMENT_IN_PROGRESS') {
     return { kind: 'in_progress', message: PAY_COPY.inProgress };
@@ -248,8 +315,33 @@ export function classifyConsultationPayError(error: unknown): PayErrorVerdict {
   if (code === 'CHECKOUT_OPENING') {
     return { kind: 'opening', message: PAY_COPY.opening };
   }
-  if (status === 400) {
-    return { kind: 'not_completed', message: PAY_COPY.notCompleted };
+  if (code === 'VALIDATION_ERROR') {
+    // Create: the booking itself was refused; there is no checkout to open.
+    if (stage === 'create') {
+      return { kind: 'booking_invalid', message: PAY_COPY.bookingInvalid };
+    }
+    if (stage === 'verify') {
+      // Only "Payment has not been completed" is the unpaid case; any other
+      // verify 400 is a reference problem we cannot call unpaid.
+      return UNPAID_MESSAGE.test(message)
+        ? { kind: 'not_completed', message: PAY_COPY.notCompleted }
+        : { kind: 'unconfirmed', message: PAY_COPY.unconfirmed };
+    }
   }
   return { kind: 'error', message: PAY_COPY.error };
+}
+
+/**
+ * True only when a verify response BODY says the booking is paid (like
+ * `isPaidResult` on the payment-request path): a 2xx alone is not proof.
+ * The backend answers `{ verified: true, consultation }`; a paid booking may
+ * also come back in the `{ requiresPayment: false, consultation }` shape,
+ * whose summary carries `paymentStatus: 'paid'`.
+ */
+export function isBookingPaidResult(data: unknown): boolean {
+  const d = (typeof data === 'object' && data !== null ? data : {}) as {
+    verified?: unknown;
+    consultation?: { paymentStatus?: unknown } | null;
+  };
+  return d.verified === true || d.consultation?.paymentStatus === 'paid';
 }

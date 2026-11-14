@@ -11,6 +11,7 @@ import {
   PAY_COPY,
   chargeChanged,
   classifyConsultationPayError,
+  isBookingPaidResult,
   formatCountdown,
   lockedQuoteFrom,
   lockedRateLine,
@@ -99,45 +100,130 @@ describe('lockedRateLine / chargeChanged', () => {
 });
 
 describe('classifyConsultationPayError', () => {
-  it('maps each backend code', () => {
+  it('maps each backend code (whatever call it came from)', () => {
+    for (const stage of ['create', 'checkout', 'verify'] as const) {
+      expect(
+        classifyConsultationPayError(
+          { code: 'PRICING_UNAVAILABLE', status: 503 },
+          stage,
+        ).kind,
+      ).toBe('pricing_unavailable');
+      expect(
+        classifyConsultationPayError(
+          { code: 'PAYMENT_IN_PROGRESS', status: 409 },
+          stage,
+        ).kind,
+      ).toBe('in_progress');
+      expect(
+        classifyConsultationPayError(
+          { code: 'BOOKING_NOT_PAYABLE', status: 409 },
+          stage,
+        ).kind,
+      ).toBe('not_payable');
+      expect(
+        classifyConsultationPayError(
+          { code: 'CHECKOUT_OPENING', status: 409 },
+          stage,
+        ).kind,
+      ).toBe('opening');
+    }
+  });
+
+  it('only the verify "Payment has not been completed" 400 is the unpaid case', () => {
+    const v = classifyConsultationPayError(
+      {
+        code: 'VALIDATION_ERROR',
+        status: 400,
+        message: 'Payment has not been completed',
+      },
+      'verify',
+    );
+    expect(v.kind).toBe('not_completed');
+    expect(v.message).toBe(PAY_COPY.notCompleted);
+  });
+
+  it('a create validation error is "couldn’t book", not "unpaid"', () => {
+    const v = classifyConsultationPayError(
+      {
+        code: 'VALIDATION_ERROR',
+        status: 400,
+        message: 'The client has no email address to pay with',
+      },
+      'create',
+    );
+    expect(v.kind).toBe('booking_invalid');
+    expect(v.message).toBe(PAY_COPY.bookingInvalid);
+    expect(v.message).not.toBe(PAY_COPY.notCompleted);
+  });
+
+  it('PAYMENT_MISMATCH never asks someone who paid to pay again', () => {
+    for (const stage of ['checkout', 'verify'] as const) {
+      const v = classifyConsultationPayError(
+        { code: 'PAYMENT_MISMATCH', status: 400 },
+        stage,
+      );
+      expect(v.kind).toBe('payment_review');
+      expect(v.message).toBe(PAY_COPY.paymentReview);
+      expect(v.message).toMatch(/don’t pay again/);
+      expect(v.message).toMatch(/support/);
+    }
+  });
+
+  it('the 402 monthly consultation limit has its own verdict', () => {
+    const v = classifyConsultationPayError(
+      { code: 'UPGRADE_REQUIRED', status: 402 },
+      'create',
+    );
+    expect(v.kind).toBe('limit_reached');
+    expect(v.message).toBe(PAY_COPY.limitReached);
+  });
+
+  it('a 400 is never "unpaid" by its status alone', () => {
+    // Verify 400 about the reference: unknown, so not called unpaid.
     expect(
-      classifyConsultationPayError({ code: 'PRICING_UNAVAILABLE', status: 503 })
-        .kind,
-    ).toBe('pricing_unavailable');
+      classifyConsultationPayError(
+        {
+          code: 'VALIDATION_ERROR',
+          status: 400,
+          message: 'This payment reference does not belong to this booking',
+        },
+        'verify',
+      ).kind,
+    ).toBe('unconfirmed');
+    // A 400 with an unknown code, or on /checkout: the plain error.
     expect(
-      classifyConsultationPayError({ code: 'PAYMENT_IN_PROGRESS', status: 409 })
+      classifyConsultationPayError({ code: 'SOMETHING', status: 400 }, 'verify')
         .kind,
-    ).toBe('in_progress');
+    ).toBe('error');
     expect(
-      classifyConsultationPayError({ code: 'BOOKING_NOT_PAYABLE', status: 409 })
-        .kind,
-    ).toBe('not_payable');
-    expect(
-      classifyConsultationPayError({ code: 'CHECKOUT_OPENING', status: 409 })
-        .kind,
-    ).toBe('opening');
-    expect(
-      classifyConsultationPayError({ code: 'VALIDATION_ERROR', status: 400 })
-        .kind,
-    ).toBe('not_completed');
+      classifyConsultationPayError(
+        { code: 'VALIDATION_ERROR', status: 400 },
+        'checkout',
+      ).kind,
+    ).toBe('error');
   });
 
   it('QUOTE_EXPIRED / CHECKOUT_REPLACED carry the current checkout', () => {
-    const v = classifyConsultationPayError({
-      code: 'QUOTE_EXPIRED',
-      status: 409,
-      data: {
-        authorizationUrl: 'https://new',
-        reference: 'r2',
-        consultation: booking,
-      },
-    });
-    expect(v.kind).toBe('new_checkout');
-    if (v.kind !== 'new_checkout') return;
-    expect(v.authorizationUrl).toBe('https://new');
-    expect(v.reference).toBe('r2');
-    expect(v.consultation?.id).toBe('cons-1');
-    expect(v.message).toBe(PAY_COPY.newPrice);
+    for (const code of ['QUOTE_EXPIRED', 'CHECKOUT_REPLACED']) {
+      const v = classifyConsultationPayError(
+        {
+          code,
+          status: 409,
+          data: {
+            authorizationUrl: 'https://new',
+            reference: 'r2',
+            consultation: booking,
+          },
+        },
+        'verify',
+      );
+      expect(v.kind).toBe('new_checkout');
+      if (v.kind !== 'new_checkout') return;
+      expect(v.authorizationUrl).toBe('https://new');
+      expect(v.reference).toBe('r2');
+      expect(v.consultation?.id).toBe('cons-1');
+      expect(v.message).toBe(PAY_COPY.newPrice);
+    }
   });
 
   it('anything else (502, 404, network, junk) is a plain error', () => {
@@ -148,7 +234,33 @@ describe('classifyConsultationPayError', () => {
       null,
       'boom',
     ]) {
-      expect(classifyConsultationPayError(e).kind).toBe('error');
+      expect(classifyConsultationPayError(e, 'verify').kind).toBe('error');
+    }
+  });
+});
+
+describe('isBookingPaidResult', () => {
+  it('is true only when the body says paid', () => {
+    expect(isBookingPaidResult({ verified: true })).toBe(true);
+    expect(
+      isBookingPaidResult({
+        requiresPayment: false,
+        consultation: { paymentStatus: 'paid' },
+      }),
+    ).toBe(true);
+  });
+  it('a bare 2xx body is not proof of payment', () => {
+    for (const body of [
+      {},
+      null,
+      undefined,
+      'ok',
+      { verified: false },
+      { verified: 'true' },
+      { consultation: { paymentStatus: 'pending' } },
+      { consultation: null },
+    ]) {
+      expect(isBookingPaidResult(body)).toBe(false);
     }
   });
 });
