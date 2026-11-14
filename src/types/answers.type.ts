@@ -16,6 +16,12 @@ export const ANSWER_MAX_LENGTH = 2000;
 export interface SavedAnswer {
   /** Typed value (a plain string = legacy / text). */
   value: AnswerValue;
+  /** The item's type when saved / re-read. */
+  answerType?: string;
+  /** Plain rendering of the value. */
+  text?: string;
+  /** Server re-read an old plain-text answer into this type's shape. */
+  legacy?: true;
   /** ISO time of the last save. */
   updatedAt: string;
 }

@@ -45,6 +45,7 @@ import {
   encodeForm,
   legacyNote,
   normaliseAnswerType,
+  serverErrorMessage,
   toPayload,
   valueToForm,
   valueToWire,
@@ -372,8 +373,9 @@ export function InformationAnswer({
   // 'invalid' has no action: it names the field (ours, or the server's 400).
   const invalidMessage =
     errorKind === 'invalid' && field.status.phase === 'error' && field.attended
-      ? ((field.status.error as { message?: string })?.message ??
-        'Check this answer and try again.')
+      ? serverErrorMessage(
+          (field.status.error as { message?: string })?.message,
+        )
       : null;
   const copy =
     errorKind && errorKind !== 'invalid' ? SAVE_ERROR_COPY[errorKind] : null;

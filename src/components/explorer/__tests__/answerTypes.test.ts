@@ -10,7 +10,10 @@ import {
   legacyNote,
   normaliseAnswerType,
   parseAmount,
+  isSavedAnswerCounted,
   sentenceCase,
+  serverErrorField,
+  serverErrorMessage,
   toPayload,
   valueToForm,
   valueToWire,
@@ -315,5 +318,58 @@ describe('progress counts typed answers', () => {
     } as never);
     expect(p.answered).toBe(1);
     expect(p.fraction).toBe(0.5);
+  });
+});
+
+describe('legacy:true answers show but do not count unless they fit', () => {
+  it('plain string for a non-text type is not counted', () => {
+    expect(isSavedAnswerCounted('date_range', 'June 2027', true)).toBe(false);
+    expect(isSavedAnswerCounted('money', '£500', true)).toBe(false);
+    expect(isSavedAnswerCounted('date', 'sometime', true)).toBe(false);
+    expect(isSavedAnswerCounted('date', '1990-05-17', true)).toBe(true);
+    expect(isSavedAnswerCounted('text', 'old', true)).toBe(true);
+  });
+  it('an address legacy { note } is not counted and prefills the note', () => {
+    const v = { note: 'lived there 2 years' };
+    expect(isSavedAnswerCounted('address', v, true)).toBe(false);
+    expect((valueToForm('address', v, 'GBP') as AddressForm).note).toBe(
+      'lived there 2 years',
+    );
+  });
+  it('a legacy one-entry list fits the list type', () => {
+    expect(isSavedAnswerCounted('list', ['old text'], true)).toBe(true);
+  });
+  it('itemState keeps a legacy range answer Waiting', () => {
+    const range = {
+      checklistItemId: 'r',
+      kind: 'information',
+      answerType: 'date_range',
+    } as unknown as ChecklistItem;
+    expect(
+      itemState(range, [], {
+        r: { value: 'June', legacy: true, updatedAt: 'x' },
+      } as never),
+    ).toBe('waiting');
+  });
+});
+
+describe('server 400 field mapping', () => {
+  it('finds the input a message names', () => {
+    expect(serverErrorField('"value.country" is required')).toBe('country');
+    expect(
+      serverErrorField('"value.to" must be on or after "value.from"'),
+    ).toBe('to');
+    expect(serverErrorField('something else')).toBeNull();
+  });
+  it('labels fields in the message', () => {
+    expect(serverErrorMessage('"value.country" is required')).toBe(
+      'Country is required',
+    );
+    expect(
+      serverErrorMessage('"value.to" must be on or after "value.from"'),
+    ).toBe('To must be on or after From');
+    expect(serverErrorMessage(undefined)).toBe(
+      'Check this answer and try again.',
+    );
   });
 });

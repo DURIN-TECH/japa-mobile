@@ -179,3 +179,20 @@ describe('typed values and server 400s', () => {
     ).toBe('list_changed');
   });
 });
+
+describe('server normalised value', () => {
+  it('prefers the value in the PUT response for the cache', async () => {
+    qc.setQueryData(answersKey('app1'), {});
+    const h = mount(() => useSaveAnswer('app1'), qc);
+    api.put.mockResolvedValueOnce({
+      success: true,
+      data: { itemId: 'i1', value: 'Trimmed', updatedAt: 'u1' },
+    });
+    await act(async () => {
+      await h.current.mutateAsync({ itemId: 'i1', value: ' Trimmed ' });
+    });
+    expect(qc.getQueryData(answersKey('app1'))).toEqual({
+      i1: { value: 'Trimmed', updatedAt: 'u1' },
+    });
+  });
+});

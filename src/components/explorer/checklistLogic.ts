@@ -11,7 +11,7 @@ import type {
 import type { Document } from '@/types/documents.type';
 import type { SavedAnswer } from '@/types/answers.type';
 import {
-  isAnswerValueNonEmpty,
+  isSavedAnswerCounted,
   normaliseAnswerType,
 } from '@/components/explorer/answerTypes';
 
@@ -87,7 +87,8 @@ export function latestDocFor(item: ChecklistItem, docs: Document[]) {
  * list one non-blank entry. A legacy plain string counts when it has text.
  */
 export const hasAnswer = (item: ChecklistItem, a?: SavedAnswer | null) =>
-  !!a && isAnswerValueNonEmpty(normaliseAnswerType(item.answerType), a.value);
+  !!a &&
+  isSavedAnswerCounted(normaliseAnswerType(item.answerType), a.value, a.legacy);
 
 /**
  * Derive the state. Information items: Answered when there is a non-empty SAVED

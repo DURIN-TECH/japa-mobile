@@ -500,3 +500,58 @@ export function sentenceCase(s: string): string {
   if (i < 0) return s;
   return s.slice(0, i) + s.charAt(i).toLocaleUpperCase() + s.slice(i + 1);
 }
+
+/**
+ * Does a saved answer count as answered? A `legacy: true` answer (an old plain
+ * text the server re-read into this type's shape) counts only when it really fits
+ * the type: a plain string only for `text`, an address needs its required fields,
+ * and so on. It is still shown, never lost. Without the flag, see
+ * `isAnswerValueNonEmpty`.
+ */
+export function isSavedAnswerCounted(
+  type: AnswerType,
+  value: unknown,
+  legacy?: boolean,
+): boolean {
+  if (!legacy) return isAnswerValueNonEmpty(type, value);
+  if (typeof value === 'string')
+    return (
+      value.trim() !== '' &&
+      (type === 'text' || (type === 'date' && isRealIsoDate(value)))
+    );
+  return isAnswerValueNonEmpty(type, value);
+}
+
+/** Label for each field a server 400 can name (`"value.to" must …`). */
+const FIELD_LABELS: Record<string, string> = {
+  from: 'From',
+  to: 'To',
+  amount: 'Amount',
+  currency: 'Currency',
+  line1: 'Address line 1',
+  line2: 'Address line 2',
+  city: 'Town or city',
+  region: 'County or region',
+  postcode: 'Postcode',
+  country: 'Country',
+  note: 'Note',
+};
+
+/**
+ * The input a server 400 names: `"value.country" is required` -> 'country'.
+ * Null when it names none.
+ */
+export function serverErrorField(message: string | undefined): string | null {
+  const m = /value\.([A-Za-z0-9_]+)/.exec(message ?? '');
+  return m ? m[1] : null;
+}
+
+/** The server's message with each `"value.x"` replaced by its input's label. */
+export function serverErrorMessage(message: string | undefined): string {
+  const raw = message ?? '';
+  if (!raw) return 'Check this answer and try again.';
+  return raw.replace(
+    /"value\.([A-Za-z0-9_]+)"/g,
+    (_, k: string) => FIELD_LABELS[k] ?? k,
+  );
+}
