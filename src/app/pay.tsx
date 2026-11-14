@@ -20,19 +20,30 @@
 // confirmation anyway: it shows an InlineError above the CTA (the CTA is the
 // retry), so the app never confirms a booking the backend doesn't have.
 //
+// japa#252: checkout opens in the in-app auth browser
+// (`WebBrowser.openAuthSessionAsync`), not Safari / Chrome. The approve call
+// asked the backend for the app return page, so after paying Paystack
+// bounces to `durintech://payment-return` and the browser closes by itself.
+// Whatever way it closed (returned, or the user cancelled) the screen then
+// verifies the request's OWN reference once (never one from the deep link)
+// and goes to /confirmation only when verify says `paid`; otherwise it stays
+// here with NOT_PAID_MESSAGE / PAYMENT_ERROR_MESSAGE and "Open checkout" to
+// retry. `autoOpen=1` (sent by application/[id] right after approving) opens
+// the checkout once on arrival.
+//
 // Design system: coral/cream Explorer tokens (EX), Space Grotesk display font.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   ScrollView,
   Text,
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import * as WebBrowser from 'expo-web-browser';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, parse, parseISO } from 'date-fns';
@@ -52,6 +63,11 @@ import {
   PAYMENT_ERROR_MESSAGE,
   isPaidResult,
 } from '@/hooks/paymentRequestFlow';
+import {
+  OPEN_CHECKOUT_ERROR_MESSAGE,
+  runPaystackCheckout,
+  type VerifyVerdict,
+} from '@/hooks/paystackCheckout';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -165,6 +181,7 @@ export default function PayScreen() {
     requestId,
     reference,
     authorizationUrl,
+    autoOpen,
     agentId,
     dateIso,
     time,
@@ -177,6 +194,8 @@ export default function PayScreen() {
     requestId?: string;
     reference?: string;
     authorizationUrl?: string;
+    /** '1' → open the checkout once on arrival (right after approve). */
+    autoOpen?: string;
     agentId: string;
     dateIso: string;
     time: string;
@@ -238,16 +257,46 @@ export default function PayScreen() {
     });
   };
 
-  // Reopen the Paystack checkout (application path), e.g. after cancelling.
-  const onOpenCheckout = async () => {
-    if (!authorizationUrl) return;
-    setPayError(null);
-    try {
-      await Linking.openURL(authorizationUrl);
-    } catch {
-      setPayError('We couldn’t open checkout. Try again in a moment.');
-    }
+  // Verify THIS request's charge with the backend (application path):
+  // 'paid' only when it says the request is settled; throws when the call
+  // itself failed. The reference is the one from approve (route param), never
+  // one read from the return deep link.
+  const verifyThisRequest = async (): Promise<VerifyVerdict> => {
+    const result = await verifyRequest.mutateAsync({
+      requestId: requestId!,
+      reference: reference!,
+    });
+    return isPaidResult(result) ? 'paid' : 'not_paid';
   };
+
+  // Open (or reopen) the Paystack checkout in the auth browser, then verify
+  // once however it closed (japa#252). Paid → confirmation; anything else
+  // stays on this screen with a message and "Open checkout" as the retry.
+  const onOpenCheckout = async () => {
+    if (!authorizationUrl || !requestId || !reference || processing) return;
+    setPayError(null);
+    setProcessing(true);
+    const outcome = await runPaystackCheckout({
+      authorizationUrl,
+      openAuthSession: WebBrowser.openAuthSessionAsync,
+      verify: verifyThisRequest,
+    });
+    setProcessing(false);
+    if (outcome.kind === 'paid') goToConfirmation();
+    else if (outcome.kind === 'not_paid') setPayError(NOT_PAID_MESSAGE);
+    else if (outcome.kind === 'error') setPayError(PAYMENT_ERROR_MESSAGE);
+    else setPayError(OPEN_CHECKOUT_ERROR_MESSAGE);
+  };
+
+  // Right after approve (application/[id] passes autoOpen=1) open checkout
+  // straight away, ONCE per mount: the ref stops re-renders reopening it.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (autoOpen !== '1' || !isApp || autoOpened.current) return;
+    autoOpened.current = true;
+    void onOpenCheckout();
+    // Runs once on mount by design (guarded by the ref).
+  }, []);
 
   const onPay = async () => {
     // A booking needs a chosen method; a payment request doesn't.
@@ -262,12 +311,9 @@ export default function PayScreen() {
     // the status, not just that the call worked.
     if (isApp) {
       try {
-        const result = await verifyRequest.mutateAsync({
-          requestId: requestId!,
-          reference: reference!,
-        });
+        const verdict = await verifyThisRequest();
         setProcessing(false);
-        if (isPaidResult(result)) goToConfirmation();
+        if (verdict === 'paid') goToConfirmation();
         else setPayError(NOT_PAID_MESSAGE);
       } catch {
         setProcessing(false);
@@ -607,6 +653,7 @@ export default function PayScreen() {
         {isApp && authorizationUrl ? (
           <Pressable
             onPress={onOpenCheckout}
+            disabled={processing}
             style={{
               height: 46,
               borderRadius: 14,

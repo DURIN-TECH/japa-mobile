@@ -18,6 +18,8 @@ import {
   PaymentRequest,
   VerifyPaymentRequestResult,
 } from '@/types/payment-requests.type';
+// japa#252: the app opts in to the Paystack return-to-app page.
+import { RETURN_TO_APP } from '@/hooks/paystackCheckout';
 
 // ─────────────────────────────────────────────
 // QUERY HOOKS
@@ -61,8 +63,11 @@ export function useApprovePaymentRequest() {
 
   return useMutation({
     mutationFn: async (requestId: string) => {
+      // japa#252: `returnTo: 'app'` → Paystack returns to the backend's app
+      // return page (→ durintech://payment-return), not the portal.
       const response = await apiService.put<ApprovePaymentRequestResult>(
         `/payment-requests/${requestId}/approve`,
+        { returnTo: RETURN_TO_APP },
       );
       return response.data;
     },

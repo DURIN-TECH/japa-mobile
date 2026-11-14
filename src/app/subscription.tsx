@@ -17,10 +17,20 @@
 // no "Current plan" badge and the upgrade CTAs are disabled (60%); a failure
 // shows an InlineError + "Try again". Plans loading → coral spinner; plans
 // failed → error + retry; no plans → "No plans available right now".
+//
+// japa#252: Upgrade opens Paystack in the in-app auth browser
+// (`openAuthSessionAsync`), which closes by itself when Paystack returns
+// through the backend's return page (`durintech://payment-return`). The app
+// then verifies the checkout's OWN reference with POST /subscriptions/verify;
+// only a confirmed verify changes the plan (the hook invalidates
+// ['subscription','me'] + ['authorization'] so it shows at once). Closing the
+// browser is silent unless the verify finds a payment; not paid after a
+// return → InlineError; a failed verify → error + "Try again" (re-verifies).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useMemo } from 'react';
-import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -43,7 +53,16 @@ import {
   usePlans,
   useMySubscription,
   useStartCheckout,
+  useVerifySubscription,
 } from '@/hooks/useSubscription';
+import {
+  OPEN_CHECKOUT_ERROR_MESSAGE,
+  SUBSCRIPTION_NOT_PAID_MESSAGE,
+  SUBSCRIPTION_VERIFY_ERROR_MESSAGE,
+  runPaystackCheckout,
+  subscriptionVerifyErrorVerdict,
+  type VerifyVerdict,
+} from '@/hooks/paystackCheckout';
 import { mapPlan } from '@/components/explorer/liveSubscription';
 
 // ── FeatureRow — 20px check circle + label for one plan feature ──────────────
@@ -347,26 +366,95 @@ export default function SubscriptionView() {
     : null;
   const subFailed = mine.isError && !subKnown;
 
-  // ── Upgrade → Paystack checkout ────────────────────────────────────────────
+  // ── Upgrade → Paystack checkout (japa#252) ─────────────────────────────────
   // The zero-price tier has no checkout (downgrades aren't self-serve), so it
-  // is a no-op; paid tiers open the hosted checkout returned by the backend.
-  // A failure shows an InlineError (the button is the retry).
+  // is a no-op; paid tiers open the hosted checkout in the auth browser and
+  // verify on return. `checkoutError` = plain InlineError (the Upgrade button
+  // is the retry); `verifyRetryRef` = a reference whose verify call FAILED, so
+  // the error shows a "Try again" that re-verifies it (never reopens checkout).
   const checkout = useStartCheckout();
+  const verifySub = useVerifySubscription();
   const [checkoutError, setCheckoutError] = React.useState<string | null>(null);
-  const onUpgrade = useCallback(
-    async (plan: Plan) => {
-      if (plan.price === 0) return;
-      setCheckoutError(null);
+  const [verifyRetryRef, setVerifyRetryRef] = React.useState<string | null>(
+    null,
+  );
+  // True from Upgrade tap until the verify settles: blocks double checkouts.
+  const [busy, setBusy] = React.useState(false);
+
+  // Verify one reference with the backend → 'paid' | 'not_paid', or throws
+  // when the call itself failed (network / 5xx). A 400 is "not paid".
+  const verifyReference = useCallback(
+    async (reference: string): Promise<VerifyVerdict> => {
       try {
-        const url = await checkout.mutateAsync(plan.id);
-        if (!url) throw new Error('No checkout URL');
-        await Linking.openURL(url);
-      } catch {
-        setCheckoutError('We couldn’t open checkout. Try again in a moment.');
+        await verifySub.mutateAsync(reference);
+        return 'paid';
+      } catch (e) {
+        return subscriptionVerifyErrorVerdict(e);
       }
     },
-    [checkout],
+    [verifySub],
   );
+
+  const onUpgrade = useCallback(
+    async (plan: Plan) => {
+      if (plan.price === 0 || busy) return;
+      setCheckoutError(null);
+      setVerifyRetryRef(null);
+      setBusy(true);
+      try {
+        // 1. Ask the backend for a checkout that returns to the app.
+        let started: Awaited<ReturnType<typeof checkout.mutateAsync>>;
+        try {
+          started = await checkout.mutateAsync(plan.id);
+        } catch {
+          started = null;
+        }
+        if (!started) {
+          setCheckoutError(OPEN_CHECKOUT_ERROR_MESSAGE);
+          return;
+        }
+        // 2. Pay in the auth browser, then verify OUR reference once.
+        const { url, reference } = started;
+        const outcome = await runPaystackCheckout({
+          authorizationUrl: url,
+          openAuthSession: WebBrowser.openAuthSessionAsync,
+          verify: () => verifyReference(reference),
+        });
+        // 3. Render the backend's verdict. `paid` needs nothing: the verify
+        //    hook refreshed the subscription, so "Current" moves by itself.
+        if (outcome.kind === 'open_failed') {
+          setCheckoutError(OPEN_CHECKOUT_ERROR_MESSAGE);
+        } else if (outcome.kind === 'error') {
+          setVerifyRetryRef(reference);
+        } else if (outcome.kind === 'not_paid' && outcome.returned) {
+          // Came back through the return page yet nothing was charged.
+          setCheckoutError(SUBSCRIPTION_NOT_PAID_MESSAGE);
+        }
+        // not_paid after the user closed the browser: stay as we were, silently.
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, checkout, verifyReference],
+  );
+
+  // "Try again" on a failed verify: re-check the same reference only.
+  const onRetryVerify = useCallback(async () => {
+    const reference = verifyRetryRef;
+    if (!reference || busy) return;
+    setBusy(true);
+    try {
+      const verdict = await verifyReference(reference);
+      setVerifyRetryRef(null);
+      setCheckoutError(
+        verdict === 'paid' ? null : SUBSCRIPTION_NOT_PAID_MESSAGE,
+      );
+    } catch {
+      // Still failing: keep the error + retry up (spinner off).
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, verifyReference, verifyRetryRef]);
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -496,6 +584,16 @@ export default function SubscriptionView() {
               <InlineError message={checkoutError} />
             </View>
           ) : null}
+          {/* japa#252: verify call failed → error + "Try again" (re-verify). */}
+          {verifyRetryRef ? (
+            <StateError
+              section
+              style={{ marginBottom: 16 }}
+              message={SUBSCRIPTION_VERIFY_ERROR_MESSAGE}
+              onRetry={onRetryVerify}
+              retrying={busy}
+            />
+          ) : null}
 
           {plansState === 'loading' ? <StateLoading section /> : null}
           {plansState === 'error' ? (
@@ -520,8 +618,9 @@ export default function SubscriptionView() {
               key={plan.id}
               plan={plan}
               currentId={currentId}
-              // Unknown subscription → no upgrades until we know the plan.
-              disabled={!subKnown}
+              // Unknown subscription → no upgrades until we know the plan;
+              // also locked while a checkout / verify is in flight (japa#252).
+              disabled={!subKnown || busy}
               onUpgrade={onUpgrade}
             />
           ))}
