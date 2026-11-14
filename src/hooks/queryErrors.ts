@@ -56,18 +56,27 @@ export function classifyStartError(error: unknown): StartFailure {
   return 'retry';
 }
 
+/** Slim summary the 409 carries (#253): no notes, contact or cost fields. */
+export interface DuplicateApplicationSummary {
+  id: string;
+  visaTypeName?: string;
+  countryName?: string;
+  status?: string;
+  /** 0-100. */
+  progress?: number;
+  mode?: string;
+  lastUpdated?: unknown;
+}
+
 /**
  * #253: the backend's 409 `DUPLICATE_ACTIVE_APPLICATION` carries the user's
  * existing application in `data.existingApplication`. Returns it (id is what
  * the prompt needs to open it), or null for any other error / a malformed body.
  * Pure, so it is unit-tested directly.
  */
-export function getDuplicateApplication(error: unknown): {
-  id: string;
-  visaTypeName?: string;
-  countryName?: string;
-  status?: string;
-} | null {
+export function getDuplicateApplication(
+  error: unknown,
+): DuplicateApplicationSummary | null {
   if (typeof error !== 'object' || error === null) return null;
   const e = error as { status?: unknown; code?: unknown; data?: unknown };
   if (e.status !== 409 || e.code !== 'DUPLICATE_ACTIVE_APPLICATION')
@@ -76,5 +85,5 @@ export function getDuplicateApplication(error: unknown): {
     e.data as { existingApplication?: { id?: unknown } } | undefined
   )?.existingApplication;
   if (!existing || typeof existing.id !== 'string' || !existing.id) return null;
-  return existing as { id: string };
+  return existing as DuplicateApplicationSummary;
 }

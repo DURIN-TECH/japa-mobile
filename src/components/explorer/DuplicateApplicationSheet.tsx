@@ -33,6 +33,22 @@ export const DUPLICATE_COPY = {
 } as const;
 
 /** "Skilled Worker visa, United Kingdom" style label from whatever is present. */
+/** "Draft, 30% complete" from the 409's status and progress (either may be absent). */
+export function duplicateProgressLine(
+  d: DuplicateApplication | null,
+): string | undefined {
+  if (!d) return undefined;
+  const status = d.status
+    ? d.status.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+    : undefined;
+  const pct =
+    typeof d.progress === 'number'
+      ? `${Math.round(d.progress)}% complete`
+      : undefined;
+  const parts = [status, pct].filter(Boolean);
+  return parts.length ? parts.join(', ') : undefined;
+}
+
 export function duplicateLabel(
   d: DuplicateApplication | null,
 ): string | undefined {
@@ -103,11 +119,24 @@ export function DuplicateApplicationSheet({
             style={{
               fontSize: 13.5,
               color: EX.color.inkMuted,
-              marginBottom: 20,
+              marginBottom: duplicateProgressLine(duplicate) ? 10 : 20,
             }}
           >
             {DUPLICATE_COPY.body(duplicateLabel(duplicate))}
           </Text>
+          {/* Where the existing application stands (status + progress). */}
+          {duplicateProgressLine(duplicate) ? (
+            <Text
+              style={{
+                fontSize: 13.5,
+                fontWeight: '700',
+                color: EX.color.ink,
+                marginBottom: 20,
+              }}
+            >
+              {duplicateProgressLine(duplicate)}
+            </Text>
+          ) : null}
 
           {/* Primary: the safe default is to continue what they have. */}
           <PressableStatic
