@@ -451,7 +451,8 @@ export function InformationAnswer({
   };
 
   return (
-    <View style={{ marginTop: 10 }}>
+    // #256: 12 below the row header, full card width.
+    <View style={{ marginTop: 12 }}>
       {field.unreadableDraft ? (
         <Text
           style={{

@@ -49,6 +49,7 @@ import {
   Gauge,
   Crown,
   CircleAlert,
+  PenLine,
 } from 'lucide-react-native';
 
 // Design-name → lucide component. Stroke width 1.8 matches the prototype default.
@@ -72,6 +73,8 @@ export const Ic = {
   pin: MapPin,
   zap: Zap,
   sliders: SlidersHorizontal,
+  // #256: the 'detail' (typed answer) icon on the checklist, vs docs for documents.
+  edit: PenLine,
   msg: MessageCircle,
   plus: Plus,
   home: House,
