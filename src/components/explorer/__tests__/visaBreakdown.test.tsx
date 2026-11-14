@@ -134,7 +134,9 @@ describe('eligibilityItems / officialSource', () => {
 });
 
 describe('sections', () => {
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   it('render nothing when empty', () => {
     for (const el of [
