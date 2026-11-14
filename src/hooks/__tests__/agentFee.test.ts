@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Agent consultation fee units (issue #148).
+// Agent consultation fee shape (japa#183, was #148).
 //
-// The backend stores `Agent.consultationFee` in WHOLE NAIRA, so neither display
-// mapper may scale it. These tests pin that: a stored 5000 shows as 5000 (₦5,000),
-// never 50 (÷100) and never 500000 (×100).
+// The backend returns the fee as `consultationFeeUsd` (Money, US cents) next
+// to `consultationFeeLocal` (the server's local quote). Neither display mapper
+// may convert or scale: both objects are carried through unchanged, and the
+// screen formats them with `priceParts`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // The hook module imports the API/analytics services (Firebase); the pure
@@ -14,9 +15,19 @@ jest.mock('@/services/analytics.service', () => ({ analyticsService: {} }));
 import { describe, expect, it, jest } from '@jest/globals';
 import { formatAgentForDisplay, type ApiAgent } from '../useAgents';
 import { mapAgent } from '@/components/explorer/liveAgents';
+import { priceInline, priceParts } from '@/components/explorer/content';
 
-// Minimal agent as the backend returns it (seed agent: ₦5,000).
-const agent = (consultationFee: number): ApiAgent =>
+const USD = { amountMinor: 3500, currency: 'USD' };
+const LOCAL = {
+  amountMinor: 4_738_940,
+  currency: 'NGN',
+  rate: 1353.97,
+  asOf: '2026-11-13T00:00:00Z',
+  available: true,
+};
+
+// Minimal agent as the backend returns it ($35 fee, ₦47,389.40 local).
+const agent = (over: Partial<ApiAgent> = {}): ApiAgent =>
   ({
     id: 'agent-1',
     displayName: 'Ada Obi',
@@ -25,28 +36,54 @@ const agent = (consultationFee: number): ApiAgent =>
     totalApplications: 30,
     successRate: 90,
     responseTime: '2-4 hours',
-    consultationFee,
+    consultationFeeUsd: USD,
+    consultationFeeLocal: LOCAL,
     isAvailable: true,
     specializations: ['Study Visa'],
     languages: ['English'],
     featuredVisas: [],
     yearsOfExperience: 5,
+    ...over,
   }) as unknown as ApiAgent;
 
-describe('agent consultation fee is whole naira, unscaled', () => {
-  it('formatAgentForDisplay returns the fee (and price) equal to the input', () => {
-    const out = formatAgentForDisplay(agent(5000));
-    expect(out.consultationFee).toBe(5000);
-    expect(out.price).toBe(5000);
+describe('agent consultation fee carries the server objects, unconverted', () => {
+  it('formatAgentForDisplay passes both objects through', () => {
+    const out = formatAgentForDisplay(agent());
+    expect(out.consultationFeeUsd).toEqual(USD);
+    expect(out.consultationFeeLocal).toEqual(LOCAL);
   });
 
-  it('mapAgent (Explorer adapter) uses the fee as-is and defaults a missing fee to 0', () => {
-    expect(mapAgent(agent(2500)).fee).toBe(2500);
-    expect(
-      mapAgent({
-        ...agent(0),
-        consultationFee: undefined,
-      } as unknown as ApiAgent).fee,
-    ).toBe(0);
+  it('mapAgent carries both, and a missing fee is null (Free)', () => {
+    const a = mapAgent(agent());
+    expect(a.feeUsd).toEqual(USD);
+    expect(a.feeLocal).toEqual(LOCAL);
+    expect(priceInline(priceParts(a.feeLocal, a.feeUsd))).toBe(
+      '₦47,389 · about $35',
+    );
+
+    const free = mapAgent(
+      agent({ consultationFeeUsd: null, consultationFeeLocal: null }),
+    );
+    expect(free.feeUsd).toBeNull();
+    expect(priceParts(free.feeLocal, free.feeUsd, { freeWhenNoUsd: true }).primary).toBe(
+      'Free',
+    );
+  });
+
+  it('an unavailable local quote shows the dollar price only', () => {
+    const a = mapAgent(
+      agent({
+        consultationFeeLocal: {
+          amountMinor: null,
+          currency: 'NGN',
+          rate: null,
+          asOf: null,
+          available: false,
+        },
+      }),
+    );
+    const p = priceParts(a.feeLocal, a.feeUsd, { freeWhenNoUsd: true });
+    expect(p.primary).toBe('$35.00');
+    expect(p.localUnavailable).toBe(true);
   });
 });

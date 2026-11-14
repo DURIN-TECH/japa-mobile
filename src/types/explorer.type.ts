@@ -10,6 +10,8 @@
 // (`n` = name, `r` = rating, `rev` = review count, …); each is documented.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { LocalPriceQuote, Money } from './money.type';
+
 /** A destination tile / detail: one visa route in one country. */
 export type Dest = {
   /** Visa type id (route param for /destination/[id]). */
@@ -83,8 +85,14 @@ export type Agent = {
   succ: number;
   apps: number;
   years: number;
-  /** Consultation fee in naira. */
-  fee: number;
+  /**
+   * Consultation fee (japa#183): the stored dollar price and the server's
+   * local figure for it, exactly as GET /agents* returns them. The app never
+   * converts one into the other; render both through `priceParts`
+   * (explorer/content.ts). `feeUsd` null or $0 → the agent books free.
+   */
+  feeUsd: Money | null;
+  feeLocal: LocalPriceQuote | null;
   /** Response-time label. */
   resp: string;
   /** Portrait gradient seed. */
@@ -260,8 +268,14 @@ export type Payment = {
   id: string;
   title: string;
   sub: string;
-  /** Naira. */
-  amount: number;
+  /**
+   * What was actually charged, in minor units of its own currency (japa#183;
+   * a ₦50,000 booking is `{ amountMinor: 5_000_000, currency: 'NGN' }`).
+   * Never flattened to a bare number.
+   */
+  amount: Money;
+  /** The dollar price of the row (from `priceUsdCents`), when the backend sent one. */
+  usd: Money | null;
   date: string;
   status: 'paid' | 'pending' | 'refunded';
   method: string;

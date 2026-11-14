@@ -3,8 +3,9 @@
 //
 // Maps the backend's ApiAgent onto the Explorer's `Agent` shape. The backend has
 // no avatar art, so we derive a stable `seed`/`tone` from the id (feeds the
-// procedural Portrait + the agent-detail tonal header). Consultation fees are
-// stored in WHOLE NAIRA (#148) → used as the ₦ display value as-is.
+// procedural Portrait + the agent-detail tonal header). The consultation fee is
+// carried as the server's two objects (dollar price + local quote, japa#183);
+// screens format them with `priceParts`, never a mobile-side conversion.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Agent } from '@/types/explorer.type';
@@ -45,7 +46,8 @@ export function mapAgent(a: ApiAgent): Agent {
     succ: a.successRate ?? 0,
     apps: a.totalApplications ?? 0,
     years: a.yearsOfExperience ?? 0,
-    fee: a.consultationFee ?? 0, // whole naira, no scaling (#148)
+    feeUsd: a.consultationFeeUsd ?? null,
+    feeLocal: a.consultationFeeLocal ?? null,
     resp: a.responseTime ?? '—',
     seed,
     tone: TONES[seed],
