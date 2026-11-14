@@ -100,6 +100,10 @@ describe('costTimelineRows', () => {
   it('skips Processing when it repeats the stat strip', () => {
     const v = visa({ processingTime: '4 weeks', baseCostUsd: 50 });
     expect(costTimelineRows(v, '4 weeks').map((r) => r.key)).toEqual(['cost']);
+    // A different strip text still counts: the fact must not appear twice.
+    expect(costTimelineRows(v, '30 to 60 days').map((r) => r.key)).toEqual([
+      'cost',
+    ]);
     expect(costTimelineRows(v, '—').map((r) => r.key)).toEqual([
       'cost',
       'processing',
@@ -122,6 +126,18 @@ describe('eligibilityItems / officialSource', () => {
       officialSource(visa({ applicationInstructions: 'Apply online' })),
     ).toBeNull();
     expect(officialSource(visa({ applicationUrl: '  ' }))).toBeNull();
+    // Non-http(s) schemes and bare text hide the section.
+    for (const bad of [
+      'javascript:alert(1)',
+      'tel:123',
+      'gov.uk/visa',
+      'ftp://x.y',
+    ]) {
+      expect(officialSource(visa({ applicationUrl: bad }))).toBeNull();
+    }
+    expect(
+      officialSource(visa({ applicationUrl: ' HTTPS://gov.uk/visa ' }))?.url,
+    ).toBe('HTTPS://gov.uk/visa');
     expect(
       officialSource(
         visa({

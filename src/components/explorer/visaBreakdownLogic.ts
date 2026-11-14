@@ -73,7 +73,12 @@ export function costTimelineRows(
   }
 
   const processing = processingText(v);
-  if (processing && processing !== statStripProcessing) {
+  // Skip when the stat strip already shows ANY real processing time (not only
+  // an identical string): the same fact must not appear twice. '—' / blank is
+  // the strip's "no data" placeholder, so it does not count as shown.
+  const stripShowsProcessing =
+    text(statStripProcessing) !== '' && text(statStripProcessing) !== '—';
+  if (processing && !stripShowsProcessing) {
     rows.push({
       key: 'processing',
       icon: 'clock',
@@ -118,13 +123,14 @@ export function eligibilityItems(v: Pick<VisaType, 'eligibilityCriteria'>) {
 }
 
 /**
- * The official application link, only when `applicationUrl` is a non-empty
- * string. `applicationInstructions` is never shown without a URL.
+ * The official application link, only when `applicationUrl` is an http(s) URL. `applicationInstructions` is never shown without a URL.
  */
 export function officialSource(
   v: Pick<VisaType, 'applicationUrl' | 'applicationInstructions'>,
 ): { url: string; instructions?: string } | null {
   const url = text(v.applicationUrl);
-  if (!url) return null;
+  // Only http(s) links are opened; anything else (javascript:, tel:, bare text)
+  // hides the whole section rather than risking a bad Linking.openURL.
+  if (!/^https?:\/\/\S+$/i.test(url)) return null;
   return { url, instructions: text(v.applicationInstructions) || undefined };
 }
