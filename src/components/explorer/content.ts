@@ -8,7 +8,11 @@
 // backend data or a loading / empty / error state (see states.tsx).
 //
 // What stays is product content, not data:
-//   • NAIRA                     currency formatter
+//   • formatMoney / aboutUsd /  the ONE money formatter set (japa#183): any
+//     priceParts / priceInline  { amountMinor, currency } in its own symbol
+//                               and decimals; the "about $X" dollar line
+//   • NAIRA                     legacy whole-naira formatter, kept ONLY for
+//                               subscription.tsx until #184 moves plan prices
 //   • STATUS / DOC_STATUS /     display maps (label + colours) for application,
 //     PAY_STATUS                document and payment statuses
 //   • CATS                      Explore category chips
@@ -21,10 +25,255 @@
 
 import { IMG } from '@/assets/countries';
 import type { OnboardSlide } from '@/types/explorer.type';
+import type { LocalPriceQuote, Money } from '@/types/money.type';
 
-// ── Currency ─────────────────────────────────────────────────────────────────
-// Whole naira → "₦12,500".
+// ── Currency (legacy) ────────────────────────────────────────────────────────
+// Whole naira → "₦12,500". ONLY subscription.tsx still uses this (plan prices
+// move to dollars under #184). Everything else formats real backend money
+// through `formatMoney` below. Do not add new callers.
 export const NAIRA = (n: number) => '₦' + n.toLocaleString();
+
+// ── Money formatting (japa#183) ──────────────────────────────────────────────
+//
+// The app never computes a rate or converts a currency: the server sends the
+// dollar price AND its local figure (or the locked charge), and these helpers
+// only turn `{ amountMinor, currency }` into text.
+//
+// Decimals come from the currency's own exponent (NGN kobo and USD cents are
+// 2; UGX / XOF are 0, their minor unit IS the major unit). The table mirrors
+// seli-backend `money/currencies.ts`; an unknown code still formats, with
+// its ISO code as the prefix ("ABC 12.50") and 2 decimals, so a new currency
+// enabled on the server never crashes or mislabels as "₦".
+
+/** One currency the app knows how to print. */
+interface CurrencyDisplay {
+  /** Decimal places of the major unit (USD 2 → 100 cents; UGX 0). */
+  exponent: number;
+  /** Printed before the amount. */
+  symbol: string;
+}
+
+/** Mirror of the backend currency table (symbols + exponents only). */
+const CURRENCY_DISPLAY: Record<string, CurrencyDisplay> = {
+  USD: { exponent: 2, symbol: '$' },
+  NGN: { exponent: 2, symbol: '₦' },
+  GBP: { exponent: 2, symbol: '£' },
+  EUR: { exponent: 2, symbol: '€' },
+  CAD: { exponent: 2, symbol: 'CA$' },
+  GHS: { exponent: 2, symbol: 'GH₵' },
+  KES: { exponent: 2, symbol: 'KSh' },
+  ZAR: { exponent: 2, symbol: 'R' },
+  UGX: { exponent: 0, symbol: 'USh' },
+  XOF: { exponent: 0, symbol: 'CFA' },
+};
+
+/**
+ * Display info for a code: the table row, or the ISO code + a space with 2
+ * decimals for a code the app does not list yet.
+ */
+function currencyDisplay(currency: string): CurrencyDisplay {
+  const code = (currency ?? '').trim().toUpperCase();
+  return CURRENCY_DISPLAY[code] ?? { exponent: 2, symbol: `${code} ` };
+}
+
+/**
+ * How many minor units make one major unit (100 for NGN/USD, 1 for UGX).
+ * The ONLY place the app applies a minor-unit factor; analytics uses it to
+ * report a `value` in major units.
+ */
+export function minorUnitFactor(currency: string): number {
+  return 10 ** currencyDisplay(currency).exponent;
+}
+
+/** "1234567" → "1,234,567" (no Intl: Hermes and Node agree on this). */
+function groupThousands(digits: string): string {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/** True when `m` is a usable amount (integer-ish finite number + a code). */
+function isMoney(m: unknown): m is Money {
+  if (!m || typeof m !== 'object') return false;
+  const { amountMinor, currency } = m as Partial<Money>;
+  return (
+    typeof amountMinor === 'number' &&
+    Number.isFinite(amountMinor) &&
+    typeof currency === 'string' &&
+    currency.trim().length > 0
+  );
+}
+
+/**
+ * Format money in its own currency.
+ *
+ *   formatMoney({ amountMinor: 5_000_000, currency: 'NGN' }) → "₦50,000.00"
+ *   formatMoney({ amountMinor: 3500, currency: 'USD' })      → "$35.00"
+ *   formatMoney({ amountMinor: 50000, currency: 'UGX' })     → "USh50,000"
+ *   formatMoney(x, { whole: true })                          → "₦50,000"
+ *
+ * @param m       the amount; null / malformed gives '' (callers decide the
+ *                fallback copy, e.g. "Contact for pricing")
+ * @param opts.whole round to whole major units (half up) and print no
+ *                decimals: for INDICATIVE prices that can still move
+ *                (list rows, the agent bar). Exact amounts that were locked
+ *                or paid keep their decimals.
+ */
+export function formatMoney(
+  m: Money | null | undefined,
+  opts: { whole?: boolean } = {},
+): string {
+  if (!isMoney(m)) return '';
+  const { exponent, symbol } = currencyDisplay(m.currency);
+  const negative = m.amountMinor < 0;
+  // Minor units are integers by contract; round defensively once.
+  const abs = Math.round(Math.abs(m.amountMinor));
+  const factor = 10 ** exponent;
+  let body: string;
+  if (opts.whole || exponent === 0) {
+    // Half-up to the nearest major unit.
+    body = groupThousands(String(Math.floor((abs + factor / 2) / factor)));
+  } else {
+    const major = Math.floor(abs / factor);
+    const minor = String(abs % factor).padStart(exponent, '0');
+    body = `${groupThousands(String(major))}.${minor}`;
+  }
+  return `${negative ? '-' : ''}${symbol}${body}`;
+}
+
+/** A dollar `Money` from integer US cents (e.g. a booking's `priceUsdCents`). */
+export function usdCents(cents: number | null | undefined): Money | null {
+  return typeof cents === 'number' && Number.isFinite(cents)
+    ? { amountMinor: cents, currency: 'USD' }
+    : null;
+}
+
+/**
+ * The dollar side as "about $35" (whole dollars). For a price whose local
+ * figure can still move with the rate. Takes no rate: the dollar figure is
+ * the server's. Null when there is no dollar price.
+ */
+export function aboutUsd(usd: Money | null | undefined): string | null {
+  if (!isMoney(usd)) return null;
+  return `about ${formatMoney(usd, { whole: true })}`;
+}
+
+/**
+ * The local figure of a read quote, or null when the server could not price
+ * it (`available: false`, a null amount, or no quote at all).
+ */
+export function formatLocalQuote(
+  quote: LocalPriceQuote | null | undefined,
+  opts: { whole?: boolean } = {},
+): string | null {
+  if (!quote || !quote.available || quote.amountMinor === null) return null;
+  const text = formatMoney(
+    { amountMinor: quote.amountMinor, currency: quote.currency },
+    opts,
+  );
+  return text || null;
+}
+
+/** What a screen renders for one price (see `priceParts`). */
+export interface PriceParts {
+  /** The big line: the local amount, the dollar price, or "Free". */
+  primary: string;
+  /** The small line under / after it ("about $35", "$35.00"), or null. */
+  secondary: string | null;
+  /** True for a $0 / missing dollar price (the backend books it free). */
+  free: boolean;
+  /**
+   * True when a local figure was expected (non-USD viewer) but the server
+   * could not price it: the screen shows the dollar price only and may say
+   * "Naira price unavailable". Never an error state.
+   */
+  localUnavailable: boolean;
+}
+
+/**
+ * THE price pattern (design spec, japa#183): primary = local amount,
+ * secondary = the dollar price. Never the other way round.
+ *
+ * @param local     the local figure: a read quote (`LocalPriceQuote`) or a
+ *                  locked / paid charge (`Money`)
+ * @param usd       the dollar price (`Money` in USD), null = no price
+ * @param opts.locked the amount was locked or paid: show it exactly and the
+ *                  dollar line as "$35.00" (no "about": the rate can't move)
+ * @param opts.freeWhenNoUsd a null / $0 dollar price reads "Free" (agent
+ *                  consultation fees). Off: a null price gives primary ''
+ *                  so the caller shows its own copy ("Contact for pricing").
+ */
+export function priceParts(
+  local: LocalPriceQuote | Money | null | undefined,
+  usd: Money | null | undefined,
+  opts: { locked?: boolean; freeWhenNoUsd?: boolean } = {},
+): PriceParts {
+  const hasUsd = isMoney(usd);
+  // ── Free / no price ────────────────────────────────────────────────────
+  if (!hasUsd || usd.amountMinor === 0) {
+    // A local charge can exist without a dollar price only on odd legacy
+    // rows: still show what was charged rather than "Free".
+    if (!hasUsd && isMoney(local) && !('available' in local)) {
+      return {
+        primary: formatMoney(local),
+        secondary: null,
+        free: false,
+        localUnavailable: false,
+      };
+    }
+    const free = hasUsd || !!opts.freeWhenNoUsd;
+    return {
+      primary: free ? 'Free' : '',
+      secondary: null,
+      free,
+      localUnavailable: false,
+    };
+  }
+
+  // ── The local figure, if the server gave one ────────────────────────────
+  let localText: string | null = null;
+  let localCurrency: string | null = null;
+  if (local && 'available' in local) {
+    localCurrency = local.currency;
+    localText = formatLocalQuote(local, { whole: !opts.locked });
+  } else if (isMoney(local)) {
+    localCurrency = local.currency;
+    localText = formatMoney(local, { whole: !opts.locked }) || null;
+  }
+
+  // A USD viewer: "$35.00" only, no second line.
+  if (localCurrency?.toUpperCase() === 'USD' && localText) {
+    return {
+      primary: formatMoney(usd),
+      secondary: null,
+      free: false,
+      localUnavailable: false,
+    };
+  }
+
+  // No local figure: dollar price only (exact), flag it when one was expected.
+  if (!localText) {
+    return {
+      primary: formatMoney(usd),
+      secondary: null,
+      free: false,
+      localUnavailable:
+        !!localCurrency && localCurrency.toUpperCase() !== 'USD',
+    };
+  }
+
+  return {
+    primary: localText,
+    secondary: opts.locked ? formatMoney(usd) : aboutUsd(usd),
+    free: false,
+    localUnavailable: false,
+  };
+}
+
+/** One-line form of `priceParts`: "₦47,389 · about $35" (or the primary alone). */
+export function priceInline(parts: PriceParts): string {
+  return parts.secondary
+    ? `${parts.primary} · ${parts.secondary}`
+    : parts.primary;
+}
 
 // ── Explore category chips ───────────────────────────────────────────────────
 export const CATS = ['All', 'Work', 'Study', 'PR', 'Family'];
