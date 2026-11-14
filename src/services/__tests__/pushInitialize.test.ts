@@ -83,6 +83,23 @@ describe('initialize', () => {
     expect(mockOnMessage).toHaveBeenCalledTimes(2);
   });
 
+  it('a stale init (sign-out then quick sign-in) attaches no second listener set', async () => {
+    // First init stalls on the permission prompt; sign out, sign in again.
+    let release!: (v: number) => void;
+    mockPermission.mockImplementationOnce(
+      () => new Promise<number>((r) => (release = r)),
+    );
+    const first = svc.initialize();
+    await svc.unregisterToken({ notifyBackend: false });
+    const second = svc.initialize();
+    await second;
+    release(1); // the stale init now resumes
+    await first;
+    expect(mockOnMessage).toHaveBeenCalledTimes(1);
+    expect(mockOnOpened).toHaveBeenCalledTimes(1);
+    expect(mockOnRefresh).toHaveBeenCalledTimes(1);
+  });
+
   it('a denied permission can be retried later', async () => {
     mockPermission.mockResolvedValueOnce(0);
     await svc.initialize();

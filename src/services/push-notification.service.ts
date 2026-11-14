@@ -97,6 +97,13 @@ class PushNotificationService {
   //     again, and when permission is denied (so a later call can retry).
   private initPromise: Promise<void> | null = null;
 
+  // #265: bumped by cleanup() (every sign-out). An init that began under an
+  // older generation is STALE: its awaits (permission, token) may resolve
+  // after a sign-out and a quick sign-in started a newer init, and attaching
+  // its listeners too would double every pop-up. A stale init attaches
+  // nothing and leaves `initPromise` alone (it may belong to the newer init).
+  private generation = 0;
+
   // #265: the cold-start message (getInitialNotification) is handled at most
   // once per app launch. Deliberately NOT reset on logout: it describes how
   // the app was launched, and re-reading it after a re-login would navigate
@@ -126,9 +133,12 @@ class PushNotificationService {
   }
 
   private async doInitialize(): Promise<void> {
+    const gen = this.generation;
+    const stale = () => gen !== this.generation;
     try {
       // Request permission — returns authorization status
       const authStatus = await requestPermission(this.messaging);
+      if (stale()) return; // signed out meanwhile: do nothing
       // authStatus: -1 = not determined, 0 = denied, 1 = authorized, 2 = provisional
       if (authStatus < 1) {
         if (__DEV__) console.warn('Push notification permission denied');
@@ -138,12 +148,13 @@ class PushNotificationService {
 
       // Get and register the FCM token
       await this.registerToken();
+      if (stale()) return; // signed out meanwhile: attach no listeners
 
       // Set up notification listeners
       this.setupListeners();
     } catch (error) {
       if (__DEV__) console.warn('Push notification init error:', error);
-      this.initPromise = null; // allow a later retry
+      if (!stale()) this.initPromise = null; // allow a later retry
     }
   }
 
@@ -331,6 +342,7 @@ class PushNotificationService {
   private cleanup(): void {
     // Logout: let the next login's initialize() set everything up again.
     this.initPromise = null;
+    this.generation += 1; // invalidate any init still in flight
     for (const unsub of this.unsubscribers) {
       unsub();
     }
