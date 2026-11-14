@@ -26,8 +26,10 @@ import {
 import {
   useCountriesWithVisas,
   useVisaSearch,
+  useVisasForCountries,
   useVisaTypes,
 } from '@/hooks/useVisaTypes';
+import { matchCountries, mergeSearchVisas } from '@/utils/countrySearch';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait } from '@/components/explorer/primitives';
 import { Tile } from '@/components/explorer/Tile';
@@ -71,10 +73,21 @@ export default function ExploreScreen() {
   // ── Search (GET /visas/search, active at ≥2 chars) — overrides browse view ──
   const [query, setQuery] = useState('');
   const searchQ = useVisaSearch(query.trim());
+  // japa#254: also resolve the query to countries (name / alias / code) and
+  // fetch THEIR visas, so typing "UK" or "ire" lists that country's visas.
+  // (Not filtered from the browse list: that is capped at limit 60.)
+  const matchedCountries = useMemo(
+    () => matchCountries(query, countries ?? []),
+    [query, countries],
+  );
+  const countryVisas = useVisasForCountries(
+    matchedCountries.map((c) => c.code),
+  );
   const searchResults = useMemo(() => {
     const q = query.trim();
     if (q.length < 2) return null;
-    return (searchQ.data ?? []).map((v) =>
+    // Name matches + matched countries' visas, each visa listed once.
+    return mergeSearchVisas(searchQ.data ?? [], countryVisas.visas).map((v) =>
       visaTypeToDest(
         v,
         countries?.find(
@@ -82,7 +95,7 @@ export default function ExploreScreen() {
         )?.name,
       ),
     );
-  }, [query, searchQ.data, countries]);
+  }, [query, searchQ.data, countryVisas.visas, countries]);
   const searchMode = searchResults !== null;
 
   // Category chips derive from whatever data is showing.
@@ -310,7 +323,7 @@ export default function ExploreScreen() {
               </>
             ) : (
               <View style={{ paddingTop: 50, alignItems: 'center' }}>
-                {searchQ.isFetching ? (
+                {searchQ.isFetching || countryVisas.isFetching ? (
                   <ActivityIndicator color={EX.color.primary} />
                 ) : (
                   <>
