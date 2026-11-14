@@ -70,6 +70,8 @@ export interface ChecksProps {
  */
 export interface AnswersProps {
   applicationId: string;
+  /** The visa country (ISO alpha-2): the money fields' default currency. */
+  countryCode?: string;
   /** Saved answers by item id; undefined until the fetch succeeds. */
   answers?: Record<string, SavedAnswer>;
   answersLoading: boolean;
@@ -305,6 +307,7 @@ function ChecklistRow({
             title={item.title}
             answerType={item.answerType}
             currencyHint={[item.title, item.appliesWhen].join(' ')}
+            countryCode={answersProps.countryCode}
             savedValue={answersProps.answers?.[item.checklistItemId]?.value}
             save={(value) =>
               answersProps.saveAnswer(item.checklistItemId, value)

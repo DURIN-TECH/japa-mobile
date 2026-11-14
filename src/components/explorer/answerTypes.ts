@@ -43,6 +43,8 @@ const TYPES: AnswerType[] = [
 export const ANSWER_TEXT_MAX = 2000;
 export const LIST_MAX_ENTRIES = 20;
 export const LIST_ENTRY_MAX = 500;
+export const ADDRESS_FIELD_MAX = 200;
+export const ADDRESS_NOTE_MAX = 500;
 
 /** Missing or unknown type => text. */
 export function normaliseAnswerType(t: unknown): AnswerType {
@@ -107,7 +109,8 @@ export const ADDRESS_FIELDS: (keyof AddressForm)[] = [
   'note',
 ];
 
-export const DEFAULT_CURRENCY = 'GBP';
+/** Fallback when neither the item text nor the visa country gives one. */
+export const DEFAULT_CURRENCY = 'USD';
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -141,16 +144,39 @@ const SYMBOLS: [RegExp, string][] = [
   [/\$/, 'USD'],
 ];
 
+/** The visa country's currency (ISO 3166 alpha-2 -> ISO 4217). */
+const COUNTRY_CURRENCY: Record<string, string> = {
+  GB: 'GBP',
+  US: 'USD',
+  CA: 'CAD',
+  AU: 'AUD',
+  NZ: 'NZD',
+  NG: 'NGN',
+  CH: 'CHF',
+  ...Object.fromEntries(
+    'IE DE FR ES IT NL PT BE AT FI GR LU MT CY SK SI EE LV LT HR'
+      .split(' ')
+      .map((c) => [c, 'EUR']),
+  ),
+};
+
 /**
  * The currency to start a money field on: a symbol or ISO code in the item text
- * (title, appliesWhen), else GBP. The user can change it; never guessed silently
- * because the chip always shows it.
+ * (title, appliesWhen), else the visa country's currency, else USD. The user can
+ * change it; never guessed silently because the chip always shows it.
  */
-export function defaultCurrencyFor(...texts: (string | undefined)[]): string {
-  const hay = texts.filter(Boolean).join(' ');
+export function defaultCurrencyFor(
+  text?: string,
+  countryCode?: string,
+): string {
+  const hay = text ?? '';
   for (const [re, code] of SYMBOLS) if (re.test(hay)) return code;
   const code = CURRENCY_CHOICES.find((c) => new RegExp(`\\b${c}\\b`).test(hay));
-  return code ?? DEFAULT_CURRENCY;
+  return (
+    code ??
+    COUNTRY_CURRENCY[(countryCode ?? '').toUpperCase()] ??
+    DEFAULT_CURRENCY
+  );
 }
 
 // ── Empty forms ───────────────────────────────────────────────────────────────
@@ -190,6 +216,7 @@ export function valueToForm(
   type: AnswerType,
   value: unknown,
   currency: string,
+  dec = deviceDecimalSeparator(),
 ): FormValue {
   const empty = emptyForm(type, currency);
   if (value === undefined || value === null) return empty;
@@ -205,7 +232,7 @@ export function valueToForm(
     case 'money':
       if (isObj(value) && typeof value.amount === 'number')
         return {
-          amount: String(value.amount),
+          amount: formatAmountForField(value.amount, dec),
           currency: str(value.currency) || currency,
         };
       return empty;
@@ -240,13 +267,73 @@ export function legacyNote(type: AnswerType, value: unknown): string | null {
 
 // ── Money amount ──────────────────────────────────────────────────────────────
 
-/** "1,200.50" -> 1200.5 ; null when not a non-negative finite number. */
-export function parseAmount(s: string): number | null {
-  const t = s.trim().replace(/,/g, '');
-  if (!/^\d+(\.\d+)?$|^\.\d+$/.test(t)) return null;
-  const n = Number(t);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+/** The device's decimal separator ("." or ","). */
+export function deviceDecimalSeparator(): string {
+  try {
+    const d = new Intl.NumberFormat(undefined)
+      .formatToParts(1.1)
+      .find((p) => p.type === 'decimal');
+    return d?.value === ',' ? ',' : '.';
+  } catch {
+    return '.';
+  }
 }
+
+export type AmountParse =
+  | { ok: true; amount: number }
+  | { ok: false; reason: 'ambiguous' | 'invalid' };
+
+/**
+ * Parse a typed amount using the device's decimal separator `dec`; the OTHER
+ * mark is grouping. "850,50" -> 850.5 (comma locale), "1.200,50" -> 1200.5,
+ * "1,200.50" -> 1200.5 (dot locale). Ambiguous input is rejected, never guessed:
+ * both marks in the wrong order, a grouping mark not followed by exactly 3
+ * digits ("850,50" on a dot device), or a lone decimal mark followed by exactly
+ * 3 digits after a non-zero integer ("1.200").
+ */
+export function parseAmountDetailed(s: string, dec = '.'): AmountParse {
+  const t = s.replace(/[\s\u00a0\u202f']/g, '');
+  if (!/^[\d.,]+$/.test(t)) return { ok: false, reason: 'invalid' };
+  const grp = dec === ',' ? '.' : ',';
+  const parts = t.split(dec);
+  if (parts.length > 2) return { ok: false, reason: 'ambiguous' };
+  const [intPart, decPart] = parts;
+  if (decPart !== undefined && (!/^\d+$/.test(decPart) || /\D/.test(decPart)))
+    return {
+      ok: false,
+      reason: decPart.includes(grp) ? 'ambiguous' : 'invalid',
+    };
+  // Integer part: plain digits, or digits grouped as 1-3 then groups of 3.
+  const grouped = intPart.includes(grp);
+  if (grouped && !new RegExp(`^\\d{1,3}(\\${grp}\\d{3})+$`).test(intPart))
+    return { ok: false, reason: 'ambiguous' };
+  if (!grouped && !/^\d*$/.test(intPart))
+    return { ok: false, reason: 'invalid' };
+  if (intPart === '' && decPart === undefined)
+    return { ok: false, reason: 'invalid' };
+  if (
+    !grouped &&
+    decPart !== undefined &&
+    decPart.length === 3 &&
+    /^[1-9]\d{0,2}$/.test(intPart)
+  )
+    return { ok: false, reason: 'ambiguous' };
+  const digits = intPart.split(grp).join('') || '0';
+  const n = Number(decPart !== undefined ? `${digits}.${decPart}` : digits);
+  return Number.isFinite(n) && n >= 0
+    ? { ok: true, amount: n }
+    : { ok: false, reason: 'invalid' };
+}
+
+/** Amount or null (see parseAmountDetailed). */
+export function parseAmount(s: string, dec = '.'): number | null {
+  const r = parseAmountDetailed(s, dec);
+  return r.ok ? r.amount : null;
+}
+
+/** A number as the field shows it on a device with decimal mark `dec`. */
+export const formatAmountForField = (n: number, dec: string): string =>
+  String(n).replace('.', dec);
 
 // ── Emptiness ─────────────────────────────────────────────────────────────────
 
@@ -326,7 +413,11 @@ export function isAnswerValueNonEmpty(
  * `text`, otherwise JSON with a fixed key order (so an unchanged value always
  * encodes the same and is never re-saved).
  */
-export function encodeForm(type: AnswerType, form: FormValue): string {
+export function encodeForm(
+  type: AnswerType,
+  form: FormValue,
+  dec = deviceDecimalSeparator(),
+): string {
   if (isFormEmpty(type, form)) return '';
   switch (type) {
     case 'text':
@@ -339,10 +430,13 @@ export function encodeForm(type: AnswerType, form: FormValue): string {
     }
     case 'money': {
       const m = form as MoneyForm;
-      const n = parseAmount(m.amount);
+      // A readable amount is stored canonically ("." decimal); anything else
+      // is kept as typed with the device's mark, so it is never altered.
+      const n = parseAmount(m.amount, dec);
       return JSON.stringify({
         amount: n === null ? m.amount.trim() : String(n),
         currency: str(m.currency).trim().toUpperCase(),
+        dec: n === null ? dec : '.',
       });
     }
     case 'address': {
@@ -360,39 +454,73 @@ export function encodeForm(type: AnswerType, form: FormValue): string {
 
 /**
  * The form for a wire string (a draft read back from the vault, or the baseline
- * of a saved value). Anything unreadable gives the empty form rather than
- * throwing: a corrupt draft must not crash the screen.
+ * of a saved value), or null when it cannot be read for this type. A plain
+ * non-JSON string is a list entry (list) or the first field (address), as legacy
+ * text is. Null means "show it, keep it, send nothing": see `toPayload`.
  */
-export function decodeForm(
+export function tryDecodeForm(
   type: AnswerType,
   wire: string,
   currency: string,
-): FormValue {
+  dec = deviceDecimalSeparator(),
+): FormValue | null {
   if (type === 'text') return wire;
   if (wire.trim() === '') return emptyForm(type, currency);
+  let v: unknown;
   try {
-    const v: unknown = JSON.parse(wire);
-    if (type === 'date') return typeof v === 'string' ? v : '';
-    if (type === 'list')
-      return Array.isArray(v) && v.length
-        ? v.filter((x): x is string => typeof x === 'string')
-        : [''];
-    if (type === 'money' && isObj(v))
+    v = JSON.parse(wire);
+  } catch {
+    // Not JSON: plain text.
+    if (type === 'list') return [wire];
+    if (type === 'address')
       return {
-        amount: str(v.amount),
+        ...(emptyForm('address', currency) as AddressForm),
+        line1: wire,
+      };
+    if (type === 'date' && isRealIsoDate(wire.trim())) return wire.trim();
+    return null;
+  }
+  switch (type) {
+    case 'date':
+      return typeof v === 'string' ? v : null;
+    case 'list':
+      if (typeof v === 'string') return [v];
+      if (Array.isArray(v)) {
+        const rows = v.filter((x): x is string => typeof x === 'string');
+        return rows.length ? rows : [''];
+      }
+      return null;
+    case 'money': {
+      if (!isObj(v)) return null;
+      const amount = str(v.amount);
+      const n = parseAmount(amount, str(v.dec) || '.');
+      return {
+        amount: n === null ? amount : formatAmountForField(n, dec),
         currency: str(v.currency) || currency,
       };
-    if (type === 'date_range' && isObj(v))
-      return { from: str(v.from), to: str(v.to) };
-    if (type === 'address' && isObj(v)) {
+    }
+    case 'date_range':
+      return isObj(v) ? { from: str(v.from), to: str(v.to) } : null;
+    case 'address': {
+      if (typeof v === 'string')
+        return { ...(emptyForm('address', currency) as AddressForm), line1: v };
+      if (!isObj(v)) return null;
       const out = emptyForm('address', currency) as AddressForm;
       for (const f of ADDRESS_FIELDS) out[f] = str(v[f]);
       return out;
     }
-  } catch {
-    /* fall through */
   }
-  return emptyForm(type, currency);
+  return null;
+}
+
+/** `tryDecodeForm`, with the empty form when unreadable (display only). */
+export function decodeForm(
+  type: AnswerType,
+  wire: string,
+  currency: string,
+  dec = deviceDecimalSeparator(),
+): FormValue {
+  return tryDecodeForm(type, wire, currency, dec) ?? emptyForm(type, currency);
 }
 
 /** The wire string of a saved server value (the saver's baseline). */
@@ -434,7 +562,14 @@ export function toPayload(type: AnswerType, wire: string): PayloadResult {
       ? invalid('text', 'This answer is over 2,000 characters. Shorten it.')
       : { ok: true, value: wire.trim() };
   }
-  const f = decodeForm(type, wire, DEFAULT_CURRENCY);
+  // Not empty but unreadable: NEVER an empty payload. Nothing is sent and the
+  // draft stays (the caller shows it).
+  const f = tryDecodeForm(type, wire, DEFAULT_CURRENCY, '.');
+  if (f === null)
+    return invalid(
+      'draft',
+      'We couldn’t read this saved draft, so it hasn’t been sent. It’s still on this device.',
+    );
   switch (type) {
     case 'date': {
       const d = str(f).trim();
@@ -453,9 +588,21 @@ export function toPayload(type: AnswerType, wire: string): PayloadResult {
     }
     case 'money': {
       const m = f as MoneyForm;
-      const n = parseAmount(m.amount);
-      if (n === null)
-        return invalid('amount', 'Enter an amount, like 1,200 or 850.50.');
+      // Parse the amount as the wire holds it (canonical, or as typed with the
+      // mark of the device that typed it): one consistent path.
+      const w = JSON.parse(wire) as { amount?: unknown; dec?: unknown };
+      const dec = str(w.dec) || '.';
+      const r = parseAmountDetailed(str(w.amount), dec);
+      if (!r.ok) {
+        const ex = formatAmountForField(1200.5, dec);
+        return invalid(
+          'amount',
+          r.reason === 'ambiguous'
+            ? `We’re not sure what that amount is. Write it like ${ex}, with just one decimal mark.`
+            : `Enter an amount, like ${ex} or ${formatAmountForField(850, dec)}.`,
+        );
+      }
+      const n = r.amount;
       const cur = m.currency.trim().toUpperCase();
       if (!/^[A-Z]{3}$/.test(cur))
         return invalid('currency', 'Choose a currency.');
@@ -548,12 +695,56 @@ export function serverErrorField(message: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
-/** The server's message with each `"value.x"` replaced by its input's label. */
+/**
+ * The server's message in plain words: `"value.x"` becomes its input's label,
+ * `"value[3]"` becomes "Entry 4", and a bare `"value"` becomes "This answer".
+ * Length limits get fixed copy.
+ */
 export function serverErrorMessage(message: string | undefined): string {
   const raw = message ?? '';
   if (!raw) return 'Check this answer and try again.';
-  return raw.replace(
-    /"value\.([A-Za-z0-9_]+)"/g,
-    (_, k: string) => FIELD_LABELS[k] ?? k,
-  );
+  const tooLong = /(length|characters|at most|less than or equal)/i.test(raw);
+  const entry = /"value\[(\d+)\]"/.exec(raw);
+  if (entry && tooLong)
+    return `Entry ${Number(entry[1]) + 1} is too long (${LIST_ENTRY_MAX} characters max).`;
+  if (
+    /"value"/.test(raw) &&
+    /(items|entries|array)/i.test(raw) &&
+    /\b20\b/.test(raw)
+  )
+    return 'You can add up to 20 entries.';
+  if (/"value"/.test(raw) && tooLong && /2000/.test(raw))
+    return 'This answer is too long (2,000 characters max).';
+  return raw
+    .replace(
+      /"value\.([A-Za-z0-9_]+)"/g,
+      (_, k: string) => FIELD_LABELS[k] ?? k,
+    )
+    .replace(/"value\[(\d+)\]"/g, (_, i: string) => `Entry ${Number(i) + 1}`)
+    .replace(/"value"/g, 'This answer');
+}
+
+/** The order a type's fields are filled in (for "has the person moved past it"). */
+const FIELD_ORDER: Partial<Record<AnswerType, string[]>> = {
+  date_range: ['from', 'to'],
+  money: ['amount', 'currency'],
+  address: ADDRESS_FIELDS as string[],
+};
+
+/**
+ * Should the inline message for an error on `field` show yet? Only once the
+ * person has touched THAT field, or a later one (moved past it). An error on the
+ * unreadable draft, or a whole-value error (no field), shows at once. A half-
+ * filled form is not an error while they are still getting to the other field.
+ */
+export function shouldShowFieldError(
+  type: AnswerType,
+  field: string,
+  touched: string[],
+): boolean {
+  if (field === 'draft') return true;
+  const order = FIELD_ORDER[type];
+  if (!order || !order.includes(field)) return touched.length > 0;
+  const at = order.indexOf(field);
+  return touched.some((t) => order.indexOf(t) >= at);
 }

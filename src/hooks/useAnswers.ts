@@ -104,7 +104,11 @@ export type SaveErrorKind =
  * over-length answer is told apart from "the list changed" by its length (the
  * input also guards it with maxLength).
  */
-export function classifySaveError(error: unknown, text: string): SaveErrorKind {
+export function classifySaveError(
+  error: unknown,
+  text: string,
+  type?: string,
+): SaveErrorKind {
   const e = (error ?? {}) as {
     code?: string;
     status?: number;
@@ -118,7 +122,13 @@ export function classifySaveError(error: unknown, text: string): SaveErrorKind {
   if (e.status === 402 || e.code === 'UPGRADE_REQUIRED')
     return 'read_only_plan';
   if (e.status === 400) {
-    if (text.length > ANSWER_MAX_LENGTH) return 'too_long';
+    // The 2,000-character limit is for text answers only (a typed value's wire
+    // string is JSON and can be longer).
+    if (
+      (type === undefined || type === 'text') &&
+      text.length > ANSWER_MAX_LENGTH
+    )
+      return 'too_long';
     // The server names a bad field: show it. An unknown / document item means
     // the list changed.
     return e.message && !/unknown|not found|document|no longer/i.test(e.message)

@@ -6,7 +6,7 @@
 // Answers are personal: nothing here logs them.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Platform, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
@@ -20,6 +20,8 @@ import {
 } from '@/components/explorer/intake/intakeLogic';
 import {
   CURRENCY_CHOICES,
+  ADDRESS_FIELD_MAX,
+  ADDRESS_NOTE_MAX,
   LIST_ENTRY_MAX,
   LIST_MAX_ENTRIES,
   type AddressForm,
@@ -33,7 +35,7 @@ interface BaseProps {
   title: string;
   editable: boolean;
   /** Fires when the person finishes with the input (blur / picker choice). */
-  onCommit: () => void;
+  onCommit: (field: string) => void;
 }
 
 const inputText = {
@@ -62,6 +64,10 @@ function DateField({
 }) {
   const [open, setOpen] = useState(false);
   const current = fromIsoDate(value) ?? minimumDate ?? new Date();
+  // iOS inline calendar: the date it shows, so "Done" can commit it. Tapping the
+  // date already shown (today, when nothing is chosen) fires no change event.
+  const shown = useRef<Date>(current);
+  shown.current = fromIsoDate(value) ?? shown.current;
   return (
     <View style={{ flex: 1, minWidth: 0 }}>
       <PressableStatic
@@ -110,9 +116,35 @@ function DateField({
           accentColor={EX.color.primary}
           onChange={(event, date) => {
             if (Platform.OS !== 'ios') setOpen(false);
-            if (event.type === 'set' && date) onChange(toIsoDate(date));
+            if (event.type === 'set' && date) {
+              shown.current = date;
+              onChange(toIsoDate(date));
+            }
           }}
         />
+      ) : null}
+      {open && Platform.OS === 'ios' ? (
+        <PressableStatic
+          onPress={() => {
+            // Commit the date the calendar shows (picks today when untouched).
+            onChange(toIsoDate(shown.current));
+            setOpen(false);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`${accessibilityLabel}, done`}
+          style={{
+            alignSelf: 'flex-end',
+            minHeight: 44,
+            justifyContent: 'center',
+            paddingHorizontal: 8,
+          }}
+        >
+          <Text
+            style={{ fontSize: 14, fontWeight: '700', color: EX.color.primary }}
+          >
+            Done
+          </Text>
+        </PressableStatic>
       ) : null}
     </View>
   );
@@ -130,7 +162,7 @@ export function DateAnswerInput({
       editable={base.editable}
       onChange={(iso) => {
         onChange(iso);
-        base.onCommit();
+        base.onCommit('date');
       }}
     />
   );
@@ -153,7 +185,7 @@ export function DateRangeAnswerInput({
         editable={base.editable}
         onChange={(iso) => {
           onChange({ ...form, from: iso });
-          base.onCommit();
+          base.onCommit('from');
         }}
       />
       <DateField
@@ -164,7 +196,7 @@ export function DateRangeAnswerInput({
         editable={base.editable}
         onChange={(iso) => {
           onChange({ ...form, to: iso });
-          base.onCommit();
+          base.onCommit('to');
         }}
       />
     </View>
@@ -193,7 +225,7 @@ export function MoneyAnswerInput({
         editable={base.editable}
         value={form.amount}
         onChangeText={(amount) => onChange({ ...form, amount })}
-        onBlur={base.onCommit}
+        onBlur={() => base.onCommit('amount')}
         style={inputText}
         right={
           <PressableStatic
@@ -233,7 +265,7 @@ export function MoneyAnswerInput({
                 onPress={() => {
                   onChange({ ...form, currency: c });
                   setChoosing(false);
-                  base.onCommit();
+                  base.onCommit('currency');
                 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: on }}
@@ -251,7 +283,7 @@ export function MoneyAnswerInput({
                   style={{
                     fontSize: 13.5,
                     fontWeight: '700',
-                    color: on ? '#ffffff' : EX.color.ink,
+                    color: on ? EX.color.cardWhite : EX.color.ink,
                   }}
                 >
                   {c}
@@ -329,7 +361,8 @@ export function AddressAnswerInput({
           editable={base.editable}
           value={form[r.key]}
           onChangeText={(t) => onChange({ ...form, [r.key]: t })}
-          onBlur={base.onCommit}
+          maxLength={r.key === 'note' ? ADDRESS_NOTE_MAX : ADDRESS_FIELD_MAX}
+          onBlur={() => base.onCommit(r.key)}
           style={inputText}
         />
       ))}
@@ -345,6 +378,13 @@ export function ListAnswerInput({
   ...base
 }: BaseProps & { form: string[]; onChange: (f: string[]) => void }) {
   const rows = form.length ? form : [''];
+  // A stable id per row, so removing a middle row never hands its focus and
+  // native input state to the next one.
+  const ids = useRef<string[]>([]);
+  const next = useRef(0);
+  while (ids.current.length < rows.length)
+    ids.current.push(`r${next.current++}`);
+  if (ids.current.length > rows.length) ids.current.length = rows.length;
   const atMax = rows.length >= LIST_MAX_ENTRIES;
   return (
     <View style={{ gap: 8 }}>
@@ -369,15 +409,16 @@ export function ListAnswerInput({
               onChangeText={(t) =>
                 onChange(rows.map((r, j) => (j === i ? t : r)))
               }
-              onBlur={base.onCommit}
+              onBlur={() => base.onCommit('list')}
               style={{ ...inputText, minHeight: 44, maxHeight: 120 }}
             />
           </View>
           {rows.length > 1 && base.editable ? (
             <PressableStatic
               onPress={() => {
+                ids.current.splice(i, 1);
                 onChange(rows.filter((_, j) => j !== i));
-                base.onCommit();
+                base.onCommit('list');
               }}
               accessibilityRole="button"
               accessibilityLabel={`Remove entry ${i + 1}`}
@@ -396,7 +437,10 @@ export function ListAnswerInput({
       ))}
       {base.editable ? (
         <PressableStatic
-          onPress={() => onChange([...rows, ''])}
+          onPress={() => {
+            ids.current.push(`r${next.current++}`);
+            onChange([...rows, '']);
+          }}
           disabled={atMax}
           accessibilityRole="button"
           accessibilityLabel="Add another"

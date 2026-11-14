@@ -40,7 +40,9 @@ import {
   MoneyAnswerInput,
 } from '@/components/explorer/AnswerInputs';
 import {
-  decodeForm,
+  tryDecodeForm,
+  emptyForm,
+  shouldShowFieldError,
   defaultCurrencyFor,
   encodeForm,
   legacyNote,
@@ -79,6 +81,9 @@ export function counterText(length: number): string | null {
     : `${n} / ${max}`;
 }
 
+/** Currency picked per item, kept across remounts (not personal data). */
+const chosenCurrency = new Map<string, string>();
+
 /**
  * The field's state and handlers. Exported separately from the view so the
  * screen logic is one hook.
@@ -109,27 +114,43 @@ export function useAnswerField({
 }) {
   const key = draftKey(applicationId, itemId);
   const draft = useAnswerDraftsStore((s) => s.drafts[key]);
+  const startCurrencyForSaved =
+    type === 'money' ? (chosenCurrency.get(key) ?? currency) : currency;
   // The server's value as the saver's string (baseline) and as form content.
   const savedText = useMemo(
-    () => valueToWire(type, savedValue, currency),
-    [type, savedValue, currency],
+    () => valueToWire(type, savedValue, startCurrencyForSaved),
+    [type, savedValue, startCurrencyForSaved],
   );
   // `null` until the person edits: until then the field shows the draft, else
   // the server value. Once they edit, their form is the truth while mounted.
   const [typed, setTyped] = useState<FormValue | null>(null);
   // Set once the person leaves the input: only then is "not valid yet" shown
   // (a half-typed address is not an error while they are still typing).
-  const [attended, setAttended] = useState(false);
+  const [touched, setTouched] = useState<string[]>([]);
+  // A currency chosen while the amount is empty is not in any wire string: keep
+  // it for the life of the app, so a remount starts on it.
+  const startCurrency = startCurrencyForSaved;
+  // A draft that cannot be read for this type (e.g. an old shape): never turned
+  // into an empty value. It is shown to the person, kept, and nothing is sent.
+  const decodedDraft = useMemo(
+    () =>
+      draft !== undefined ? tryDecodeForm(type, draft, startCurrency) : null,
+    [draft, type, startCurrency],
+  );
+  const unreadableDraft =
+    !locked && typed === null && draft !== undefined && decodedDraft === null
+      ? draft
+      : null;
   // Locked: the server's answer, never an unsaved draft.
   const form: FormValue = useMemo(
     () =>
       locked
-        ? valueToForm(type, savedValue, currency)
+        ? valueToForm(type, savedValue, startCurrency)
         : (typed ??
           (draft !== undefined
-            ? decodeForm(type, draft, currency)
-            : valueToForm(type, savedValue, currency))),
-    [locked, typed, draft, type, savedValue, currency],
+            ? (decodedDraft ?? emptyForm(type, startCurrency))
+            : valueToForm(type, savedValue, startCurrency))),
+    [locked, typed, draft, decodedDraft, type, savedValue, startCurrency],
   );
 
   // ONE saver per item, shared by every mount (answerSavers.ts), so a remount
@@ -155,7 +176,7 @@ export function useAnswerField({
     entry.holder.onStatus = (s) => {
       if (
         s.phase === 'error' &&
-        classifySaveError(s.error, s.text) === 'locked'
+        classifySaveError(s.error, s.text, type) === 'locked'
       )
         lockedRef.current();
       setStatus(s);
@@ -224,6 +245,7 @@ export function useAnswerField({
   const onChangeForm = (next: FormValue) => {
     if (locked) return;
     setTyped(next);
+    if (type === 'money') chosenCurrency.set(key, (next as MoneyForm).currency);
     // Unsaved input is held in memory the moment it is edited.
     const wire = encodeForm(type, next);
     useAnswerDraftsStore.getState().setDraft(applicationId, itemId, wire);
@@ -233,10 +255,14 @@ export function useAnswerField({
   return {
     form,
     status,
-    attended,
+    touched,
+    unreadableDraft,
     onChangeForm,
-    onBlur: () => {
-      setAttended(true);
+    onBlur: (touchedField?: string) => {
+      if (touchedField)
+        setTouched((t) =>
+          t.includes(touchedField) ? t : [...t, touchedField],
+        );
       saver.flush();
       useAnswerDraftsStore.getState().flushWrites();
     },
@@ -321,6 +347,7 @@ export function InformationAnswer({
   title,
   answerType,
   currencyHint,
+  countryCode,
   savedValue,
   save,
   locked,
@@ -336,6 +363,8 @@ export function InformationAnswer({
   answerType?: unknown;
   /** Text a money field's starting currency is read from (title, appliesWhen). */
   currencyHint?: string;
+  /** The visa country (ISO alpha-2): its currency is the money default. */
+  countryCode?: string;
   /** The server's saved value (undefined when none; a string may be legacy). */
   savedValue: unknown;
   /** Sends the validated value ('' clears; rejects on failure). */
@@ -350,8 +379,8 @@ export function InformationAnswer({
 }) {
   const type = normaliseAnswerType(answerType);
   const currency = useMemo(
-    () => defaultCurrencyFor(currencyHint),
-    [currencyHint],
+    () => defaultCurrencyFor(currencyHint, countryCode),
+    [currencyHint, countryCode],
   );
   const field = useAnswerField({
     applicationId,
@@ -366,28 +395,53 @@ export function InformationAnswer({
   const errorKind: Exclude<SaveErrorKind, 'locked'> | null =
     field.status.phase === 'error'
       ? (() => {
-          const k = classifySaveError(field.status.error, field.status.text);
+          const k = classifySaveError(
+            field.status.error,
+            field.status.text,
+            type,
+          );
           return k === 'locked' ? null : k;
         })()
       : null;
   // 'invalid' has no action: it names the field (ours, or the server's 400).
-  const invalidMessage =
-    errorKind === 'invalid' && field.status.phase === 'error' && field.attended
-      ? serverErrorMessage(
-          (field.status.error as { message?: string })?.message,
-        )
-      : null;
+  // Ours waits until the person has reached that field; the server's shows now.
+  const invalidMessage = (() => {
+    if (errorKind !== 'invalid' || field.status.phase !== 'error') return null;
+    const e = (field.status.error ?? {}) as {
+      code?: string;
+      field?: string;
+      message?: string;
+    };
+    if (
+      e.code === 'INVALID_ANSWER' &&
+      !shouldShowFieldError(type, e.field ?? '', field.touched)
+    )
+      return null;
+    return serverErrorMessage(e.message);
+  })();
   const copy =
     errorKind && errorKind !== 'invalid' ? SAVE_ERROR_COPY[errorKind] : null;
   const legacy = legacyNote(type, savedValue);
   const base = {
     title,
     editable: !locked,
-    onCommit: field.onBlur,
+    onCommit: (f: string) => field.onBlur(f),
   };
 
   return (
     <View style={{ marginTop: 10 }}>
+      {field.unreadableDraft ? (
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 18,
+            color: EX.color.inkMuted,
+            marginBottom: 8,
+          }}
+        >
+          Your unsaved draft: {field.unreadableDraft}
+        </Text>
+      ) : null}
       {legacy ? (
         <Text
           style={{
@@ -445,7 +499,7 @@ export function InformationAnswer({
           editable={!locked}
           value={field.form as string}
           onChangeText={field.onChangeForm}
-          onBlur={field.onBlur}
+          onBlur={() => field.onBlur('text')}
           style={{
             fontSize: 14.5,
             lineHeight: 21,

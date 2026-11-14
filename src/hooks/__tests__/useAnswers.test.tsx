@@ -216,3 +216,17 @@ describe('clearing a structured answer', () => {
     expect(qc.getQueryData(answersKey('app1'))).toEqual({});
   });
 });
+
+describe('2,000 limit is for text only', () => {
+  it('a long structured wire with a 400 is not "too long"', () => {
+    const long = 'x'.repeat(2500);
+    expect(
+      classifySaveError(
+        { status: 400, message: 'Unknown checklist item' },
+        long,
+        'list',
+      ),
+    ).toBe('list_changed');
+    expect(classifySaveError({ status: 400 }, long, 'text')).toBe('too_long');
+  });
+});

@@ -1383,6 +1383,7 @@ export default function SelfServiceView() {
                   }
                   answersProps={{
                     applicationId: app.id,
+                    countryCode: app.countryCode,
                     answers: answersQ.data,
                     answersLoading: answersQ.isLoading,
                     answersError: answersQ.isError,

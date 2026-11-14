@@ -12,6 +12,9 @@ import {
   parseAmount,
   isSavedAnswerCounted,
   sentenceCase,
+  tryDecodeForm,
+  parseAmountDetailed,
+  shouldShowFieldError,
   serverErrorField,
   serverErrorMessage,
   toPayload,
@@ -218,9 +221,18 @@ describe('draft round-trip of structured values', () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(decodeForm('list', chunks.join(''), 'GBP')).toEqual(rows);
   });
-  it('a corrupt draft gives the empty form, not a crash', () => {
-    expect(decodeForm('address', '{not json', 'GBP')).toEqual(addr());
-    expect(decodeForm('list', '"str"', 'GBP')).toEqual(['']);
+  it('a plain non-JSON draft is kept: list entry / first address field', () => {
+    expect(decodeForm('list', 'I went to France', 'GBP')).toEqual([
+      'I went to France',
+    ]);
+    expect(
+      (decodeForm('address', 'old text', 'GBP') as AddressForm).line1,
+    ).toBe('old text');
+  });
+  it('an undecodable draft is null (shown, kept, never sent)', () => {
+    expect(tryDecodeForm('date_range', 'plain words', 'GBP')).toBeNull();
+    expect(tryDecodeForm('money', '{not json', 'GBP')).toBeNull();
+    expect(tryDecodeForm('list', '{"a":1}', 'GBP')).toBeNull();
   });
   it('a saved server value has the same wire as the form it fills', () => {
     const value = { amount: 1200.5, currency: 'EUR' };
@@ -250,13 +262,20 @@ describe('legacy plain-string answers are never lost', () => {
 });
 
 describe('money helpers', () => {
-  it('default currency from a symbol or code in the item text, else GBP', () => {
+  it('default currency from a symbol or code in the item text, else country, else USD', () => {
     expect(defaultCurrencyFor('how much you earn (over £20,000)')).toBe('GBP');
     expect(defaultCurrencyFor('income of $5,000')).toBe('USD');
     expect(defaultCurrencyFor('trip cost in EUR')).toBe('EUR');
-    expect(defaultCurrencyFor('how much you think your trip will cost')).toBe(
-      'GBP',
-    );
+    // No symbol: the visa country's currency, else USD.
+    expect(defaultCurrencyFor('how much it will cost', 'GB')).toBe('GBP');
+    expect(defaultCurrencyFor('how much it will cost', 'us')).toBe('USD');
+    expect(defaultCurrencyFor('how much it will cost', 'CA')).toBe('CAD');
+    expect(defaultCurrencyFor('how much it will cost', 'IE')).toBe('EUR');
+    expect(defaultCurrencyFor('how much it will cost', 'AU')).toBe('AUD');
+    expect(defaultCurrencyFor('how much it will cost')).toBe('USD');
+    expect(defaultCurrencyFor('how much it will cost', 'ZZ')).toBe('USD');
+    // A symbol in the item wins over the country.
+    expect(defaultCurrencyFor('earn over £20,000', 'US')).toBe('GBP');
   });
   it('parseAmount', () => {
     expect(parseAmount('1,200')).toBe(1200);
@@ -374,5 +393,119 @@ describe('server 400 field mapping', () => {
     expect(serverErrorMessage(undefined)).toBe(
       'Check this answer and try again.',
     );
+  });
+});
+
+describe('toPayload never turns a non-empty value into an empty one', () => {
+  it('list: plain text is one entry', () => {
+    expect(toPayload('list', 'plain text')).toEqual({
+      ok: true,
+      value: ['plain text'],
+    });
+    expect(toPayload('list', '[bad json')).toEqual({
+      ok: true,
+      value: ['[bad json'],
+    });
+  });
+  it('others: an unreadable non-empty draft is rejected, not cleared', () => {
+    for (const t of ['date_range', 'money'] as const) {
+      const r = toPayload(t, 'some old text');
+      expect(r.ok).toBe(false);
+    }
+    const addr = toPayload('address', 'some old text');
+    // plain text prefills line1, so it is incomplete (city, country), not empty
+    expect(addr.ok).toBe(false);
+    expect(toPayload('date', 'old text').ok).toBe(false);
+    expect(toPayload('list', '{"a":1}').ok).toBe(false);
+  });
+  it('only a really emptied input gives null / ""', () => {
+    expect(toPayload('list', encodeForm('list', ['', ' ']))).toEqual({
+      ok: true,
+      value: null,
+    });
+  });
+});
+
+describe('locale-aware amounts', () => {
+  const ok = (s: string, dec: string) => {
+    const r = parseAmountDetailed(s, dec);
+    return r.ok ? r.amount : r.reason;
+  };
+  it('comma locale', () => {
+    expect(ok('850,50', ',')).toBe(850.5);
+    expect(ok('1.200,50', ',')).toBe(1200.5);
+    expect(ok('1.200', ',')).toBe(1200);
+    expect(ok('1200', ',')).toBe(1200);
+  });
+  it('dot locale', () => {
+    expect(ok('1,200.50', '.')).toBe(1200.5);
+    expect(ok('1,200', '.')).toBe(1200);
+    expect(ok('850.50', '.')).toBe(850.5);
+  });
+  it('rejects ambiguous or mixed input instead of guessing', () => {
+    expect(ok('850,50', '.')).toBe('ambiguous');
+    expect(ok('1.200,50', '.')).toBe('ambiguous');
+    expect(ok('1,200.50', ',')).toBe('ambiguous');
+    expect(ok('1.200', '.')).toBe('ambiguous');
+    expect(ok('1,2,3', ',')).toBe('ambiguous');
+    expect(ok('abc', '.')).toBe('invalid');
+    expect(ok('', '.')).toBe('invalid');
+  });
+  it('a comma-locale amount round-trips through the wire and PUT as a number', () => {
+    const wire = encodeForm(
+      'money',
+      { amount: '850,50', currency: 'EUR' },
+      ',',
+    );
+    expect(toPayload('money', wire)).toEqual({
+      ok: true,
+      value: { amount: 850.5, currency: 'EUR' },
+    });
+    // the field shows it back with the comma
+    expect(
+      (decodeForm('money', wire, 'EUR', ',') as { amount: string }).amount,
+    ).toBe('850,5');
+    // an ambiguous amount is kept as typed and rejected, not altered
+    const amb = encodeForm('money', { amount: '1,200', currency: 'EUR' }, ',');
+    expect(toPayload('money', amb).ok).toBe(false);
+  });
+});
+
+describe('friendly server messages', () => {
+  it('maps value, value[i] and limits', () => {
+    expect(
+      serverErrorMessage(
+        '"value[3]" length must be less than or equal to 500 characters long',
+      ),
+    ).toBe('Entry 4 is too long (500 characters max).');
+    expect(
+      serverErrorMessage('"value" must contain less than or equal to 20 items'),
+    ).toBe('You can add up to 20 entries.');
+    expect(
+      serverErrorMessage(
+        '"value" length must be less than or equal to 2000 characters long',
+      ),
+    ).toBe('This answer is too long (2,000 characters max).');
+    expect(serverErrorMessage('"value" must be a valid date')).toBe(
+      'This answer must be a valid date',
+    );
+  });
+});
+
+describe('shouldShowFieldError', () => {
+  it('waits until the person reaches the field (or moves past it)', () => {
+    expect(shouldShowFieldError('date_range', 'to', ['from'])).toBe(false);
+    expect(shouldShowFieldError('date_range', 'to', ['from', 'to'])).toBe(true);
+    expect(shouldShowFieldError('address', 'city', ['line1'])).toBe(false);
+    expect(shouldShowFieldError('address', 'city', ['line1', 'city'])).toBe(
+      true,
+    );
+    // moved past city to a later field: city's error shows
+    expect(shouldShowFieldError('address', 'city', ['line1', 'postcode'])).toBe(
+      true,
+    );
+    expect(shouldShowFieldError('list', 'list', [])).toBe(false);
+    expect(shouldShowFieldError('list', 'list', ['list'])).toBe(true);
+    expect(shouldShowFieldError('date', 'draft', [])).toBe(true);
   });
 });
