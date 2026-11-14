@@ -24,6 +24,8 @@
 //     in the payload (criterion titles, rule references, quotes, links).
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { StackLayer } from '@/types/sharedRoute.type';
+
 /** Readiness band. Computed by the backend from stored outcomes. */
 export type ReadinessBand = 'not_ready' | 'weak' | 'competitive' | 'strong';
 
@@ -62,6 +64,8 @@ export interface AssessmentMeta {
   startedAt: string | null; // ISO
   finishedAt: string | null; // ISO
   error: { code: string; message: string } | null;
+  /** japa#237: the rulebook layers (omitted for a single-layer route). */
+  stackLayers?: StackLayer[];
 }
 
 /** One of the (up to three) issues on the free tier: title only. */
@@ -91,6 +95,8 @@ export interface CitedFinding {
   sourceQuote: string;
   detail: string;
   whatWouldHelp: string;
+  /** japa#237: the rulebook layer of the rule (stacks only). */
+  layerKey?: string;
 }
 
 /** A plain finding without a citation (strengths, statement findings). */
@@ -98,6 +104,7 @@ export interface PlainFinding {
   criterionId: string;
   title: string;
   detail: string;
+  layerKey?: string;
 }
 
 /**
@@ -117,6 +124,7 @@ export interface InsufficientItem {
   criterionId: string;
   title: string;
   reason: string;
+  layerKey?: string;
 }
 
 /**

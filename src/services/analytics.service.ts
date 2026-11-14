@@ -202,6 +202,25 @@ class AnalyticsService {
   }
 
   // ─────────────────────────────────────────────
+  // APPLY THROUGH A SHARED ROUTE (japa#237)
+  // Names only, NO properties: never a country, a route, an answer or a code.
+  // ─────────────────────────────────────────────
+  async trackSharedRouteEvent(
+    name:
+      | 'apply_through_viewed'
+      | 'apply_through_skipped'
+      | 'apply_through_confirmed'
+      | 'apply_through_overrode_proposal'
+      | 'apply_through_changed',
+  ) {
+    try {
+      await logEvent(this.analytics, name);
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics shared-route error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // REVIEW EVENTS (issue #43)
   // The application review: started, viewed, upgrade prompt tapped, rule source
   // opened. `tier` is the tier the SERVER answered with; `band` is the readiness

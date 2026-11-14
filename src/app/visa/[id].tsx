@@ -43,7 +43,8 @@ import {
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { useTopAgents } from '@/hooks/useAgents';
-import { useStartApplication } from '@/hooks/useStartApplication';
+import { useStartVisa } from '@/hooks/useStartVisa';
+import { AlsoCoversCard } from '@/components/explorer/SharedRouteParts';
 import {
   StartApplicationBar,
   startBarExtraHeight,
@@ -137,9 +138,11 @@ export default function VisaBreakdown() {
   // Application, then opens self-service with that id. A failure shows an
   // InlineError above the CTA (the CTA is the retry).
   // japa#174: shared start flow (402 → upgrade, 404/403 → unavailable, other → retry).
-  const startApp = useStartApplication(
+  // japa#237: a visa on a shared route opens the "apply through" sheet instead.
+  const startApp = useStartVisa(
     d?.id ?? id ?? '',
     code ?? d?.flag ?? '',
+    liveQ.data?.visaType.sharedRoute,
   );
 
   // Live fetch still in flight.
@@ -332,6 +335,13 @@ export default function VisaBreakdown() {
             />
             <StatCell value={d.applied.toLocaleString()} label="Applicants" />
           </View>
+
+          {/* japa#237: "Also covers other countries" (only for a shared route
+              that covers a country besides this one; nothing otherwise). */}
+          <AlsoCoversCard
+            route={liveQ.data?.visaType.sharedRoute}
+            countryCode={code ?? d.flag}
+          />
 
           {/* Blurb */}
           <Text

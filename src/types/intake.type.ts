@@ -7,6 +7,8 @@
 // route or a nationality. Dates are strings (ISO-8601 / YYYY-MM-DD).
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { StackLayer } from '@/types/sharedRoute.type';
+
 /** Answer types this app version can render. Others are skipped safely. */
 export const KNOWN_INTAKE_TYPES = [
   'single_choice',
@@ -54,6 +56,8 @@ export interface IntakeQuestion {
   maxLengthDays?: number;
   /** amount: ISO currency codes the question allows (any code when absent). */
   currencies?: string[];
+  /** japa#237: the rulebook layer the question came from (stacks only). */
+  layerKey?: string;
 }
 
 export interface IntakeMeta {
@@ -86,4 +90,6 @@ export interface IntakeResponse {
   openRequiredIds: string[];
   /** Last review's time (#42). Null until the assessment engine ships. */
   lastReviewAt: string | null;
+  /** japa#237: the rulebook layers (omitted for a single-layer route). */
+  stackLayers?: StackLayer[];
 }

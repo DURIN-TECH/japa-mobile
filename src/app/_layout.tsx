@@ -167,6 +167,11 @@ function RootLayoutContent() {
           name="subscription"
           options={{ animation: 'slide_from_bottom' }}
         />
+        {/* Which country will you apply through? (#237): slides up like a sheet */}
+        <Stack.Screen
+          name="apply-through/[visaId]"
+          options={{ animation: 'slide_from_bottom' }}
+        />
         {/* Consultation booking flow + detail + settings */}
         <Stack.Screen name="book/[agentId]" />
         <Stack.Screen name="pay" />
