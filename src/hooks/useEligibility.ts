@@ -13,6 +13,10 @@ import {
 
 /**
  * Pre-check: Does the user need a visa?
+ *
+ * japa#237: the result's `visaRequired` can be null (and `requirementType`
+ * 'unknown') when no official source covers the trip. Callers must treat that
+ * as "we don't know", never as true or false.
  */
 export function useVisaPreCheck() {
   return useMutation({
