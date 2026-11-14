@@ -12,7 +12,9 @@
  * 3. On foreground notification → show in-app alert
  * 4. On notification tap (background) → deep-link to relevant screen
  * 5. On notification tap (cold start) → deep-link after app loads
- * 6. On logout → unregisterToken()
+ * 6. On sign-out (logout, account deletion, a session that ended on its own,
+ *    or the signed-in account changing) → unregisterToken(). Wired up in
+ *    auth.store.ts (#263).
  */
 
 import { Platform, Alert } from 'react-native';
@@ -108,23 +110,55 @@ class PushNotificationService {
   }
 
   /**
-   * Unregister the FCM token on logout.
+   * Unregister the FCM token on sign-out (#263: EVERY sign-out path).
    * Prevents push notifications from being sent to a logged-out device.
+   *
+   * Three independent steps, each with its own error handling, so one failing
+   * never skips the others:
+   *
+   *   1. Backend removal (DELETE /users/fcm-token). Best-effort: on the
+   *      "session ended" path (revoked / expired / signed out elsewhere) there
+   *      is no Firebase user any more, so this call is expected to fail with a
+   *      401. Skipped entirely with `{ notifyBackend: false }` (used when the
+   *      app starts signed out, where there is no session to call with, and we
+   *      don't want getToken() to mint a token just to throw it away).
+   *   2. Local deletion (deleteToken). This is what actually stops the device
+   *      receiving the previous user's pushes: FCM invalidates the token, so a
+   *      send to it fails even if the backend still lists it on that user's
+   *      doc. The next sign-in gets a NEW token and registers it to the new
+   *      user only.
+   *   3. Listener cleanup, so no foreground alert / tap handler from the old
+   *      session survives.
+   *
+   * Never throws.
    */
-  async unregisterToken(): Promise<void> {
-    try {
-      const token = await getToken(this.messaging);
-      if (token) {
-        // Tell backend to remove this token — DELETE /users/fcm-token
-        await apiService.delete('/users/fcm-token', { token });
+  async unregisterToken(
+    options: { notifyBackend?: boolean } = {},
+  ): Promise<void> {
+    const { notifyBackend = true } = options;
+
+    // 1. Backend: forget this device's token for the (current) user.
+    if (notifyBackend) {
+      try {
+        const token = await getToken(this.messaging);
+        if (token) {
+          // Tell backend to remove this token — DELETE /users/fcm-token
+          await apiService.delete('/users/fcm-token', { token });
+        }
+      } catch (error) {
+        if (__DEV__) console.warn('FCM token backend unregister error:', error);
       }
-      // Delete the token locally so Firebase generates a new one next time
-      await deleteToken(this.messaging);
-    } catch (error) {
-      if (__DEV__) console.warn('FCM token unregister error:', error);
     }
 
-    // Clean up listeners
+    // 2. Local: delete the token so Firebase generates a new one next time.
+    //    Runs even when step 1 failed (the session-ended case).
+    try {
+      await deleteToken(this.messaging);
+    } catch (error) {
+      if (__DEV__) console.warn('FCM token local delete error:', error);
+    }
+
+    // 3. Clean up listeners
     this.cleanup();
   }
 
