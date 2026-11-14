@@ -1,3 +1,4 @@
+import { FileSystemUploadType, uploadAsync } from 'expo-file-system/legacy';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiService } from '@/services/api.service';
 import {
@@ -267,24 +268,28 @@ export function useSharedDocument(documentId: string) {
 }
 
 /**
- * Upload a document to Firebase Storage using signed URL
+ * Upload a document to Firebase Storage using a signed URL.
+ *
+ * The file goes straight from its uri to the URL as binary content (native
+ * upload), with no `fetch(uri).blob()` round-trip: since Expo SDK 56.0.24 RN's
+ * Blob path goes through base64 and the PUT silently did not land, so the next
+ * step ("create document") failed with "File not found in storage".
+ *
+ * Throws when storage does not answer 2xx, so a failed PUT surfaces as the
+ * upload error and the document record is never created.
  */
 export async function uploadToStorage(
   uploadUrl: string,
   file: { uri: string; type: string; name: string },
 ): Promise<void> {
-  // Read file as blob
-  const response = await fetch(file.uri);
-  const blob = await response.blob();
-
-  // Upload to signed URL
-  await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': file.type,
-    },
-    body: blob,
+  const result = await uploadAsync(uploadUrl, file.uri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystemUploadType.BINARY_CONTENT,
+    headers: { 'Content-Type': file.type },
   });
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`Storage upload failed with status ${result.status}`);
+  }
 }
 
 /**

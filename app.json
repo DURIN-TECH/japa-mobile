@@ -39,6 +39,7 @@
       "@react-native-firebase/crashlytics",
       "expo-router",
       "expo-document-picker",
+      "expo-secure-store",
       "expo-font",
       [
         "expo-build-properties",

@@ -80,18 +80,28 @@ export function LabeledInput({
   label,
   right,
   style,
+  focusRing = false,
   ...inputProps
 }: {
   label: string;
   right?: React.ReactNode;
+  /**
+   * Opt-in (#187): draw a coral 1.5px border while the field has focus. The
+   * default `line10` border is about 1.3:1 on white, below the 3:1 a UI border
+   * needs, so a field the person types long text into shows where it is.
+   */
+  focusRing?: boolean;
 } & TextInputProps) {
+  const [focused, setFocused] = React.useState(false);
+  const ring = focusRing && focused;
   return (
     <View
       style={{
         backgroundColor: EX.color.cardWhite,
         borderRadius: 18,
-        borderWidth: 1,
-        borderColor: EX.color.line10,
+        // 1.5px on focus (a half-pixel growth; nothing around it moves visibly).
+        borderWidth: ring ? 1.5 : 1,
+        borderColor: ring ? EX.color.primary : EX.color.line10,
         paddingHorizontal: 16,
         paddingTop: 12,
         paddingBottom: 14,
@@ -119,6 +129,15 @@ export function LabeledInput({
         <TextInput
           placeholderTextColor={EX.color.faint}
           autoCorrect={false}
+          {...inputProps}
+          onFocus={(e) => {
+            setFocused(true);
+            inputProps.onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            inputProps.onBlur?.(e);
+          }}
           style={[
             {
               flex: 1,
@@ -129,7 +148,6 @@ export function LabeledInput({
             },
             style,
           ]}
-          {...inputProps}
         />
         {right}
       </View>

@@ -28,7 +28,7 @@
 // render only.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
@@ -91,6 +91,14 @@ import {
   isChecklistDocument,
 } from '@/components/explorer/DocumentChecklist';
 import type { ChecklistItem } from '@/types/checklist.type';
+import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
+import { useAuthStore } from '@/stores/auth.store';
+// Information items (#187): typed answers, saved on the server.
+import { useAnswers, useSaveAnswer } from '@/hooks/useAnswers';
+import {
+  computeProgress,
+  isInformationItem,
+} from '@/components/explorer/checklistLogic';
 // Per-upload document check (#115).
 import {
   useDocumentChecks,
@@ -674,6 +682,43 @@ export default function SelfServiceView() {
     !!app && app.mode === 'self',
   );
   const checklist = checklistQ.data;
+  // Answers (#187): fetched only once the list has an information item. A failed
+  // fetch never hides document items (the checklist shows its own error).
+  const hasInfoItems = !!checklist?.items.some(isInformationItem);
+  const answersQ = useAnswers(
+    app ? app.id : '',
+    !!app && app.mode === 'self' && hasInfoItems,
+  );
+  const saveAnswerM = useSaveAnswer(app?.id ?? '');
+  // Set by a 409 ANSWERS_LOCKED from a save: answers are read-only from then on.
+  const [answersLockedByServer, setAnswersLockedByServer] = useState(false);
+  // Unsaved answers from an earlier visit (offline, app killed) come back from
+  // the encrypted vault when the screen opens.
+  // Drafts that can no longer be saved are dropped: all of this application's
+  // when it is read-only, and those of items no longer in the list (after
+  // "Refresh list"). The server answer is shown instead.
+  const draftsLocked =
+    answersLockedByServer || isStatementLocked(app?.status as string);
+  useEffect(() => {
+    if (!app) return;
+    if (draftsLocked) {
+      useAnswerDraftsStore.getState().pruneDrafts(app.id, []);
+      return;
+    }
+    if (checklist?.state !== 'ready') return; // not known yet: keep everything
+    useAnswerDraftsStore.getState().pruneDrafts(
+      app.id,
+      checklist.items
+        .filter(
+          (i) => isInformationItem(i) && i.current && i.status !== 'waived',
+        )
+        .map((i) => i.checklistItemId),
+    );
+  }, [app, checklist, draftsLocked]);
+  useEffect(() => {
+    const uid = useAuthStore.getState().user?.uid;
+    if (uid) void useAnswerDraftsStore.getState().loadFromVault(uid);
+  }, []);
   // Per-upload document checks (#115): polled while one is running.
   const checksQ = useDocumentChecks(
     app ? app.id : '',
@@ -848,7 +893,25 @@ export default function SelfServiceView() {
 
     // Progress: backend may send a fraction (0–1) or a percentage (0–100).
     const frac = app.progress > 1 ? app.progress / 100 : app.progress;
-    const livePct = Math.round((frac || 0) * 100);
+    // #187: with typed details in the list, the card counts from the checklist
+    // (both kinds, required items only in the bar) once the answers have loaded.
+    // Until then, or if they failed, it keeps the backend values: it never shows
+    // a count it can't back up.
+    const checklistProgress =
+      app.mode === 'self' &&
+      checklist?.state === 'ready' &&
+      hasInfoItems &&
+      answersQ.isSuccess
+        ? computeProgress(checklist, docs, answersQ.data ?? {})
+        : null;
+    const shownFrac = checklistProgress
+      ? checklistProgress.fraction
+      : frac || 0;
+    const livePct = Math.round(shownFrac * 100);
+    // Read-only once under review or later (same window as the statement), or
+    // after the server said so.
+    const answersLocked =
+      answersLockedByServer || isStatementLocked(app.status as string);
 
     // Requirements ordered by their orderIndex (backend sort key).
     const orderedReqs = [...requirements].sort(
@@ -1044,9 +1107,10 @@ export default function SelfServiceView() {
                   {livePct}%
                 </Text>
               </View>
-              <Progress value={frac || 0} height={7} />
+              <Progress value={shownFrac} height={7} />
 
-              {/* 3 counts with dividers: Uploaded · Verified (green) · Required */}
+              {/* Counts with dividers: Uploaded · Verified (green) · Answered (#187, only
+                  with typed details) · Required */}
               <View style={{ flexDirection: 'row', marginTop: 16 }}>
                 <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
                   <Text
@@ -1057,7 +1121,9 @@ export default function SelfServiceView() {
                       letterSpacing: -0.2,
                     }}
                   >
-                    {app.documentsUploaded}
+                    {checklistProgress
+                      ? checklistProgress.uploaded
+                      : app.documentsUploaded}
                   </Text>
                   <Text
                     style={{
@@ -1079,7 +1145,9 @@ export default function SelfServiceView() {
                       letterSpacing: -0.2,
                     }}
                   >
-                    {app.documentsVerified}
+                    {checklistProgress
+                      ? checklistProgress.verified
+                      : app.documentsVerified}
                   </Text>
                   <Text
                     style={{
@@ -1091,6 +1159,34 @@ export default function SelfServiceView() {
                     Verified
                   </Text>
                 </View>
+                {checklistProgress?.hasInformation ? (
+                  <>
+                    <View
+                      style={{ width: 1, backgroundColor: EX.color.line08 }}
+                    />
+                    <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
+                      <Text
+                        style={{
+                          fontSize: 20,
+                          fontWeight: '700',
+                          color: EX.color.ink,
+                          letterSpacing: -0.2,
+                        }}
+                      >
+                        {checklistProgress.answered}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11.5,
+                          color: EX.color.muted,
+                          fontWeight: '500',
+                        }}
+                      >
+                        Answered
+                      </Text>
+                    </View>
+                  </>
+                ) : null}
                 <View style={{ width: 1, backgroundColor: EX.color.line08 }} />
                 <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
                   <Text
@@ -1101,7 +1197,9 @@ export default function SelfServiceView() {
                       letterSpacing: -0.2,
                     }}
                   >
-                    {app.documentsRequired}
+                    {checklistProgress
+                      ? checklistProgress.required
+                      : app.documentsRequired}
                   </Text>
                   <Text
                     style={{
@@ -1203,7 +1301,9 @@ export default function SelfServiceView() {
             {/* ── Upload documents: the personal checklist (#114) with each item's
                 upload-check result (#115), then any leftover requirement cards.
                 japa#174: the empty / loading / error states of this step. ── */}
-            <SectionTitle>{`Step ${stepNo('documents')} · Upload documents`}</SectionTitle>
+            <SectionTitle>
+              {`Step ${stepNo('documents')} · ${hasInfoItems ? 'Documents and details' : 'Upload documents'}`}
+            </SectionTitle>
             {reqsLoading ? (
               <StateLoading section />
             ) : reqsError ? (
@@ -1280,6 +1380,22 @@ export default function SelfServiceView() {
                       ? () => router.push(`/self-service/${app.id}/intake`)
                       : undefined
                   }
+                  answersProps={{
+                    applicationId: app.id,
+                    answers: answersQ.data,
+                    answersLoading: answersQ.isLoading,
+                    answersError: answersQ.isError,
+                    onRetryAnswers: () => answersQ.refetch(),
+                    saveAnswer: (itemId: string, text: string) =>
+                      saveAnswerM.mutateAsync({ itemId, text }),
+                    locked: answersLocked,
+                    onLocked: () => setAnswersLockedByServer(true),
+                    onSeePlans: () => router.push(PLANS_ROUTE),
+                    onRefreshList: () => {
+                      checklistQ.refetch();
+                      answersQ.refetch();
+                    },
+                  }}
                   checksProps={{
                     checks: checksQ.data,
                     checksLoading: checksQ.isLoading,

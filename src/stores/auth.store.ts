@@ -7,6 +7,8 @@ import {
   ConfirmationResult,
 } from '@/services/auth.service';
 import { apiService } from '@/services/api.service';
+// #187: unsaved answer text (memory + encrypted vault) must not outlive the session.
+import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
 import { pushNotificationService } from '@/services/push-notification.service';
 import {
   UserProfile,
@@ -429,6 +431,18 @@ export const useAuthStore = create<AuthState>()(
     },
   ),
 );
+
+// #187: forget every unsaved answer the moment the user signs out (any path:
+// logout, account deletion, a session that ended). The drafts are personal
+// details (in memory and in the encrypted device vault); the next person on this device must never see them.
+// On sign-in, load THIS user's drafts and remove any other user's (a session that
+// ended while the app was closed never fired the sign-out above).
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated)
+    useAnswerDraftsStore.getState().clearAll();
+  else if (!prev.isAuthenticated && state.isAuthenticated && state.user?.uid)
+    void useAnswerDraftsStore.getState().loadFromVault(state.user.uid);
+});
 
 // Hook to check if auth store is hydrated
 export const useAuthHydration = () => {
