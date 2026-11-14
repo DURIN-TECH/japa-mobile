@@ -89,4 +89,9 @@ export interface CreateApplicationInput {
   mode: ApplicationMode;
   agentId?: string;
   userNotes?: string;
+  /**
+   * #253: set to true once the user confirmed "start another" after the
+   * backend answered 409 DUPLICATE_ACTIVE_APPLICATION. Never sent otherwise.
+   */
+  confirmNew?: boolean;
 }

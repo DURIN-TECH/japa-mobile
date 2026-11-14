@@ -863,6 +863,10 @@ export default function DestinationDetail() {
         failure={startApp.failure}
         onStart={startApp.start}
         onDismissUpgrade={startApp.dismissUpgrade}
+        duplicate={startApp.duplicate}
+        onContinueExisting={startApp.continueExisting}
+        onStartAnyway={startApp.startAnyway}
+        onDismissDuplicate={startApp.dismissDuplicate}
       />
     </View>
   );

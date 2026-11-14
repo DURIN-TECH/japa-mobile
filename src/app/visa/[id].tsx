@@ -540,6 +540,10 @@ export default function VisaBreakdown() {
         failure={startApp.failure}
         onStart={startApp.start}
         onDismissUpgrade={startApp.dismissUpgrade}
+        duplicate={startApp.duplicate}
+        onContinueExisting={startApp.continueExisting}
+        onStartAnyway={startApp.startAnyway}
+        onDismissDuplicate={startApp.dismissDuplicate}
       />
     </View>
   );
