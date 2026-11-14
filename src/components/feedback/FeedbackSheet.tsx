@@ -334,8 +334,10 @@ export function FeedbackSheet({
     >
       {/* Backdrop: a lighter veil than on photos; tapping it asks to close. */}
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        {/* Hidden from screen readers: the Cancel button does the same job. */}
         <Pressable
-          accessibilityLabel={C.cancel}
+          accessible={false}
+          importantForAccessibility="no"
           onPress={requestClose}
           disabled={sending}
           style={{

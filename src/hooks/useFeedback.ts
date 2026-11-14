@@ -74,16 +74,22 @@ export async function submitFeedback(
         const up = await apiService.post<{
           uploadUrl: string;
           storagePath: string;
+          uploadHeaders?: Record<string, string>;
         }>('/feedback/screenshot-url', {
           fileName: SCREENSHOT_FILE.name,
           contentType: SCREENSHOT_FILE.type,
         });
         if (!up.data) throw new Error('No upload URL returned');
-        await uploadToStorage(up.data.uploadUrl, {
-          uri: input.screenshotUri,
-          type: SCREENSHOT_FILE.type,
-          name: SCREENSHOT_FILE.name,
-        });
+        await uploadToStorage(
+          up.data.uploadUrl,
+          {
+            uri: input.screenshotUri,
+            type: SCREENSHOT_FILE.type,
+            name: SCREENSHOT_FILE.name,
+          },
+          // The signature binds the 5 MB size cap; the PUT must carry it.
+          up.data.uploadHeaders,
+        );
         screenshotPath = up.data.storagePath;
         if (cache) {
           cache.current = {

@@ -28,7 +28,7 @@ const upload = uploadAsync as unknown as jest.Mock<
 const input = {
   kind: 'bug' as const,
   message: '  It broke  ',
-  route: '/(tabs)/home',
+  route: '/home',
   screenshotUri: 'file:///shot.jpg' as string | null,
 };
 
@@ -80,7 +80,7 @@ describe('submitFeedback', () => {
     expect(body).toMatchObject({
       kind: 'bug',
       message: 'It broke',
-      route: '/(tabs)/home',
+      route: '/home',
       screenshotPath: 'users/u1/feedback/abc_feedback.jpg',
       appEnv: 'development',
     });
@@ -136,5 +136,39 @@ describe('submitFeedback', () => {
     expect(post.mock.calls[0][1]).toMatchObject({
       screenshotPath: 'users/u1/feedback/abc_feedback.jpg',
     });
+  });
+});
+
+describe('submitFeedback upload headers', () => {
+  it('sends the size-cap header from the signed URL with the PUT', async () => {
+    post.mockImplementation(async (...args: unknown[]) =>
+      args[0] === '/feedback/screenshot-url'
+        ? {
+            success: true,
+            data: {
+              uploadUrl: 'https://signed/put',
+              storagePath: 'users/u1/feedback/a_f.jpg',
+              uploadHeaders: { 'x-goog-content-length-range': '0,5242880' },
+            },
+          }
+        : { success: true, data: { id: 'fb1' } },
+    );
+    upload.mockResolvedValue({ status: 200 });
+    await submitFeedback({
+      kind: 'bug',
+      message: 'x',
+      route: '/home',
+      screenshotUri: 'file:///s.jpg',
+    });
+    expect(upload).toHaveBeenCalledWith(
+      'https://signed/put',
+      'file:///s.jpg',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-goog-content-length-range': '0,5242880',
+          'Content-Type': 'image/jpeg',
+        }),
+      }),
+    );
   });
 });

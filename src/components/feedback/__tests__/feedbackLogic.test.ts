@@ -72,7 +72,7 @@ describe('isFeedbackEnabledFlag', () => {
 
 describe('routeFromSegments', () => {
   it('builds a params-free pattern, never a record id', () => {
-    expect(routeFromSegments(['(tabs)', 'home'])).toBe('/(tabs)/home');
+    expect(routeFromSegments(['(tabs)', 'home'])).toBe('/home');
     expect(routeFromSegments(['application', '[id]'])).toBe(
       '/application/[id]',
     );
@@ -125,5 +125,12 @@ describe('sendErrorMessage', () => {
     );
     expect(sendErrorMessage(new Error('x'))).toBe(FEEDBACK_COPY.errorGeneric);
     expect(sendErrorMessage(undefined)).toBe(FEEDBACK_COPY.errorGeneric);
+  });
+});
+
+describe('routeFromSegments route groups', () => {
+  it('drops (group) segments', () => {
+    expect(routeFromSegments(['(tabs)', 'home'])).toBe('/home');
+    expect(routeFromSegments(['(auth)', '(x)', 'login'])).toBe('/login');
   });
 });

@@ -37,7 +37,7 @@ import { authService } from '@/services/auth.service';
 // the auth store (PATCH /users/me/notification-preferences).
 import { useAuthStore } from '@/stores/auth.store';
 // Feedback button toggle (issue #257).
-import { FEEDBACK_ENABLED } from '@/config/feedback';
+import { FEEDBACK_ENABLED } from '@/config/env';
 import { FEEDBACK_COPY } from '@/components/feedback/feedbackLogic';
 import { useSettingsStore } from '@/stores/settings.store';
 // Privacy row value (#172): approved / included in plan / not approved / off for all.

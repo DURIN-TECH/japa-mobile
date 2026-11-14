@@ -27,9 +27,14 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   apiUrl?: string;
   useEmulator?: boolean;
   emulatorProjectId?: string;
+  feedbackEnabled?: boolean;
 };
 
 export const APP_ENV: AppEnv = extra.appEnv ?? 'development';
+// Whether this build ships the feedback button (issue #257); baked in by
+// app.config.ts from EXPO_PUBLIC_FEEDBACK_ENABLED. On unless explicitly false.
+export const FEEDBACK_ENABLED = extra.feedbackEnabled !== false;
+
 export const IS_PROD = APP_ENV === 'production';
 
 // The Firebase project this build's native config (google-services / plist) targets.

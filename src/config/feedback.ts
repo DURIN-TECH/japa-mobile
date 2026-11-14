@@ -1,20 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Feedback build flag (issue #257).
+// Feedback build flag parser (issue #257).
 //
 // `EXPO_PUBLIC_FEEDBACK_ENABLED=false` in a build's environment removes the
-// floating feedback button and its Settings row for that build (for example a
-// store release that testers should not see). Anything else, including unset,
-// leaves the feature on. Expo inlines `EXPO_PUBLIC_*` values at bundle time,
-// which is why this one flag is read from `process.env` here: it is a UI
-// switch, not backend/Firebase routing (that stays in `config/env.ts`).
+// floating feedback button and its Settings row for that build. Anything else,
+// including unset, leaves the feature on.
+//
+// app.config.ts repeats this rule (the Expo config loader cannot import local
+// TS files) and bakes the result into expo `extra.feedbackEnabled`. Runtime
+// code reads it from `FEEDBACK_ENABLED` in `config/env.ts`, never `process.env`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** True unless the build sets EXPO_PUBLIC_FEEDBACK_ENABLED to exactly "false". */
+/** True unless the value is exactly "false" (case and spaces ignored). */
 export function isFeedbackEnabledFlag(value: string | undefined): boolean {
   return value?.trim().toLowerCase() !== 'false';
 }
-
-/** Whether this build ships the feedback feature at all. */
-export const FEEDBACK_ENABLED = isFeedbackEnabledFlag(
-  process.env.EXPO_PUBLIC_FEEDBACK_ENABLED,
-);

@@ -68,5 +68,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     apiUrl: API_URL,
     useEmulator: USE_EMULATOR,
     emulatorProjectId: EMULATOR_PROJECT_ID,
+    // Feedback button build flag (EXPO_PUBLIC_FEEDBACK_ENABLED=false removes it).
+    // Same rule as isFeedbackEnabledFlag in src/config/feedback.ts (the config
+    // loader cannot import local TS files, so it is repeated here).
+    feedbackEnabled:
+      process.env.EXPO_PUBLIC_FEEDBACK_ENABLED?.trim().toLowerCase() !==
+      'false',
   },
 });

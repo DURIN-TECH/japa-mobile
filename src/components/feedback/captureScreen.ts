@@ -1,3 +1,4 @@
+import { deleteAsync } from 'expo-file-system/legacy';
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen capture for the feedback button (issue #257).
 //
@@ -21,7 +22,19 @@ function nextFrames(count = 2): Promise<void> {
  * Returns the file uri, or null when capture is unavailable or fails.
  * The caller must hide the button and sheet BEFORE calling.
  */
-export async function captureCurrentScreen(): Promise<string | null> {
+export const CAPTURE_TIMEOUT_MS = 2000;
+
+export async function captureCurrentScreen(
+  timeoutMs = CAPTURE_TIMEOUT_MS,
+): Promise<string | null> {
+  // A capture that hangs must not keep the button hidden: give up after ~2s.
+  const timeout = new Promise<null>((resolve) =>
+    setTimeout(() => resolve(null), timeoutMs),
+  );
+  return Promise.race([doCapture(), timeout]);
+}
+
+async function doCapture(): Promise<string | null> {
   try {
     await nextFrames();
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -40,5 +53,15 @@ export async function captureCurrentScreen(): Promise<string | null> {
     return typeof uri === 'string' && uri.length > 0 ? uri : null;
   } catch {
     return null;
+  }
+}
+
+/** Delete a captured temp file (best effort; a missing file is fine). */
+export async function deleteCapture(uri: string | null): Promise<void> {
+  if (!uri) return;
+  try {
+    await deleteAsync(uri, { idempotent: true });
+  } catch {
+    // Nothing to do: the OS clears the cache directory eventually.
   }
 }

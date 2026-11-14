@@ -97,11 +97,12 @@ export function shouldShowFeedbackButton(i: ButtonVisibilityInput): boolean {
 
 /**
  * The screen the tester is on, WITHOUT params: the route pattern built from
- * the segments ("/application/[id]", "/(tabs)/home"), so no record id or
+ * the segments ("/application/[id]", "/home"; route groups dropped), so no record id or
  * query string ever leaves the device. Capped at the backend's 200 characters.
  */
 export function routeFromSegments(segments: readonly string[]): string {
-  const route = '/' + segments.join('/');
+  // Route groups like "(tabs)" are layout detail, not screens: drop them.
+  const route = '/' + segments.filter((s) => !/^\(.*\)$/.test(s)).join('/');
   return route.slice(0, 200);
 }
 

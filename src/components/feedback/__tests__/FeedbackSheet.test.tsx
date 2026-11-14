@@ -48,7 +48,7 @@ function mount(over: Partial<React.ComponentProps<typeof FeedbackSheet>> = {}) {
         visible
         screenshotUri="file:///shot.jpg"
         captureFailed={false}
-        route="/(tabs)/home"
+        route="/home"
         onClose={onClose}
         send={send as never}
         {...over}
@@ -136,7 +136,7 @@ describe('FeedbackSheet', () => {
     expect(send.mock.calls[0][0]).toEqual({
       kind: 'idea',
       message: 'Dark mode please',
-      route: '/(tabs)/home',
+      route: '/home',
       screenshotUri: 'file:///shot.jpg',
     });
     expect(hasText(r, C.successTitle)).toBe(true);

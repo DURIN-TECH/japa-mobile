@@ -9,17 +9,17 @@
 // was looking at, not the sheet.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Keyboard, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSegments } from 'expo-router';
-import { captureCurrentScreen } from './captureScreen';
+import { captureCurrentScreen, deleteCapture } from './captureScreen';
 import { FeedbackButton } from './FeedbackButton';
 import { FeedbackSheet } from './FeedbackSheet';
 import { routeFromSegments, shouldShowFeedbackButton } from './feedbackLogic';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
-import { FEEDBACK_ENABLED } from '@/config/feedback';
+import { FEEDBACK_ENABLED } from '@/config/env';
 
 /** Tracks whether the on-screen keyboard is open (the button hides while it is). */
 function useKeyboardOpen(): boolean {
@@ -54,6 +54,9 @@ export function FeedbackHost() {
     open: boolean;
   } | null>(null);
 
+  // The temp JPEG of the sheet being shown; deleted when the sheet is dropped.
+  const shotRef = useRef<string | null>(null);
+
   const visible = shouldShowFeedbackButton({
     buildEnabled: FEEDBACK_ENABLED,
     userEnabled,
@@ -73,6 +76,9 @@ export function FeedbackHost() {
     setCapturing(true);
     const uri = await captureCurrentScreen();
     setCapturing(false);
+    // A previous sheet's file that was not dropped yet is no longer needed.
+    deleteCapture(shotRef.current);
+    shotRef.current = uri;
     setSheet({ id: Date.now(), screenshotUri: uri, route, open: true });
   }, [capturing, segments]);
 
@@ -81,13 +87,22 @@ export function FeedbackHost() {
   const close = useCallback(() => {
     setSheet((s) => (s ? { ...s, open: false } : s));
     setTimeout(() => {
-      setSheet((s) => (s && !s.open ? null : s));
+      setSheet((s) => {
+        if (s && !s.open) {
+          deleteCapture(s.screenshotUri);
+          return null;
+        }
+        return s;
+      });
     }, 500);
   }, []);
 
   // Signing out (or a route change into auth) while the sheet is open closes it.
   useEffect(() => {
-    if (!isAuthenticated) setSheet(null);
+    if (!isAuthenticated) {
+      deleteCapture(shotRef.current);
+      setSheet(null);
+    }
   }, [isAuthenticated]);
 
   if (!FEEDBACK_ENABLED || !isAuthenticated) return null;
