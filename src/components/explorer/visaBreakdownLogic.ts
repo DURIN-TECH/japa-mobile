@@ -7,6 +7,7 @@
 // data, never the text "undefined".
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { formatMoney, minorUnitFactor } from './content';
 import type { VisaType } from '@/types/visas.type';
 
 /** Icon keys resolved to `Ic.*` by the component (keeps this file UI-free). */
@@ -28,10 +29,33 @@ const positive = (n: unknown): n is number =>
 // Trimmed text, or '' for anything that is not a string.
 const text = (s: unknown): string => (typeof s === 'string' ? s.trim() : '');
 
-/** Dollar price in the same format as the destination "Starting at" ($1,200). */
+/**
+ * A GOVERNMENT fee (`baseCostUsd`, whole US dollars) as "$1,200" (japa#183).
+ * Government fees are not service prices: they stay in US dollars, never get
+ * a naira figure next to them, and are always labelled "government fee" /
+ * "Paid in US dollars" (copy below). Formatted through the one money
+ * formatter (dollars to cents is the USD exponent, not a conversion).
+ */
 export function formatCostUsd(n: number): string {
-  return `$${Math.round(n).toLocaleString()}`;
+  return formatMoney(
+    { amountMinor: Math.round(n) * minorUnitFactor('USD'), currency: 'USD' },
+    { whole: true },
+  );
 }
+
+/** Copy for government fees (japa#183, resolves #177). */
+export const GOV_FEE_COPY = {
+  /** Bottom bar label (visa + destination), replaces "Starting at". */
+  barLabel: 'Government fee from',
+  /** Caption under the bar value. */
+  caption: 'Paid in US dollars',
+  /** Destination stats-row cell label. */
+  statLabel: 'Gov. fee from',
+  /** Tile / home-card chip prefix: "Fee from $120". */
+  chipPrefix: 'Fee from',
+  /** Visa breakdown row label. */
+  rowLabel: 'Government fee',
+} as const;
 
 /**
  * Processing time text: "30 to 60 days" when min and max are both > 0 and
@@ -67,8 +91,9 @@ export function costTimelineRows(
     rows.push({
       key: 'cost',
       icon: 'cards',
-      label: 'Visa cost',
+      label: GOV_FEE_COPY.rowLabel,
       value: formatCostUsd(v.baseCostUsd),
+      hint: GOV_FEE_COPY.caption,
     });
   }
 

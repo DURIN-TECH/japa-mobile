@@ -16,8 +16,6 @@
  * crash the app. In __DEV__ mode, failures are logged as warnings.
  */
 
-import { minorUnitFactor } from '@/components/explorer/content';
-import type { Money } from '@/types/money.type';
 import { getApp } from '@react-native-firebase/app';
 import {
   getAnalytics,
@@ -29,6 +27,8 @@ import {
   setUserId,
   setUserProperty,
 } from '@react-native-firebase/analytics';
+import { minorUnitFactor } from '@/components/explorer/content';
+import type { Money } from '@/types/money.type';
 
 /**
  * Minor units → major units in the money's OWN currency (japa#183): kobo /

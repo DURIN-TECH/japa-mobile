@@ -115,7 +115,10 @@ export function normalizeVisaPrices(raw: unknown): PublicVisaPrice[] {
     const v = item as Record<string, unknown>;
     if (typeof v.visaTypeId !== 'string' || !v.visaTypeId) continue;
     if (typeof v.countryCode !== 'string' || !v.countryCode) continue;
-    const usd = v.priceUsd as { amountMinor?: unknown; currency?: unknown } | null;
+    const usd = v.priceUsd as {
+      amountMinor?: unknown;
+      currency?: unknown;
+    } | null;
     const priceUsd =
       usd &&
       typeof usd.amountMinor === 'number' &&

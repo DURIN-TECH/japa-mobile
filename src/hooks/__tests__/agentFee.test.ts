@@ -65,9 +65,9 @@ describe('agent consultation fee carries the server objects, unconverted', () =>
       agent({ consultationFeeUsd: null, consultationFeeLocal: null }),
     );
     expect(free.feeUsd).toBeNull();
-    expect(priceParts(free.feeLocal, free.feeUsd, { freeWhenNoUsd: true }).primary).toBe(
-      'Free',
-    );
+    expect(
+      priceParts(free.feeLocal, free.feeUsd, { freeWhenNoUsd: true }).primary,
+    ).toBe('Free');
   });
 
   it('an unavailable local quote shows the dollar price only', () => {

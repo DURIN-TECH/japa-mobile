@@ -13,7 +13,11 @@
  * unit-tested directly.
  */
 
-import { formatMoney, priceParts, type PriceParts } from '@/components/explorer/content';
+import {
+  formatMoney,
+  priceParts,
+  type PriceParts,
+} from '@/components/explorer/content';
 import type { PaymentRequest } from '@/types/payment-requests.type';
 
 /** The Paystack checkout URL from an approve response, or null if unusable. */

@@ -12,6 +12,7 @@
  * directly; pay.tsx wires it to the hooks in useConsultations.ts.
  */
 
+import type { ApiTimestamp, BookingSummary } from './useConsultations';
 import { toDate } from '@/components/explorer/liveDate';
 import {
   formatMoney,
@@ -19,7 +20,6 @@ import {
   usdCents,
 } from '@/components/explorer/content';
 import type { Money } from '@/types/money.type';
-import type { ApiTimestamp, BookingSummary } from './useConsultations';
 
 // ─────────────────────────────────────────────
 // THE LOCKED QUOTE
@@ -214,7 +214,10 @@ export function classifyConsultationPayError(error: unknown): PayErrorVerdict {
   const status = typeof e.status === 'number' ? e.status : 0;
 
   if (code === 'PRICING_UNAVAILABLE' || status === 503) {
-    return { kind: 'pricing_unavailable', message: PAY_COPY.pricingUnavailable };
+    return {
+      kind: 'pricing_unavailable',
+      message: PAY_COPY.pricingUnavailable,
+    };
   }
   if (code === 'PAYMENT_IN_PROGRESS') {
     return { kind: 'in_progress', message: PAY_COPY.inProgress };
@@ -229,7 +232,9 @@ export function classifyConsultationPayError(error: unknown): PayErrorVerdict {
       kind: 'new_checkout',
       message: PAY_COPY.newPrice,
       authorizationUrl:
-        typeof data.authorizationUrl === 'string' ? data.authorizationUrl : null,
+        typeof data.authorizationUrl === 'string'
+          ? data.authorizationUrl
+          : null,
       reference: typeof data.reference === 'string' ? data.reference : null,
       consultation:
         data.consultation && typeof data.consultation === 'object'

@@ -24,6 +24,10 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
+import {
+  GOV_FEE_COPY,
+  formatCostUsd,
+} from '@/components/explorer/visaBreakdownLogic';
 import { STATUS } from '@/components/explorer/content';
 import type { App, Dest } from '@/types/explorer.type';
 // ── Live adapters + React Query hooks (japa#145: live only) ──────────
@@ -219,8 +223,9 @@ function RecoCard({ d, onPress }: { d: Dest; onPress: () => void }) {
             paddingVertical: 4,
           }}
         >
+          {/* Government fee chip (japa#183): dollars only. */}
           <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}>
-            ${d.price.toLocaleString()}
+            {`${GOV_FEE_COPY.chipPrefix} ${formatCostUsd(d.price)}`}
           </Text>
         </BlurView>
       </View>

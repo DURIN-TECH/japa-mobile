@@ -272,7 +272,9 @@ export function priceParts(
  * The calm note shown when the server could not give a local figure:
  * "Naira price unavailable" for NGN, else "Local price unavailable".
  */
-export function localUnavailableNote(currency: string | null | undefined): string {
+export function localUnavailableNote(
+  currency: string | null | undefined,
+): string {
   return (currency ?? '').toUpperCase() === 'NGN'
     ? 'Naira price unavailable'
     : 'Local price unavailable';

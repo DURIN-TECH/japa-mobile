@@ -20,7 +20,10 @@ import {
 import type { LocalPriceQuote } from '@/types/money.type';
 
 /** A read quote as GET /agents returns it. */
-const quote = (amountMinor: number | null, currency = 'NGN'): LocalPriceQuote =>
+const quote = (
+  amountMinor: number | null,
+  currency = 'NGN',
+): LocalPriceQuote =>
   amountMinor === null
     ? { amountMinor: null, currency, rate: null, asOf: null, available: false }
     : {
@@ -76,9 +79,9 @@ describe('formatMoney', () => {
   it('null / malformed gives an empty string', () => {
     expect(formatMoney(null)).toBe('');
     expect(formatMoney(undefined)).toBe('');
-    expect(
-      formatMoney({ amountMinor: NaN, currency: 'NGN' } as never),
-    ).toBe('');
+    expect(formatMoney({ amountMinor: NaN, currency: 'NGN' } as never)).toBe(
+      '',
+    );
   });
 });
 
@@ -137,9 +140,9 @@ describe('priceParts', () => {
   });
 
   it('$0 reads Free; a null price is Free only when asked', () => {
-    expect(priceParts(quote(0), { amountMinor: 0, currency: 'USD' }).primary).toBe(
-      'Free',
-    );
+    expect(
+      priceParts(quote(0), { amountMinor: 0, currency: 'USD' }).primary,
+    ).toBe('Free');
     expect(priceParts(null, null, { freeWhenNoUsd: true }).free).toBe(true);
     expect(priceParts(null, null).primary).toBe('');
   });

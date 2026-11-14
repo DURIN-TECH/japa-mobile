@@ -355,7 +355,10 @@ describe('pay.tsx booking (japa#183)', () => {
   });
 
   it('other failures (502 / network) never crash and keep the retry', async () => {
-    mockCreate.mockRejectedValue({ code: 'BILLING_PROVIDER_ERROR', status: 502 });
+    mockCreate.mockRejectedValue({
+      code: 'BILLING_PROVIDER_ERROR',
+      status: 502,
+    });
     const tree = await render();
     expect(text(tree)).toContain(PAY_COPY.error);
     expect(text(tree)).toContain('Try again');

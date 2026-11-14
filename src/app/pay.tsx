@@ -403,8 +403,7 @@ export default function PayScreen() {
   ) => {
     // Prefer the server's summary; fall back to the quote that was shown.
     const charged: Money | null =
-      typeof summary?.chargedAmountMinor === 'number' &&
-      summary.chargedCurrency
+      typeof summary?.chargedAmountMinor === 'number' && summary.chargedCurrency
         ? {
             amountMinor: summary.chargedAmountMinor,
             currency: summary.chargedCurrency,
@@ -1094,7 +1093,11 @@ export default function PayScreen() {
               }}
             >
               <Text
-                style={{ fontSize: 15.5, fontWeight: '700', color: EX.color.ink }}
+                style={{
+                  fontSize: 15.5,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                }}
               >
                 Total
               </Text>

@@ -71,7 +71,7 @@ describe('countdown', () => {
   });
 
   it('keeps the earlier offset when a summary has no quoteLockedAt', () => {
-    const { quoteLockedAt: _drop, ...summary } = booking;
+    const summary = { ...booking, quoteLockedAt: undefined };
     const q = lockedQuoteFrom(summary, checkout, LOCKED, -60_000)!;
     expect(q.clockOffsetMs).toBe(-60_000);
   });
@@ -126,7 +126,11 @@ describe('classifyConsultationPayError', () => {
     const v = classifyConsultationPayError({
       code: 'QUOTE_EXPIRED',
       status: 409,
-      data: { authorizationUrl: 'https://new', reference: 'r2', consultation: booking },
+      data: {
+        authorizationUrl: 'https://new',
+        reference: 'r2',
+        consultation: booking,
+      },
     });
     expect(v.kind).toBe('new_checkout');
     if (v.kind !== 'new_checkout') return;
