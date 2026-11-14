@@ -161,6 +161,27 @@ class AnalyticsService {
   }
 
   // ─────────────────────────────────────────────
+  // WHAT YOU ALREADY HOLD (japa#234)
+  // Names only, NO properties: never a nationality, country code, document kind,
+  // issuer or date. Those are personal data and stay out of analytics.
+  // ─────────────────────────────────────────────
+  async trackHoldingsEvent(
+    name:
+      | 'holdings_viewed'
+      | 'holdings_nationality_added'
+      | 'holdings_residence_saved'
+      | 'holdings_document_added'
+      | 'holdings_document_removed'
+      | 'holdings_none_declared',
+  ) {
+    try {
+      await logEvent(this.analytics, name);
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics holdings error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // REVIEW EVENTS (issue #43)
   // The application review: started, viewed, upgrade prompt tapped, rule source
   // opened. `tier` is the tier the SERVER answered with; `band` is the readiness
