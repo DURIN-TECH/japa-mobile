@@ -357,6 +357,10 @@ export default function PayScreen() {
   const [quote, setQuote] = useState<LockedQuote | null>(null);
   // True after a checkout came back unpaid: CTA reads "Open checkout".
   const [attempted, setAttempted] = useState(false);
+  // True after the verify CALL itself failed (network / 5xx) once Paystack
+  // closed: the person may have paid, so the CTA reads "Check again" and
+  // only re-verifies the same reference. It never opens a checkout.
+  const [recheck, setRecheck] = useState(false);
   // Device clock, ticked once a second while a quote is locked.
   const [now, setNow] = useState(() => Date.now());
   // Refs mirror the latest values for async handlers (no stale closures).
@@ -378,6 +382,7 @@ export default function PayScreen() {
     quoteRef.current = q;
     bookingIdRef.current = q.consultationId;
     setQuote(q);
+    setRecheck(false);
     setPhase('locked');
     setNow(Date.now());
   };
@@ -389,6 +394,7 @@ export default function PayScreen() {
     resumeRef.current = false;
     setQuote(null);
     setAttempted(false);
+    setRecheck(false);
   };
 
   /**
@@ -403,12 +409,15 @@ export default function PayScreen() {
     resumeRef.current = false;
     setQuote(null);
     setAttempted(false);
+    setRecheck(false);
     setPhase('blocked');
   };
 
   // Seconds left on the lock (null before a quote / without an expiry).
   const secondsLeft = quote ? quoteSecondsLeft(quote, now) : null;
-  const expired = phase === 'locked' && secondsLeft === 0;
+  // While a payment still needs checking (`recheck`) the quote is NOT treated
+  // as expired: "Refresh price" would re-price a booking that may be paid.
+  const expired = phase === 'locked' && secondsLeft === 0 && !recheck;
 
   // Tick the countdown once a second while a quote is locked.
   useEffect(() => {
@@ -675,8 +684,55 @@ export default function PayScreen() {
   };
 
   // ── Pay a booking ─────────────────────────────────────────────────────────
+  /**
+   * After a verify call that failed outright (network / 5xx): settle what
+   * happened to the checkout that was open, WITHOUT opening anything. Used
+   * by both the first failure's follow-up and every "Check again" press.
+   *
+   * @param q the quote whose reference was (or is being) verified
+   */
+  const finishVerify = (verdict: VerifyVerdict, q: LockedQuote) => {
+    if (verdict === 'paid') {
+      setRecheck(false);
+      bookingPaid(paidSummaryRef.current, q);
+      return;
+    }
+    // Verify answered: we now know it is not paid (or what else is up).
+    setRecheck(false);
+    const verifyKind = verifyKindRef.current;
+    setAttempted(!(verifyKind && VERIFY_ENDS_CHECKOUT.has(verifyKind)));
+    setPayError(verifyNoteRef.current ?? PAY_COPY.notCompleted);
+  };
+
+  // ── "Check again": re-verify the SAME reference ────────────────────────────
+  // No browser, no /checkout, no new booking: only POST /consultations/
+  // public/verify with the reference that was just used. If the call fails
+  // again the screen stays as it is (still "Check again").
+  const onCheckAgain = async () => {
+    const q = quoteRef.current;
+    if (processing || !q) return;
+    setPayError(null);
+    setProcessing(true);
+    verifyNoteRef.current = null;
+    verifyKindRef.current = null;
+    paidSummaryRef.current = null;
+    try {
+      const verdict = await verifyBooking(q);
+      setProcessing(false);
+      finishVerify(verdict, q);
+    } catch {
+      setProcessing(false);
+      setPayError(PAY_COPY.verifyFailed);
+    }
+  };
+
   const onPayBooking = async () => {
     if (processing) return;
+    // A payment is waiting to be checked: check it, never open a checkout.
+    if (recheck) {
+      await onCheckAgain();
+      return;
+    }
     // Expired: the CTA is "Refresh price" (no method needed to re-price).
     if (expired) {
       await requestQuote();
@@ -745,17 +801,25 @@ export default function PayScreen() {
       setPayError(OPEN_CHECKOUT_ERROR_MESSAGE);
       return;
     }
+    if (outcome.kind === 'error') {
+      // The verify CALL failed after Paystack closed (network / 5xx). They
+      // may have paid: never "Nothing was charged", never "pay again". The
+      // CTA becomes "Check again" (re-verify, same reference). Without a
+      // reference there is nothing to re-check: the plain error + reopen.
+      if (q.reference) {
+        setRecheck(true);
+        setPayError(PAY_COPY.verifyFailed);
+      } else {
+        setAttempted(true);
+        setPayError(PAY_COPY.error);
+      }
+      return;
+    }
     // Not paid: stay, with "Open checkout" as the retry. NOT when verify
     // ended that checkout (a new price reads "Pay {new amount}"; a closed
     // booking shows "Try again"; a blocked screen shows no control): setting
     // `attempted` there would mislabel the CTA for the next quote.
-    const verifyKind = verifyKindRef.current;
-    setAttempted(!(verifyKind && VERIFY_ENDS_CHECKOUT.has(verifyKind)));
-    setPayError(
-      outcome.kind === 'error'
-        ? PAY_COPY.error
-        : (verifyNoteRef.current ?? PAY_COPY.notCompleted),
-    );
+    finishVerify('not_paid', q);
   };
 
   // ── Payment request (application path) ────────────────────────────────────
@@ -841,15 +905,17 @@ export default function PayScreen() {
   const bookingQuoteDown = phase === 'unavailable' || phase === 'failed';
   const ctaEnabled = isApp
     ? !processing
-    : !processing && (expired || (phase === 'locked' && !!method));
+    : !processing && (expired || (phase === 'locked' && (recheck || !!method)));
   const ctaLabel = isApp
     ? 'I’ve paid — confirm'
     : expired
       ? 'Refresh price'
       : phase === 'locked' && quote
-        ? attempted
-          ? 'Open checkout'
-          : `Pay ${formatMoney(quote.charged)}`
+        ? recheck
+          ? 'Check again'
+          : attempted
+            ? 'Open checkout'
+            : `Pay ${formatMoney(quote.charged)}`
         : 'Pay';
   // Loading the quote shows a white spinner in place of the label.
   const ctaBusy = processing || (!isApp && phase === 'loading');

@@ -187,6 +187,11 @@ export const PAY_COPY = {
   // Verify was refused for a reason other than "not paid yet".
   unconfirmed:
     'We couldn’t confirm this payment. If you’ve already paid, don’t pay again: contact support and we’ll sort it out.',
+  // The verify CALL failed (network / 5xx) after Paystack closed: we do not
+  // know whether they paid, so never "Nothing was charged". The CTA becomes
+  // "Check again", which re-verifies the SAME reference (no new checkout).
+  verifyFailed:
+    'We couldn’t check your payment just now. If you paid, don’t pay again. Tap Check again.',
   error: 'We couldn’t complete that. Nothing was charged. Try again.',
 } as const;
 

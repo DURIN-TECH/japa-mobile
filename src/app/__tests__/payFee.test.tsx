@@ -579,6 +579,76 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
     expect(tryAgain(tree)).toBeDefined();
   });
 
+  it('verify network / 5xx after Paystack: no "Nothing was charged", "Check again" re-verifies the same reference', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockRejectedValue({ code: 'NETWORK_ERROR', status: 0 }),
+    );
+    let t = text(tree);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(t).toContain(PAY_COPY.verifyFailed);
+    expect(t).not.toContain('Nothing was charged');
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+    expect(cta(tree).props.disabled).toBe(false);
+
+    // A 5xx on the re-check: still "Check again", still nothing opened.
+    mockOpenAuth.mockClear();
+    mockVerify.mockReset();
+    mockVerify.mockRejectedValue({ code: 'INTERNAL_ERROR', status: 500 });
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    t = text(tree);
+    expect(mockVerify).toHaveBeenCalledWith('cons-ref-1');
+    expect(t).toContain(PAY_COPY.verifyFailed);
+    expect(t).not.toContain('Nothing was charged');
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+
+    // The re-check gets through and the booking IS paid: confirmation,
+    // with the SAME reference, no checkout opened, no /checkout, no rebook.
+    mockVerify.mockReset();
+    mockVerify.mockResolvedValue({
+      verified: true,
+      consultation: { ...paidBooking(), paymentStatus: 'paid' },
+    });
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockVerify).toHaveBeenCalledTimes(1);
+    expect(mockVerify).toHaveBeenCalledWith('cons-ref-1');
+    expect(mockOpenAuth).not.toHaveBeenCalled();
+    expect(mockCheckout).not.toHaveBeenCalled();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    const arg = mockPush.mock.calls[0][0] as {
+      pathname: string;
+      params: Record<string, string>;
+    };
+    expect(arg.pathname).toBe('/confirmation');
+    expect(arg.params.paidAmountMinor).toBe('4738940');
+  });
+
+  it('"Check again" that finds the checkout unpaid goes back to "Open checkout"', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockRejectedValue({
+        code: 'BILLING_PROVIDER_ERROR',
+        status: 502,
+      }),
+    );
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+    mockVerify.mockReset();
+    mockVerify.mockRejectedValue({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      message: 'Payment has not been completed',
+    });
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(text(tree)).toContain(PAY_COPY.notCompleted);
+    expect(cta(tree).props.accessibilityLabel).toBe('Open checkout');
+  });
+
   it('create 402 monthly limit: its own message, no retry, Pay disabled', async () => {
     mockCreate.mockRejectedValue({
       code: 'UPGRADE_REQUIRED',
