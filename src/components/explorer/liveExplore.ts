@@ -91,11 +91,17 @@ export function mapVisasToDests(
     byCode.set(c.code.toLowerCase(), c);
   });
   const dests = visas.map((v) => mapVisaToDest(v, byCode));
-  // Feature the most-applied route so the grid has a lead tile.
+  // Feature the most-applied route so the grid has a lead tile. Prefer real
+  // (scraped) visas: candidates are the scraped ones, or the whole list when
+  // none are scraped. Strict `>` keeps the earlier (server-order) one on ties.
   if (dests.length && !dests.some((d) => d.featured)) {
-    let leadIdx = 0;
-    dests.forEach((d, i) => {
-      if (d.applied > dests[leadIdx].applied) leadIdx = i;
+    const scraped = visas
+      .map((v, i) => (v.source === 'scraped' ? i : -1))
+      .filter((i) => i >= 0);
+    const candidates = scraped.length ? scraped : dests.map((_, i) => i);
+    let leadIdx = candidates[0];
+    candidates.forEach((i) => {
+      if (dests[i].applied > dests[leadIdx].applied) leadIdx = i;
     });
     dests[leadIdx] = { ...dests[leadIdx], featured: true };
   }

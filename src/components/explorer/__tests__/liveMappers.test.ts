@@ -214,6 +214,32 @@ describe('liveExplore', () => {
     expect(mapVisasToDests([], [])).toEqual([]);
   });
 
+  it('leads with the most-applied SCRAPED visa, else the whole list', () => {
+    const countries = [{ code: 'GB', name: 'United Kingdom' } as never];
+    const lead = (vs: VisaType[]) =>
+      mapVisasToDests(vs, countries).findIndex((d) => d.featured);
+    // A seeded visa with more applications does not beat the scraped ones.
+    expect(
+      lead([
+        visa({ id: 'seed', totalApplications: 500 }),
+        visa({ id: 's1', source: 'scraped', totalApplications: 5 }),
+        visa({ id: 's2', source: 'scraped', totalApplications: 9 }),
+      ]),
+    ).toBe(2);
+    // Ties among scraped keep server order.
+    expect(
+      lead([
+        visa({ id: 'seed', totalApplications: 500 }),
+        visa({ id: 's1', source: 'scraped', totalApplications: 5 }),
+        visa({ id: 's2', source: 'scraped', totalApplications: 5 }),
+      ]),
+    ).toBe(1);
+    // None scraped: falls back to the whole list.
+    expect(
+      lead([visa({ id: 'a' }), visa({ id: 'b', totalApplications: 3 })]),
+    ).toBe(1);
+  });
+
   it('orders requirements and never invents rows', () => {
     const reqs = [
       { title: 'B', description: 'b', orderIndex: 2, estimatedTime: '' },

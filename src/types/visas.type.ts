@@ -54,6 +54,8 @@ export interface VisaType {
   applicationInstructions?: string; // Brief instructions for completing official application
   successRate?: number;
   totalApplications?: number;
+  /** Where the record came from, e.g. "scraped" (official-source import) vs seeded. */
+  source?: string;
   isActive: boolean;
   quotaLimit?: number;
   currentQuotaUsed?: number;
