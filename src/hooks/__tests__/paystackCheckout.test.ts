@@ -3,6 +3,7 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import {
   APP_PAYMENT_RETURN_URL,
+  paymentReturnLeaveAction,
   runPaystackCheckout,
   subscriptionVerifyErrorVerdict,
   type AuthSessionResult,
@@ -132,5 +133,16 @@ describe('subscriptionVerifyErrorVerdict', () => {
     const err = { status: 500 };
     expect(() => subscriptionVerifyErrorVerdict(err)).toThrow();
     expect(() => subscriptionVerifyErrorVerdict(new Error('x'))).toThrow();
+  });
+});
+
+describe('paymentReturnLeaveAction (Android /payment-return landing)', () => {
+  it('never steps back while another screen (e.g. /confirmation) is on top', () => {
+    expect(paymentReturnLeaveAction(false, true)).toBe('stay');
+    expect(paymentReturnLeaveAction(false, false)).toBe('stay');
+  });
+  it('on top: back to the checkout screen, or home with no history', () => {
+    expect(paymentReturnLeaveAction(true, true)).toBe('back');
+    expect(paymentReturnLeaveAction(true, false)).toBe('home');
   });
 });

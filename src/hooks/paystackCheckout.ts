@@ -135,3 +135,19 @@ export const SUBSCRIPTION_VERIFY_ERROR_MESSAGE =
 /** Copy: the checkout could not be opened at all. */
 export const OPEN_CHECKOUT_ERROR_MESSAGE =
   'We couldn’t open checkout. Try again in a moment.';
+
+/**
+ * How the `/payment-return` route (Android deep-link landing) should leave
+ * (japa#252 review). It must never pop a screen ABOVE it, e.g. /confirmation
+ * pushed by the pay screen's verify, so:
+ * - not focused → 'stay' (another screen is on top; leave it alone);
+ * - focused with history → 'back' (to the screen that opened checkout);
+ * - focused without history → 'home' (cold or forged link).
+ */
+export function paymentReturnLeaveAction(
+  isFocused: boolean,
+  canGoBack: boolean,
+): 'stay' | 'back' | 'home' {
+  if (!isFocused) return 'stay';
+  return canGoBack ? 'back' : 'home';
+}
