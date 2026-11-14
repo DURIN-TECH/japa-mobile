@@ -579,6 +579,32 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
     expect(tryAgain(tree)).toBeDefined();
   });
 
+  // A checkout first opened on the web returns to the WEB confirm page
+  // inside the lock, so the auth browser never reaches the app deep link:
+  // the user closes it. That is not a failure: verify decides.
+  for (const closed of ['cancel', 'dismiss']) {
+    it(`browser closed by the user (${closed}) after paying on a web-return checkout → verified, confirmation`, async () => {
+      mockCreate.mockResolvedValue(paidBooking());
+      mockOpenAuth.mockResolvedValue({ type: closed });
+      mockVerify.mockResolvedValue({
+        verified: true,
+        consultation: { ...paidBooking(), paymentStatus: 'paid' },
+      });
+      const tree = await render();
+      await chooseMethod(tree);
+      await act(async () => {
+        await cta(tree).props.onPress();
+      });
+      expect(mockVerify).toHaveBeenCalledWith('cons-ref-1');
+      expect(mockPush).toHaveBeenCalledTimes(1);
+      const arg = mockPush.mock.calls[0][0] as { pathname: string };
+      expect(arg.pathname).toBe('/confirmation');
+      // No error of any kind was shown on the way.
+      expect(text(tree)).not.toContain(PAY_COPY.error);
+      expect(text(tree)).not.toContain(PAY_COPY.notCompleted);
+    });
+  }
+
   it('verify network / 5xx after Paystack: no "Nothing was charged", "Check again" re-verifies the same reference', async () => {
     const tree = await payThenVerify(() =>
       mockVerify.mockRejectedValue({ code: 'NETWORK_ERROR', status: 0 }),

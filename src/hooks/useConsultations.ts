@@ -27,6 +27,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { retryUnlessNotFound } from './queryErrors';
+import { RETURN_TO_APP } from '@/hooks/paystackCheckout';
 import { apiService } from '@/services/api.service';
 
 /**
@@ -116,9 +117,8 @@ export interface CreateConsultationInput {
   timezone: string;
   applicationId?: string; // optional link to an existing application
   // NO fee / amount / currency (japa#183): the server prices the booking.
-  // TODO(japa#183, backend gap 1): send `returnTo: RETURN_TO_APP` once
-  // POST /consultations accepts it (today it always returns Paystack to the
-  // web confirm page, so the auth browser does not close by itself).
+  // `returnTo: 'app'` is NOT part of this input: `useCreateConsultation`
+  // adds it to every request itself, so no caller can forget it.
 }
 
 /**
@@ -245,9 +245,12 @@ export function useCreateConsultation() {
 
   return useMutation({
     mutationFn: async (input: CreateConsultationInput) => {
+      // `returnTo: 'app'` (backend #285): Paystack returns through the
+      // backend's app return page, which redirects to the app's deep link,
+      // so the in-app auth browser closes by itself after paying.
       const response = await apiService.post<CreateConsultationResult>(
         '/consultations',
-        input,
+        { ...input, returnTo: RETURN_TO_APP },
       );
       return response.data!;
     },
@@ -266,8 +269,11 @@ export function useCreateConsultation() {
  * (PAYMENT_IN_PROGRESS, BOOKING_NOT_PAYABLE, CHECKOUT_OPENING) and 503
  * PRICING_UNAVAILABLE reject as `ApiError`; see `classifyConsultationPayError`.
  *
- * TODO(japa#183, backend gap 1): send `{ returnTo: RETURN_TO_APP }` once the
- * route accepts it.
+ * Sends `{ returnTo: 'app' }` (backend #285) so a NEW checkout returns to the
+ * app. Inside the lock the backend hands back the booking's existing
+ * checkout unchanged, so one first opened on the web still returns to the
+ * web confirm page: the auth browser then does not close by itself, the
+ * user closes it, and `runPaystackCheckout` verifies all the same.
  */
 export function useConsultationCheckout() {
   const queryClient = useQueryClient();
@@ -276,7 +282,7 @@ export function useConsultationCheckout() {
     mutationFn: async (consultationId: string) => {
       const response = await apiService.post<ConsultationCheckoutResult>(
         `/consultations/${consultationId}/checkout`,
-        {},
+        { returnTo: RETURN_TO_APP },
       );
       return response.data!;
     },

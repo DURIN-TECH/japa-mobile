@@ -37,11 +37,14 @@
 //     so nobody who paid is ever asked to pay again.
 // Coming back to this screen (back, then Continue again) books a new quote.
 //
-// TODO(japa#183, backend gap 1): consultation checkouts cannot return to the
-// app yet. POST /consultations and /:id/checkout ignore `returnTo: 'app'`, so
-// Paystack lands on the web confirm page and the auth browser does not close
-// by itself (the user closes it; verify then runs as usual). Send
-// `returnTo: RETURN_TO_APP` from useConsultations.ts once the backend ships it.
+// Return to the app (backend #285): the hooks send `returnTo: 'app'` on POST
+// /consultations and /:id/checkout, so Paystack lands on the backend's app
+// return page, which redirects to `durintech://payment-return`; the auth
+// browser closes by itself and verify runs. A booking whose checkout was
+// first opened on the WEB keeps its web confirm URL inside the 30-minute
+// lock: that browser does not close by itself, the user closes it, and
+// verify runs exactly the same. Closing the browser is never a failure on
+// its own; only the backend's verify answer decides paid / not paid.
 //
 // ── Payment request (`type=application`, japa#145 / #252) ──────────────────
 // Approving it (application/[id]) already opened the Paystack checkout; this
