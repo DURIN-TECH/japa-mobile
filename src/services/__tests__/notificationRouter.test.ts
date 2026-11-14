@@ -85,7 +85,7 @@ describe('routeForNotification', () => {
     ).toBe('/consultation/k1');
     expect(
       route({
-        type: 'consultation_booked',
+        type: 'consultation_booking',
         relatedEntityType: 'consultation',
         relatedEntityId: 'k2',
       }),

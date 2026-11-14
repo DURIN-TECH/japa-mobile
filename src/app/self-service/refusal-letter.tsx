@@ -555,11 +555,12 @@ export default function RefusalLetterScreen() {
   // The analysis remembered for this application (survives backgrounding / restart).
   const [storedId, setAnalysisId, storedReady] = useStoredAnalysisId(appId);
   // #269: a push for a finished analysis carries its id, so the result shows on
-  // a phone that never uploaded the letter. The phone's own saved id wins; the
-  // param is dropped once the user starts over ("reset").
+  // a phone that never uploaded the letter. It is the newest analysis, so it
+  // wins over the id saved on the phone; it is dropped once the user starts
+  // over ("reset") or starts a new analysis.
   const [paramDropped, setParamDropped] = useState(false);
   const analysisId =
-    storedId ?? (!paramDropped && paramAnalysisId ? paramAnalysisId : null);
+    !paramDropped && paramAnalysisId ? paramAnalysisId : storedId;
   const analysisQ = useRefusalAnalysis(analysisId);
 
   const getUploadUrl = useGetUploadUrl();
@@ -578,6 +579,7 @@ export default function RefusalLetterScreen() {
       setError(null);
       try {
         const res = await start.mutateAsync(docId);
+        setParamDropped(true);
         setAnalysisId(res.analysisId);
       } catch (e) {
         setError(e);

@@ -126,7 +126,7 @@ export function routeForNotification(
     case 'application_update':
       return id ? `/application/${id}` : fallback;
   }
-  // consultation_reminder, consultation_booked, ...
+  // consultation_reminder, consultation_booking, ...
   if (type?.startsWith('consultation')) return consultationRoute(id);
 
   // A documentRequestId on any other type still means "documents".

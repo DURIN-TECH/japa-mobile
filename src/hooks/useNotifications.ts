@@ -20,14 +20,20 @@ import { apiService } from '@/services/api.service';
 /**
  * Notification type matching the backend model.
  *
- * The `type` field determines the icon and deep-link behavior:
- * - application_update → navigates to /me/applications/:referenceId
- * - document_status → navigates to document in application
- * - consultation_reminder → navigates to /me/consultations/:referenceId
- * - payment_received → shows payment confirmation
- * - payment_request → navigates to /me/applications/:referenceId
- * - payment_request_rejected → navigates to /me/applications/:referenceId
- * - system → general system announcement
+ * The `type` field picks the inbox icon (toKind) and the tap target
+ * (`routeForNotification(record, 'inbox')` in notification-router.ts):
+ * - application_update, rule_change_alert, document_rejected,
+ *   document_approved → /application/:id
+ * - readiness_review_ready → /self-service/:id/review
+ * - document_check_* → /self-service/:id
+ * - refusal_analysis_ready → /self-service/refusal-letter?applicationId=:id
+ * - document_status → /documents
+ * - consultation_* → /consultation/:id (or /consultations with no id)
+ * - payment_request, payment_request_rejected, payment_received → /payments
+ * - message_received → /messages/:conversationId (or /messages)
+ * - identity_verified, identity_verification_failed → /verify-identity
+ * - visa_news, system, unknown types → nothing opens (row just marks read),
+ *   unless a related entity the router knows is attached
  */
 export interface ApiNotification {
   id: string;
@@ -35,7 +41,12 @@ export interface ApiNotification {
   type:
     | 'application_update'
     | 'document_status'
+    | 'consultation_booking'
     | 'consultation_reminder'
+    | 'consultation_confirmed'
+    | 'consultation_rescheduled'
+    | 'consultation_cancelled'
+    | 'consultation_completed'
     | 'payment_received'
     | 'payment_request'
     | 'payment_request_rejected'
@@ -51,6 +62,7 @@ export interface ApiNotification {
     | 'identity_verified'
     | 'identity_verification_failed'
     | 'visa_news'
+    | 'system'
     | (string & {}); // unknown future types fall back to `status` in toKind
   title: string;
   /** Notification body text — matches backend field name */
@@ -63,9 +75,14 @@ export interface ApiNotification {
     | 'consultation'
     | 'document'
     | 'message'
+    | 'news_article'
     | 'payment_request'
-    | 'refusal_analysis'
-    | (string & {});
+    | 'subscription'
+    | 'agency'
+    | 'agent'
+    | 'verification'
+    | 'review'
+    | 'visa';
   /** Deep linking — ID of the related entity */
   relatedEntityId?: string;
   /** @deprecated Use relatedEntityId instead */
