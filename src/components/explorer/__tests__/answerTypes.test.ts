@@ -509,3 +509,13 @@ describe('shouldShowFieldError', () => {
     expect(shouldShowFieldError('date', 'draft', [])).toBe(true);
   });
 });
+
+describe('a JSON array without text entries is unreadable, not empty', () => {
+  it('"[]" and "[1,2]" decode to null and are rejected, never cleared', () => {
+    for (const w of ['[]', '[1,2]']) {
+      expect(tryDecodeForm('list', w, 'GBP')).toBeNull();
+      expect(toPayload('list', w).ok).toBe(false);
+    }
+    expect(tryDecodeForm('list', '["a",1]', 'GBP')).toEqual(['a']);
+  });
+});

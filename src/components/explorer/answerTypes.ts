@@ -486,8 +486,10 @@ export function tryDecodeForm(
     case 'list':
       if (typeof v === 'string') return [v];
       if (Array.isArray(v)) {
+        // A non-empty draft must keep its content: "[]" or "[1,2]" has no text
+        // entries, so it is unreadable (kept and shown), never an empty list.
         const rows = v.filter((x): x is string => typeof x === 'string');
-        return rows.length ? rows : [''];
+        return rows.length ? rows : null;
       }
       return null;
     case 'money': {

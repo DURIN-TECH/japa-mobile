@@ -58,7 +58,10 @@ import {
   type FormValue,
   type MoneyForm,
 } from '@/components/explorer/answerTypes';
-import type { SaverStatus } from '@/components/explorer/answerSaver';
+import {
+  SAVE_DEBOUNCE_MS,
+  type SaverStatus,
+} from '@/components/explorer/answerSaver';
 import { acquireSaver, dropSaver } from '@/components/explorer/answerSavers';
 import {
   SAVE_ERROR_COPY,
@@ -80,6 +83,9 @@ export function counterText(length: number): string | null {
     ? `${n} / ${max} · That’s the limit`
     : `${n} / ${max}`;
 }
+
+/** Idle time after the last edit before an incomplete value explains itself (ms). */
+export const SETTLE_MS = SAVE_DEBOUNCE_MS + 1000;
 
 /** Currency picked per item, kept across remounts (not personal data). */
 const chosenCurrency = new Map<string, string>();
@@ -127,6 +133,17 @@ export function useAnswerField({
   // Set once the person leaves the input: only then is "not valid yet" shown
   // (a half-typed address is not an error while they are still typing).
   const [touched, setTouched] = useState<string[]>([]);
+  // True once the person has stopped editing for a while: an incomplete value
+  // then says why it was not saved, even if they never touched that field
+  // (e.g. the country of an address).
+  const [settled, setSettled] = useState(false);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    },
+    [],
+  );
   // A currency chosen while the amount is empty is not in any wire string: keep
   // it for the life of the app, so a remount starts on it.
   const startCurrency = startCurrencyForSaved;
@@ -245,6 +262,9 @@ export function useAnswerField({
   const onChangeForm = (next: FormValue) => {
     if (locked) return;
     setTyped(next);
+    setSettled(false);
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => setSettled(true), SETTLE_MS);
     if (type === 'money') chosenCurrency.set(key, (next as MoneyForm).currency);
     // Unsaved input is held in memory the moment it is edited.
     const wire = encodeForm(type, next);
@@ -256,6 +276,7 @@ export function useAnswerField({
     form,
     status,
     touched,
+    settled,
     unreadableDraft,
     onChangeForm,
     onBlur: (touchedField?: string) => {
@@ -414,6 +435,7 @@ export function InformationAnswer({
     };
     if (
       e.code === 'INVALID_ANSWER' &&
+      !field.settled &&
       !shouldShowFieldError(type, e.field ?? '', field.touched)
     )
       return null;

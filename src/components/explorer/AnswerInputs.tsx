@@ -390,7 +390,7 @@ export function ListAnswerInput({
     <View style={{ gap: 8 }}>
       {rows.map((row, i) => (
         <View
-          key={i}
+          key={ids.current[i]}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
         >
           <View style={{ flex: 1, minWidth: 0 }}>

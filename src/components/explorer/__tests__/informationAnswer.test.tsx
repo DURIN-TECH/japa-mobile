@@ -25,7 +25,10 @@ import {
   it,
   jest,
 } from '@jest/globals';
-import { useAnswerField } from '@/components/explorer/InformationAnswer';
+import {
+  useAnswerField,
+  SETTLE_MS,
+} from '@/components/explorer/InformationAnswer';
 import { dropAllSavers } from '@/components/explorer/answerSavers';
 import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
 import { encodeForm } from '@/components/explorer/answerTypes';
@@ -209,5 +212,50 @@ describe('one saver across a remount', () => {
     await tick();
     expect(save).toHaveBeenCalledTimes(2);
     expect(save).toHaveBeenLastCalledWith(['x', 'y']);
+  });
+});
+
+describe('an incomplete value explains itself', () => {
+  const addr = (o: Record<string, string>) => ({
+    line1: '',
+    line2: '',
+    city: '',
+    region: '',
+    postcode: '',
+    country: '',
+    note: '',
+    ...o,
+  });
+  it('after the person stops editing, even if the missing field was never touched', async () => {
+    const save = jest.fn<SaveFn>().mockResolvedValue({});
+    const h = mount('address', save);
+    act(() =>
+      h.ref.current!.onChangeForm(addr({ line1: '1 High St', city: 'Leeds' })),
+    );
+    await tick();
+    expect(save).not.toHaveBeenCalled();
+    expect(h.ref.current!.status.phase).toBe('error');
+    expect(h.ref.current!.settled).toBe(false);
+    await tick(SETTLE_MS);
+    expect(h.ref.current!.settled).toBe(true);
+    // typing again hides it until they stop once more
+    act(() =>
+      h.ref.current!.onChangeForm(
+        addr({ line1: '1 High St', city: 'Leeds', note: 'x' }),
+      ),
+    );
+    expect(h.ref.current!.settled).toBe(false);
+  });
+});
+
+describe('a draft that is a JSON array with no text', () => {
+  it('is kept and not sent as an empty list', async () => {
+    const save = jest.fn<SaveFn>().mockResolvedValue({});
+    setDraft('[]');
+    const h = mount('list', save);
+    await tick();
+    expect(save).not.toHaveBeenCalled();
+    expect(h.ref.current!.unreadableDraft).toBe('[]');
+    expect(useAnswerDraftsStore.getState().drafts['a1:i1']).toBe('[]');
   });
 });
