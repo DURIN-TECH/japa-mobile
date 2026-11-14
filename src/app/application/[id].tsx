@@ -26,7 +26,6 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
-  Linking,
   Modal,
   Platform,
   Pressable,
@@ -454,7 +453,7 @@ export default function AppDetail() {
 
   // Approve = client consent. The backend marks the request approved and
   // returns a Paystack `authorizationUrl` + `paystackReference`; NO money has
-  // moved yet. We open the checkout and hand off to /pay, which verifies the
+  // moved yet. We hand off to /pay, which opens the checkout and verifies the
   // charge (POST /payment-requests/:id/verify) before it shows a confirmation.
   const approveRequest = async (req: PayReqRow) => {
     if (approvingId) return;
@@ -482,23 +481,20 @@ export default function AppDetail() {
       setReqError((e) => ({ ...e, [req.id]: PAYMENT_ERROR_MESSAGE }));
       return;
     }
-    try {
-      await Linking.openURL(url);
-    } catch {
-      setReqError((e) => ({
-        ...e,
-        [req.id]: 'We couldn’t open checkout. Tap Complete payment to retry.',
-      }));
-    }
-    toPay(req, reference, url);
+    // japa#252: /pay opens the checkout itself (autoOpen) in the in-app
+    // auth browser, which returns to the app after paying, then verifies.
+    toPay(req, reference, url, true);
   };
 
   // Open the pay screen for an approved request: it verifies the Paystack
   // charge by `reference`, and can reopen checkout via `authorizationUrl`.
+  // `autoOpen` (japa#252): open Paystack as soon as /pay mounts (right after
+  // approve); a later "Complete payment" lands on /pay without opening it.
   const toPay = (
     req: PayReqRow,
     reference?: string,
     authorizationUrl?: string,
+    autoOpen = false,
   ) =>
     router.push({
       pathname: '/pay',
@@ -507,6 +503,7 @@ export default function AppDetail() {
         requestId: req.id,
         reference: reference ?? req.reference ?? '',
         authorizationUrl: authorizationUrl ?? '',
+        autoOpen: autoOpen ? '1' : '',
         agentId: req.agentId,
         dateIso: '',
         time: '',
