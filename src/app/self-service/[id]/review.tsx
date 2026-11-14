@@ -63,6 +63,8 @@ import {
   BAND_SUMMARY,
   DISCLAIMER,
   failedReasonLine,
+  NO_REVIEW_BODY,
+  NO_REVIEW_TITLE,
   staleCopy,
 } from '@/components/explorer/review/reviewCopy';
 import { useApplication } from '@/hooks/useApplications';
@@ -274,8 +276,8 @@ export default function ReviewScreen() {
         <View style={pad}>
           <ReviewEmpty
             icon={Ic.help}
-            title="No review for this visa yet"
-            body="Seli hasn’t finished checking the published rules for this visa, so there’s nothing to review against yet. You can still prepare and upload your documents here."
+            title={NO_REVIEW_TITLE}
+            body={NO_REVIEW_BODY}
           />
           <OutlineButton
             label="Back to your application"

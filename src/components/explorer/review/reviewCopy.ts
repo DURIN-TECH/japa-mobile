@@ -122,3 +122,12 @@ export function savedLabel(iso: string | null | undefined): string {
   if (!isNaN(t) && Date.now() - t < 60_000) return 'Saved just now';
   return `Saved ${fmtDate(iso)}`;
 }
+
+// ── No review for this visa (404 NO_APPROVED_RUBRIC, #251) ───────────────────
+// The route has no published rulebook, so there is nothing to review against.
+// That is a plain "not available for this visa yet", not a half-finished
+// check, so the copy says so and points the user at what they CAN do. Shared
+// by the self-service card and the full review screen so they never drift.
+export const NO_REVIEW_TITLE = 'Review not available for this visa yet';
+export const NO_REVIEW_BODY =
+  'Seli doesn’t have a review for this visa yet. You can still prepare your answers and upload your documents here.';

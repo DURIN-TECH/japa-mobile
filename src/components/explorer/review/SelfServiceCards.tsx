@@ -27,6 +27,8 @@ import {
   failedCardCopy,
   fmtDate,
   fmtTime,
+  NO_REVIEW_BODY,
+  NO_REVIEW_TITLE,
   savedLabel,
   staleCopy,
 } from '@/components/explorer/review/reviewCopy';
@@ -301,12 +303,8 @@ export function ReviewCard({
   if (state === 'no_rubric') {
     return (
       <View style={cardStyle}>
-        <CardHead state="empty" title="No review for this visa yet" />
-        <Text style={body}>
-          Seli hasn’t finished checking the published rules for this visa, so
-          there’s nothing to review against yet. You can still prepare and
-          upload your documents here.
-        </Text>
+        <CardHead state="empty" title={NO_REVIEW_TITLE} />
+        <Text style={body}>{NO_REVIEW_BODY}</Text>
       </View>
     );
   }
