@@ -29,6 +29,10 @@ import { Pill, SectionTitle } from '@/components/explorer/primitives';
 import { InlineError, InfoNote } from '@/components/explorer/AccountForm';
 import { Checklist, ChecklistItem } from '@/types/checklist.type';
 import type { SavedAnswer } from '@/types/answers.type';
+import {
+  sentenceCase,
+  type AnswerValue,
+} from '@/components/explorer/answerTypes';
 import { ANSWERS_LOCKED_COPY } from '@/hooks/useAnswers';
 import { InformationAnswer } from '@/components/explorer/InformationAnswer';
 import { useAnswerDraftsStore, draftKey } from '@/stores/answerDrafts.store';
@@ -71,8 +75,8 @@ export interface AnswersProps {
   answersLoading: boolean;
   answersError: boolean;
   onRetryAnswers: () => void;
-  /** Sends one trimmed answer (rejects on failure). */
-  saveAnswer: (itemId: string, trimmed: string) => Promise<unknown>;
+  /** Sends one validated answer value ('' clears; rejects on failure). */
+  saveAnswer: (itemId: string, value: AnswerValue | '') => Promise<unknown>;
   /** Read-only: the application is under review (409 ANSWERS_LOCKED). */
   locked: boolean;
   onLocked: () => void;
@@ -185,7 +189,7 @@ function ChecklistRow({
           <Text
             style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}
           >
-            {item.title}
+            {sentenceCase(item.title)}
           </Text>
           {/* Need label (#187): ink-muted, because it can carry a condition the
               person must read (`muted` is 3.58:1 on white). */}
@@ -296,9 +300,11 @@ function ChecklistRow({
             applicationId={answersProps.applicationId}
             itemId={item.checklistItemId}
             title={item.title}
-            savedText={answersProps.answers?.[item.checklistItemId]?.text ?? ''}
-            save={(trimmed) =>
-              answersProps.saveAnswer(item.checklistItemId, trimmed)
+            answerType={item.answerType}
+            currencyHint={[item.title, item.appliesWhen].join(' ')}
+            savedValue={answersProps.answers?.[item.checklistItemId]?.value}
+            save={(value) =>
+              answersProps.saveAnswer(item.checklistItemId, value)
             }
             locked={answersProps.locked}
             onLocked={answersProps.onLocked}

@@ -41,6 +41,8 @@ export interface ChecklistItem {
   kindReview?: true;
   /** Verbatim lead-in or item text the `kind` was decided from. */
   kindQuote?: string;
+  /** Information items: which input to show. Missing / unknown = 'text'. */
+  answerType?: 'date' | 'date_range' | 'money' | 'address' | 'list' | 'text';
   need?: ChecklistNeed;
   /** Verbatim "if ..." / "unless ..." clause, or the "Depending on..." lead-in. */
   appliesWhen?: string;

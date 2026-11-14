@@ -1,7 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // InformationAnswer (issue #187): the typed answer of one "information" item on
-// the self-service checklist. A multiline field that saves itself, a SaveStatus
-// line, and an InlineError with an action when a save fails.
+// the self-service checklist. One input per answerType (answerTypes.ts, inputs in
+// AnswerInputs.tsx) that saves itself, a SaveStatus line, and an InlineError with
+// an action when a save fails.
+//
+// The saver and the vault hold one string per item: the text itself, or for the
+// other types the canonical JSON of the typed value ('' = empty). A value that is
+// not valid for its type is blocked before the PUT with an inline message (shown
+// once the person leaves the input) and what they typed is kept.
 //
 // Save rules live in `answerSaver.ts`: 1.5 s after the last keystroke, right
 // away on blur / screen blur / app to background, trimmed text only, only when
@@ -13,13 +19,42 @@
 // The answer text is personal: it is never logged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { ActivityIndicator, AppState, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { InlineError, LabeledInput } from '@/components/explorer/AccountForm';
+import {
+  AddressAnswerInput,
+  DateAnswerInput,
+  DateRangeAnswerInput,
+  ListAnswerInput,
+  MoneyAnswerInput,
+} from '@/components/explorer/AnswerInputs';
+import {
+  decodeForm,
+  defaultCurrencyFor,
+  encodeForm,
+  legacyNote,
+  normaliseAnswerType,
+  toPayload,
+  valueToForm,
+  valueToWire,
+  type AddressForm,
+  type AnswerType,
+  type AnswerValue,
+  type DateRangeValue,
+  type FormValue,
+  type MoneyForm,
+} from '@/components/explorer/answerTypes';
 import type { SaverStatus } from '@/components/explorer/answerSaver';
 import { acquireSaver, dropSaver } from '@/components/explorer/answerSavers';
 import {
@@ -50,17 +85,22 @@ export function counterText(length: number): string | null {
 export function useAnswerField({
   applicationId,
   itemId,
-  savedText,
+  type,
+  currency,
+  savedValue,
   save,
   onLocked,
   locked,
 }: {
   applicationId: string;
   itemId: string;
-  /** The server's saved text for this item ('' when none). */
-  savedText: string;
-  /** Sends the trimmed text (rejects on failure). */
-  save: (trimmed: string) => Promise<unknown>;
+  type: AnswerType;
+  /** Currency a money field starts on. */
+  currency: string;
+  /** The server's saved value for this item (undefined when none). */
+  savedValue: unknown;
+  /** Sends the validated value ('' clears; rejects on failure). */
+  save: (value: AnswerValue | '') => Promise<unknown>;
   /** A 409 ANSWERS_LOCKED came back. */
   onLocked: () => void;
   /** Read-only: show the server answer, send nothing, drop any draft. */
@@ -68,11 +108,28 @@ export function useAnswerField({
 }) {
   const key = draftKey(applicationId, itemId);
   const draft = useAnswerDraftsStore((s) => s.drafts[key]);
-  // `null` until the person types: until then the field shows the draft, else
-  // the server text. Once they type, their text is the truth while mounted.
-  const [typed, setTyped] = useState<string | null>(null);
+  // The server's value as the saver's string (baseline) and as form content.
+  const savedText = useMemo(
+    () => valueToWire(type, savedValue, currency),
+    [type, savedValue, currency],
+  );
+  // `null` until the person edits: until then the field shows the draft, else
+  // the server value. Once they edit, their form is the truth while mounted.
+  const [typed, setTyped] = useState<FormValue | null>(null);
+  // Set once the person leaves the input: only then is "not valid yet" shown
+  // (a half-typed address is not an error while they are still typing).
+  const [attended, setAttended] = useState(false);
   // Locked: the server's answer, never an unsaved draft.
-  const value = locked ? savedText : (typed ?? draft ?? savedText);
+  const form: FormValue = useMemo(
+    () =>
+      locked
+        ? valueToForm(type, savedValue, currency)
+        : (typed ??
+          (draft !== undefined
+            ? decodeForm(type, draft, currency)
+            : valueToForm(type, savedValue, currency))),
+    [locked, typed, draft, type, savedValue, currency],
+  );
 
   // ONE saver per item, shared by every mount (answerSavers.ts), so a remount
   // never starts a second save while one is in flight.
@@ -88,7 +145,12 @@ export function useAnswerField({
 
   useEffect(() => {
     // Plug this mount into the saver; unplug on unmount (the saver carries on).
-    entry.holder.save = (trimmed) => saveRef.current(trimmed);
+    entry.holder.save = async (wire) => {
+      // Validate by the item's type BEFORE anything is sent.
+      const r = toPayload(type, wire);
+      if (!r.ok) throw r.error;
+      return saveRef.current(r.value);
+    };
     entry.holder.onStatus = (s) => {
       if (
         s.phase === 'error' &&
@@ -112,7 +174,7 @@ export function useAnswerField({
     return () => {
       entry.holder.onStatus = () => {};
     };
-  }, [entry, key, applicationId, itemId]);
+  }, [entry, key, applicationId, itemId, type]);
 
   // Server text arrives or changes (load, refetch): tell the saver, but only
   // while there is nothing unsaved (the saver enforces it).
@@ -158,19 +220,22 @@ export function useAnswerField({
     return () => sub.remove();
   }, [saver]);
 
-  const onChangeText = (text: string) => {
+  const onChangeForm = (next: FormValue) => {
     if (locked) return;
-    setTyped(text);
-    // Unsaved text is held in memory the moment it is typed.
-    useAnswerDraftsStore.getState().setDraft(applicationId, itemId, text);
-    saver.change(text);
+    setTyped(next);
+    // Unsaved input is held in memory the moment it is edited.
+    const wire = encodeForm(type, next);
+    useAnswerDraftsStore.getState().setDraft(applicationId, itemId, wire);
+    saver.change(wire);
   };
 
   return {
-    value,
+    form,
     status,
-    onChangeText,
+    attended,
+    onChangeForm,
     onBlur: () => {
+      setAttended(true);
       saver.flush();
       useAnswerDraftsStore.getState().flushWrites();
     },
@@ -253,7 +318,9 @@ export function InformationAnswer({
   applicationId,
   itemId,
   title,
-  savedText,
+  answerType,
+  currencyHint,
+  savedValue,
   save,
   locked,
   onLocked,
@@ -262,10 +329,16 @@ export function InformationAnswer({
 }: {
   applicationId: string;
   itemId: string;
-  /** The item title: the field's accessibility label. */
+  /** The item title: the input's accessibility label. */
   title: string;
-  savedText: string;
-  save: (trimmed: string) => Promise<unknown>;
+  /** Which input to show; missing / unknown = text. */
+  answerType?: unknown;
+  /** Text a money field's starting currency is read from (title, appliesWhen). */
+  currencyHint?: string;
+  /** The server's saved value (undefined when none; a string may be legacy). */
+  savedValue: unknown;
+  /** Sends the validated value ('' clears; rejects on failure). */
+  save: (value: AnswerValue | '') => Promise<unknown>;
   /** Answers are read-only (409 ANSWERS_LOCKED, or the application is under review). */
   locked: boolean;
   onLocked: () => void;
@@ -274,10 +347,17 @@ export function InformationAnswer({
   /** Refetches the checklist and the answers (list-changed error). */
   onRefreshList: () => void;
 }) {
+  const type = normaliseAnswerType(answerType);
+  const currency = useMemo(
+    () => defaultCurrencyFor(currencyHint),
+    [currencyHint],
+  );
   const field = useAnswerField({
     applicationId,
     itemId,
-    savedText,
+    type,
+    currency,
+    savedValue,
     save,
     onLocked,
     locked,
@@ -289,35 +369,100 @@ export function InformationAnswer({
           return k === 'locked' ? null : k;
         })()
       : null;
-  const copy = errorKind ? SAVE_ERROR_COPY[errorKind] : null;
+  // 'invalid' has no action: it names the field (ours, or the server's 400).
+  const invalidMessage =
+    errorKind === 'invalid' && field.status.phase === 'error' && field.attended
+      ? ((field.status.error as { message?: string })?.message ??
+        'Check this answer and try again.')
+      : null;
+  const copy =
+    errorKind && errorKind !== 'invalid' ? SAVE_ERROR_COPY[errorKind] : null;
+  const legacy = legacyNote(type, savedValue);
+  const base = {
+    title,
+    editable: !locked,
+    onCommit: field.onBlur,
+  };
 
   return (
     <View style={{ marginTop: 10 }}>
-      <LabeledInput
-        label=""
-        focusRing
-        multiline
-        textAlignVertical="top"
-        autoCapitalize="sentences"
-        autoCorrect
-        maxLength={ANSWER_MAX_LENGTH}
-        placeholder="Type your answer"
-        accessibilityLabel={title}
-        accessibilityHint="Saves as you type"
-        editable={!locked}
-        value={field.value}
-        onChangeText={field.onChangeText}
-        onBlur={field.onBlur}
-        style={{
-          fontSize: 14.5,
-          lineHeight: 21,
-          fontWeight: '400',
-          minHeight: 92,
-          maxHeight: 220,
-        }}
-      />
+      {legacy ? (
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 18,
+            color: EX.color.inkMuted,
+            marginBottom: 8,
+          }}
+        >
+          Your earlier answer: {legacy}
+        </Text>
+      ) : null}
+      {type === 'date' ? (
+        <DateAnswerInput
+          {...base}
+          form={field.form as string}
+          onChange={field.onChangeForm}
+        />
+      ) : type === 'date_range' ? (
+        <DateRangeAnswerInput
+          {...base}
+          form={field.form as DateRangeValue}
+          onChange={field.onChangeForm}
+        />
+      ) : type === 'money' ? (
+        <MoneyAnswerInput
+          {...base}
+          form={field.form as MoneyForm}
+          onChange={field.onChangeForm}
+        />
+      ) : type === 'address' ? (
+        <AddressAnswerInput
+          {...base}
+          form={field.form as AddressForm}
+          onChange={field.onChangeForm}
+        />
+      ) : type === 'list' ? (
+        <ListAnswerInput
+          {...base}
+          form={field.form as string[]}
+          onChange={field.onChangeForm}
+        />
+      ) : (
+        <LabeledInput
+          label=""
+          focusRing
+          multiline
+          textAlignVertical="top"
+          autoCapitalize="sentences"
+          autoCorrect
+          maxLength={ANSWER_MAX_LENGTH}
+          placeholder="Type your answer"
+          accessibilityLabel={title}
+          accessibilityHint="Saves as you type"
+          editable={!locked}
+          value={field.form as string}
+          onChangeText={field.onChangeForm}
+          onBlur={field.onBlur}
+          style={{
+            fontSize: 14.5,
+            lineHeight: 21,
+            fontWeight: '400',
+            minHeight: 92,
+            maxHeight: 220,
+          }}
+        />
+      )}
       {!locked ? (
-        <SaveStatus length={field.value.length} status={field.status} />
+        <SaveStatus
+          length={type === 'text' ? (field.form as string).length : 0}
+          status={field.status}
+        />
+      ) : null}
+      {!locked && invalidMessage ? (
+        <View style={{ marginTop: 8 }}>
+          <InlineError message={invalidMessage} />
+        </View>
       ) : null}
       {!locked && copy ? (
         <View style={{ marginTop: 8, gap: 8 }}>

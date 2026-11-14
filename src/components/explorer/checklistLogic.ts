@@ -10,6 +10,10 @@ import type {
 } from '@/types/checklist.type';
 import type { Document } from '@/types/documents.type';
 import type { SavedAnswer } from '@/types/answers.type';
+import {
+  isAnswerValueNonEmpty,
+  normaliseAnswerType,
+} from '@/components/explorer/answerTypes';
 
 /** The `requirementId` the backend gives an upload made against a request. */
 export const checklistRequirementId = (documentRequestId: string) =>
@@ -77,9 +81,13 @@ export function latestDocFor(item: ChecklistItem, docs: Document[]) {
   );
 }
 
-/** True when the saved answer has any content. */
-export const hasAnswer = (a?: SavedAnswer | null) =>
-  !!a && a.text.trim() !== '';
+/**
+ * True when the saved answer has content for the item's type (#187): a date
+ * range needs both dates, an address its required fields, money an amount, a
+ * list one non-blank entry. A legacy plain string counts when it has text.
+ */
+export const hasAnswer = (item: ChecklistItem, a?: SavedAnswer | null) =>
+  !!a && isAnswerValueNonEmpty(normaliseAnswerType(item.answerType), a.value);
 
 /**
  * Derive the state. Information items: Answered when there is a non-empty SAVED
@@ -93,7 +101,9 @@ export function itemState(
 ): ItemState {
   if (item.status === 'waived') return 'not_needed';
   if (isInformationItem(item))
-    return hasAnswer(answers?.[item.checklistItemId]) ? 'answered' : 'waiting';
+    return hasAnswer(item, answers?.[item.checklistItemId])
+      ? 'answered'
+      : 'waiting';
   if (!item.documentRequestId) return 'waiting';
   const doc = latestDocFor(item, docs);
   if (!doc) return 'waiting';

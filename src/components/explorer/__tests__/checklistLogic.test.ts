@@ -101,10 +101,10 @@ describe('item state', () => {
   it('information: Answered only with a non-empty saved answer', () => {
     const i = item({ kind: 'information', documentRequestId: null });
     expect(itemState(i, [], {})).toBe('waiting');
-    expect(itemState(i, [], { i1: { text: '  ', updatedAt: 'x' } })).toBe(
+    expect(itemState(i, [], { i1: { value: '  ', updatedAt: 'x' } })).toBe(
       'waiting',
     );
-    expect(itemState(i, [], { i1: { text: 'hi', updatedAt: 'x' } })).toBe(
+    expect(itemState(i, [], { i1: { value: 'hi', updatedAt: 'x' } })).toBe(
       'answered',
     );
   });
@@ -147,8 +147,8 @@ describe('progress counting', () => {
   it('counts both kinds, but the bar uses required items only', () => {
     const docs = [doc('ra', 'verified'), doc('rb', 'uploaded')];
     const p = computeProgress(list(items), docs, {
-      c: { text: 'dates', updatedAt: 'x' },
-      d: { text: 'earn', updatedAt: 'x' },
+      c: { value: 'dates', updatedAt: 'x' },
+      d: { value: 'earn', updatedAt: 'x' },
     });
     expect(p.uploaded).toBe(2); // ra + rb, any need
     expect(p.verified).toBe(1); // ra

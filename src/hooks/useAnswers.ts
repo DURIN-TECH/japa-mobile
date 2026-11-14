@@ -2,10 +2,10 @@
 // Answers to "information" checklist items (issue #187).
 //
 // BACKEND CONTRACT
-//   GET /applications/:id/answers          -> { answers: { [itemId]: { text, updatedAt } } }
-//   PUT /applications/:id/answers/:itemId  body { text }  (trimmed, <= 2000, "" clears)
-//                                          -> { itemId, text, updatedAt }
-//   400 VALIDATION_ERROR  not a string / too long / unknown item / a document item
+//   GET /applications/:id/answers          -> { answers: { [itemId]: { value, updatedAt } } }
+//   PUT /applications/:id/answers/:itemId  body { value }  (shape by the item's answerType,
+//                                          see answerTypes.ts; "" clears)
+//   400 VALIDATION_ERROR  names the bad field / unknown item / a document item
 //   402 UPGRADE_REQUIRED  read-only plan (auth middleware)
 //   403                   no access to the application (treated as a generic failure)
 //   409 ANSWERS_LOCKED    application under review or later: read-only (GET unaffected)
@@ -17,6 +17,7 @@ import { apiService } from '@/services/api.service';
 import { retryUnlessNotFound } from '@/hooks/queryErrors';
 import type { AnswersResponse, SaveAnswerResponse } from '@/types/answers.type';
 import { ANSWER_MAX_LENGTH } from '@/types/answers.type';
+import type { AnswerValue } from '@/components/explorer/answerTypes';
 
 /** Query key for one application's answers (same shape as `checklistKey`). */
 export const answersKey = (applicationId: string) =>
@@ -55,25 +56,27 @@ export function useSaveAnswer(applicationId: string) {
   return useMutation({
     mutationFn: async (input: {
       itemId: string;
-      text: string;
+      /** The typed value ('' clears). */
+      value: AnswerValue | '';
     }): Promise<SaveAnswerResponse> => {
       const response = await apiService.put<SaveAnswerResponse>(
         `/applications/${applicationId}/answers/${encodeURIComponent(input.itemId)}`,
-        { text: input.text },
+        { value: input.value },
       );
       if (!response.data) throw new Error('Empty answer response');
       return response.data;
     },
-    onSuccess: (saved) => {
+    onSuccess: (saved, input) => {
       queryClient.setQueryData<AnswersResponse['answers']>(
         answersKey(applicationId),
         (prev) => {
           const next = { ...(prev ?? {}) };
           // "" clears the answer: drop the entry so the pill goes back to Waiting.
-          if (saved.text === '') delete next[saved.itemId];
+          // The cache takes the value we sent (the response shape is not relied on).
+          if (input.value === '') delete next[input.itemId];
           else
-            next[saved.itemId] = {
-              text: saved.text,
+            next[input.itemId] = {
+              value: input.value,
               updatedAt: saved.updatedAt,
             };
           return next;
@@ -91,6 +94,7 @@ export type SaveErrorKind =
   | 'read_only_plan'
   | 'list_changed'
   | 'too_long'
+  | 'invalid'
   | 'locked'
   | 'other';
 
@@ -100,20 +104,32 @@ export type SaveErrorKind =
  * input also guards it with maxLength).
  */
 export function classifySaveError(error: unknown, text: string): SaveErrorKind {
-  const e = (error ?? {}) as { code?: string; status?: number };
+  const e = (error ?? {}) as {
+    code?: string;
+    status?: number;
+    message?: string;
+  };
+  // Our own check, before any request: the typed value is not valid.
+  if (e.code === 'INVALID_ANSWER') return 'invalid';
   if (e.status === 409 && e.code === 'ANSWERS_LOCKED') return 'locked';
   if (e.code === 'NETWORK_ERROR' || e.status === 0) return 'offline';
   // The read-only-plan block answers 402 UPGRADE_REQUIRED; a 403 is no access.
   if (e.status === 402 || e.code === 'UPGRADE_REQUIRED')
     return 'read_only_plan';
-  if (e.status === 400)
-    return text.length > ANSWER_MAX_LENGTH ? 'too_long' : 'list_changed';
+  if (e.status === 400) {
+    if (text.length > ANSWER_MAX_LENGTH) return 'too_long';
+    // The server names a bad field: show it. An unknown / document item means
+    // the list changed.
+    return e.message && !/unknown|not found|document|no longer/i.test(e.message)
+      ? 'invalid'
+      : 'list_changed';
+  }
   return 'other';
 }
 
 /** The InlineError line for each kind (design spec copy), plus its action. */
 export const SAVE_ERROR_COPY: Record<
-  Exclude<SaveErrorKind, 'locked'>,
+  Exclude<SaveErrorKind, 'locked' | 'invalid'>,
   { message: string; action: 'retry' | 'plans' | 'refresh' }
 > = {
   offline: {
