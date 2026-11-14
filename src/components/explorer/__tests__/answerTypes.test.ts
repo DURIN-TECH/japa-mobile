@@ -51,7 +51,7 @@ describe('isRealIsoDate', () => {
 });
 
 describe('toPayload (validation per type)', () => {
-  it('empty clears for every type', () => {
+  it('empty clears for every type (text "", structured null)', () => {
     for (const t of [
       'text',
       'date',
@@ -60,7 +60,10 @@ describe('toPayload (validation per type)', () => {
       'address',
       'list',
     ] as const)
-      expect(toPayload(t, '')).toEqual({ ok: true, value: '' });
+      expect(toPayload(t, '')).toEqual({
+        ok: true,
+        value: t === 'text' ? '' : null,
+      });
   });
   it('text: trimmed, max 2000', () => {
     expect(toPayload('text', '  hi ')).toEqual({ ok: true, value: 'hi' });

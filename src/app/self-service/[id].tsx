@@ -1387,7 +1387,7 @@ export default function SelfServiceView() {
                     answersLoading: answersQ.isLoading,
                     answersError: answersQ.isError,
                     onRetryAnswers: () => answersQ.refetch(),
-                    saveAnswer: (itemId: string, value: AnswerValue | '') =>
+                    saveAnswer: (itemId: string, value: AnswerValue | '' | null) =>
                       saveAnswerM.mutateAsync({ itemId, value }),
                     locked: answersLocked,
                     onLocked: () => setAnswersLockedByServer(true),

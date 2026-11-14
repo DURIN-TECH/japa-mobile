@@ -101,7 +101,7 @@ export function useAnswerField({
   /** The server's saved value for this item (undefined when none). */
   savedValue: unknown;
   /** Sends the validated value ('' clears; rejects on failure). */
-  save: (value: AnswerValue | '') => Promise<unknown>;
+  save: (value: AnswerValue | '' | null) => Promise<unknown>;
   /** A 409 ANSWERS_LOCKED came back. */
   onLocked: () => void;
   /** Read-only: show the server answer, send nothing, drop any draft. */
@@ -339,7 +339,7 @@ export function InformationAnswer({
   /** The server's saved value (undefined when none; a string may be legacy). */
   savedValue: unknown;
   /** Sends the validated value ('' clears; rejects on failure). */
-  save: (value: AnswerValue | '') => Promise<unknown>;
+  save: (value: AnswerValue | '' | null) => Promise<unknown>;
   /** Answers are read-only (409 ANSWERS_LOCKED, or the application is under review). */
   locked: boolean;
   onLocked: () => void;

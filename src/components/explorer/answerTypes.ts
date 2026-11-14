@@ -421,12 +421,14 @@ const invalid = (field: string, message: string) => ({
 });
 
 export type PayloadResult =
-  | { ok: true; value: AnswerValue | '' }
+  | { ok: true; value: AnswerValue | '' | null }
   | { ok: false; error: AnswerValidationError };
 
 /** Validate a wire string for its type and build the PUT value ('' clears). */
 export function toPayload(type: AnswerType, wire: string): PayloadResult {
-  if (wire.trim() === '') return { ok: true, value: '' };
+  // Clearing: text sends '', every structured type sends null.
+  if (wire.trim() === '')
+    return { ok: true, value: type === 'text' ? '' : null };
   if (type === 'text') {
     return wire.trim().length > ANSWER_TEXT_MAX
       ? invalid('text', 'This answer is over 2,000 characters. Shorten it.')

@@ -196,3 +196,23 @@ describe('server normalised value', () => {
     });
   });
 });
+
+describe('clearing a structured answer', () => {
+  it('PUTs value null and removes the cached answer', async () => {
+    qc.setQueryData(answersKey('app1'), {
+      i1: { value: { amount: 5, currency: 'GBP' }, updatedAt: 't' },
+    });
+    const h = mount(() => useSaveAnswer('app1'), qc);
+    api.put.mockResolvedValueOnce({
+      success: true,
+      data: { itemId: 'i1', updatedAt: 'u2' },
+    });
+    await act(async () => {
+      await h.current.mutateAsync({ itemId: 'i1', value: null });
+    });
+    expect(api.put).toHaveBeenCalledWith('/applications/app1/answers/i1', {
+      value: null,
+    });
+    expect(qc.getQueryData(answersKey('app1'))).toEqual({});
+  });
+});

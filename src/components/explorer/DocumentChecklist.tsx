@@ -76,7 +76,7 @@ export interface AnswersProps {
   answersError: boolean;
   onRetryAnswers: () => void;
   /** Sends one validated answer value ('' clears; rejects on failure). */
-  saveAnswer: (itemId: string, value: AnswerValue | '') => Promise<unknown>;
+  saveAnswer: (itemId: string, value: AnswerValue | '' | null) => Promise<unknown>;
   /** Read-only: the application is under review (409 ANSWERS_LOCKED). */
   locked: boolean;
   onLocked: () => void;
