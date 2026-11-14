@@ -142,6 +142,13 @@ export type App = {
   agentId: string;
   next: { label: string; cta: string | null };
   steps: AppStep[];
+  /**
+   * The case's total cost in its OWN currency (japa#183); null when the
+   * backend sent none. Show it through `costLabel`, never with a literal "$".
+   */
+  cost?: Money | null;
+  /** `cost` through the money formatter ("$50,000.00", "₦5,000.00"); '' if none. */
+  costLabel?: string;
   /** Resolved destination art + names for the row. */
   dest?: Dest;
 };
