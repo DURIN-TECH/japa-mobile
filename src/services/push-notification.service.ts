@@ -9,9 +9,12 @@
  * Flow:
  * 1. On login → requestPermission() + registerToken()
  * 2. On token refresh → re-register with backend
- * 3. On foreground notification → show in-app alert
+ * 3. On foreground notification → refresh the inbox + bell, show in-app alert
  * 4. On notification tap (background) → deep-link to relevant screen
- * 5. On notification tap (cold start) → deep-link after app loads
+ * 5. On notification tap (cold start) → deep-link after app loads (once per
+ *    app launch)
+ * Every tap and the pop-up's "View" use the shared pure router
+ * (`notification-router.ts`, #265), the same one the inbox uses.
  * 6. On sign-out (logout, account deletion, a session that ended on its own,
  *    or the signed-in account changing) → unregisterToken(). Wired up in
  *    auth.store.ts (#263).
@@ -31,17 +34,19 @@ import {
   deleteToken,
 } from '@react-native-firebase/messaging';
 import { apiService } from './api.service';
+import { routeForNotification } from './notification-router';
+import { queryClient } from '@/providers/QueryProvider';
 
 // ─────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────
 
-/** Notification data payload from the backend */
-interface NotificationData {
-  type?: string;
-  referenceId?: string;
-  [key: string]: string | undefined;
-}
+/**
+ * Notification data payload from the backend (FCM `data`: string values only).
+ * Same shape the shared router reads (type, relatedEntityType,
+ * relatedEntityId, conversationId, documentRequestId, deprecated referenceId).
+ */
+type NotificationData = Record<string, string | undefined>;
 
 // ─────────────────────────────────────────────
 // TEARDOWN TIMEOUT (#263, review round 1)
@@ -84,6 +89,20 @@ class PushNotificationService {
   // the next user.
   private pendingLocalDelete: Promise<unknown> | null = null;
 
+  // #265: initialize() is called from the auth listener (and used to be from
+  // the login actions too). This guards it so listeners are added only once:
+  //   - `initPromise` is set synchronously on the first call, so a second call
+  //     made while the first is still awaiting permission/token joins it.
+  //   - It is cleared by unregisterToken() (logout), so the next login sets up
+  //     again, and when permission is denied (so a later call can retry).
+  private initPromise: Promise<void> | null = null;
+
+  // #265: the cold-start message (getInitialNotification) is handled at most
+  // once per app launch. Deliberately NOT reset on logout: it describes how
+  // the app was launched, and re-reading it after a re-login would navigate
+  // again.
+  private coldStartChecked = false;
+
   private get messaging() {
     if (!this._messaging) {
       this._messaging = getMessaging(getApp());
@@ -99,13 +118,21 @@ class PushNotificationService {
    * 2. Get the FCM token and send it to the backend
    * 3. Set up listeners for incoming notifications
    */
-  async initialize(): Promise<void> {
+  initialize(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.doInitialize();
+    }
+    return this.initPromise;
+  }
+
+  private async doInitialize(): Promise<void> {
     try {
       // Request permission — returns authorization status
       const authStatus = await requestPermission(this.messaging);
       // authStatus: -1 = not determined, 0 = denied, 1 = authorized, 2 = provisional
       if (authStatus < 1) {
         if (__DEV__) console.warn('Push notification permission denied');
+        this.initPromise = null; // allow a later retry
         return;
       }
 
@@ -116,6 +143,7 @@ class PushNotificationService {
       this.setupListeners();
     } catch (error) {
       if (__DEV__) console.warn('Push notification init error:', error);
+      this.initPromise = null; // allow a later retry
     }
   }
 
@@ -228,8 +256,14 @@ class PushNotificationService {
     });
     this.unsubscribers.push(unsubRefresh);
 
-    // 2. Foreground notification — show an in-app alert
+    // 2. Foreground notification — refresh the inbox and bell, then show ONE
+    //    in-app alert. Invalidating ['notifications'] covers the list and
+    //    ['notifications','unread-count'], so the bell updates without waiting
+    //    for the 30 s poll. The shared query client is imported (no React hook
+    //    in a service).
     const unsubMessage = onMessage(this.messaging, (remoteMessage) => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+
       const { title, body } = remoteMessage.notification ?? {};
       if (title || body) {
         Alert.alert(title ?? 'Notification', body ?? '', [
@@ -264,6 +298,9 @@ class PushNotificationService {
    * Must be called once during initialization.
    */
   private async checkInitialNotification(): Promise<void> {
+    // Once per app launch, however many times initialize() runs.
+    if (this.coldStartChecked) return;
+    this.coldStartChecked = true;
     try {
       const remoteMessage = await getInitialNotification(this.messaging);
       if (remoteMessage) {
@@ -279,44 +316,21 @@ class PushNotificationService {
 
   /**
    * Handle deep-linking when a notification is tapped.
-   * Routes to the appropriate screen based on notification type.
+   * The route comes from the shared router (notification-router.ts).
    */
   private handleNotificationPress(data?: NotificationData): void {
-    if (!data?.type || !data?.referenceId) return;
-
-    switch (data.type) {
-      case 'application_update':
-      case 'payment_request':
-      case 'payment_request_rejected':
-      case 'document_status':
-        router.push({
-          pathname: '/application/[id]',
-          params: { id: data.referenceId },
-        });
-        break;
-      case 'consultation_reminder':
-        router.push({
-          pathname: '/consultation/[id]',
-          params: { id: data.referenceId },
-        });
-        break;
-      case 'message_received':
-        router.push({
-          pathname: '/messages/[id]',
-          params: { id: data.referenceId },
-        });
-        break;
-      default:
-        // For system notifications or unknown types, go to notifications list
-        router.push('/notifications');
-        break;
-    }
+    // Shared pure router; in push mode "nothing matched" opens the inbox.
+    // It never throws, so a malformed payload cannot crash a tap.
+    const to = routeForNotification(data, 'push');
+    if (to) router.push(to as never);
   }
 
   /**
    * Clean up all listeners. Called on logout.
    */
   private cleanup(): void {
+    // Logout: let the next login's initialize() set everything up again.
+    this.initPromise = null;
     for (const unsub of this.unsubscribers) {
       unsub();
     }
