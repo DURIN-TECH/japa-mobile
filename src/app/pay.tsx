@@ -360,9 +360,10 @@ export default function PayScreen() {
   const [quote, setQuote] = useState<LockedQuote | null>(null);
   // True after a checkout came back unpaid: CTA reads "Open checkout".
   const [attempted, setAttempted] = useState(false);
-  // True after the verify CALL itself failed (network / 5xx) once Paystack
-  // closed: the person may have paid, so the CTA reads "Check again" and
-  // only re-verifies the same reference. It never opens a checkout.
+  // True while a payment still needs checking: the verify CALL failed
+  // (network / 5xx) once Paystack closed, or verify answered "in progress" /
+  // "couldn’t confirm". The person may have paid, so the CTA reads "Check
+  // again" and only re-verifies the same reference. It never opens a checkout.
   const [recheck, setRecheck] = useState(false);
   // Device clock, ticked once a second while a quote is locked.
   const [now, setNow] = useState(() => Date.now());
@@ -372,6 +373,8 @@ export default function PayScreen() {
   // Reopening after an unpaid attempt goes through /checkout first (it may
   // hand back a fresh quote); cleared when verify itself handed a new one.
   const resumeRef = useRef(false);
+  // True while a booking / re-price call is running (see requestQuote).
+  const quoteBusyRef = useRef(false);
   // Side results of a verify call (read after runPaystackCheckout returns).
   const verifyNoteRef = useRef<string | null>(null);
   // How the last verify failed (null = it did not fail, or was not paid on
@@ -485,7 +488,11 @@ export default function PayScreen() {
         charged,
       });
     }
-    goToConfirmation({ charged, usdCents });
+    // REPLACE, not push (as the free path does): the booking is paid, so
+    // this screen must not stay under the confirmation with a live "Pay".
+    // Going back returns to the slot picker, and the booking analytics
+    // above can only ever fire once per booking.
+    goToConfirmation({ charged, usdCents, replace: true });
   };
 
   /** A free booking (`requiresPayment: false`): no checkout at all. */
@@ -555,6 +562,18 @@ export default function PayScreen() {
   // First call books: POST /consultations (no fee). Later calls (refresh
   // after expiry) re-price the SAME booking: POST /consultations/:id/checkout.
   const requestQuote = async () => {
+    // In-flight guard (a ref, so it holds before the next render): a double
+    // tap on "Try again" / "Refresh price" must not send two create calls,
+    // which would book the slot twice.
+    if (quoteBusyRef.current) return;
+    quoteBusyRef.current = true;
+    try {
+      await runQuoteRequest();
+    } finally {
+      quoteBusyRef.current = false;
+    }
+  };
+  const runQuoteRequest = async () => {
     setPayError(null);
     setPhase('loading');
     const prev = quoteRef.current;
@@ -700,9 +719,17 @@ export default function PayScreen() {
       bookingPaid(paidSummaryRef.current, q);
       return;
     }
+    const verifyKind = verifyKindRef.current;
+    if (verifyKind === 'in_progress' || verifyKind === 'unconfirmed') {
+      // A payment may still land (in progress), or may already have been
+      // made (unconfirmed): the only safe control is "Check again", which
+      // re-verifies and opens nothing. Never "Open checkout" here.
+      setRecheck(true);
+      setPayError(verifyNoteRef.current ?? PAY_COPY.unconfirmed);
+      return;
+    }
     // Verify answered: we now know it is not paid (or what else is up).
     setRecheck(false);
-    const verifyKind = verifyKindRef.current;
     setAttempted(!(verifyKind && VERIFY_ENDS_CHECKOUT.has(verifyKind)));
     setPayError(verifyNoteRef.current ?? PAY_COPY.notCompleted);
   };
@@ -1278,7 +1305,9 @@ export default function PayScreen() {
         {/* ── Lock note + live countdown (booking, locked, not expired) ─────── */}
         {/* InfoNote anatomy (cream panel, shield) with the countdown on the
             right; tabular numerals so the digits don't jitter. */}
-        {!isApp && phase === 'locked' && quote && !expired ? (
+        {/* Hidden while a payment check is pending (`recheck`): "locked for
+            30 minutes" with 0:00 next to "Check again" would only confuse. */}
+        {!isApp && phase === 'locked' && quote && !expired && !recheck ? (
           <View
             style={{
               flexDirection: 'row',

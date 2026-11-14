@@ -251,7 +251,7 @@ describe('pay.tsx booking (japa#183)', () => {
       'durintech://payment-return',
     );
     expect(mockVerify).toHaveBeenCalledWith('cons-ref-1');
-    const arg = mockPush.mock.calls[0][0] as {
+    const arg = mockReplace.mock.calls[0][0] as {
       pathname: string;
       params: Record<string, string>;
     };
@@ -280,7 +280,7 @@ describe('pay.tsx booking (japa#183)', () => {
     await act(async () => {
       await cta(tree).props.onPress();
     });
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(text(tree)).toContain(PAY_COPY.notCompleted);
     expect(cta(tree).props.accessibilityLabel).toBe('Open checkout');
   });
@@ -288,7 +288,12 @@ describe('pay.tsx booking (japa#183)', () => {
   it('reopening resumes via /checkout and shows a FRESH price before opening', async () => {
     mockCreate.mockResolvedValue(paidBooking());
     mockOpenAuth.mockResolvedValue({ type: 'cancel' });
-    mockVerify.mockRejectedValue({ code: 'VALIDATION_ERROR', status: 400 });
+    // The backend's wording for a genuinely unpaid checkout.
+    mockVerify.mockRejectedValue({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      message: 'Payment has not been completed',
+    });
     const tree = await render();
     await chooseMethod(tree);
     await act(async () => {
@@ -320,7 +325,12 @@ describe('pay.tsx booking (japa#183)', () => {
   it('409 PAYMENT_IN_PROGRESS on resume says so and does not reopen', async () => {
     mockCreate.mockResolvedValue(paidBooking());
     mockOpenAuth.mockResolvedValue({ type: 'cancel' });
-    mockVerify.mockRejectedValue({ code: 'VALIDATION_ERROR', status: 400 });
+    // The backend's wording for a genuinely unpaid checkout.
+    mockVerify.mockRejectedValue({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      message: 'Payment has not been completed',
+    });
     const tree = await render();
     await chooseMethod(tree);
     await act(async () => {
@@ -434,7 +444,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
         message: 'This booking is no longer awaiting payment',
       }),
     );
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(text(tree)).toContain(PAY_COPY.notPayable);
     // The CTA is the plain, DISABLED "Pay" (not a live button that does
     // nothing, and not "Open checkout" for a closed booking).
@@ -475,7 +485,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
         }),
       );
       // The new amount is on screen before anything else opens.
-      expect(mockPush).not.toHaveBeenCalled();
+      expect(mockReplace).not.toHaveBeenCalled();
       expect(text(tree)).toContain('₦49,000.00');
       expect(text(tree)).toContain(PAY_COPY.newPrice);
       expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦49,000.00');
@@ -500,7 +510,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
         'durintech://payment-return',
       );
       expect(mockVerify).toHaveBeenCalledWith('cons-ref-2');
-      const arg = mockPush.mock.calls[0][0] as {
+      const arg = mockReplace.mock.calls[0][0] as {
         params: Record<string, string>;
       };
       expect(arg.params.paidAmountMinor).toBe('4900000');
@@ -513,7 +523,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
         consultation: { ...paidBooking(), paymentStatus: 'pending' },
       }),
     );
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(mockTrackBooked).not.toHaveBeenCalled();
     expect(text(tree)).toContain(PAY_COPY.notCompleted);
     expect(cta(tree).props.accessibilityLabel).toBe('Open checkout');
@@ -526,7 +536,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
         consultation: { ...paidBooking(), paymentStatus: 'paid' },
       }),
     );
-    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
   });
 
   it('verify 400 PAYMENT_MISMATCH: says we are checking it, and offers NO way to pay again', async () => {
@@ -538,7 +548,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
       }),
     );
     const t = text(tree);
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(t).toContain(PAY_COPY.paymentReview);
     expect(t).not.toContain(PAY_COPY.notCompleted);
     // No pay control of any kind: the CTA is disabled and there is no retry.
@@ -564,6 +574,99 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
     );
     expect(text(tree)).toContain(PAY_COPY.unconfirmed);
     expect(text(tree)).not.toContain(PAY_COPY.notCompleted);
+    // "Don’t pay again" sits next to "Check again", never "Open checkout".
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+    // The press only re-verifies: nothing opens, no /checkout.
+    mockOpenAuth.mockClear();
+    mockVerify.mockClear();
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockVerify).toHaveBeenCalledWith('cons-ref-1');
+    expect(mockOpenAuth).not.toHaveBeenCalled();
+    expect(mockCheckout).not.toHaveBeenCalled();
+  });
+
+  it('verify 409 PAYMENT_IN_PROGRESS: "Check again" (re-verify only), then paid → confirmation', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockRejectedValue({
+        code: 'PAYMENT_IN_PROGRESS',
+        status: 409,
+      }),
+    );
+    expect(text(tree)).toContain(PAY_COPY.inProgress);
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+    // The lock note is hidden while the check is pending.
+    expect(text(tree)).not.toContain('Your price is locked for 30 minutes.');
+    mockOpenAuth.mockClear();
+    mockVerify.mockReset();
+    mockVerify.mockResolvedValue({
+      verified: true,
+      consultation: { ...paidBooking(), paymentStatus: 'paid' },
+    });
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockOpenAuth).not.toHaveBeenCalled();
+    expect(mockCheckout).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    // Booked analytics fired exactly once.
+    expect(mockTrackBooked).toHaveBeenCalledTimes(1);
+  });
+
+  it('verify bare 503 (no PRICING_UNAVAILABLE code): "Check again", never "Nothing was charged"', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockRejectedValue({ code: 'UNKNOWN_ERROR', status: 503 }),
+    );
+    const t = text(tree);
+    expect(t).toContain(PAY_COPY.verifyFailed);
+    expect(t).not.toContain('Nothing was charged');
+    expect(t).not.toContain(PAY_COPY.pricingUnavailable);
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+  });
+
+  it('a pending check is never shown as expired, even after the lock has passed', async () => {
+    const tree = await payThenVerify(() =>
+      mockVerify.mockRejectedValue({ code: 'NETWORK_ERROR', status: 0 }),
+    );
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+    // Device 10:33 = server 10:31: one minute past `quoteExpiresAt`.
+    (Date.now as jest.Mock).mockReturnValue(
+      new Date('2026-11-14T10:33:00.000Z').getTime(),
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 1100));
+    });
+    const t = text(tree);
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+    expect(t).not.toContain(PAY_COPY.expired);
+    expect(t).toContain(PAY_COPY.verifyFailed);
+    // No "locked for 30 minutes · 0:00" note beside the pending check.
+    expect(t).not.toContain('Your price is locked for 30 minutes.');
+    // The press re-verifies; it does not re-price through /checkout.
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockCheckout).not.toHaveBeenCalled();
+    expect(mockVerify).toHaveBeenLastCalledWith('cons-ref-1');
+  });
+
+  it('a double tap on "Try again" sends ONE booking call', async () => {
+    mockCreate.mockRejectedValue({
+      code: 'BILLING_PROVIDER_ERROR',
+      status: 502,
+    });
+    const tree = await render();
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue(paidBooking());
+    const retry = tryAgain(tree)!;
+    await act(async () => {
+      // Two presses before any re-render.
+      void retry.props.onPress();
+      void retry.props.onPress();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
   it('create 400 VALIDATION_ERROR: "couldn’t book", never "haven’t received your payment"', async () => {
@@ -596,8 +699,8 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
         await cta(tree).props.onPress();
       });
       expect(mockVerify).toHaveBeenCalledWith('cons-ref-1');
-      expect(mockPush).toHaveBeenCalledTimes(1);
-      const arg = mockPush.mock.calls[0][0] as { pathname: string };
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+      const arg = mockReplace.mock.calls[0][0] as { pathname: string };
       expect(arg.pathname).toBe('/confirmation');
       // No error of any kind was shown on the way.
       expect(text(tree)).not.toContain(PAY_COPY.error);
@@ -610,7 +713,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
       mockVerify.mockRejectedValue({ code: 'NETWORK_ERROR', status: 0 }),
     );
     let t = text(tree);
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(t).toContain(PAY_COPY.verifyFailed);
     expect(t).not.toContain('Nothing was charged');
     expect(cta(tree).props.accessibilityLabel).toBe('Check again');
@@ -644,8 +747,8 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
     expect(mockOpenAuth).not.toHaveBeenCalled();
     expect(mockCheckout).not.toHaveBeenCalled();
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(mockPush).toHaveBeenCalledTimes(1);
-    const arg = mockPush.mock.calls[0][0] as {
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    const arg = mockReplace.mock.calls[0][0] as {
       pathname: string;
       params: Record<string, string>;
     };
@@ -670,7 +773,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
     await act(async () => {
       await cta(tree).props.onPress();
     });
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(text(tree)).toContain(PAY_COPY.notCompleted);
     expect(cta(tree).props.accessibilityLabel).toBe('Open checkout');
   });

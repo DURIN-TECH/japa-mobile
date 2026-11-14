@@ -275,7 +275,11 @@ export function classifyConsultationPayError(
   const message = typeof e.message === 'string' ? e.message : '';
   const status = typeof e.status === 'number' ? e.status : 0;
 
-  if (code === 'PRICING_UNAVAILABLE' || status === 503) {
+  // ONLY the explicit code, never a bare 503: a 503 from the platform itself
+  // (cold start, gateway) says nothing about pricing. On verify it must fall
+  // to `error`, which the screen turns into "couldn’t check your payment…
+  // Check again" (they may have paid), never "Nothing was charged".
+  if (code === 'PRICING_UNAVAILABLE') {
     return {
       kind: 'pricing_unavailable',
       message: PAY_COPY.pricingUnavailable,

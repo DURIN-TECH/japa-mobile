@@ -129,6 +129,16 @@ describe('classifyConsultationPayError', () => {
     }
   });
 
+  it('a bare 503 is never the pricing message (only the explicit code is)', () => {
+    for (const stage of ['create', 'checkout', 'verify'] as const) {
+      const v = classifyConsultationPayError(
+        { code: 'UNKNOWN_ERROR', status: 503 },
+        stage,
+      );
+      expect(v.kind).toBe('error');
+    }
+  });
+
   it('only the verify "Payment has not been completed" 400 is the unpaid case', () => {
     const v = classifyConsultationPayError(
       {
