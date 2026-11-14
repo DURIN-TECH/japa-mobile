@@ -54,10 +54,34 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   slug: config.slug ?? 'japa-mobile',
   ios: {
     ...config.ios,
+    infoPlist: {
+      ...config.ios?.infoPlist,
+      // Lets a silent/data push wake the app in the background (japa#264).
+      UIBackgroundModes: Array.from(
+        new Set([
+          ...((config.ios?.infoPlist?.UIBackgroundModes as
+            | string[]
+            | undefined) ?? []),
+          'remote-notification',
+        ]),
+      ),
+    },
+    entitlements: {
+      ...config.ios?.entitlements,
+      // `development` for local builds; EAS rewrites it to `production` for
+      // store/TestFlight builds from the provisioning profile.
+      'aps-environment': 'development',
+    },
     googleServicesFile: `${googleServicesDir}/GoogleService-Info.plist`,
   },
   android: {
     ...config.android,
+    // Android 13+ runtime notification permission (japa#264). The channel, icon
+    // and default channel id come from plugins/withAndroidPushSetup.js.
+    permissions: [
+      ...(config.android?.permissions ?? []),
+      'android.permission.POST_NOTIFICATIONS',
+    ],
     googleServicesFile: `${googleServicesDir}/google-services.json`,
   },
   extra: {
