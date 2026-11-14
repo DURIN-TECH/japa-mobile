@@ -2,6 +2,7 @@
 import { describe, expect, it } from '@jest/globals';
 import {
   classifyStartError,
+  getDuplicateApplication,
   isNotFoundError,
   retryUnlessNotFound,
 } from '../queryErrors';
@@ -43,5 +44,29 @@ describe('classifyStartError', () => {
     expect(classifyStartError({ status: 0 })).toBe('retry');
     expect(classifyStartError(new Error('x'))).toBe('retry');
     expect(classifyStartError(null)).toBe('retry');
+  });
+});
+
+// Duplicate-application 409 (japa#253).
+describe('getDuplicateApplication', () => {
+  const dup = {
+    status: 409,
+    code: 'DUPLICATE_ACTIVE_APPLICATION',
+    message: '',
+    data: {
+      existingApplication: { id: 'app-1', visaTypeName: 'Skilled Worker' },
+    },
+  };
+  it('returns the existing application from the 409', () => {
+    expect(getDuplicateApplication(dup)?.id).toBe('app-1');
+  });
+  it('is null for other 409s, other statuses, and malformed bodies', () => {
+    expect(getDuplicateApplication({ ...dup, code: 'CONFLICT' })).toBeNull();
+    expect(getDuplicateApplication({ ...dup, status: 400 })).toBeNull();
+    expect(getDuplicateApplication({ ...dup, data: undefined })).toBeNull();
+    expect(
+      getDuplicateApplication({ ...dup, data: { existingApplication: {} } }),
+    ).toBeNull();
+    expect(getDuplicateApplication(null)).toBeNull();
   });
 });

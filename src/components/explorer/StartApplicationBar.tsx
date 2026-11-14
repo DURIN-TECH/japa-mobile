@@ -6,6 +6,7 @@
 //   upgrade      UpgradePrompt (its "See plans" is the only coral button) + "Not now"
 //   unavailable  InlineError, CTA disabled (60%) for this visit
 //   retry        InlineError, CTA enabled (it is the retry)
+//   duplicate    (#253) bottom sheet: continue the existing application or start a new one
 // ─────────────────────────────────────────────────────────────────────────────
 import React from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
@@ -16,7 +17,11 @@ import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { InlineError } from '@/components/explorer/AccountForm';
 import { UpgradePrompt } from '@/components/explorer/UpgradePrompt';
-import type { StartFailure } from '@/hooks/useStartApplication';
+import { DuplicateApplicationSheet } from '@/components/explorer/DuplicateApplicationSheet';
+import type {
+  DuplicateApplication,
+  StartFailure,
+} from '@/hooks/useStartApplication';
 
 /** Copy lives here so both screens say the same thing. */
 export const START_COPY = {
@@ -40,6 +45,10 @@ export function StartApplicationBar({
   failure,
   onStart,
   onDismissUpgrade,
+  duplicate = null,
+  onContinueExisting,
+  onStartAnyway,
+  onDismissDuplicate,
 }: {
   /** "Starting at" price (display only; see the naira follow-up). */
   price: number;
@@ -47,6 +56,11 @@ export function StartApplicationBar({
   failure: StartFailure | null;
   onStart: () => void;
   onDismissUpgrade: () => void;
+  /** #253: the user's existing application for this visa, when the backend said so. */
+  duplicate?: DuplicateApplication | null;
+  onContinueExisting?: () => void;
+  onStartAnyway?: () => void;
+  onDismissDuplicate?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const disabled = creating || failure === 'unavailable';
@@ -161,6 +175,13 @@ export function StartApplicationBar({
           </View>
         </>
       )}
+      {/* #253: the "you already have this" prompt (a Modal, so it floats above the bar). */}
+      <DuplicateApplicationSheet
+        duplicate={duplicate}
+        onContinue={onContinueExisting ?? (() => {})}
+        onStartNew={onStartAnyway ?? (() => {})}
+        onDismiss={onDismissDuplicate ?? (() => {})}
+      />
     </BlurView>
   );
 }

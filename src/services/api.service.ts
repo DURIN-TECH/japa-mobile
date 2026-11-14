@@ -23,6 +23,8 @@ export interface ApiError {
   code: string;
   message: string;
   status: number;
+  /** The error body's `data`, when the backend sends one (#253: the existing application on a 409). */
+  data?: unknown;
 }
 
 // Create axios instance
@@ -113,6 +115,7 @@ api.interceptors.response.use(
         code: error.response.data?.error || 'UNKNOWN_ERROR',
         message: error.response.data?.message || 'An error occurred',
         status: error.response.status,
+        data: error.response.data?.data,
       };
       return Promise.reject(apiError);
     } else if (error.request) {
