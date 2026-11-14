@@ -73,7 +73,8 @@ export function useSaveAnswer(applicationId: string) {
           const next = { ...(prev ?? {}) };
           // "" clears the answer: drop the entry so the pill goes back to Waiting.
           // The server's normalised value when it sends one, else what we sent.
-          if (input.value === '' || input.value === null) delete next[input.itemId];
+          if (input.value === '' || input.value === null)
+            delete next[input.itemId];
           else
             next[input.itemId] = {
               value: saved.value ?? input.value,

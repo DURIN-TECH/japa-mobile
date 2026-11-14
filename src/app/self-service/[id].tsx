@@ -1387,8 +1387,10 @@ export default function SelfServiceView() {
                     answersLoading: answersQ.isLoading,
                     answersError: answersQ.isError,
                     onRetryAnswers: () => answersQ.refetch(),
-                    saveAnswer: (itemId: string, value: AnswerValue | '' | null) =>
-                      saveAnswerM.mutateAsync({ itemId, value }),
+                    saveAnswer: (
+                      itemId: string,
+                      value: AnswerValue | '' | null,
+                    ) => saveAnswerM.mutateAsync({ itemId, value }),
                     locked: answersLocked,
                     onLocked: () => setAnswersLockedByServer(true),
                     onSeePlans: () => router.push(PLANS_ROUTE),
