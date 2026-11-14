@@ -4,7 +4,7 @@
 // CTA. Reanimated drives the hero parallax/zoom from the sheet's scroll offset.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, Text, View, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
 import Animated, {
@@ -39,6 +39,7 @@ import {
   loadErrorCopy,
 } from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
+import { NeedAVisaCard } from '@/components/explorer/NeedAVisaCard';
 import {
   Flag,
   GlassButton,
@@ -203,6 +204,10 @@ export default function DestinationDetail() {
   // so a missing code or id simply finds nothing (not-found state below).
   const liveQ = useVisaType(code ?? '', id ?? '');
   const { data: countries } = useCountriesWithVisas();
+
+  // japa#237: the "Do I need a visa?" card hides the Start bar when the answer
+  // says no visa application is the route (visa-free, on arrival, ...).
+  const [hideStartBar, setHideStartBar] = useState(false);
 
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
@@ -403,7 +408,9 @@ export default function DestinationDetail() {
             minHeight: 540,
             paddingTop: 8,
             paddingHorizontal: 20,
-            paddingBottom: 130 + startBarExtraHeight(startApp.failure),
+            paddingBottom: hideStartBar
+              ? EX.space.tabClear
+              : 130 + startBarExtraHeight(startApp.failure),
             shadowColor: '#171326',
             shadowOpacity: 0.28,
             shadowRadius: 30,
@@ -469,6 +476,12 @@ export default function DestinationDetail() {
           >
             {d.blurb}
           </Text>
+
+          {/* japa#237: "Do I need a visa?" */}
+          <NeedAVisaCard
+            destinationCode={code ?? ''}
+            onHideStartBar={setHideStartBar}
+          />
 
           {/* Choose your path */}
           <Text
@@ -857,17 +870,19 @@ export default function DestinationDetail() {
 
       {/* Sticky glass CTA */}
       {/* Sticky CTA + start-failure states (japa#174) */}
-      <StartApplicationBar
-        price={d.price}
-        creating={startApp.creating}
-        failure={startApp.failure}
-        onStart={startApp.start}
-        onDismissUpgrade={startApp.dismissUpgrade}
-        duplicate={startApp.duplicate}
-        onContinueExisting={startApp.continueExisting}
-        onStartAnyway={startApp.startAnyway}
-        onDismissDuplicate={startApp.dismissDuplicate}
-      />
+      {!hideStartBar ? (
+        <StartApplicationBar
+          price={d.price}
+          creating={startApp.creating}
+          failure={startApp.failure}
+          onStart={startApp.start}
+          onDismissUpgrade={startApp.dismissUpgrade}
+          duplicate={startApp.duplicate}
+          onContinueExisting={startApp.continueExisting}
+          onStartAnyway={startApp.startAnyway}
+          onDismissDuplicate={startApp.dismissDuplicate}
+        />
+      ) : null}
     </View>
   );
 }

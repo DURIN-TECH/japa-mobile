@@ -161,6 +161,26 @@ class AnalyticsService {
   }
 
   // ─────────────────────────────────────────────
+  // DO I NEED A VISA? (japa#237, P8b)
+  // Names only, NO properties: never the nationality, destination, outcome,
+  // purpose, stay or anything from the person's holdings.
+  // ─────────────────────────────────────────────
+  async trackNeedAVisaEvent(
+    name:
+      | 'need_a_visa_answered'
+      | 'need_a_visa_unknown'
+      | 'need_a_visa_official_link_opened'
+      | 'need_a_visa_holdings_opened'
+      | 'need_a_visa_details_opened',
+  ) {
+    try {
+      await logEvent(this.analytics, name);
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics need-a-visa error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // WHAT YOU ALREADY HOLD (japa#234)
   // Names only, NO properties: never a nationality, country code, document kind,
   // issuer or date. Those are personal data and stay out of analytics.
