@@ -16,6 +16,13 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 // Shared, ordered log of the side effects under test. `mock` prefix lets the
 // hoisted jest.mock factories reference it.
 const mockCalls: string[] = [];
+// When set, the push teardown waits on it: simulates a slow network so a
+// second auth event can arrive mid-teardown (review round 1).
+const mockGate: { wait: Promise<void> | null } = { wait: null };
+// Firebase's live currentUser (authService.getCurrentUser()).
+const mockFirebase: { currentUser: { uid: string } | null } = {
+  currentUser: null,
+};
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   jest.requireActual(
@@ -28,6 +35,7 @@ jest.mock('@/services/auth.service', () => ({
       mockCalls.push('signOut');
     }),
     reauthenticate: jest.fn(async () => {}),
+    getCurrentUser: () => mockFirebase.currentUser,
     getErrorMessage: () => 'error',
   },
 }));
@@ -40,6 +48,7 @@ jest.mock('@/services/api.service', () => ({
 jest.mock('@/services/push-notification.service', () => ({
   pushNotificationService: {
     unregisterToken: jest.fn(async (opts?: { notifyBackend?: boolean }) => {
+      if (mockGate.wait) await mockGate.wait;
       mockCalls.push(
         opts?.notifyBackend === false ? 'unregisterLocal' : 'unregister',
       );
@@ -109,6 +118,8 @@ beforeEach(() => {
   });
   jest.clearAllMocks();
   mockCalls.length = 0;
+  mockGate.wait = null;
+  mockFirebase.currentUser = null;
 });
 
 describe('logout()', () => {
@@ -157,7 +168,7 @@ describe('syncAuthUser() (onAuthStateChanged)', () => {
     await signIn('A');
     await st().syncAuthUser(null);
     expect(mockCalls).toEqual([
-      'unregister',
+      'unregisterLocal',
       'clearUserSession',
       'drafts.clearAll',
     ]);
@@ -174,7 +185,7 @@ describe('syncAuthUser() (onAuthStateChanged)', () => {
     await signIn('A');
     await st().syncAuthUser(fbUser('B'));
     expect(mockCalls).toEqual([
-      'unregister',
+      'unregisterLocal',
       'clearUserSession',
       // Answer drafts: A's forgotten, B's loaded.
       'drafts.clearAll',
@@ -196,7 +207,7 @@ describe('syncAuthUser() (onAuthStateChanged)', () => {
     mockCalls.length = 0;
     await st().syncAuthUser(fbUser('B'));
     expect(mockCalls).toContain('clearUserSession');
-    expect(mockCalls).toContain('unregister');
+    expect(mockCalls).toContain('unregisterLocal');
   });
 
   it('relaunch with a valid session keeps the cache', async () => {
@@ -207,5 +218,92 @@ describe('syncAuthUser() (onAuthStateChanged)', () => {
     mockCalls.length = 0;
     await st().syncAuthUser(fbUser('A'));
     expect(mockCalls).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Overlapping auth events (review round 1). Events run one at a time, and a
+// stale event never writes auth state over a newer one.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('syncAuthUser() with overlapping events', () => {
+  /** Hold the push teardown until `release()` is called. */
+  function holdTeardown() {
+    let release: () => void = () => {};
+    mockGate.wait = new Promise<void>((r) => {
+      release = r;
+    });
+    return () => {
+      mockGate.wait = null;
+      release();
+    };
+  }
+
+  /** Record every isAuthenticated value the store goes through. */
+  function trackAuthFlips() {
+    const seen: boolean[] = [];
+    const unsub = useAuthStore.subscribe((s, prev) => {
+      if (s.isAuthenticated !== prev.isAuthenticated)
+        seen.push(s.isAuthenticated);
+    });
+    return { seen, unsub };
+  }
+
+  it("A's session ends, B signs in mid-teardown: B stays signed in", async () => {
+    await signIn('A');
+    const release = holdTeardown();
+
+    // A's session ends on its own; the teardown hangs on the network.
+    const aEnded = st().syncAuthUser(null);
+    // B signs in meanwhile: loginWithEmail writes B into the store first,
+    // then Firebase's listener fires with B.
+    mockFirebase.currentUser = { uid: 'B' };
+    useAuthStore.setState({ user: fbUser('B'), isAuthenticated: true });
+    // (That write swaps the answer drafts A → B via the #187 subscription;
+    // only the queue's side effects matter from here.)
+    mockCalls.length = 0;
+    const flips = trackAuthFlips();
+    const bSignedIn = st().syncAuthUser(fbUser('B'));
+
+    // B's event is queued behind A's teardown: nothing has run yet.
+    await Promise.resolve();
+    expect(mockCalls).toEqual([]);
+
+    release();
+    await Promise.all([aEnded, bSignedIn]);
+
+    // A's teardown ran once, and B's event did not tear anything down.
+    expect(mockCalls).toEqual(['unregisterLocal', 'clearUserSession']);
+    // A's stale reset never signed B out (no bounce to /welcome).
+    expect(flips.seen).toEqual([]);
+    expect(st().user?.uid).toBe('B');
+    expect(st().isAuthenticated).toBe(true);
+    flips.unsub();
+  });
+
+  it('same, when B reaches the listener before the store', async () => {
+    await signIn('A');
+    const release = holdTeardown();
+    const aEnded = st().syncAuthUser(null);
+    mockFirebase.currentUser = { uid: 'B' };
+    const bSignedIn = st().syncAuthUser(fbUser('B'));
+    release();
+    await Promise.all([aEnded, bSignedIn]);
+    expect(mockCalls.filter((c) => c.startsWith('unregister'))).toEqual([
+      'unregisterLocal',
+    ]);
+    expect(st().user?.uid).toBe('B');
+    expect(st().isAuthenticated).toBe(true);
+  });
+
+  it('A switches to B, then signs out mid-teardown: ends signed out', async () => {
+    await signIn('A');
+    const release = holdTeardown();
+    const switched = st().syncAuthUser(fbUser('B'));
+    const signedOut = st().syncAuthUser(null);
+    release();
+    await Promise.all([switched, signedOut]);
+    // The stale switch never signed B in after the sign-out.
+    expect(st().user).toBeNull();
+    expect(st().isAuthenticated).toBe(false);
   });
 });
