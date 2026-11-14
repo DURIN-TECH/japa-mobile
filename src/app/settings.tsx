@@ -2,7 +2,7 @@
 // Settings screen (Explorer, coral/cream design).
 // Grouped white cards that reuse the profile.tsx `ProfileRow` visual language:
 //   36px cream icon chip · label 15/600 · optional muted value · chevron.
-// Sections: Appearance · Notifications · Privacy · Billing · Legal · Security · Account.
+// Sections: About you · Appearance · Notifications · Privacy · Billing · Legal · Security · Account.
 // Notification toggles + the security/account rows are LIVE (persist to the
 // backend); Appearance/Billing/Legal/Support remain display-only for now.
 // Native primitives only; safe-area aware.
@@ -46,6 +46,12 @@ import {
   AI_COPY,
   settingsRowValue,
 } from '@/components/explorer/aiMessageAccessLogic';
+// "What you already hold" row (#234): value = how many nationalities.
+import { useHoldings } from '@/hooks/useHoldings';
+import {
+  HOLDINGS_COPY,
+  nationalitiesSummary,
+} from '@/components/explorer/holdingsLogic';
 
 // ── One settings row ─────────────────────────────────────────────────────────
 // Mirrors profile.tsx `ProfileRow`: 36px cream icon chip, 15/600 label, optional
@@ -219,6 +225,8 @@ export default function SettingsScreen() {
   // loading failed: the row still opens the screen, which shows the error.
   const aiAccessState = useAiMessageAccessState();
   const aiAccessValue = settingsRowValue(aiAccessState.data);
+  // #234: nationalities count for the "What you already hold" row.
+  const holdingsQ = useHoldings();
 
   // Subscription tier label from live data. A loaded `subscription: null`
   // means no paid plan → the zero-price plan's real name from GET /plans.
@@ -328,6 +336,28 @@ export default function SettingsScreen() {
           paddingBottom: 40,
         }}
       >
+        {/* ── 0. About you (#234) ────────────────────────────────────────── */}
+        <GroupLabel>{HOLDINGS_COPY.settingsGroup}</GroupLabel>
+        <Card>
+          <SettingsRow
+            icon={Ic.globe}
+            label={HOLDINGS_COPY.screenTitle}
+            // Loading: small coral spinner. Failed: no value, row still opens.
+            value={
+              holdingsQ.data
+                ? nationalitiesSummary(holdingsQ.data.nationalities)
+                : undefined
+            }
+            right={
+              holdingsQ.isLoading ? (
+                <ActivityIndicator size="small" color={EX.color.primary} />
+              ) : undefined
+            }
+            onPress={() => router.push('/holdings')}
+          />
+        </Card>
+        <View style={{ height: 22 }} />
+
         {/* ── 1. Appearance ──────────────────────────────────────────────── */}
         <GroupLabel>Appearance</GroupLabel>
         <Card>
