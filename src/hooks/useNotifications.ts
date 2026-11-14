@@ -45,7 +45,13 @@ export interface ApiNotification {
     | 'document_check_problems'
     | 'document_check_could_not_check'
     | 'document_check_passed'
-    | 'system';
+    | 'refusal_analysis_ready'
+    | 'document_approved'
+    | 'document_rejected'
+    | 'identity_verified'
+    | 'identity_verification_failed'
+    | 'visa_news'
+    | (string & {}); // unknown future types fall back to `status` in toKind
   title: string;
   /** Notification body text — matches backend field name */
   body: string;
@@ -57,7 +63,9 @@ export interface ApiNotification {
     | 'consultation'
     | 'document'
     | 'message'
-    | 'payment_request';
+    | 'payment_request'
+    | 'refusal_analysis'
+    | (string & {});
   /** Deep linking — ID of the related entity */
   relatedEntityId?: string;
   /** @deprecated Use relatedEntityId instead */

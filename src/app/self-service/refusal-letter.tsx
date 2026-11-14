@@ -546,11 +546,20 @@ function Results({
 export default function RefusalLetterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { applicationId } = useLocalSearchParams<{ applicationId?: string }>();
+  const { applicationId, analysisId: paramAnalysisId } = useLocalSearchParams<{
+    applicationId?: string;
+    analysisId?: string;
+  }>();
   const appId = applicationId ?? '';
 
   // The analysis remembered for this application (survives backgrounding / restart).
-  const [analysisId, setAnalysisId, storedReady] = useStoredAnalysisId(appId);
+  const [storedId, setAnalysisId, storedReady] = useStoredAnalysisId(appId);
+  // #269: a push for a finished analysis carries its id, so the result shows on
+  // a phone that never uploaded the letter. The phone's own saved id wins; the
+  // param is dropped once the user starts over ("reset").
+  const [paramDropped, setParamDropped] = useState(false);
+  const analysisId =
+    storedId ?? (!paramDropped && paramAnalysisId ? paramAnalysisId : null);
   const analysisQ = useRefusalAnalysis(analysisId);
 
   const getUploadUrl = useGetUploadUrl();
@@ -622,6 +631,7 @@ export default function RefusalLetterScreen() {
 
   /** Forget the current analysis and go back to the upload prompt. */
   const reset = useCallback(() => {
+    setParamDropped(true);
     setAnalysisId(null);
     setDocumentId(null);
     setError(null);

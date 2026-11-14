@@ -47,13 +47,37 @@ type IconType = React.ComponentType<{
   strokeWidth?: number;
 }>;
 
-// Kind → icon + tinted IconChip colors.
+// Kind → icon + tinted IconChip colors (design spec #269; all EX tokens).
 const KIND: Record<Notif['kind'], { icon: IconType; fg: string; bg: string }> =
   {
-    status: { icon: Ic.gauge, fg: '#2F62A0', bg: '#DCEBF7' }, // blue
-    message: { icon: Ic.msg, fg: EX.color.primary, bg: EX.color.primaryTint10 }, // coral — source rgba(244,81,108,0.1)
-    action: { icon: Ic.upload, fg: EX.color.amber, bg: '#FCEAC8' }, // amber — source #FCEAC8
-    consult: { icon: Ic.cal, fg: EX.color.success, bg: '#D6F2E2' }, // green
+    status: {
+      icon: Ic.gauge,
+      fg: EX.status.review.fg,
+      bg: EX.status.review.bg,
+    },
+    message: { icon: Ic.msg, fg: EX.color.primary, bg: EX.color.primaryTint10 },
+    action: {
+      icon: Ic.upload,
+      fg: EX.status.documents.fg,
+      bg: EX.status.documents.bg,
+    },
+    consult: {
+      icon: Ic.cal,
+      fg: EX.status.approved.fg,
+      bg: EX.status.approved.bg,
+    },
+    verified: {
+      icon: Ic.check2,
+      fg: EX.status.submitted.fg,
+      bg: EX.status.submitted.bg,
+    },
+    payment: { icon: Ic.cards, fg: EX.color.primary, bg: EX.color.cream },
+    alert: {
+      icon: Ic.alert,
+      fg: EX.status.documents.fg,
+      bg: EX.status.documents.bg,
+    },
+    news: { icon: Ic.globe, fg: EX.color.ink2, bg: EX.color.cream },
   };
 
 export default function NotificationsView() {

@@ -143,3 +143,57 @@ describe('routeForNotification', () => {
     expect(route({ type: 'document_check_passed' }, 'inbox')).toBeNull();
   });
 });
+
+// ── #269: every backend type gets a tap target (inbox mode) ──────────────────
+describe('routeForNotification (#269 type table)', () => {
+  const inbox = (type: string, id?: string, entity?: string) =>
+    route({ type, relatedEntityId: id, relatedEntityType: entity }, 'inbox');
+
+  it('refusal_analysis_ready -> refusal-letter screen by applicationId', () => {
+    expect(inbox('refusal_analysis_ready', 'a1', 'application')).toBe(
+      '/self-service/refusal-letter?applicationId=a1',
+    );
+  });
+  it('refusal_analysis_ready push passes analysisId through', () => {
+    expect(
+      route({
+        type: 'refusal_analysis_ready',
+        relatedEntityId: 'a1',
+        analysisId: 'x9',
+      }),
+    ).toBe('/self-service/refusal-letter?applicationId=a1&analysisId=x9');
+  });
+  it('refusal_analysis_ready without an id stays / opens the inbox', () => {
+    expect(inbox('refusal_analysis_ready')).toBeNull();
+    expect(route({ type: 'refusal_analysis_ready' })).toBe('/notifications');
+  });
+  it('document_rejected / document_approved -> the application', () => {
+    expect(inbox('document_rejected', 'a1', 'application')).toBe(
+      '/application/a1',
+    );
+    expect(inbox('document_approved', 'a1', 'application')).toBe(
+      '/application/a1',
+    );
+    expect(inbox('document_approved')).toBeNull();
+  });
+  it('identity results -> /verify-identity', () => {
+    expect(inbox('identity_verified')).toBe('/verify-identity');
+    expect(inbox('identity_verification_failed')).toBe('/verify-identity');
+  });
+  it('visa_news never opens anything, even with an entity', () => {
+    expect(inbox('visa_news', 'n1', 'application')).toBeNull();
+    expect(route({ type: 'visa_news', relatedEntityId: 'n1' })).toBe(
+      '/notifications',
+    );
+  });
+  it('self-service types as before', () => {
+    expect(inbox('readiness_review_ready', 'a1')).toBe(
+      '/self-service/a1/review',
+    );
+    expect(inbox('document_check_problems', 'a1')).toBe('/self-service/a1');
+    expect(inbox('document_check_could_not_check', 'a1')).toBe(
+      '/self-service/a1',
+    );
+    expect(inbox('document_check_passed', 'a1')).toBe('/self-service/a1');
+  });
+});
