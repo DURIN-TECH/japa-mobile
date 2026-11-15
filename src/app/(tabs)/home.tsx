@@ -40,6 +40,8 @@ import { useUnreadNotificationCount } from '@/hooks/useNotifications';
 import { useMe } from '@/hooks/useMe';
 import { profileName, profileSeed } from '@/components/explorer/liveProfile';
 import { Ic } from '@/components/explorer/icons';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import {
   Card,
   Flag,
@@ -327,6 +329,9 @@ function HeaderButton({
 
 export default function HomeScreen() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides the Messages button and the
+  // "Find an agent" quick action. Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
 
   // ── Applications (GET /applications) — japa#145: no demo APPS ──────────────
@@ -425,11 +430,15 @@ export default function HomeScreen() {
           ) : null}
         </View>
         <View style={{ flexDirection: 'row', gap: 9 }}>
-          <HeaderButton
-            icon={Ic.msg}
-            onPress={() => router.push('/messages')}
-            accessibilityLabel="Messages"
-          />
+          {/* Messages (chat with agents) is hidden in a self-service-only
+              build (japa#334); the bell and portrait stay. */}
+          {selfServiceOnly ? null : (
+            <HeaderButton
+              icon={Ic.msg}
+              onPress={() => router.push('/messages')}
+              accessibilityLabel="Messages"
+            />
+          )}
           <HeaderButton
             icon={Ic.bell}
             onPress={() => router.push('/notifications')}
@@ -720,12 +729,17 @@ export default function HomeScreen() {
           tone={{ bg: EX.color.tealTint14, fg: EX.color.success }}
           onPress={checkEligibility}
         />
-        <QuickAction
-          icon={Ic.users}
-          label="Find an agent"
-          tone={{ bg: EX.color.purpleTint, fg: EX.color.purple }}
-          onPress={() => router.push('/(tabs)/agents')}
-        />
+        {/* "Find an agent" goes to the Agents tab, hidden in a
+            self-service-only build (japa#334); the other two tiles share
+            the row (each is flex: 1). */}
+        {selfServiceOnly ? null : (
+          <QuickAction
+            icon={Ic.users}
+            label="Find an agent"
+            tone={{ bg: EX.color.purpleTint, fg: EX.color.purple }}
+            onPress={() => router.push('/(tabs)/agents')}
+          />
+        )}
       </View>
 
       {/* ── Active applications / its loading · error · first-run states ──────

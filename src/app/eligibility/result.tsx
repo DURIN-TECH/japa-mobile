@@ -41,6 +41,8 @@ import { EX } from '@/components/explorer/theme';
 import { mapCheckResult } from '@/components/explorer/liveEligibility';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useTopAgents } from '@/hooks/useAgents';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import { isUnavailableError } from '@/hooks/queryErrors';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { loadErrorCopy } from '@/components/explorer/states';
@@ -205,6 +207,8 @@ function CriteriaRow({
 
 export default function EligibilityResult() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides the agent-nudge card.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
   const { dest, checkId } = useLocalSearchParams<{
     dest?: string;
@@ -221,7 +225,9 @@ export default function EligibilityResult() {
   );
 
   // Agent nudge: the real #1 top agent (GET /agents/top); none → hidden.
-  const topAgentsQ = useTopAgents(1);
+  // Self-service-only build (japa#334): the nudge is hidden, so the call is
+  // skipped and `agent` stays undefined.
+  const topAgentsQ = useTopAgents(1, !selfServiceOnly);
   const agent = useMemo(
     () => (topAgentsQ.data ?? []).map(mapAgent)[0],
     [topAgentsQ.data],
@@ -389,8 +395,9 @@ export default function EligibilityResult() {
             ))}
           </View>
 
-          {/* Dark agent-nudge card — eyebrow + title + coral chevron circle */}
-          {agent ? (
+          {/* Dark agent-nudge card — eyebrow + title + coral chevron circle.
+              Never in a self-service-only build (japa#334). */}
+          {!selfServiceOnly && agent ? (
             <Pressable
               onPress={() => router.push(`/agent/${agent.id}`)}
               style={{
