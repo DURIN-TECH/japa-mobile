@@ -20,8 +20,14 @@
  * MONEY (japa#183): the app never sends a fee, amount, currency or rate. The
  * server reads the agent's dollar fee, quotes it in the client's currency,
  * stores the snapshot (`priceUsdCents`, `chargedCurrency`,
- * `chargedAmountMinor`, `fxRate`) and locks it for 30 minutes
+ * `chargedAmountMinor`) and locks it for 30 minutes
  * (`quoteLockedAt` → `quoteExpiresAt`). The app shows those stored values.
+ *
+ * RATE (japa#332): a client is never sent the raw exchange rate (`fxRate`)
+ * or Seli's markup. Every response carries `effectiveRate` instead: local
+ * units per 1 USD, amount charged ÷ dollar price, markup included. That is
+ * the rate behind "$6.00 at ₦1,353.97 per $1". It is absent on a free
+ * booking and on a legacy one with no complete charge.
  *
  * The backend Consultation type has more fields than the mobile app's
  * original `Consultation` type. We map the API response to a richer
@@ -92,8 +98,12 @@ export interface ApiConsultation {
   chargedCurrency?: string;
   /** The locked amount, in minor units of `chargedCurrency`. Paid only. */
   chargedAmountMinor?: number;
-  /** Local units per 1 USD the quote used (display: "at ₦1,353.97 per $1"). */
-  fxRate?: number;
+  /**
+   * Local units per 1 USD the client effectively pays, markup included
+   * (japa#332; display: "at ₦1,353.97 per $1"). Absent on a free or legacy
+   * booking. Replaces the raw `fxRate`, which clients are no longer sent.
+   */
+  effectiveRate?: number;
   /** When the quote was locked (server clock). */
   quoteLockedAt?: ApiTimestamp;
   /** After this the quote may not be charged; a retry re-prices it. */
@@ -169,7 +179,8 @@ export interface BookingSummary {
   priceUsdCents?: number;
   chargedCurrency?: string;
   chargedAmountMinor?: number;
-  fxRate?: number;
+  /** Local units per 1 USD effectively paid (japa#332); see ApiConsultation. */
+  effectiveRate?: number;
   quoteExpiresAt?: ApiTimestamp;
 }
 

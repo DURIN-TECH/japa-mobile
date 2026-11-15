@@ -107,7 +107,7 @@ const paidBooking = (over: Record<string, unknown> = {}) => ({
   priceUsdCents: 3500,
   chargedCurrency: 'NGN',
   chargedAmountMinor: 4_738_940,
-  fxRate: 1353.97,
+  effectiveRate: 1353.97,
   quoteLockedAt: LOCKED_AT,
   quoteExpiresAt: EXPIRES_AT,
   requiresPayment: true,
@@ -227,6 +227,53 @@ describe('pay.tsx booking (japa#183)', () => {
     expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦47,389.40');
   });
 
+  // ── japa#332: the rate shown is the server's `effectiveRate` ─────────────
+  it('the issue example: $6.00 charged ₦8,123.84 shows "$6.00 at ₦1,353.97 per $1"', async () => {
+    mockCreate.mockResolvedValue(
+      paidBooking({
+        priceUsdCents: 600,
+        chargedAmountMinor: 812_384,
+        effectiveRate: 1353.973333,
+      }),
+    );
+    const tree = await render();
+    const t = text(tree);
+    expect(t).toContain('₦8,123.84');
+    expect(t).toContain('$6.00 at ₦1,353.97 per $1');
+  });
+
+  it('a legacy booking with no effectiveRate shows the dollar price only and still pays', async () => {
+    // A raw `fxRate` (which clients are no longer sent) must not be shown.
+    mockCreate.mockResolvedValue(
+      paidBooking({ effectiveRate: undefined, fxRate: 1320.95 }),
+    );
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockResolvedValue({
+      verified: true,
+      consultation: {
+        ...paidBooking({ effectiveRate: undefined }),
+        paymentStatus: 'paid',
+      },
+    });
+    const tree = await render();
+    const t = text(tree);
+    expect(t).toContain('₦47,389.40');
+    expect(t).toContain('$35.00');
+    expect(t).not.toContain('per $1');
+    expect(t).not.toContain('1,320.95');
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦47,389.40');
+    // Paying still works, and the confirmation gets no rate ('' = none).
+    await chooseMethod(tree);
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    const arg = mockReplace.mock.calls[0][0] as {
+      params: Record<string, string>;
+    };
+    expect(arg.params.paidAmountMinor).toBe('4738940');
+    expect(arg.params.effectiveRate).toBe('');
+  });
+
   it('a free booking goes straight to confirmation, no checkout', async () => {
     mockCreate.mockResolvedValue({
       id: 'cons-free',
@@ -274,6 +321,9 @@ describe('pay.tsx booking (japa#183)', () => {
     expect(arg.params.paidAmountMinor).toBe('4738940');
     expect(arg.params.paidCurrency).toBe('NGN');
     expect(arg.params.priceUsdCents).toBe('3500');
+    // japa#332: the server's effective rate goes with the amount, so the
+    // confirmation can repeat "$35.00 at ₦1,353.97 per $1".
+    expect(arg.params.effectiveRate).toBe('1353.97');
     // Analytics: the real currency, value in major units.
     expect(mockTrackBooked).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -831,7 +881,7 @@ describe('pay.tsx booking: resumed bookings (japa#288)', () => {
     priceUsdCents: 3500,
     chargedCurrency: 'NGN',
     chargedAmountMinor: 4_738_940,
-    fxRate: 1353.97,
+    effectiveRate: 1353.97,
     quoteExpiresAt: EXPIRES_AT,
     ...over,
   });

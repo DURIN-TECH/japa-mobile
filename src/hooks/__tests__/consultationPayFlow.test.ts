@@ -23,7 +23,11 @@ import {
   paymentRequestParts,
   REQUEST_NOT_PAYABLE_MESSAGE,
 } from '../paymentRequestFlow';
-import { priceInline } from '@/components/explorer/content';
+import {
+  isUsableRate,
+  priceInline,
+  usdAtRateLine,
+} from '@/components/explorer/content';
 
 const LOCKED = Date.parse('2026-11-14T10:00:00Z');
 const booking = {
@@ -31,7 +35,7 @@ const booking = {
   priceUsdCents: 3500,
   chargedCurrency: 'NGN',
   chargedAmountMinor: 4_738_940,
-  fxRate: 1353.97,
+  effectiveRate: 1353.97,
   quoteLockedAt: { _seconds: LOCKED / 1000, _nanoseconds: 0 },
   quoteExpiresAt: '2026-11-14T10:30:00Z',
 };
@@ -90,7 +94,61 @@ describe('lockedRateLine / chargeChanged', () => {
   it('shows the server rate verbatim in the charged currency', () => {
     const q = lockedQuoteFrom(booking, checkout, LOCKED)!;
     expect(lockedRateLine(q)).toBe('$35.00 at ₦1,353.97 per $1');
-    expect(lockedRateLine({ ...q, fxRate: null })).toBe('$35.00');
+    expect(lockedRateLine({ ...q, effectiveRate: null })).toBe('$35.00');
+  });
+
+  // ── japa#332: the rate is the server's `effectiveRate`, never `fxRate` ──
+  it('the issue example: $6.00 charged ₦8,123.84 reads "$6.00 at ₦1,353.97 per $1"', () => {
+    // effectiveRate = 812384 kobo ÷ 600 cents = 1353.973333 (6 decimals, as
+    // the backend sends it); shown to the naira's 2 decimals.
+    const q = lockedQuoteFrom(
+      {
+        ...booking,
+        priceUsdCents: 600,
+        chargedAmountMinor: 812_384,
+        effectiveRate: 1353.973333,
+      },
+      checkout,
+      LOCKED,
+    )!;
+    expect(q.effectiveRate).toBe(1353.973333);
+    expect(lockedRateLine(q)).toBe('$6.00 at ₦1,353.97 per $1');
+  });
+  it('ignores a raw `fxRate`: only `effectiveRate` is ever read', () => {
+    // An older backend (or a leak) sending the raw mid-market rate must not
+    // put it on screen: with no effectiveRate the line is dollars only.
+    // Built as a variable: `fxRate` is no longer part of the typed shape.
+    const leaky = { ...booking, effectiveRate: undefined, fxRate: 1320.95 };
+    const q = lockedQuoteFrom(leaky, checkout, LOCKED)!;
+    expect(q.effectiveRate).toBeNull();
+    expect(q).not.toHaveProperty('fxRate');
+    expect(lockedRateLine(q)).toBe('$35.00');
+  });
+  it('a legacy booking with no / unusable effectiveRate shows the dollar price only, without throwing', () => {
+    for (const bad of [undefined, null, NaN, Infinity, 0, -5, '1353.97']) {
+      const q = lockedQuoteFrom(
+        { ...booking, effectiveRate: bad as unknown as number },
+        checkout,
+        LOCKED,
+      )!;
+      // The quote itself is still usable (amount, expiry, checkout).
+      expect(q.charged.amountMinor).toBe(4_738_940);
+      expect(q.effectiveRate).toBeNull();
+      expect(lockedRateLine(q)).toBe('$35.00');
+    }
+  });
+  it('a USD charge has no "per $1" line', () => {
+    const q = lockedQuoteFrom(
+      {
+        ...booking,
+        chargedCurrency: 'USD',
+        chargedAmountMinor: 3500,
+        effectiveRate: 1,
+      },
+      checkout,
+      LOCKED,
+    )!;
+    expect(lockedRateLine(q)).toBe('$35.00');
   });
   it('detects a re-priced amount', () => {
     const q = lockedQuoteFrom(booking, checkout, LOCKED)!;
@@ -311,6 +369,62 @@ describe('paymentRequestParts', () => {
       ),
     ).toBe('₦150,000.00 · $100.00');
   });
+
+  // ── japa#332: a priced request carries the server's `effectiveRate` ─────
+  it('approved with effectiveRate: "$100.00 at ₦1,500.00 per $1" under the amount', () => {
+    const parts = paymentRequestParts({
+      ...base,
+      status: 'approved',
+      charge: { amountMinor: 15_000_000, currency: 'NGN' },
+      effectiveRate: 1500,
+    });
+    expect(parts.primary).toBe('₦150,000');
+    expect(parts.secondary).toBe('$100.00 at ₦1,500.00 per $1');
+  });
+  it('the issue example on a paid request: "$6.00 at ₦1,353.97 per $1"', () => {
+    const parts = paymentRequestParts({
+      ...base,
+      amount: 600,
+      priceUsd: { amountMinor: 600, currency: 'USD' },
+      status: 'paid',
+      charge: { amountMinor: 812_384, currency: 'NGN' },
+      effectiveRate: 1353.973333,
+    });
+    expect(parts.primary).toBe('₦8,123.84');
+    expect(parts.secondary).toBe('$6.00 at ₦1,353.97 per $1');
+  });
+  it('a pending request never shows a rate, even if one were sent', () => {
+    // No charge yet = nothing was priced, so there is no rate to show.
+    expect(
+      priceInline(paymentRequestParts({ ...base, effectiveRate: 1500 })),
+    ).toBe('$100.00');
+  });
+  it('priced but no usable effectiveRate (older record): the dollar-only line, no throw', () => {
+    for (const bad of [undefined, null, NaN, 0, -1]) {
+      expect(
+        priceInline(
+          paymentRequestParts({
+            ...base,
+            status: 'paid',
+            charge: { amountMinor: 15_000_000, currency: 'NGN' },
+            effectiveRate: bad as unknown as number,
+          }),
+        ),
+      ).toBe('₦150,000.00 · $100.00');
+    }
+  });
+  it('a USD charge keeps "$100.00" alone', () => {
+    expect(
+      priceInline(
+        paymentRequestParts({
+          ...base,
+          status: 'paid',
+          charge: { amountMinor: 10000, currency: 'USD' },
+          effectiveRate: 1,
+        }),
+      ),
+    ).toBe('$100.00');
+  });
   it('legacy: its own amount and currency', () => {
     expect(
       priceInline(
@@ -509,6 +623,39 @@ describe('bookingDisplay', () => {
       expect(bookingDisplay(picked, { durationMinutes }, label).dur).toBe(
         '30 min',
       );
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// usdAtRateLine / isUsableRate (japa#332): the one formatter behind the rate
+// line on the pay screen, the confirmation and a priced payment request.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('usdAtRateLine / isUsableRate', () => {
+  const usd = { amountMinor: 600, currency: 'USD' };
+  it('formats the rate in the charged currency', () => {
+    expect(usdAtRateLine(usd, 'NGN', 1353.973333)).toBe(
+      '$6.00 at ₦1,353.97 per $1',
+    );
+  });
+  it('falls back to the dollar price when there is no usable rate or currency', () => {
+    expect(usdAtRateLine(usd, 'NGN', undefined)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'NGN', null)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'NGN', NaN)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'NGN', 0)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'NGN', '1353.97')).toBe('$6.00');
+    expect(usdAtRateLine(usd, undefined, 1353.97)).toBe('$6.00');
+    expect(usdAtRateLine(usd, '', 1353.97)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'usd', 1)).toBe('$6.00');
+  });
+  it('gives an empty string (never "undefined at …") without a dollar price', () => {
+    expect(usdAtRateLine(null, 'NGN', 1353.97)).toBe('');
+    expect(usdAtRateLine(undefined, 'NGN', 1353.97)).toBe('');
+  });
+  it('isUsableRate accepts only finite numbers above zero', () => {
+    expect(isUsableRate(1353.97)).toBe(true);
+    for (const bad of [0, -1, NaN, Infinity, null, undefined, '1', {}]) {
+      expect(isUsableRate(bad)).toBe(false);
     }
   });
 });

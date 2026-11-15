@@ -269,6 +269,59 @@ export function priceParts(
 }
 
 /**
+ * "$6.00 at ₦1,353.97 per $1" (japa#332): the dollar price and the rate the
+ * payer EFFECTIVELY pays, on the pay screen, the confirmation and a priced
+ * payment request.
+ *
+ * `effectiveRate` is the server's `effectiveRate` field: local units per
+ * 1 USD, amount charged ÷ dollar price, Seli's markup already included. It
+ * is the ONLY rate a client is sent (the raw mid-market rate and the markup
+ * stay on the server), and the only rate that agrees with the amount on
+ * screen. It is only FORMATTED here, in the charged currency's own decimals
+ * (₦1,353.97; a zero-decimal currency as a whole number): nothing is
+ * multiplied by it and the app never works a rate out itself.
+ *
+ * Falls back to the dollar price alone ("$6.00") when there is no usable
+ * rate: a free booking, a legacy record priced before rates were stored, a
+ * malformed value, or a charge in USD (where "per $1" says nothing).
+ *
+ * @param usd           the dollar price (`Money` in USD); null gives ''
+ * @param currency      the currency the client is charged in, e.g. "NGN"
+ * @param effectiveRate the server's `effectiveRate`; anything that is not a
+ *                      finite number above zero counts as "no rate"
+ */
+export function usdAtRateLine(
+  usd: Money | null | undefined,
+  currency: string | null | undefined,
+  effectiveRate: unknown,
+): string {
+  const usdText = formatMoney(usd);
+  if (
+    !usdText ||
+    !currency ||
+    currency.toUpperCase() === 'USD' ||
+    !isUsableRate(effectiveRate)
+  ) {
+    return usdText;
+  }
+  const rate = formatMoney({
+    amountMinor: Math.round(effectiveRate * minorUnitFactor(currency)),
+    currency,
+  });
+  // An unformattable rate (unknown currency) never prints "at  per $1".
+  return rate ? `${usdText} at ${rate} per $1` : usdText;
+}
+
+/**
+ * True for a rate that can be shown: a finite number above zero. Takes
+ * `unknown` because the value comes straight off an API response or a route
+ * param, so absent, null, a string, NaN, 0 and negatives are all "no rate".
+ */
+export function isUsableRate(rate: unknown): rate is number {
+  return typeof rate === 'number' && Number.isFinite(rate) && rate > 0;
+}
+
+/**
  * The calm note shown when the server could not give a local figure:
  * "Naira price unavailable" for NGN, else "Local price unavailable".
  */

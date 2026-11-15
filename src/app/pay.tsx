@@ -14,7 +14,8 @@
 //   • free (`requiresPayment: false`) → straight to /confirmation, "Free";
 //   • paid → the summary shows the LOCKED `chargedAmountMinor` in
 //     `chargedCurrency`, "$35.00 at ₦1,353.97 per $1" (the server's dollar
-//     price and rate, verbatim) and a live countdown from `quoteExpiresAt`
+//     price and its `effectiveRate`, the rate the client really pays with
+//     the markup included, japa#332; both verbatim) and a live countdown from `quoteExpiresAt`
 //     (measured against the server clock via `quoteLockedAt`). The amount
 //     never changes on screen after that, whatever the rate does;
 //   • "Pay ₦…" opens `authorizationUrl` in the auth browser
@@ -93,7 +94,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, parse, parseISO } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
-import { formatMoney, type PriceParts } from '@/components/explorer/content';
+import {
+  formatMoney,
+  isUsableRate,
+  type PriceParts,
+} from '@/components/explorer/content';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { InfoNote, InlineError } from '@/components/explorer/AccountForm';
 import { Ic } from '@/components/explorer/icons';
@@ -521,6 +526,13 @@ export default function PayScreen() {
   const goToConfirmation = (paid: {
     charged?: Money | null;
     usdCents?: number | null;
+    /**
+     * The server's `effectiveRate` for this charge (japa#332), so the
+     * confirmation can repeat "$6.00 at ₦1,353.97 per $1". Leave it out (or
+     * null) for a free or legacy record: the confirmation then shows the
+     * dollar price alone.
+     */
+    effectiveRate?: number | null;
     free?: boolean;
     replace?: boolean;
   }) => {
@@ -543,6 +555,10 @@ export default function PayScreen() {
         paidCurrency: paid.charged?.currency ?? '',
         priceUsdCents:
           typeof paid.usdCents === 'number' ? String(paid.usdCents) : '',
+        // Route params are strings; '' = no rate (free / legacy record).
+        effectiveRate: isUsableRate(paid.effectiveRate)
+          ? String(paid.effectiveRate)
+          : '',
         free: paid.free ? '1' : '',
       },
     };
@@ -577,7 +593,10 @@ export default function PayScreen() {
     // this screen must not stay under the confirmation with a live "Pay".
     // Going back returns to the slot picker, and the booking analytics
     // above can only ever fire once per booking.
-    goToConfirmation({ charged, usdCents, replace: true });
+    // The rate travels with the amount it belongs to: the summary's when the
+    // summary's charge is used, else the shown quote's (japa#332).
+    const effectiveRate = summary?.effectiveRate ?? fallback?.effectiveRate;
+    goToConfirmation({ charged, usdCents, effectiveRate, replace: true });
   };
 
   /** A free booking (`requiresPayment: false`): no checkout at all. */
@@ -1020,6 +1039,8 @@ export default function PayScreen() {
     goToConfirmation({
       charged,
       usdCents: r?.priceUsd?.amountMinor ?? r?.priceUsdCents ?? null,
+      // The request's own effective rate (japa#332); absent on a legacy one.
+      effectiveRate: r?.effectiveRate,
     });
   };
 

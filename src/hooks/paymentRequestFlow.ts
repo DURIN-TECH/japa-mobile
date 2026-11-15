@@ -15,7 +15,9 @@
 
 import {
   formatMoney,
+  isUsableRate,
   priceParts,
+  usdAtRateLine,
   type PriceParts,
 } from '@/components/explorer/content';
 import type { PaymentRequest } from '@/types/payment-requests.type';
@@ -60,11 +62,23 @@ export const REQUEST_NOT_PAYABLE_MESSAGE =
  *  - paid: exact, "₦150,000.00 · $100.00";
  *  - legacy (`legacy: true`, or no dollar price): its own `amount` +
  *    `currency` through the same formatter.
+ *
+ * japa#332: once a request is priced the server also sends `effectiveRate`
+ * (amount charged ÷ dollar price, markup included). The dollar line then
+ * reads "$100.00 at ₦1,500.00 per $1", the same line the consultation pay
+ * screen shows. A priced request WITHOUT a usable rate (an older record)
+ * keeps the dollar-only line above; nothing is worked out in the app.
  */
 export function paymentRequestParts(
   r: Pick<
     PaymentRequest,
-    'amount' | 'currency' | 'priceUsd' | 'legacy' | 'charge' | 'status'
+    | 'amount'
+    | 'currency'
+    | 'priceUsd'
+    | 'legacy'
+    | 'charge'
+    | 'status'
+    | 'effectiveRate'
   >,
 ): PriceParts {
   const own: PriceParts = {
@@ -74,7 +88,18 @@ export function paymentRequestParts(
     localUnavailable: false,
   };
   if (r.legacy || !r.priceUsd) return own;
-  return priceParts(r.charge ?? null, r.priceUsd, {
+  const parts = priceParts(r.charge ?? null, r.priceUsd, {
     locked: r.status === 'paid',
   });
+  // A second line exists only when there is a local (non-USD) charge next to
+  // the dollar price: that is exactly when a rate means something. With a
+  // usable rate it becomes "$100.00 at ₦1,500.00 per $1"; without one the
+  // dollar-only line stays.
+  if (parts.secondary && r.charge && isUsableRate(r.effectiveRate)) {
+    return {
+      ...parts,
+      secondary: usdAtRateLine(r.priceUsd, r.charge.currency, r.effectiveRate),
+    };
+  }
+  return parts;
 }
