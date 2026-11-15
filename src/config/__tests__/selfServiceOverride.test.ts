@@ -4,9 +4,10 @@
 // Covers: the pure rules (parse, plan, link), the override on / off /
 // cleared in development through the single read point `isSelfServiceOnly()`,
 // the link handler's accepted and rejected values, no reload when the value
-// already applies, the dev menu entry — and, the point of the issue, that
-// with `__DEV__` false a stored override has no effect, the link is ignored
-// and the menu entry is not registered.
+// already applies, the stale link the native side re-delivers after a reload
+// (review round 1), the startup read timeout, the dev menu entry — and, the
+// point of the issue, that with `__DEV__` false a stored override has no
+// effect, the link is ignored and the menu entry is not registered.
 // ─────────────────────────────────────────────────────────────────────────────
 // `require` is needed: jest.isolateModules reloads the modules per "app
 // start", which a static import cannot do.
@@ -55,6 +56,17 @@ jest.mock('react-native/Libraries/Utilities/DevSettings', () => ({
   default: { reload: () => mockReload(), addMenuItem: jest.fn() },
 }));
 
+// expo-linking's native memory of the last link (see the stale-link notes in
+// selfServiceOverrideStore.ts): set by every received link, survives a JS
+// reload, cleared by clearInitialURL().
+let mockNativeUrl: string | null = null;
+jest.mock('expo-linking', () => ({
+  getLinkingURL: () => mockNativeUrl,
+  clearInitialURL: () => {
+    mockNativeUrl = null;
+  },
+}));
+
 // Dev menu + router, for the menu-entry tests.
 const mockRegister = jest.fn();
 jest.mock('expo-dev-menu', () => ({
@@ -73,6 +85,7 @@ type Mods = {
   override: typeof import('@/config/selfServiceOverride');
   store: typeof import('@/config/selfServiceOverrideStore');
   menu: typeof import('@/utils/dev-menu');
+  intent: typeof import('@/app/+native-intent');
   reload: jest.Mock;
 };
 
@@ -88,16 +101,75 @@ function load(): Mods {
       override: require('@/config/selfServiceOverride'),
       store: require('@/config/selfServiceOverrideStore'),
       menu: require('@/utils/dev-menu'),
+      intent: require('@/app/+native-intent'),
       reload,
     };
   });
   return mods;
 }
 
+// ── Simulated app lifecycle (what expo-router hands +native-intent) ─────────
+type Platform = 'ios' | 'android';
+// Android: React Native's initial URL (the launching intent) is NOT cleared
+// by clearInitialURL and survives a JS reload. Worst case modelled: it holds
+// the last link received.
+let mockAndroidIntent: string | null = null;
+
+const link = (v: string) => `durintech://dev/self-service-only?value=${v}`;
+
+/** The initial URL expo-router would deliver on this JS start, if any. */
+function initialUrl(platform: Platform): string | null {
+  // iOS: expo-router reads expo-linking's getLinkingURL().
+  // Android: expo-router reads React Native's initial URL (the intent).
+  return platform === 'ios' ? mockNativeUrl : mockAndroidIntent;
+}
+
+/** A JS start (cold launch or reload): deliver the initial URL, then load. */
+async function start(platform: Platform): Promise<Mods> {
+  const m = load();
+  const url = initialUrl(platform);
+  if (url) await m.intent.redirectSystemPath({ path: url, initial: true });
+  await m.store.loadSelfServiceOverride(); // the root layout's gate
+  return m;
+}
+
+/** New process launched by `url` (or plainly): native memory starts fresh. */
+function coldStart(platform: Platform, url: string | null = null) {
+  mockNativeUrl = url;
+  mockAndroidIntent = url;
+  return start(platform);
+}
+
+/** JS reload in the same process (DevSettings.reload / Metro "r"). */
+const reload = (platform: Platform) => start(platform);
+
+/** A link opened while the app runs. */
+async function openWarm(m: Mods, url: string) {
+  mockNativeUrl = url; // expo-linking records every received link
+  mockAndroidIntent = url;
+  await m.intent.redirectSystemPath({ path: url, initial: false });
+}
+
+/** Tap a dev menu item by name and let its async work finish. */
+async function tapMenu(m: Mods, name: string) {
+  mockRegister.mockClear();
+  m.menu.registerDevMenu();
+  const items = mockRegister.mock.calls[0][0] as {
+    name: string;
+    callback: () => void;
+  }[];
+  items.find((i) => i.name === name)!.callback();
+  await new Promise((r) => setTimeout(r, 0));
+}
+const TOGGLE = 'Self-service only: toggle on/off';
+const USE_BUILD = "Self-service only: use the build's value";
+
 beforeEach(() => {
   mockStore.clear();
   mockBaked = false;
   mockRegister.mockClear();
+  mockNativeUrl = null;
+  mockAndroidIntent = null;
   g.__DEV__ = true;
 });
 afterEach(() => {
@@ -297,6 +369,8 @@ describe('in development (__DEV__ true)', () => {
   });
 
   it('the +native-intent hook routes the dev link through the handler', async () => {
+    // Cold launch by the link: expo-linking holds it natively.
+    mockNativeUrl = 'durintech://dev/self-service-only?value=on';
     let hook!: typeof import('@/app/+native-intent');
     jest.isolateModules(() => {
       hook = require('@/app/+native-intent');
@@ -319,32 +393,169 @@ describe('in development (__DEV__ true)', () => {
     );
   });
 
-  it('registers the dev menu entry with the effective value and source', async () => {
+  it('registers state-free menu entries; toggle flips the current value', async () => {
     mockStore.set(KEY, 'on');
-    const m = load();
-    await m.store.loadSelfServiceOverride();
+    const m = await coldStart('ios');
     m.menu.registerDevMenu();
-    const items = mockRegister.mock.calls[0][0] as {
-      name: string;
-      callback: () => void;
-    }[];
-    const names = items.map((i) => i.name);
-    expect(names).toContain('Self-service only: ON (override) - turn off');
-    expect(names).toContain("Self-service only: use the build's value");
+    const names = (mockRegister.mock.calls[0][0] as { name: string }[]).map(
+      (i) => i.name,
+    );
+    expect(names).toEqual(expect.arrayContaining([TOGGLE, USE_BUILD]));
 
-    // The flip item turns it off (and reloads).
-    items.find((i) => i.name.startsWith('Self-service only: ON'))!.callback();
-    await new Promise((r) => setTimeout(r, 0));
+    // Toggle reads the value when tapped: on → off (reload), off → on.
+    await tapMenu(m, TOGGLE);
     expect(mockStore.get(KEY)).toBe('off');
-    expect(m.reload).toHaveBeenCalled();
+    expect(m.reload).toHaveBeenCalledTimes(1);
+    await tapMenu(m, TOGGLE);
+    expect(mockStore.get(KEY)).toBe('on');
   });
 
-  it('labels the build value when there is no override', () => {
-    expect(load().menu.selfServiceMenuLabel(false, 'build')).toBe(
-      'Self-service only: OFF (build) - turn on',
-    );
+  it('a storage read that never settles falls back to no override', async () => {
+    jest.useFakeTimers();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const AsyncStorage = require('@react-native-async-storage/async-storage')
+      .default as { getItem: jest.Mock };
+    AsyncStorage.getItem.mockImplementationOnce(() => new Promise(() => {}));
+    mockBaked = true;
+    const m = load();
+    const done = m.store.loadSelfServiceOverride();
+    jest.advanceTimersByTime(m.store.LOAD_TIMEOUT_MS);
+    await done;
+    expect(m.override.getSelfServiceOverride()).toBeUndefined();
+    expect(m.env.isSelfServiceOnly()).toBe(true);
+    warn.mockRestore();
+    jest.useRealTimers();
+  });
+
+  it('useSelfServiceOverrideLoaded is false until the read finishes', async () => {
+    const seen = await renderLoadedHook();
+    expect(seen[0]).toBe(false);
+    expect(seen[seen.length - 1]).toBe(true);
   });
 });
+
+// ── Stale link re-delivered after a reload (review round 1) ─────────────────
+// The native side remembers the last link across a JS reload. A dev link
+// must be applied exactly once, and opening it again later — same or other
+// value, warm or cold — must still work.
+describe.each<Platform>(['ios', 'android'])(
+  'stale dev link after a reload (%s)',
+  (platform) => {
+    it('link on → menu off → reload: stays off', async () => {
+      const a = await coldStart(platform, link('on'));
+      expect(a.env.isSelfServiceOnly()).toBe(true);
+      const b = await reload(platform); // the reload the link caused
+      expect(b.env.isSelfServiceOnly()).toBe(true);
+      expect(b.reload).not.toHaveBeenCalled();
+
+      await tapMenu(b, TOGGLE);
+      expect(b.reload).toHaveBeenCalledTimes(1);
+      const c = await reload(platform);
+      expect(c.env.isSelfServiceOnly()).toBe(false);
+      expect(mockStore.get(KEY)).toBe('off');
+      expect(c.reload).not.toHaveBeenCalled();
+    });
+
+    it("link on → use the build's value → reload: stays on the build", async () => {
+      const a = await coldStart(platform);
+      await openWarm(a, link('on'));
+      expect(a.reload).toHaveBeenCalledTimes(1);
+      const b = await reload(platform);
+      expect(b.env.isSelfServiceOnly()).toBe(true);
+
+      await tapMenu(b, USE_BUILD);
+      const c = await reload(platform);
+      expect(mockStore.has(KEY)).toBe(false);
+      expect(c.env.isSelfServiceOnly()).toBe(false);
+      expect(
+        c.override.selfServiceOnlySource(c.override.getSelfServiceOverride()),
+      ).toBe('build');
+      expect(c.reload).not.toHaveBeenCalled();
+    });
+
+    it('link on → plain reloads: no re-apply, no second reload', async () => {
+      const a = await coldStart(platform);
+      await openWarm(a, link('on'));
+      expect(a.reload).toHaveBeenCalledTimes(1);
+      for (let i = 0; i < 3; i++) {
+        // Change storage behind its back: a re-applied link would undo this.
+        const r = await reload(platform);
+        expect(r.reload).not.toHaveBeenCalled();
+        expect(r.env.isSelfServiceOnly()).toBe(true);
+      }
+      // Proof the link is not re-applied: set off by hand, reload, still off.
+      mockStore.set(KEY, 'off');
+      const r = await reload(platform);
+      expect(r.env.isSelfServiceOnly()).toBe(false);
+      expect(r.reload).not.toHaveBeenCalled();
+    });
+
+    it('link on → link off → link on: each applies (warm)', async () => {
+      const a = await coldStart(platform);
+      await openWarm(a, link('on'));
+      let m = await reload(platform);
+      expect(m.env.isSelfServiceOnly()).toBe(true);
+
+      await openWarm(m, link('off'));
+      expect(m.reload).toHaveBeenCalledTimes(1);
+      m = await reload(platform);
+      expect(m.env.isSelfServiceOnly()).toBe(false);
+
+      await openWarm(m, link('on'));
+      expect(m.reload).toHaveBeenCalledTimes(1);
+      m = await reload(platform);
+      expect(m.env.isSelfServiceOnly()).toBe(true);
+    });
+
+    it('the same link opened again later still applies, warm or cold', async () => {
+      const a = await coldStart(platform, link('on'));
+      await tapMenu(a, TOGGLE); // off
+      let m = await reload(platform);
+      expect(m.env.isSelfServiceOnly()).toBe(false);
+
+      // Same value again while running: applies.
+      await openWarm(m, link('on'));
+      m = await reload(platform);
+      expect(m.env.isSelfServiceOnly()).toBe(true);
+
+      // Off by menu, then the app is killed and cold-launched by the SAME
+      // link: a new process, so it applies.
+      await tapMenu(m, TOGGLE);
+      m = await reload(platform);
+      expect(m.env.isSelfServiceOnly()).toBe(false);
+      m = await coldStart(platform, link('on'));
+      expect(m.env.isSelfServiceOnly()).toBe(true);
+    });
+  },
+);
+
+/** Renders a probe of useSelfServiceOverrideLoaded; returns every value seen. */
+async function renderLoadedHook(): Promise<boolean[]> {
+  // React, the renderer and the store must come from ONE module registry,
+  // or the hook sees a second copy of React.
+  let React!: typeof import('react');
+  let TestRenderer!: typeof import('react-test-renderer');
+  let store!: typeof import('@/config/selfServiceOverrideStore');
+  jest.isolateModules(() => {
+    React = require('react');
+    TestRenderer = require('react-test-renderer');
+    store = require('@/config/selfServiceOverrideStore');
+  });
+  const seen: boolean[] = [];
+  function Probe() {
+    seen.push(store.useSelfServiceOverrideLoaded());
+    return null;
+  }
+  let tree!: ReturnType<typeof TestRenderer.create>;
+  await TestRenderer.act(async () => {
+    tree = TestRenderer.create(React.createElement(Probe));
+  });
+  await TestRenderer.act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  TestRenderer.act(() => tree.unmount());
+  return seen;
+}
 
 // ── Production guarantee (__DEV__ false) ────────────────────────────────────
 describe('outside development (__DEV__ false)', () => {
@@ -406,5 +617,25 @@ describe('outside development (__DEV__ false)', () => {
   it('does not register the dev menu entry', () => {
     load().menu.registerDevMenu();
     expect(mockRegister).not.toHaveBeenCalled();
+  });
+
+  it('redirectSystemPath passes the dev link and other links through unchanged', () => {
+    mockNativeUrl = link('on');
+    const m = load();
+    for (const path of [link('on'), link('off'), 'durintech://home']) {
+      for (const initial of [true, false]) {
+        expect(m.intent.redirectSystemPath({ path, initial })).toBe(path);
+      }
+    }
+    expect(mockStore.size).toBe(0);
+    expect(m.reload).not.toHaveBeenCalled();
+    // The native link memory is left alone too.
+    expect(mockNativeUrl).toBe(link('on'));
+  });
+
+  it('useSelfServiceOverrideLoaded starts true (nothing to wait for)', async () => {
+    const seen = await renderLoadedHook();
+    expect(seen[0]).toBe(true);
+    expect(seen.every(Boolean)).toBe(true);
   });
 });

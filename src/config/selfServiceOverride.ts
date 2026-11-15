@@ -22,6 +22,9 @@
 // every screen and test does) pulls in no native module.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// `__DEV__` check, read at call time (one definition for all dev tools).
+import { isDevBuild as isDev } from '@/config/isDevBuild';
+
 /** What a developer can ask for: force on, force off, or the build's value. */
 export type SelfServiceRequest = 'on' | 'off' | 'build';
 
@@ -33,12 +36,6 @@ export const SELF_SERVICE_OVERRIDE_KEY = 'dev.selfServiceOnlyOverride';
 
 /** Where the link lands after it is handled (the Home tab's URL). */
 export const SELF_SERVICE_LINK_LANDING = '/home' as const;
-
-/**
- * `__DEV__`, read at CALL time (not at import time) so a unit test can set
- * `global.__DEV__ = false` and prove the production behaviour.
- */
-const isDev = (): boolean => typeof __DEV__ !== 'undefined' && __DEV__ === true;
 
 // ── The loaded override (module state) ──────────────────────────────────────
 // undefined = no override stored (or not a development build).

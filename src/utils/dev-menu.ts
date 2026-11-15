@@ -5,45 +5,28 @@ import { router } from 'expo-router';
 import { useSettingsStore } from '@/stores/settings.store';
 // Self-service-only flag + its dev-only override (japa#375).
 import { isSelfServiceOnly } from '@/config/env';
-import {
-  getSelfServiceOverride,
-  selfServiceOnlySource,
-} from '@/config/selfServiceOverride';
 import { applySelfServiceRequest } from '@/config/selfServiceOverrideStore';
-
-/**
- * Dev menu label for the self-service-only flag, e.g.
- * "Self-service only: ON (override) - turn off". The menu is registered after
- * the override is loaded and again after every reload, so it is current.
- */
-export function selfServiceMenuLabel(
-  effective: boolean,
-  source: 'build' | 'override',
-): string {
-  return `Self-service only: ${effective ? 'ON' : 'OFF'} (${source}) - turn ${
-    effective ? 'off' : 'on'
-  }`;
-}
+import { isDevBuild } from '@/config/isDevBuild';
 
 // Registers custom items in the Expo dev client menu (cmd+D on iOS sim,
 // cmd+M on Android emulator, or shake on device). Dev-only — guarded by __DEV__.
 export function registerDevMenu() {
-  if (!__DEV__) return;
-
-  // ── Self-service-only flag (japa#375) ────────────────────────────────────
-  // Read through the single read point, then shown with its source.
-  const effective = isSelfServiceOnly();
-  const source = selfServiceOnlySource(getSelfServiceOverride());
+  if (!isDevBuild()) return;
 
   registerDevMenuItems([
+    // ── Self-service-only flag (japa#375) ──────────────────────────────────
+    // Labels are deliberately state-free: they are set once at registration
+    // and an action that does not reload (e.g. clearing an override equal to
+    // the build's value) would leave a stateful label lying. The current
+    // value and its source are on the App configuration screen below.
     {
-      // Flips the EFFECTIVE value and stores it as an override; the app
-      // reloads so every screen, the route guard and notification routing
-      // pick it up. Dev menu only, never the app's Settings.
-      name: selfServiceMenuLabel(effective, source),
+      // Flips the EFFECTIVE value, read when tapped, and stores it as an
+      // override; the app reloads so every screen, the route guard and
+      // notification routing pick it up. Dev menu only, never Settings.
+      name: 'Self-service only: toggle on/off',
       shouldCollapse: true,
       callback: () => {
-        void applySelfServiceRequest(effective ? 'off' : 'on');
+        void applySelfServiceRequest(isSelfServiceOnly() ? 'off' : 'on');
       },
     },
     {

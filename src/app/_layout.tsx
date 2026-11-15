@@ -177,9 +177,8 @@ function RootLayoutContent() {
   // Set up auth-based navigation
   useProtectedRoute(flagReady);
 
-  // Registered once the override is known: the self-service-only menu item's
-  // label shows the effective value (japa#375). A change reloads the app,
-  // which registers the menu again with the new label.
+  // Registered once the override is known (japa#375), so a menu tap can never
+  // act on the baked value before the stored override was read.
   useEffect(() => {
     if (flagReady) registerDevMenu();
   }, [flagReady]);

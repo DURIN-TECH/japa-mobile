@@ -115,9 +115,10 @@ released (DURIN-TECH/japa#336).
   `EXPO_PUBLIC_SELF_SERVICE_ONLY=true npx expo start --clear`.
 - **Development-only override (japa#375)**, no rebuild needed.
   In a `__DEV__` build, either:
-  - Expo dev menu → "Self-service only: ON/OFF (build|override)
-    - turn off/on" flips it, and "Self-service only: use the
-    build's value" clears the override; or
+  - Expo dev menu → "Self-service only: toggle on/off" flips
+    it, and "Self-service only: use the build's value" clears
+    the override (labels are state-free; read the state on the
+    App configuration screen); or
   - open `durintech://dev/self-service-only?value=on|off|build`
     (e.g. `xcrun simctl openurl booted '<link>'`; the Maestro
     flows, japa#361, use this). Lands on Home; an unknown value
@@ -125,8 +126,13 @@ released (DURIN-TECH/japa#336).
 
   The choice is stored on the device (AsyncStorage key
   `dev.selfServiceOnlyOverride`), loaded before the first screen
-  renders, and a change reloads the app. Same result warm or
-  cold; no reload when the value already applies. The App
+  renders (a read stuck for 1.5 s counts as no override), and a
+  change reloads the app. Same result warm or cold; no reload
+  when the value already applies. Each opened link is applied
+  exactly once: the native side remembers the last link across
+  a JS reload, so the handler calls `clearInitialURL()` and drops
+  a re-delivered initial link, or a reload would undo a later
+  menu change. The App
   configuration dev screen shows the effective value and its
   source ("on · override (build: off)"). `isSelfServiceOnly()`
   stays the only read point (`config/selfServiceOverride.ts`,

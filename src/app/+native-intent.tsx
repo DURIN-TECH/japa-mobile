@@ -18,6 +18,7 @@ import { handleSelfServiceLink } from '@/config/selfServiceOverrideStore';
 
 export function redirectSystemPath({
   path,
+  initial,
 }: {
   path: string;
   initial: boolean;
@@ -25,7 +26,9 @@ export function redirectSystemPath({
   // expo-router warns that a throw here can crash the app: fall back to the
   // link as it came in.
   try {
-    return handleSelfServiceLink(path);
+    // `initial` lets the handler drop a dev link the native side re-delivers
+    // after a reload (it has already been applied once).
+    return handleSelfServiceLink(path, initial);
   } catch {
     return path;
   }
