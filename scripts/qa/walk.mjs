@@ -21,10 +21,12 @@
  *   node scripts/qa/walk.mjs step <name> --udid <device> --out <dir>
  *
  * Options (env fallback in brackets):
- *   -p, --port <n>      Metro port [QA_METRO_PORT], default 8084; 8081-8083 refused
+ *   -p, --port <n>      YOUR Metro's port [QA_METRO_PORT]; required, no default;
+ *                       8081-8083 refused
+ *   --udid <device>     your simulator [QA_UDID]. When set, only a target from
+ *                       that simulator is accepted (and `step` screenshots it)
  *   -d, --device <s>    pick the target whose device name contains <s> [QA_DEVICE]
  *   -t, --target <id>   pick a target by its inspector page id
- *   --udid <device>     simulator for `step` screenshots [QA_UDID]
  *   --out <dir>         where `step` writes <name>.png/.txt [QA_OUT]; required for
  *                       `step` (use your scratchpad, never the repo)
  *   --all               include mounted screens that are not focused
@@ -37,7 +39,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { QaError, checkPort, screenshot } from './sim.mjs';
+import { QaError, checkPort, deviceName, screenshot } from './sim.mjs';
 
 // The in-app helper source, sent before every command (see agent.js header).
 const AGENT_SRC = fs.readFileSync(new URL('./agent.js', import.meta.url), 'utf8');
@@ -66,40 +68,65 @@ function describe(t) {
 }
 
 /**
+ * Which physical/simulated device a target belongs to. Metro gives each
+ * device a stable logical id; fall back to the name if it's missing. Two
+ * simulators that share a name still count as two devices.
+ */
+function deviceKey(t) {
+  return (t.reactNative && t.reactNative.logicalDeviceId) || `name:${t.deviceName}`;
+}
+
+/**
  * Choose one target. Several apps (or several pages of one app) can be
  * attached to the same Metro; we never guess between DEVICES, because
  * driving the wrong one would be driving someone else's walk.
+ *
+ * `expectedName` (from --udid / QA_UDID) is the guard against attaching to
+ * another session's Metro: only targets from that simulator are accepted.
+ * Metro's target list carries the device NAME (not the UDID), so we compare
+ * names; `sim.mjs create` makes names unique per session ("Seli QA <issue>").
  */
-function pickTarget(list, opts) {
+function pickTarget(list, opts, expectedName) {
   if (!list.length) {
     throw new QaError(
       'Metro is up but no app is attached. Open the dev client on this port ' +
         '(`sim.mjs open-dev-client <device> --port <port>`) and wait for "iOS Bundled" in the Metro log.',
     );
   }
+  let cands = list;
+  if (expectedName) {
+    cands = cands.filter((x) => x.deviceName === expectedName);
+    if (!cands.length) {
+      throw new QaError(
+        `no app from your simulator "${expectedName}" is attached to the Metro on this port. ` +
+          'This Metro may belong to another session: check --port / QA_METRO_PORT. ' +
+          `Attached:\n${list.map(describe).join('\n')}`,
+      );
+    }
+  }
   if (opts.target) {
-    const t = list.find((x) => String(x.id) === String(opts.target));
-    if (!t) throw new QaError(`no target with id ${opts.target}. Targets:\n${list.map(describe).join('\n')}`);
+    const t = cands.find((x) => String(x.id) === String(opts.target));
+    if (!t) throw new QaError(`no target with id ${opts.target}. Targets:\n${cands.map(describe).join('\n')}`);
     return t;
   }
-  let cands = list;
   if (opts.device) {
     cands = cands.filter((x) => `${x.deviceName ?? ''} ${x.title ?? ''}`.includes(opts.device));
     if (!cands.length) {
       throw new QaError(`no target on a device matching "${opts.device}". Targets:\n${list.map(describe).join('\n')}`);
     }
   }
-  // The new-architecture page is "React Native Bridgeless [C++ connection]";
-  // prefer it over any legacy/experimental entries when both are listed.
-  const bridgeless = cands.filter((x) => String(x.description ?? '').includes('Bridgeless'));
-  if (bridgeless.length) cands = bridgeless;
-  const devices = [...new Set(cands.map((x) => x.deviceName))];
-  if (devices.length > 1) {
+  // Count devices BEFORE preferring a page type, so a second device that
+  // only lists a non-Bridgeless page still triggers the refusal.
+  const devices = new Set(cands.map(deviceKey));
+  if (devices.size > 1) {
     throw new QaError(
-      `several devices are attached to this Metro; pass --device or --target:\n${cands.map(describe).join('\n')}`,
+      `several devices are attached to this Metro; pass --udid, --device or --target:\n${cands.map(describe).join('\n')}`,
     );
   }
-  return cands[0];
+  // One device. Its new-architecture page is "React Native Bridgeless
+  // [C++ connection]"; prefer it over legacy/experimental entries.
+  const bridgeless = cands.filter((x) => String(x.description ?? '').includes('Bridgeless'));
+  return (bridgeless.length ? bridgeless : cands)[0];
 }
 
 // -----------------------------------------------------------------------------
@@ -379,7 +406,9 @@ async function main() {
   const { values: o, positionals } = parseArgs({
     allowPositionals: true,
     options: {
-      port: { type: 'string', short: 'p', default: process.env.QA_METRO_PORT || '8084' },
+      // No default port on purpose: a default would let two sessions'
+      // walks both reach for it and one end up driving the other's app.
+      port: { type: 'string', short: 'p', default: process.env.QA_METRO_PORT },
       device: { type: 'string', short: 'd', default: process.env.QA_DEVICE },
       target: { type: 'string', short: 't' },
       udid: { type: 'string', default: process.env.QA_UDID },
@@ -399,6 +428,11 @@ async function main() {
     console.log(usage());
     return;
   }
+  if (!o.port) {
+    throw new QaError(
+      'no Metro port: pass --port <n> or export QA_METRO_PORT (the port YOUR Metro runs on, >= 8084)',
+    );
+  }
   const port = checkPort(o.port);
   const timeoutMs = Number(o.timeout);
 
@@ -409,7 +443,14 @@ async function main() {
   }
   if (!commands[cmd]) throw new QaError(`unknown command "${cmd}" (try --help)`);
 
-  const target = pickTarget(list, o);
+  // With --udid / QA_UDID, resolve the simulator's name to guard the target.
+  const expectedName = o.udid ? deviceName(o.udid) : null;
+  const target = pickTarget(list, o, expectedName);
+  if (!expectedName) {
+    // No UDID to check against: say on every command which device we drive,
+    // on stderr so --json output stays clean, so a wrong attachment shows.
+    console.error(`(attached to "${target.deviceName}", target ${target.id}, Metro :${port}; set QA_UDID to enforce)`);
+  }
   const session = await connect(target, port, timeoutMs);
   try {
     print(await commands[cmd](session, args, o, timeoutMs), o.json);

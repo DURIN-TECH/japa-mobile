@@ -30,8 +30,16 @@ full option list.
 - **Your own everything.** Use your own cloned simulator, your own Metro, and a
   free port of 8084 or higher. Ports **8081–8083** belong to other sessions;
   both CLIs refuse them. Never boot, shut down or delete another session's
-  simulator. `sim.mjs` only acts on devices named `Seli QA …`, the names it
-  gives the devices it creates.
+  simulator.
+  - `sim.mjs` only acts on a device named `Seli QA …` that it created
+    itself. `create` writes a marker per UDID under
+    `~/Library/Caches/seli-qa/sims/`, and `teardown` removes it. A device
+    named that way by hand has no marker, so it is refused.
+  - `walk.mjs` has no default port. With `QA_UDID` set, it only drives an
+    app running on that simulator, so it can't attach to another session's
+    Metro by mistake.
+  - **Export `QA_METRO_PORT` and `QA_UDID` at the start of every walk**
+    (step 1 below).
 - **Confirm the bundle came from YOUR Metro.** The app can end up on another
   session's server, which may point at a different backend. Check your Metro
   log for the bundle request and the device connection before you trust a
@@ -51,14 +59,15 @@ it off. Run everything from the issue's `seli-mobile` worktree.
 ### 1. Simulator
 
 ```bash
-export PORT=8084                       # any free port >= 8084
-lsof -nP -iTCP:$PORT -sTCP:LISTEN      # must print nothing
-export SCRATCH=/path/to/your/scratch   # evidence goes here
+# Pick a free port >= 8084. Another QA walk may already hold 8084, so check.
+export QA_METRO_PORT=8084
+lsof -nP -iTCP:$QA_METRO_PORT -sTCP:LISTEN   # must print nothing; else pick another
+export SCRATCH=/path/to/your/scratch         # evidence goes here
 
 node scripts/qa/sim.mjs list           # QA devices + shut-down clone sources
 node scripts/qa/sim.mjs create 342     # clones a SHUT-DOWN device that has the dev client
                                        # (or: --from <udid|name>; or a blank device: --app path/to/Seli.app)
-export QA_UDID=<udid printed above>
+export QA_UDID=<udid printed above>     # both CLIs read it from here on
 
 node scripts/qa/sim.mjs boot             # simctl boot only: no Simulator window
 node scripts/qa/sim.mjs approve-schemes  # no "Open in Seli?" alert on openurl,
@@ -80,7 +89,9 @@ underneath it, so the walk can go on, but screenshots show the prompt.
 Mention it in the verdict, or clone a device where it was already answered.
 
 `create` refuses a source device that is booted, because a booted device is
-probably someone else's walk. The source is only read, never booted. Bundle
+probably someone else's walk. A clone copies the source device's app data,
+including a signed-in session, and keeps it until `teardown` deletes the
+clone. The source is only read, never booted. Bundle
 id and URL schemes are read from the installed app's `Info.plist`. The dev
 client is the app with an `exp+…` scheme, matched to this repo's
 `app.json` bundle id (override with `--bundle-id`).
@@ -89,14 +100,14 @@ client is the app with an `exp+…` scheme, matched to this repo's
 
 ```bash
 CI=1 EXPO_PUBLIC_SELF_SERVICE_ONLY=true \
-  npx expo start --port $PORT 2>&1 | tee $SCRATCH/metro-on.log
+  npx expo start --port $QA_METRO_PORT 2>&1 | tee $SCRATCH/metro-on.log
 ```
 
 Run it in the background and note its PID so you can stop exactly this
 process later. `CI=1` turns off watch mode and interactive prompts.
 
 ```bash
-node scripts/qa/sim.mjs open-dev-client --port $PORT
+node scripts/qa/sim.mjs open-dev-client --port $QA_METRO_PORT
 ```
 
 Then check `$SCRATCH/metro-on.log` for both:
@@ -119,7 +130,8 @@ and run `open-dev-client` again.
 
 ```bash
 # Works in bash and zsh (a plain W="node ..." variable does not split in zsh).
-W() { node scripts/qa/walk.mjs --port "$PORT" "$@"; }
+# walk.mjs reads QA_METRO_PORT and QA_UDID from the environment.
+W() { node scripts/qa/walk.mjs "$@"; }
 
 W dump                          # route, stack, rendered text, a11y labels, input placeholders
 W press "I already have an account"
@@ -127,7 +139,7 @@ W fill you@email.com "$QA_EMAIL"         # the login screen's placeholders
 W fill "Your password" "$QA_PASSWORD"
 W press "Log in"                # the login button's text
 W wait-for "Explore visas"      # poll until a line shows up (after a fetch)
-W step 01-home --out "$SCRATCH/shots"    # needs --udid or QA_UDID (set in step 1)
+W step 01-home --out "$SCRATCH/shots"    # needs --udid or QA_UDID (exported in step 1)
 ```
 
 **Matching is case-sensitive.** `fill Password` doesn't find "Your password".
@@ -138,6 +150,12 @@ W step 01-home --out "$SCRATCH/shots"    # needs --udid or QA_UDID (set in step 
   It doesn't match the visible label above the field: on the login screen
   "Email" is that label and "you@email.com" is the placeholder.
 - Run `dump` or `inputs` first and copy the exact strings.
+
+With `QA_UDID` set, every command checks that the attached app runs on
+that simulator. It refuses with "no app from your simulator … is attached"
+when the Metro on that port is serving someone else's device. Without
+`QA_UDID`, each command prints the device it attached to on stderr. Read it
+before you trust the step.
 
 `step` takes the screenshot of the device named by `--udid`, or by
 `QA_UDID` when `--udid` is left out. It writes `<name>.png` and `<name>.txt`
@@ -192,7 +210,7 @@ node scripts/qa/sim.mjs open durintech://messages        # warm deep link
 # Cold start through a link:
 node scripts/qa/sim.mjs terminate                        # 1. kill the app
 node scripts/qa/sim.mjs open durintech://messages        # 2. the dev client's launcher opens
-node scripts/qa/sim.mjs open-dev-client --port $PORT     # 3. load the bundle
+node scripts/qa/sim.mjs open-dev-client --port $QA_METRO_PORT     # 3. load the bundle
 ```
 
 The bundle doesn't load by itself on a cold start through a link. After
@@ -208,8 +226,8 @@ with `--clear`. `EXPO_PUBLIC_*` values are inlined into the bundle, so a
 cached bundle would keep the old value.
 
 ```bash
-CI=1 npx expo start --port $PORT --clear 2>&1 | tee $SCRATCH/metro-off.log
-node scripts/qa/sim.mjs open-dev-client --port $PORT
+CI=1 npx expo start --port $QA_METRO_PORT --clear 2>&1 | tee $SCRATCH/metro-off.log
+node scripts/qa/sim.mjs open-dev-client --port $QA_METRO_PORT
 ```
 
 Check for the `iOS Bundled` line again, then repeat the walk.
@@ -217,7 +235,7 @@ Check for the `iOS Bundled` line again, then repeat the walk.
 ### 5. Tear down
 
 ```bash
-kill <your Metro PID>; lsof -nP -iTCP:$PORT -sTCP:LISTEN   # port free again
+kill <your Metro PID>; lsof -nP -iTCP:$QA_METRO_PORT -sTCP:LISTEN   # port free again
 node scripts/qa/sim.mjs teardown                           # shutdown + delete the clone
 ```
 
@@ -241,9 +259,9 @@ renders it. Nothing is written to the backend, and a reload or refetch wipes
 it.
 
 ```bash
-$W eval '__qa.queryKeys()'          # what's cached, as JSON keys
-$W eval '__qa.qc().getQueryData(["notifications"])'
-$W eval '(function () {
+W eval '__qa.queryKeys()'          # what's cached, as JSON keys
+W eval '__qa.qc().getQueryData(["notifications"])'
+W eval '(function () {
   var qc = __qa.qc();
   var key = ["notifications"];      // copy the exact key from queryKeys()
   var cur = qc.getQueryData(key);
@@ -274,7 +292,7 @@ $W eval '(function () {
     next command says no app is attached.
   - The debugger connection caused it, not the app.
   - Relaunch in two steps: `sim.mjs terminate`, then `sim.mjs
-    open-dev-client --port $PORT`. Running `open-dev-client` alone straight
+    open-dev-client --port $QA_METRO_PORT`. Running `open-dev-client` alone straight
     after a crash can fail with "Failed to load app from http://…".
   - Sign in again if needed, redo the step, and mention the crash in the
     verdict's notes.
@@ -286,8 +304,11 @@ $W eval '(function () {
 - **Confirm the bundle request in YOUR Metro log** after every (re)launch.
   See [Ground rules](#ground-rules).
 - **Several apps on one Metro.** If more than one device is attached,
-  `walk.mjs` refuses to guess. Pick one with `--device "<name part>"` or
-  `--target <id>` (`targets` lists them).
+  `walk.mjs` refuses to guess. `QA_UDID` picks yours. Otherwise use
+  `--device "<name part>"` or `--target <id>` (`targets` lists them).
+- **Metro lists devices by name, not UDID.** The `QA_UDID` check compares
+  the simulator's name, so keep the `create` suffix unique (the issue
+  number). If two attached devices share a name, the walk is refused.
 - **`eval` scope.** Top-level `const`/`let` persist between calls and clash on
   the next one. Wrap multi-line code in an IIFE, as in the examples.
 - **Handlers, not touches.** `press` calls the nearest `onPress` with a fake

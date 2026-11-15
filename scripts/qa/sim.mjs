@@ -20,16 +20,18 @@
  * <device> is a UDID or the full device name; QA_UDID in the environment
  * is used when it is left out.
  *
- * SAFETY: every command that changes a device refuses any device whose name
- * does not start with "Seli QA " (the prefix `create` gives). Other sessions
- * run their own simulators on this machine; this script can never boot,
- * shut down or delete one of them. Cloning only READS the source device.
+ * SAFETY: every command that changes a device requires BOTH a name starting
+ * with "Seli QA " (the prefix `create` gives) AND an ownership marker that
+ * `create` writes (one file per UDID under ~/Library/Caches/seli-qa/sims/).
+ * A simulator someone named "Seli QA ..." by hand has no marker and is
+ * refused. Cloning only READS the source device.
  *
  * Node built-ins only (no npm install needed). Every external command goes
  * through execFileSync with an argument array: no shell, no quoting issues.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -109,9 +111,43 @@ function resolveDevice(ref) {
   throw new QaError(`no simulator matches "${ref}"`);
 }
 
+/** Name of the simulator a UDID (or exact name) points at. Read-only. */
+export function deviceName(ref) {
+  return resolveDevice(ref).name;
+}
+
+// -----------------------------------------------------------------------------
+// Ownership markers: `create` writes one, `teardown` removes it, and every
+// mutating command requires it. Kept outside the simulator's own folders so
+// this tool never writes into CoreSimulator's data.
+// -----------------------------------------------------------------------------
+
+const MARKER_DIR = path.join(os.homedir(), 'Library', 'Caches', 'seli-qa', 'sims');
+
+function markerPath(udid) {
+  return path.join(MARKER_DIR, `${udid}.json`);
+}
+
+function writeMarker(udid, name) {
+  fs.mkdirSync(MARKER_DIR, { recursive: true });
+  fs.writeFileSync(
+    markerPath(udid),
+    JSON.stringify({ udid, name, createdAt: new Date().toISOString(), cwd: process.cwd() }, null, 2),
+  );
+}
+
+function hasMarker(udid) {
+  return fs.existsSync(markerPath(udid));
+}
+
+function removeMarker(udid) {
+  fs.rmSync(markerPath(udid), { force: true });
+}
+
 /**
- * Resolve a device AND check this tool created it. Every mutating command
- * goes through here, so a typo'd UDID can never hit someone else's device.
+ * Resolve a device AND check this tool created it (name prefix + marker).
+ * Every mutating command goes through here, so a typo'd UDID can never hit
+ * someone else's device.
  */
 export function ownedDevice(ref) {
   const d = resolveDevice(ref);
@@ -119,6 +155,12 @@ export function ownedDevice(ref) {
     throw new QaError(
       `refusing to touch "${d.name}" (${d.udid}): only devices named ` +
         `"${QA_PREFIX}..." (made by \`sim.mjs create\`) are handled by this tool`,
+    );
+  }
+  if (!hasMarker(d.udid)) {
+    throw new QaError(
+      `refusing to touch "${d.name}" (${d.udid}): it is named like a QA device but ` +
+        `\`sim.mjs create\` did not make it (no marker in ${MARKER_DIR})`,
     );
   }
   return d;
@@ -266,7 +308,10 @@ const commands = {
     const mine = all.filter((d) => d.name.startsWith(QA_PREFIX));
     console.log('QA simulators:');
     if (!mine.length) console.log('  (none)');
-    for (const d of mine) console.log(`  ${d.name}  ${d.udid}  ${d.state}`);
+    for (const d of mine) {
+      const mark = hasMarker(d.udid) ? '' : '  (no marker: not made by this tool, will be refused)';
+      console.log(`  ${d.name}  ${d.udid}  ${d.state}${mark}`);
+    }
     console.log('\nShut-down devices with a dev client (clone sources):');
     let any = false;
     for (const d of all) {
@@ -299,9 +344,18 @@ const commands = {
         throw new QaError(`${opts.app} is not an .app bundle (no Info.plist)`);
       }
       const udid = simctl(['create', name, opts['device-type'] || 'iPhone 17']);
-      simctl(['boot', udid]);
-      simctl(['bootstatus', udid]);
-      simctl(['install', udid, path.resolve(opts.app)]);
+      writeMarker(udid, name);
+      try {
+        simctl(['boot', udid]);
+        simctl(['bootstatus', udid]);
+        simctl(['install', udid, path.resolve(opts.app)]);
+      } catch (e) {
+        // Don't leave a half-made (possibly booted) device behind.
+        simctl(['shutdown', udid], { quiet: true });
+        simctl(['delete', udid], { quiet: true });
+        removeMarker(udid);
+        throw e;
+      }
       const installed = installedApps({ dataPath: resolveDevice(udid).dataPath }).find(
         (a) => a.appPath.endsWith(path.basename(opts.app)),
       );
@@ -339,6 +393,7 @@ const commands = {
     }
     requireDevClient(src, opts['bundle-id']);
     const udid = simctl(['clone', src.udid, name]);
+    writeMarker(udid, name);
     console.log(`created ${name} ${udid} (clone of ${src.name}, shut down)`);
     console.log(udid);
   },
@@ -408,9 +463,27 @@ const commands = {
 
   /** Open a deep link, e.g. durintech://messages. */
   open(args) {
+    if (!args[1]) throw new QaError('usage: open <device> <url>');
+    // A dev-client link carries the Metro URL in ?url=; apply the same
+    // reserved-port rule as open-dev-client so this can't load another
+    // session's bundle.
+    let inner = null;
+    try {
+      inner = new URL(args[1]).searchParams.get('url');
+    } catch {
+      throw new QaError(`not a URL: ${args[1]}`);
+    }
+    if (inner) {
+      let metro;
+      try {
+        metro = new URL(inner);
+      } catch {
+        throw new QaError(`the link's url= parameter is not a URL: ${inner}`);
+      }
+      checkPort(metro.port || (metro.protocol === 'https:' ? 443 : 80));
+    }
     const d = ownedDevice(args[0]);
     requireBooted(d);
-    if (!args[1]) throw new QaError('usage: open <device> <url>');
     simctl(['openurl', d.udid, args[1]]);
     console.log(`opened ${args[1]}`);
   },
@@ -434,6 +507,7 @@ const commands = {
     const d = ownedDevice(args[0]);
     if (d.state !== 'Shutdown') simctl(['shutdown', d.udid], { quiet: true });
     simctl(['delete', d.udid]);
+    removeMarker(d.udid);
     console.log(`deleted ${d.name} ${d.udid}`);
   },
 };
@@ -465,7 +539,20 @@ function main() {
   // Commands that take a device fall back to QA_UDID when the device
   // argument is left out (i.e. fewer positionals than the command takes).
   const arity = { open: 2, screenshot: 2, list: 0, create: 0 }[cmd] ?? 1;
-  if (rest.length < arity && process.env.QA_UDID) {
+  if (arity === 2 && rest.length === 1) {
+    // One argument: only treat it as the SECOND one (QA_UDID supplying the
+    // device) when it clearly is a path or URL. Otherwise `screenshot
+    // <device>` would write a PNG named after the device.
+    const second = cmd === 'screenshot' ? /\.png$/i.test(rest[0]) : rest[0].includes('://');
+    if (!second || !process.env.QA_UDID) {
+      throw new QaError(
+        cmd === 'screenshot'
+          ? 'usage: screenshot [<device>] <path.png>  (an explicit .png path is required)'
+          : 'usage: open [<device>] <url>',
+      );
+    }
+    rest.unshift(process.env.QA_UDID);
+  } else if (rest.length < arity && process.env.QA_UDID) {
     rest.unshift(process.env.QA_UDID);
   }
   commands[cmd](rest, opts);
