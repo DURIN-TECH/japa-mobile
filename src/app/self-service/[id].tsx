@@ -1049,7 +1049,12 @@ export default function SelfServiceView() {
           ? 'unknown'
           : !intakeQ.data.available
             ? 'none'
-            : openRequired(intakeQ.data.questions, intakeQ.data.answers).length;
+            : // The server's own count when it sends one (the rule the backend
+              // gates on), else the same rule worked out in the app.
+              Array.isArray(intakeQ.data.openRequiredIds)
+              ? intakeQ.data.openRequiredIds.length
+              : openRequired(intakeQ.data.questions, intakeQ.data.answers)
+                  .length;
     const docCount: number | 'unknown' | 'loading' =
       docsQ.isLoading && !docsQ.data
         ? 'loading'
@@ -1059,6 +1064,8 @@ export default function SelfServiceView() {
     const contentKey = `${intakeOpen}|${docCount}`;
     const localContent = reviewContent({
       intakeOpen,
+      // A read-only intake (past the editable statuses) never blocks.
+      intakeEditable: intakeQ.data?.editable !== false,
       documents: docCount,
     });
     // The backend's answer wins only while the inputs are what they were then.

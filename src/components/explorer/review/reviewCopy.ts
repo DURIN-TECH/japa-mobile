@@ -264,12 +264,13 @@ export function showsThenYouApply(view: AssessmentView | null): boolean {
 // Their `reason` text is written for staff and is never shown.
 
 /**
- * Closing line of "What we couldn’t tell" when items were left out. Route
- * neutral on purpose ("most people", not "most visitors"): this screen serves
- * every visa.
+ * Closing line of "What we couldn’t tell" when items were left out. It must
+ * be true of every hidden rule: some do apply to everyone (a fee, biometrics),
+ * they just can’t be settled from uploads or answers. Route neutral: this
+ * screen serves every visa.
  */
 export const COULDNT_TELL_SKIPPED_LINE =
-  'Some rules in the guidance don’t apply to most people, so we didn’t check them.';
+  'Some rules in the guidance can’t be checked from your documents or answers here, so they aren’t part of this review.';
 
 /**
  * Splits `insufficientInformation` into the items to list and whether any were
@@ -366,6 +367,10 @@ export function reviewableDocumentCount(
  *
  * `intakeOpen`: the number of open required questions, `'none'` when the
  * route has no intake, `'unknown'` when it could not be loaded.
+ * `intakeEditable`: the intake response's `editable`. Once the intake can no
+ * longer be saved (the backend allows edits only in draft, pending_payment and
+ * pending_documents), open questions are not counted as missing: the
+ * applicant could not answer them, and the backend does not count them either.
  * `documents`: the reviewable document count, or `'unknown'` when the list
  * could not be loaded.
  *
@@ -374,13 +379,15 @@ export function reviewableDocumentCount(
  */
 export function reviewContent(input: {
   intakeOpen: number | 'none' | 'unknown' | 'loading';
+  intakeEditable: boolean;
   documents: number | 'unknown' | 'loading';
 }): ReviewContent {
-  const { intakeOpen, documents } = input;
+  const { intakeOpen, intakeEditable, documents } = input;
   if (intakeOpen === 'loading' || documents === 'loading')
     return { status: 'loading' };
   const missing: ReviewGap[] = [];
-  const open = typeof intakeOpen === 'number' ? intakeOpen : 0;
+  const open =
+    intakeEditable && typeof intakeOpen === 'number' ? intakeOpen : 0;
   if (open > 0) missing.push('intake');
   if (documents === 0) missing.push('documents');
   return missing.length === 0
