@@ -372,3 +372,16 @@ export const ONBOARD: OnboardSlide[] = [
     body: 'Live status, document checklists and reminders — from application to approval.',
   },
 ];
+
+// ── Self-service-only build (japa#334) ───────────────────────────────────────
+// The "Vetted agents by your side" slide sells agent messaging, which a
+// self-service-only build hides, so the carousel leaves it out (two slides,
+// two pager dots). Flag off: every slide, as before.
+const AGENT_SLIDE_IDS: ReadonlySet<string> = new Set(['o2']);
+
+/** The welcome carousel's slides for this build. */
+export function onboardSlides(selfServiceOnly: boolean): OnboardSlide[] {
+  return selfServiceOnly
+    ? ONBOARD.filter((s) => !AGENT_SLIDE_IDS.has(s.id))
+    : ONBOARD;
+}
