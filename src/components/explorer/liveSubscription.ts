@@ -45,6 +45,20 @@ function titleCase(key: string): string {
   return key.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * The human label for one plan feature key: FEATURE_LABEL, then the extra
+ * labels for keys newer than the pinned authz package, then a title-cased
+ * fallback. Shared by the plan cards (`mapPlan`) and the Profile upgrade
+ * banner's benefit line (japa#346), so both always word a feature the same.
+ */
+export function featureLabel(key: string): string {
+  return (
+    FEATURE_LABEL[key as FeatureKey] ??
+    EXTRA_FEATURE_LABEL[key] ??
+    titleCase(key)
+  );
+}
+
 // ── Self-service-only build (japa#334) ─────────────────────────────────────
 // What a plan card may list in a self-service-only build. An ALLOW-list, not
 // a deny-list: every key in the authz catalogue is either here (a feature
@@ -96,7 +110,7 @@ export function mapPlan(
     tag: p.id === popularId ? 'Most popular' : null,
     features: p.features
       .filter((f) => !opts.selfServiceOnly || SELF_SERVICE_PLAN_FEATURES.has(f))
-      .map((f) => FEATURE_LABEL[f] ?? EXTRA_FEATURE_LABEL[f] ?? titleCase(f)),
+      .map(featureLabel),
     blurb: '',
   };
 }

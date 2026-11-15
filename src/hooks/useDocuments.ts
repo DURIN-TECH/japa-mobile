@@ -9,6 +9,8 @@ import {
   SharedDocument,
 } from '@/types/documents.type';
 import { Application } from '@/types/applications.type';
+// The Documents screen's mapper: decides which rows count as uploaded files.
+import { mapDocument } from '@/components/explorer/liveDocuments';
 
 // A single document paired with the application it belongs to. The application
 // context supplies the human-readable label + destination country used by the
@@ -18,54 +20,107 @@ export type MyDocument = { doc: Document; app: Application };
 // How many applications to fan out over. The backend has no "all my documents"
 // endpoint, so `useMyDocuments` fetches documents per-application; capping the
 // count bounds the request fan-out for users with many applications.
-const MY_DOCUMENTS_APP_CAP = 10;
+export const MY_DOCUMENTS_APP_CAP = 10;
 
 /**
- * Aggregate every document across the current user's applications.
+ * Everything the "my documents" fan-out found, plus whether it is the WHOLE
+ * picture (japa#346). `complete` is false when the applications request
+ * failed, any per-application documents request failed, or the user has more
+ * applications than MY_DOCUMENTS_APP_CAP — in each case `docs` may be an
+ * undercount, so a count built on it must show "–" rather than a number.
+ */
+export type MyDocumentsResult = { docs: MyDocument[]; complete: boolean };
+
+// Shared cache key: the list hook and the count hook read ONE query, so the
+// Profile row and the Documents screen never fetch twice.
+const MY_DOCUMENTS_KEY = ['documents', 'mine'] as const;
+
+/**
+ * The fan-out itself (exported for tests):
+ *   1. fetch the user's applications (`GET /applications`),
+ *   2. fetch each application's documents in parallel (first
+ *      MY_DOCUMENTS_APP_CAP applications only), and
+ *   3. flatten them, pairing each document with its parent application.
  *
- * There is no single "all my documents" endpoint, so this:
- *   1. fetches the user's applications (`GET /applications`),
- *   2. fetches each application's documents in parallel (capped at the first
- *      ~10 applications), and
- *   3. flattens them into one list, annotating each document with its parent
- *      application for the UI's label/meta line.
- *
- * Fully defensive: any failed sub-request yields an empty list rather than
- * rejecting the whole query, so a single bad application can't blank the screen.
+ * Never rejects: a failed sub-request contributes nothing to `docs` (so one bad
+ * application can't blank the Documents screen) and marks the result
+ * incomplete instead.
+ */
+export async function fetchMyDocuments(): Promise<MyDocumentsResult> {
+  // 1. The user's applications. Failure → nothing known at all.
+  let apps: Application[] = [];
+  try {
+    const res = await apiService.get<Application[]>('/applications');
+    apps = res.data ?? [];
+  } catch {
+    return { docs: [], complete: false };
+  }
+
+  // Over the cap → some applications' documents are never fetched.
+  let complete = apps.length <= MY_DOCUMENTS_APP_CAP;
+
+  // 2. Each application's documents in parallel (capped fan-out).
+  const perApp = await Promise.all(
+    apps.slice(0, MY_DOCUMENTS_APP_CAP).map(async (app) => {
+      try {
+        const res = await apiService.get<Document[]>(
+          `/applications/${app.id}/documents`,
+        );
+        // 3. Pair each document with its application for downstream context.
+        return (res.data ?? []).map((doc) => ({ doc, app }));
+      } catch {
+        complete = false;
+        return [] as MyDocument[];
+      }
+    }),
+  );
+
+  // Flatten the per-application arrays into a single document list.
+  return { docs: perApp.flat(), complete };
+}
+
+/**
+ * Every document across the current user's applications (the Documents
+ * screen's list). Fully defensive, as before japa#346: whatever loaded is
+ * listed, and a failed sub-request simply adds nothing.
  */
 export function useMyDocuments() {
   return useQuery({
-    queryKey: ['documents', 'mine'],
-    queryFn: async (): Promise<MyDocument[]> => {
-      // 1. Fetch the user's applications (empty list on failure).
-      let apps: Application[] = [];
-      try {
-        const res = await apiService.get<Application[]>('/applications');
-        apps = res.data ?? [];
-      } catch {
-        return [];
-      }
-
-      // 2. Fetch each application's documents in parallel (capped fan-out).
-      const perApp = await Promise.all(
-        apps.slice(0, MY_DOCUMENTS_APP_CAP).map(async (app) => {
-          try {
-            const res = await apiService.get<Document[]>(
-              `/applications/${app.id}/documents`,
-            );
-            // 3. Pair each document with its application for downstream context.
-            return (res.data ?? []).map((doc) => ({ doc, app }));
-          } catch {
-            return [] as MyDocument[];
-          }
-        }),
-      );
-
-      // Flatten the per-application arrays into a single document list.
-      return perApp.flat();
-    },
+    queryKey: MY_DOCUMENTS_KEY,
+    queryFn: fetchMyDocuments,
+    select: (r: MyDocumentsResult): MyDocument[] => r.docs,
     staleTime: 1000 * 60 * 2, // 2 minutes
   });
+}
+
+/**
+ * How many files the user has uploaded (Profile's "My documents" row,
+ * japa#346), or null when that can't be known for sure: still loading, or the
+ * fan-out was incomplete (see `MyDocumentsResult`). Same cache as
+ * `useMyDocuments`.
+ */
+export function useMyDocumentsCount() {
+  return useQuery({
+    queryKey: MY_DOCUMENTS_KEY,
+    queryFn: fetchMyDocuments,
+    select: uploadedFileCount,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
+
+/**
+ * The uploaded-file count for a fan-out result, or null when it is incomplete.
+ *
+ * "Uploaded" = every document the Documents screen lists under "All" except
+ * its `missing` rows (`pending_upload` / `uploading`: a placeholder with no
+ * file behind it yet). Classified with the screen's own mapper, so the two
+ * can't drift apart.
+ */
+export function uploadedFileCount(r: MyDocumentsResult): number | null {
+  if (!r.complete) return null;
+  return r.docs.filter(
+    ({ doc, app }) => mapDocument(doc, app).status !== 'missing',
+  ).length;
 }
 
 /**
