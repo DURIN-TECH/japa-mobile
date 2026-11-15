@@ -125,6 +125,15 @@ import {
   isStatementLocked,
   useStatement,
 } from '@/hooks/useStatement';
+// japa#312: step numbering and the "Where you apply" card copy.
+import {
+  OFFICIAL_SITE_HEADING,
+  OFFICIAL_SITE_TITLE,
+  officialSiteBody,
+  selfServiceSteps,
+  stepNumberOf,
+  type SelfServiceStep,
+} from '@/components/explorer/selfServiceSteps';
 
 // japa#174: requirement key for an upload tied to no requirement or checklist
 // item (the "upload what you already have" buttons). The backend only needs a
@@ -978,14 +987,9 @@ export default function SelfServiceView() {
     // Step numbers are computed from the steps that are present: the intake
     // (#113) only exists for routes with questions, and it shifts the rest. The
     // statement and review steps (#43) are always there on this live path.
-    const presentSteps = [
-      intakeStep ? 'intake' : null,
-      'official',
-      'documents',
-      'statement',
-      'review',
-    ].filter(Boolean) as string[];
-    const stepNo = (key: string) => presentSteps.indexOf(key) + 1;
+    // japa#312: the official-site card is not a step ("Where you apply").
+    const presentSteps = selfServiceSteps(intakeStep);
+    const stepNo = (key: SelfServiceStep) => stepNumberOf(presentSteps, key);
     // A refetch failed but a cached review is on screen → offline note.
     const offlineCached = reviewQ.isError && !!reviewQ.data;
     const openReview = () => router.push(`/self-service/${app.id}/review`);
@@ -1224,8 +1228,10 @@ export default function SelfServiceView() {
               lastReviewAt={lastReviewFinishedAt(reviewQ.data)}
               stepNumber={stepNo('intake')}
             />
-            {/* ── Official application ────────────────────────────────────────── */}
-            <SectionTitle>{`Step ${stepNo('official')} · Official application`}</SectionTitle>
+            {/* ── Where you apply (official site) ─────────────────────────────────
+                japa#312: not a numbered step. It stays here, but says the real
+                order: get ready in the app first, then apply on the official site. */}
+            <SectionTitle>{OFFICIAL_SITE_TITLE}</SectionTitle>
             <View
               style={{
                 backgroundColor: EX.color.cream, // #FFF6EC
@@ -1258,7 +1264,7 @@ export default function SelfServiceView() {
                       color: '#7A5A2E',
                     }}
                   >
-                    Complete the online form
+                    {OFFICIAL_SITE_HEADING}
                   </Text>
                   <Text
                     style={{
@@ -1268,9 +1274,7 @@ export default function SelfServiceView() {
                       marginTop: 2,
                     }}
                   >
-                    {officialUrl
-                      ? 'Fill in your application on the official government portal before uploading documents here.'
-                      : `Fill in your application on the ${country} government’s official site, then upload your documents here. We don’t have the link for this visa yet.`}
+                    {officialSiteBody(!!officialUrl, country)}
                   </Text>
                 </View>
               </View>
