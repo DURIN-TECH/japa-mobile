@@ -238,3 +238,128 @@ export function nextSteps(d: FullAssessmentData): string[] {
   steps.push('Run the review again to see where you stand.');
   return steps;
 }
+
+// ── Enough to review (japa#309) ──────────────────────────────────────────────
+// A review needs something to read. The backend refuses a start (422
+// NOT_ENOUGH_TO_REVIEW) until the application has (1) no open required intake
+// question, when the route has an intake, and (2) at least one uploaded
+// document that is not the refusal letter (the review never reads that one).
+// The statement is not required. The hub works the same rule out from what it
+// already has loaded, so it can say what is still needed instead of offering a
+// button that would only be refused.
+
+/** A part of the application the review still needs, in the backend's order. */
+export type ReviewGap = 'intake' | 'documents';
+
+/** What is still needed. `missing` is never empty. */
+export interface ReviewGaps {
+  missing: ReviewGap[];
+  /** Open required intake questions; 0 when the intake is not missing. */
+  openRequiredCount: number;
+}
+
+/** Whether the review can start, as far as the app can tell. */
+export type ReviewContent =
+  | { status: 'loading' } // intake or documents still loading: no run yet
+  | { status: 'enough' }
+  | { status: 'missing'; gaps: ReviewGaps };
+
+/** The refusal letter's requirement id. The review does not read it. */
+export const REFUSAL_LETTER_REQUIREMENT_ID = 'refusal-letter';
+
+/** Uploaded documents the review reads (everything but the refusal letter). */
+export function reviewableDocumentCount(
+  docs: readonly { requirementId?: string | null }[],
+): number {
+  return docs.filter((d) => d.requirementId !== REFUSAL_LETTER_REQUIREMENT_ID)
+    .length;
+}
+
+/**
+ * The hub's own "enough to review" check.
+ *
+ * `intakeOpen`: the number of open required questions, `'none'` when the
+ * route has no intake, `'unknown'` when it could not be loaded.
+ * `documents`: the reviewable document count, or `'unknown'` when the list
+ * could not be loaded.
+ *
+ * An unknown part never blocks: the backend decides, and a refusal comes back
+ * as the same lines (see `parseReviewGaps`).
+ */
+export function reviewContent(input: {
+  intakeOpen: number | 'none' | 'unknown' | 'loading';
+  documents: number | 'unknown' | 'loading';
+}): ReviewContent {
+  const { intakeOpen, documents } = input;
+  if (intakeOpen === 'loading' || documents === 'loading')
+    return { status: 'loading' };
+  const missing: ReviewGap[] = [];
+  const open = typeof intakeOpen === 'number' ? intakeOpen : 0;
+  if (open > 0) missing.push('intake');
+  if (documents === 0) missing.push('documents');
+  return missing.length === 0
+    ? { status: 'enough' }
+    : { status: 'missing', gaps: { missing, openRequiredCount: open } };
+}
+
+/**
+ * Reads the backend's 422 NOT_ENOUGH_TO_REVIEW body
+ * (`{ error, message, missing, openRequiredCount }`, fields at the top level).
+ * Unknown entries are dropped and the order is fixed (intake, then
+ * documents). Returns null when nothing usable is left, so the caller can fall
+ * back to its own view.
+ */
+export function parseReviewGaps(body: unknown): ReviewGaps | null {
+  if (!body || typeof body !== 'object') return null;
+  const b = body as { missing?: unknown; openRequiredCount?: unknown };
+  const raw = Array.isArray(b.missing) ? b.missing : [];
+  const missing = (['intake', 'documents'] as const).filter((g) =>
+    raw.includes(g),
+  );
+  if (missing.length === 0) return null;
+  const n = b.openRequiredCount;
+  const openRequiredCount =
+    missing.includes('intake') && typeof n === 'number' && n > 0
+      ? Math.floor(n)
+      : 0;
+  return { missing: [...missing], openRequiredCount };
+}
+
+/**
+ * One line per missing part, in order. `intakeStep` is the intake's step
+ * number on the screen (0 when the screen shows no intake step, e.g. it has
+ * not loaded): the step number comes from `selfServiceSteps`, never a fixed 1.
+ */
+export function reviewGapLines(
+  gaps: ReviewGaps,
+  intakeStep: number,
+): { gap: ReviewGap; text: string }[] {
+  return gaps.missing.map((gap) => {
+    if (gap === 'documents')
+      return { gap, text: 'Upload at least one document.' };
+    const n = gaps.openRequiredCount;
+    const what =
+      n === 1
+        ? 'the required question'
+        : n > 1
+          ? `the ${n} required questions`
+          : 'the required questions';
+    const where = intakeStep > 0 ? ` in Step ${intakeStep}` : '';
+    return { gap, text: `Answer ${what}${where}.` };
+  });
+}
+
+/** Lead line of the review card when something is still needed. */
+export const NEEDS_CONTENT_BODY =
+  'Seli needs a little more before it can review your application:';
+
+/**
+ * Where the hub is not on screen (the review screen), a refused start gets one
+ * line pointing back to it.
+ */
+export const NEEDS_CONTENT_ELSEWHERE =
+  'Your application needs a little more before it can be reviewed. Go back to your application to see what’s still needed.';
+
+/** A refused start whose body named nothing usable (should not happen). */
+export const NEEDS_CONTENT_GENERIC =
+  'Your application needs a little more before it can be reviewed.';

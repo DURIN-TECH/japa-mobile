@@ -22,11 +22,15 @@
 // carries them.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiService, type ApiError } from '@/services/api.service';
 import { analyticsService } from '@/services/analytics.service';
+import {
+  parseReviewGaps,
+  type ReviewGaps,
+} from '@/components/explorer/review/reviewCopy';
 import type {
   AssessmentMeta,
   AssessmentResult,
@@ -65,6 +69,11 @@ export const isForbidden = (e: unknown) => asApiError(e)?.status === 403;
 /** The route has no approved rubric. */
 export const isNoRubric = (e: unknown) =>
   asApiError(e)?.code === 'NO_APPROVED_RUBRIC';
+/** 422 NOT_ENOUGH_TO_REVIEW (japa#309): nothing yet for the review to read. */
+export const isNotEnoughToReview = (e: unknown) => {
+  const err = asApiError(e);
+  return err?.status === 422 && err.code === 'NOT_ENOUGH_TO_REVIEW';
+};
 
 // ── Whitelist builders ────────────────────────────────────────────────────────
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -340,6 +349,7 @@ export type StartOutcome =
   | 'started' // a job is queued/running, or a stored result came back
   | 'upgrade' // 402: a free caller re-running changed inputs
   | 'no_rubric' // 404: nothing to review against
+  | 'not_enough' // 422: intake or documents still needed (see `notEnough`)
   | 'offline' // no response
   | 'error'; // anything else
 
@@ -351,6 +361,10 @@ export type StartOutcome =
  */
 export function useStartReview(applicationId: string) {
   const run = useRunAssessment(applicationId);
+  // japa#309: what the last refused start said was still needed, read from the
+  // 422 body. Null when the body had nothing usable (the caller then uses its
+  // own view) and reset on every new start.
+  const [notEnough, setNotEnough] = useState<ReviewGaps | null>(null);
 
   const start = async (
     source: 'cta' | 'rerun' | 'retry' = 'cta',
@@ -358,16 +372,23 @@ export function useStartReview(applicationId: string) {
     // Guard: ignore a second tap while one is in flight.
     if (run.isPending) return 'started';
     analyticsService.trackReviewEvent('review_run_started', { source });
+    setNotEnough(null);
     try {
       await run.mutateAsync();
       return 'started';
     } catch (e) {
       if (isUpgradeRequired(e)) return 'upgrade'; // not an error: show upgrade path
       if (isNoRubric(e)) return 'no_rubric';
+      // Checked before the generic error: a refusal for missing content is not
+      // a failure, and it is never the upgrade screen.
+      if (isNotEnoughToReview(e)) {
+        setNotEnough(parseReviewGaps(asApiError(e)?.body));
+        return 'not_enough';
+      }
       if (isOffline(e)) return 'offline';
       return 'error';
     }
   };
 
-  return { start, isStarting: run.isPending };
+  return { start, isStarting: run.isPending, notEnough };
 }

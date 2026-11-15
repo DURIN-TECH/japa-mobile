@@ -81,6 +81,7 @@ import {
   NO_REVIEW_TITLE,
   showsThenYouApply,
   staleCopy,
+  NEEDS_CONTENT_ELSEWHERE,
 } from '@/components/explorer/review/reviewCopy';
 import { ThenYouApply } from '@/components/explorer/review/ThenYouApply';
 import { useApplication } from '@/hooks/useApplications';
@@ -191,6 +192,8 @@ export default function ReviewScreen() {
       );
     else if (out === 'error')
       setStartError('We couldn’t start your review. Try again in a moment.');
+    // japa#309: nothing to review yet; the application screen lists what.
+    else if (out === 'not_enough') setStartError(NEEDS_CONTENT_ELSEWHERE);
     // 'upgrade' is not an error: the refetch shows the free out-of-date state.
   };
 
