@@ -29,6 +29,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Linking,
   ScrollView,
   Text,
   View,
@@ -74,6 +75,9 @@ import {
   BAND_SUMMARY,
   DISCLAIMER,
   failedReasonLine,
+  failedCanRetry,
+  CONTACT_SUPPORT_LABEL,
+  SUPPORT_MAILTO,
   fullTierBlocked,
   isFixedRuleFinding,
   nextSteps,
@@ -396,12 +400,23 @@ export default function ReviewScreen() {
               <InlineError message={startError} />
             </View>
           ) : null}
-          {/* A retry after a failed job is free on both tiers. */}
-          <SolidButton
-            label={isStarting ? 'Starting…' : 'Try again'}
-            loading={isStarting}
-            onPress={() => run('retry')}
-          />
+          {/* A retry after a failed job is free on both tiers. japa#310: when
+              a retry cannot succeed (the application is too big for one
+              review), the button opens support instead of failing again. */}
+          {failedCanRetry(meta) ? (
+            <SolidButton
+              label={isStarting ? 'Starting…' : 'Try again'}
+              loading={isStarting}
+              onPress={() => run('retry')}
+            />
+          ) : (
+            <SolidButton
+              label={CONTACT_SUPPORT_LABEL}
+              onPress={() =>
+                Linking.openURL(SUPPORT_MAILTO).catch(() => undefined)
+              }
+            />
+          )}
         </StickyBar>
       </View>
     );

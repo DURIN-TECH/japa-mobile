@@ -127,6 +127,9 @@ import {
   reviewGapLines,
   reviewableDocumentCount,
   NEEDS_CONTENT_GENERIC,
+  // japa#310: a failure a retry cannot fix points at support instead.
+  failedCanRetry,
+  SUPPORT_MAILTO,
   type ReviewContent,
   type ReviewGap,
   type ReviewGaps,
@@ -147,6 +150,13 @@ import {
   type SelfServiceStep,
 } from '@/components/explorer/selfServiceSteps';
 
+// japa#310: the size and type the backend accepts, checked before uploading.
+import {
+  pickedContentType,
+  pickedFileProblem,
+  uploadFailureCopy,
+} from '@/components/explorer/uploadLimits';
+
 // japa#174: requirement key for an upload tied to no requirement or checklist
 // item (the "upload what you already have" buttons). The backend only needs a
 // requirementId to be present (it does not check it against the visa), and the
@@ -154,9 +164,8 @@ import {
 // not a listed requirement and not a checklist item, so these land there.
 const GENERAL_REQUIREMENT_ID = 'general';
 
-// japa#174: the one upload-failure line (replaces the old Alert).
-const uploadErrorCopy = (fileName: string) =>
-  `We couldn’t upload ${fileName}. Check your connection and try again.`;
+// japa#174: the upload-failure lines (they replace the old Alert) live in
+// uploadLimits.ts since japa#310, next to the size and type checks.
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -796,6 +805,8 @@ export default function SelfServiceView() {
     requirementId: string | null;
     documentRequestId?: string;
     fileName: string;
+    /** japa#310: the line to show (generic, too large or wrong type). */
+    message: string;
   } | null>(null);
 
   // Parallax driven by the sheet's scroll offset. The prototype translated the
@@ -816,6 +827,16 @@ export default function SelfServiceView() {
       // once it is known.
       const failureKey = documentRequestId ?? requirementId ?? 'general';
       let fileName = 'your file';
+      let contentType = 'application/octet-stream';
+      // The in-card failure for this upload, with its line.
+      const fail = (message: string) =>
+        setUploadFailure({
+          key: failureKey,
+          requirementId,
+          documentRequestId,
+          fileName,
+          message,
+        });
       setUploadFailure(null);
       try {
         const res = await DocumentPicker.getDocumentAsync({
@@ -825,7 +846,16 @@ export default function SelfServiceView() {
         if (res.canceled) return;
         const f = res.assets[0];
         fileName = f.name;
-        const contentType = f.mimeType ?? 'application/octet-stream';
+        contentType = pickedContentType(f);
+
+        // japa#310: refuse a file the backend would refuse (wrong type, or
+        // over 7 MB for an image / 10 MB otherwise) before asking for an
+        // upload URL, so nothing is uploaded. Shown in the card it came from.
+        const problem = pickedFileProblem({ size: f.size, contentType });
+        if (problem) {
+          fail(problem);
+          return;
+        }
 
         // Checklist uploads track the request id; requirement uploads the req id.
         if (documentRequestId) setUploadingItemId(documentRequestId);
@@ -863,15 +893,12 @@ export default function SelfServiceView() {
         // A new document changes the review's inputs: refresh the review state
         // so the card can show it as out of date.
         queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
-      } catch {
+      } catch (err) {
         // Signed URL, storage PUT or register failed: show it in the card the
         // upload came from (never an Alert), with a retry for the same target.
-        setUploadFailure({
-          key: failureKey,
-          requirementId,
-          documentRequestId,
-          fileName,
-        });
+        // japa#310: a 413 FILE_TOO_LARGE (the backend has already deleted the
+        // file) and a wrong-type 400 get their own line, not the generic one.
+        fail(uploadFailureCopy(err, fileName, contentType));
       } finally {
         setUploadingReqId(null);
         setUploadingItemId(null);
@@ -1043,7 +1070,15 @@ export default function SelfServiceView() {
       check: content,
       submitted,
     });
-    const reviewCta = deriveReviewCta(reviewState, submitted);
+    // japa#310: a failure a retry cannot fix (too many documents, too large)
+    // offers "Contact support" instead of "Try again".
+    const reviewCta = deriveReviewCta(
+      reviewState,
+      submitted,
+      reviewQ.data?.kind === 'review'
+        ? failedCanRetry(reviewQ.data.view.meta)
+        : true,
+    );
     // Step numbers are computed from the steps that are present: the intake
     // (#113) only exists for routes with questions, and it shifts the rest. The
     // statement and review steps (#43) are always there on this live path.
@@ -1085,6 +1120,10 @@ export default function SelfServiceView() {
       setRefusedAtKey(null);
       if (reviewCta.action === 'open') return openReview();
       if (reviewCta.action === 'upgrade') return router.push(PLANS_ROUTE);
+      if (reviewCta.action === 'contact') {
+        Linking.openURL(SUPPORT_MAILTO).catch(() => undefined);
+        return;
+      }
       const out = await startReview(
         reviewCta.action === 'retry' ? 'retry' : 'cta',
       );
@@ -1439,9 +1478,7 @@ export default function SelfServiceView() {
                   style={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}
                 >
                   {uploadFailure?.key === 'general' ? (
-                    <InlineError
-                      message={uploadErrorCopy(uploadFailure.fileName)}
-                    />
+                    <InlineError message={uploadFailure.message} />
                   ) : null}
                   {uploadingGeneral ? (
                     <ActivityIndicator color={EX.color.primary} />
@@ -1472,7 +1509,7 @@ export default function SelfServiceView() {
                     uploadFailure?.documentRequestId
                       ? {
                           documentRequestId: uploadFailure.documentRequestId,
-                          message: uploadErrorCopy(uploadFailure.fileName),
+                          message: uploadFailure.message,
                         }
                       : null
                   }
@@ -1524,9 +1561,7 @@ export default function SelfServiceView() {
                   <View style={{ marginTop: 10, gap: 8 }}>
                     {/* Error above the button; label becomes Try again (#174). */}
                     {uploadFailure?.key === 'general' ? (
-                      <InlineError
-                        message={uploadErrorCopy(uploadFailure.fileName)}
-                      />
+                      <InlineError message={uploadFailure.message} />
                     ) : null}
                     {uploadingGeneral ? (
                       <ActivityIndicator color={EX.color.primary} />
@@ -1552,9 +1587,7 @@ export default function SelfServiceView() {
                 uploading={uploadingReqId === req.id}
                 onUpload={handleUpload}
                 uploadError={
-                  uploadFailure?.key === req.id
-                    ? uploadErrorCopy(uploadFailure.fileName)
-                    : null
+                  uploadFailure?.key === req.id ? uploadFailure.message : null
                 }
                 onRetryUpload={() => handleUpload(req.id)}
               />

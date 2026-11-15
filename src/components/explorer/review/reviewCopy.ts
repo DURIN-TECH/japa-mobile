@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type {
+  AssessmentErrorCode,
   AssessmentMeta,
   AssessmentView,
   CitedFinding,
@@ -69,22 +70,81 @@ export function staleCopy(
     : 'You’ve changed your documents or answers since this review, so it’s out of date. Running it again is part of the full review.';
 }
 
-/** Failed-job reason clause for the card sentence ("…finish your review{clause}"). */
+// ── Failed review (japa#310) ─────────────────────────────────────────────────
+// Which failures a retry can fix, and what each one says.
+//
+//   daily_cap_exceeded  the platform-wide daily limit: a real pause, so
+//                       "Reviews are paused for now, so try again tomorrow" is
+//                       true for it, and only for it.
+//   too_many_documents  the application has more documents than one review can
+//   review_too_large    read, or is too large for one review for another
+//                       reason. The same inputs fail the same way every time,
+//                       and the app cannot remove a document yet (japa#314), so
+//                       there is no "Try again": the applicant is pointed at
+//                       support instead.
+//   cost_cap_exceeded   only on failures stored before japa#310 (the old,
+//                       too-tight size check). A retry goes through the new
+//                       checks and can succeed, so it gets the generic wording
+//                       and keeps "Try again". It never says reviews are paused.
+//
+// Any other or unknown code: the generic wording with "Try again".
+
+/** Failure codes a retry cannot fix: the application is too big for one review. */
+const TOO_BIG_CODES: readonly string[] = [
+  'too_many_documents',
+  'review_too_large',
+] satisfies AssessmentErrorCode[];
+
+/** Where "Contact support" goes (same address as Settings → Contact support). */
+export const SUPPORT_MAILTO = 'mailto:support@weareseli.com';
+/** Button label used instead of "Try again" when a retry cannot succeed. */
+export const CONTACT_SUPPORT_LABEL = 'Contact support';
+
+/**
+ * Whether "Try again" can succeed for a failed review. False only for the
+ * size codes above; a missing meta or error counts as retryable (as before).
+ */
+export function failedCanRetry(meta: AssessmentMeta | null): boolean {
+  const code = meta?.error?.code;
+  return !code || !TOO_BIG_CODES.includes(code);
+}
+
+/** The plain size sentence for a too-big failure, or null for any other code. */
+function tooBigLine(code: string | undefined): string | null {
+  if (code === 'too_many_documents')
+    return 'This application has more documents than one review can read.';
+  if (code === 'review_too_large')
+    return 'This application is larger than one review can read.';
+  return null;
+}
+
+/** What to do instead of retrying a too-big failure. */
+const TOO_BIG_ACTION = 'Contact support and we’ll help you with it.';
+
+/** Failed-job sentence for the self-service review card. */
 export function failedCardCopy(meta: AssessmentMeta | null): string {
   const code = meta?.error?.code;
-  if (code === 'daily_cap_exceeded' || code === 'cost_cap_exceeded') {
+  if (code === 'daily_cap_exceeded') {
     return 'We couldn’t finish your review. Nothing you added is lost. Reviews are paused for now, so try again tomorrow.';
   }
+  const tooBig = tooBigLine(code);
+  if (tooBig)
+    return `We couldn’t finish your review. ${tooBig} Nothing you added is lost. ${TOO_BIG_ACTION}`;
   const because = code === 'timed_out' ? ' because it took too long' : '';
   return `We couldn’t finish your review${because}. Nothing you added is lost. Try again.`;
 }
 
-/** Failed-job reason line for the review screen. */
+/**
+ * Failed-job reason line for the review screen. The screen adds "Nothing you
+ * added is lost." itself, as a note under this line.
+ */
 export function failedReasonLine(meta: AssessmentMeta | null): string {
   const code = meta?.error?.code;
   if (code === 'timed_out') return 'It took too long.';
-  if (code === 'daily_cap_exceeded' || code === 'cost_cap_exceeded')
+  if (code === 'daily_cap_exceeded')
     return 'Reviews are paused for now. Try again tomorrow.';
+  const tooBig = tooBigLine(code);
+  if (tooBig) return `${tooBig} ${TOO_BIG_ACTION}`;
   return 'Something went wrong on our side.';
 }
 

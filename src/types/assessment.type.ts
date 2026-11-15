@@ -35,6 +35,40 @@ export type AssessmentStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 /** Why a stored review no longer matches the current state (server-computed). */
 export type StaleReason = 'inputs_changed' | 'rules_updated';
 
+// ── Failed-job codes (mirror of the backend's ASSESSMENT_ERROR_CODES) ─────────
+// `meta.error.code` stays typed as `string` because a newer backend may send a
+// code this build does not know; the copy helpers fall back to the generic
+// "Try again" wording for those. This list is what the app knows by name.
+//
+// japa#310: the codes the applicant sees differently from the generic failure:
+//   daily_cap_exceeded  the PLATFORM-WIDE daily limit is used up: a real pause,
+//                       "try again tomorrow" is true
+//   too_many_documents  this application has more documents than one review can
+//                       read; the same inputs fail the same way, so a retry
+//                       cannot succeed
+//   review_too_large    this application is too large for one review for another
+//                       reason (the rules or the text); a retry cannot succeed
+//   cost_cap_exceeded   only on failures stored before japa#310; a retry now
+//                       goes through the new checks and can succeed
+export const ASSESSMENT_ERROR_CODES = [
+  'inputs_changed',
+  'rubric_changed',
+  'timed_out',
+  'cost_cap_exceeded',
+  'daily_cap_exceeded',
+  'too_many_documents',
+  'review_too_large',
+  'settings_unavailable',
+  'disabled',
+  'provider_error',
+  'provider_refused',
+  'provider_stopped',
+  'invalid_model_output',
+  'internal_error',
+  'application_closed',
+] as const;
+export type AssessmentErrorCode = (typeof ASSESSMENT_ERROR_CODES)[number];
+
 /** Rubric criterion kind (copied from the rubric by the backend). */
 export type CriterionKind =
   | 'objective'

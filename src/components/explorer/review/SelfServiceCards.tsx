@@ -25,6 +25,7 @@ import {
 } from '@/components/explorer/review/ReviewParts';
 import {
   bandLabel,
+  CONTACT_SUPPORT_LABEL,
   failedCardCopy,
   fmtDate,
   fmtTime,
@@ -259,14 +260,21 @@ export function deriveReviewState(
 export interface ReviewCta {
   label: string;
   /** What a tap does. */
-  action: 'run' | 'open' | 'upgrade' | 'retry';
+  /** `contact` (japa#310): open support, for a failure a retry cannot fix. */
+  action: 'run' | 'open' | 'upgrade' | 'retry' | 'contact';
   disabled?: boolean;
   withArrow?: boolean;
 }
 
+/**
+ * `canRetry` (japa#310) only matters for `failed`: false when the failure is
+ * one a retry cannot fix (see `failedCanRetry` in reviewCopy.ts), and the bar
+ * then offers "Contact support" instead of "Try again". Omitted, it is true.
+ */
 export function deriveReviewCta(
   state: ReviewState,
   submitted: boolean,
+  canRetry = true,
 ): ReviewCta | null {
   // After submission: view only. A review that was never run has no CTA.
   if (submitted) {
@@ -288,7 +296,9 @@ export function deriveReviewCta(
     case 'running':
       return { label: 'Reviewing…', action: 'open', disabled: true };
     case 'failed':
-      return { label: 'Try again', action: 'retry' };
+      return canRetry
+        ? { label: 'Try again', action: 'retry' }
+        : { label: CONTACT_SUPPORT_LABEL, action: 'contact' };
     case 'ready':
       return { label: 'See my review', action: 'open', withArrow: true };
     case 'stale_full':
