@@ -48,7 +48,12 @@ import {
   useMarkAllNotificationsRead,
 } from '@/hooks/useNotifications';
 import { mapNotif } from '@/components/explorer/liveNotifications';
-import { routeForNotification } from '@/services/notification-router';
+import {
+  isSelfServiceHiddenNotification,
+  routeForNotification,
+} from '@/services/notification-router';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -109,7 +114,19 @@ export default function NotificationsView() {
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
   const del = useDeleteNotification();
-  const raw = useMemo(() => notifsQ.data ?? [], [notifsQ.data]);
+  // ── Self-service-only build (japa#334) ───────────────────────────────────
+  // Notices about hidden features (messages, consultations, agent payments,
+  // identity checks, agent document requests) are left out of the list, so
+  // they can be neither seen nor tapped. With the flag off the list is the
+  // backend's, unfiltered, as before. (The bell's unread count may still
+  // include them: accepted for the launch, see japa#334.)
+  const selfServiceOnly = isSelfServiceOnly();
+  const raw = useMemo(() => {
+    const all = notifsQ.data ?? [];
+    return selfServiceOnly
+      ? all.filter((r) => !isSelfServiceHiddenNotification(r))
+      : all;
+  }, [notifsQ.data, selfServiceOnly]);
   const items = useMemo(() => raw.map(mapNotif), [raw]);
 
   // In-flight writes only (never a persisted local state): ids being marked
@@ -152,7 +169,9 @@ export default function NotificationsView() {
   // the raw backend record. Inbox mode: null when there is nothing to open.
   const routeFor = (id: string) => {
     const r = raw.find((x) => x.id === id);
-    return r ? routeForNotification(r, 'inbox') : null;
+    // The flag also goes to the router, so even a row that slipped through
+    // the filter can never open a hidden screen (japa#334).
+    return r ? routeForNotification(r, 'inbox', { selfServiceOnly }) : null;
   };
 
   // Mark read on the backend (if unread), then route.

@@ -28,6 +28,12 @@ import { useAuthStore, useAuthHydration } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
 import { pushNotificationService } from '@/services/push-notification.service';
 import { registerDevMenu } from '@/utils/dev-menu';
+// Self-service-only launch flag + its hidden-route table (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
+import {
+  isHiddenInSelfServiceOnly,
+  SELF_SERVICE_REDIRECT,
+} from '@/config/selfServiceRoutes';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -43,6 +49,8 @@ export const unstable_settings = {
 // The guard keeps users on the right side of the auth boundary:
 //   - signed out                       → /(auth)/welcome
 //   - signed in, but on auth / stranded → /(tabs)/home
+//   - signed in, self-service-only build, on a hidden route → /(tabs)/home
+//     (japa#334; the table lives in config/selfServiceRoutes.ts)
 // Onboarding, the tabs, and all detail screens are left alone (those flows drive
 // their own forward navigation).
 function useProtectedRoute() {
@@ -96,6 +104,15 @@ function useProtectedRoute() {
     } else if (inAuthGroup || stranded) {
       // Signed in but on a login screen or stranded → into the app home.
       router.replace('/(tabs)/home');
+    } else if (isHiddenInSelfServiceOnly(segments, isSelfServiceOnly())) {
+      // ── Self-service-only build (japa#334) ──────────────────────────────
+      // A hidden screen (agents, agencies, booking, messaging, agent
+      // payments: see config/selfServiceRoutes.ts) was opened by a deep
+      // link, a notification or a stray push → Home. `replace`, not `push`,
+      // so Back never returns to the hidden screen. Signed-out users never
+      // get here: the branch above already sent them to welcome. With the
+      // flag off this branch never matches.
+      router.replace(SELF_SERVICE_REDIRECT);
     }
   }, [isAuthenticated, isInitialized, profile, segments, router]);
 }

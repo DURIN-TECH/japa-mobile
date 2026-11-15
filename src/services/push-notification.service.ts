@@ -35,6 +35,8 @@ import {
 } from '@react-native-firebase/messaging';
 import { apiService } from './api.service';
 import { routeForNotification } from './notification-router';
+// Self-service-only launch flag (japa#334): hidden-feature pushes open the inbox.
+import { isSelfServiceOnly } from '@/config/env';
 import { queryClient } from '@/providers/QueryProvider';
 
 // ─────────────────────────────────────────────
@@ -332,7 +334,14 @@ class PushNotificationService {
   private handleNotificationPress(data?: NotificationData): void {
     // Shared pure router; in push mode "nothing matched" opens the inbox.
     // It never throws, so a malformed payload cannot crash a tap.
-    const to = routeForNotification(data, 'push');
+    // Self-service-only build (japa#334): a push about a hidden feature
+    // (message, consultation, agent payment, identity, agent document
+    // request) never opens its hidden screen; it falls back to the inbox.
+    // Covers the foreground "View", background and cold-start taps, which
+    // all land here.
+    const to = routeForNotification(data, 'push', {
+      selfServiceOnly: isSelfServiceOnly(),
+    });
     if (to) router.push(to as never);
   }
 
