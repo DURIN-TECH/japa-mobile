@@ -86,6 +86,8 @@ import {
   type StartOutcome,
 } from '@/hooks/useCaseOfficer';
 import { analyticsService } from '@/services/analytics.service';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import type {
   AssessmentView,
   CitedFinding,
@@ -125,6 +127,9 @@ function nextSteps(d: FullAssessmentData): string[] {
 }
 
 export default function ReviewScreen() {
+  // Self-service-only build (japa#334): hides the "Find an agent" buttons and
+  // the line pointing at agents. Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
@@ -456,7 +461,9 @@ export default function ReviewScreen() {
 
   // Sticky bar: full tier only. Blocking state and the free result have none.
   const showBar = view.tier === 'full' && !fullBlocked;
-  const findAgent = (
+  // "Find an agent" opens the Agents tab, hidden in a self-service-only build
+  // (japa#334): both placements below then render nothing.
+  const findAgent = selfServiceOnly ? null : (
     <SolidButton
       label="Find an agent"
       tone="ink"
@@ -527,7 +534,13 @@ export default function ReviewScreen() {
                   {[
                     'Read the rule at its source.',
                     'If your details are wrong, correct them and run the review again.',
-                    'If the rule does apply to you, an agent can talk you through other routes.',
+                    // Points at agents, so it goes with the "Find an agent"
+                    // button in a self-service-only build (japa#334).
+                    ...(selfServiceOnly
+                      ? []
+                      : [
+                          'If the rule does apply to you, an agent can talk you through other routes.',
+                        ]),
                   ].map((s, i) => (
                     <Text
                       key={s}

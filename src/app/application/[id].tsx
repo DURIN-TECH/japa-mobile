@@ -53,6 +53,8 @@ import type { AppStep } from '@/types/explorer.type';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useAgent } from '@/hooks/useAgents';
 import { useConversations } from '@/hooks/useMessaging';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import {
   mapApplication,
   mapTimeline,
@@ -271,6 +273,13 @@ function Timeline({ steps }: { steps: AppStep[] }) {
 
 export default function AppDetail() {
   const router = useRouter();
+  // ── Self-service-only build (japa#334) ───────────────────────────────────
+  // An agent-managed case still shows its progress, timeline, next step and
+  // visa details, but every agent part is hidden: the message button, the
+  // "Payment requests" section, the "Your agent" row, and the sticky CTA's
+  // fall-through to a conversation. The agent / conversation / payment
+  // request calls are skipped too. Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
@@ -292,10 +301,15 @@ export default function AppDetail() {
   // Mapped cases carry a self-contained `dest` (assets-module art).
   const dest = app?.dest;
   // The assigned agent (none for a self-service case → the row's empty copy).
-  const agentQ = useAgent(app?.agentId || undefined);
+  // (Skipped in a self-service-only build: no agent row to fill.)
+  const agentQ = useAgent(
+    selfServiceOnly ? undefined : app?.agentId || undefined,
+  );
   const agent = agentQ.data ? mapAgent(agentQ.data) : undefined;
   // The user's conversation with that agent, for the message actions.
-  const { data: conversations } = useConversations();
+  const { data: conversations } = useConversations({
+    enabled: !selfServiceOnly,
+  });
   const convo = app?.agentId
     ? conversations?.find((c) => c.agentId === app.agentId)
     : undefined;
@@ -332,7 +346,8 @@ export default function AppDetail() {
   // ── Payment requests (GET /payment-requests?role=client&applicationId=…) ────
   // Mutation hooks are created here (top level, before any early return) so
   // approve/reject fire the real backend calls. None → the block is hidden.
-  const payReqQ = usePaymentRequests(id);
+  // (Skipped in a self-service-only build: the section is hidden.)
+  const payReqQ = usePaymentRequests(id, { enabled: !selfServiceOnly });
   const approveReq = useApprovePaymentRequest();
   const rejectReq = useRejectPaymentRequest();
 
@@ -564,6 +579,8 @@ export default function AppDetail() {
   // Sticky / nudge action: perform the next step (self-service flow) when
   // actionable, otherwise open the agent conversation.
   const openConvo = () => {
+    // Never into messaging in a self-service-only build (japa#334).
+    if (selfServiceOnly) return;
     if (convo) router.push(`/messages/${convo.id}`);
   };
   const onNext = () => {
@@ -571,6 +588,9 @@ export default function AppDetail() {
     if (actionable) router.push(`/self-service/${app.id}`);
     else openConvo();
   };
+  // Sticky CTA: with no next step its only job is "Message your agent", so a
+  // self-service-only build shows no CTA at all then (japa#334).
+  const showStickyCta = actionable || !selfServiceOnly;
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -668,7 +688,10 @@ export default function AppDetail() {
         }}
       >
         <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
-        <GlassButton icon={Ic.msg} onPress={openConvo} />
+        {/* Message the agent: hidden in a self-service-only build (japa#334). */}
+        {selfServiceOnly ? null : (
+          <GlassButton icon={Ic.msg} onPress={openConvo} />
+        )}
       </View>
 
       {/* Scrolling content sheet */}
@@ -833,7 +856,9 @@ export default function AppDetail() {
           ) : null}
 
           {/* ── Payment requests (only when the agent has raised one) ────────── */}
-          {payReqs.length > 0 ? (
+          {/* Never in a self-service-only build (japa#334): agent payments,
+              their approve / reject / pay and "message your agent" actions. */}
+          {!selfServiceOnly && payReqs.length > 0 ? (
             <>
               <Text
                 style={{
@@ -1273,8 +1298,9 @@ export default function AppDetail() {
             </>
           ) : null}
 
-          {/* japa#145: no assigned agent (self-service case) → no section. */}
-          {agent ? (
+          {/* japa#145: no assigned agent (self-service case) → no section.
+              Never in a self-service-only build (japa#334). */}
+          {!selfServiceOnly && agent ? (
             <>
               <Text
                 style={{
@@ -1434,6 +1460,9 @@ export default function AppDetail() {
       </Animated.ScrollView>
 
       {/* ── Sticky coral CTA (bar padding 15/22, glass rgba(251,247,240,0.8)) ── */}
+      {/* Not shown in a self-service-only build when there is no next step
+          (it would only message the agent, japa#334). */}
+      {showStickyCta ? (
       <BlurView
         intensity={30}
         tint="light"
@@ -1473,6 +1502,7 @@ export default function AppDetail() {
           <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
         </Pressable>
       </BlurView>
+      ) : null}
 
       {/* ── Reject-reason modal (agent request → client must give a reason) ───── */}
       <Modal
