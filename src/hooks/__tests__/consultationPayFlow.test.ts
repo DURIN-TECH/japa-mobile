@@ -412,6 +412,31 @@ describe('409s that name the booking (japa#288)', () => {
   });
 });
 
+describe('lockedQuoteFrom: a resumed booking’s clock (japa#288)', () => {
+  // Locked at 10:00, expires 10:30, handed back at 10:10 device time.
+  const TEN_PAST = LOCKED + 10 * 60_000;
+
+  it('does not take an old quoteLockedAt as "now": 20:00 left, not 30:00', () => {
+    const q = lockedQuoteFrom(booking, checkout, TEN_PAST, 0, false)!;
+    expect(q.clockOffsetMs).toBe(0);
+    expect(quoteSecondsLeft(q, TEN_PAST)).toBe(20 * 60);
+    // What the default (fresh lock) would wrongly have shown here.
+    const fresh = lockedQuoteFrom(booking, checkout, TEN_PAST)!;
+    expect(quoteSecondsLeft(fresh, TEN_PAST)).toBe(30 * 60);
+  });
+
+  it('already past its expiry: 0 seconds left at once', () => {
+    const late = LOCKED + 45 * 60_000;
+    const q = lockedQuoteFrom(booking, checkout, late, 0, false)!;
+    expect(quoteSecondsLeft(q, late)).toBe(0);
+  });
+
+  it('keeps an offset measured earlier when one is passed', () => {
+    const q = lockedQuoteFrom(booking, checkout, TEN_PAST, -5000, false)!;
+    expect(q.clockOffsetMs).toBe(-5000);
+  });
+});
+
 describe('isResumedBooking', () => {
   it('is true only for resumed: true', () => {
     expect(isResumedBooking({ id: 'c', resumed: true })).toBe(true);

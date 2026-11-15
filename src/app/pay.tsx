@@ -95,7 +95,7 @@ import { format, parse, parseISO } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
 import { formatMoney, type PriceParts } from '@/components/explorer/content';
 import { CenteredState } from '@/components/explorer/CenteredState';
-import { InlineError } from '@/components/explorer/AccountForm';
+import { InfoNote, InlineError } from '@/components/explorer/AccountForm';
 import { Ic } from '@/components/explorer/icons';
 import {
   getConsultationTypeLabel,
@@ -453,6 +453,12 @@ export default function PayScreen() {
       getConsultationTypeLabel,
     );
   const display = displayFor(actual);
+  // The "earlier booking" note: when its details differ from the pick, and
+  // ALSO when the fetch of a 409-named booking failed. Then its length is
+  // not known (the card keeps the 409 summary's type and the picked
+  // duration), so the note still says these are not simply the fresh pick.
+  const showResumedNote =
+    display.differs || (!!adoptedId && adoptedQ.isError === true);
 
   /** Show a newly locked quote (and remember which booking it belongs to). */
   const applyQuote = (q: LockedQuote) => {
@@ -731,6 +737,12 @@ export default function PayScreen() {
             reference: res.reference,
           },
           Date.now(),
+          0,
+          // A RESUMED booking was locked earlier, so its `quoteLockedAt` is
+          // not "now": the countdown must continue to its real expiry (and
+          // read "Refresh price" at once if that has passed), not restart
+          // at 30:00. A new booking's lock IS now and measures the clock.
+          !isResumedBooking(res),
         );
         if (!q) {
           // Paid booking without a usable snapshot: never a ₦0 checkout.
@@ -1170,33 +1182,10 @@ export default function PayScreen() {
         </View>
 
         {/* ── Resumed booking differs from the pick (japa#288) ─────────────── */}
-        {/* Same InfoNote anatomy as the lock note below (cream panel, coral
-            icon): says why the card above does not match what was chosen. */}
-        {!isApp && display.differs ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 10,
-              backgroundColor: EX.color.cream,
-              borderWidth: 1,
-              borderColor: EX.color.line08,
-              borderRadius: 16,
-              padding: 14,
-              marginTop: 12,
-            }}
-          >
-            <Ic.cal size={17} color={EX.color.primary} strokeWidth={1.9} />
-            <Text
-              style={{
-                flex: 1,
-                fontSize: 13,
-                lineHeight: 19,
-                color: EX.color.ink2,
-              }}
-            >
-              {PAY_COPY.resumedDetails}
-            </Text>
+        {/* Says why the card above does not match what was chosen. */}
+        {!isApp && showResumedNote ? (
+          <View style={{ marginTop: 12 }}>
+            <InfoNote icon={Ic.cal}>{PAY_COPY.resumedDetails}</InfoNote>
           </View>
         ) : null}
 

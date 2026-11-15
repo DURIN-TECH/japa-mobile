@@ -63,7 +63,8 @@ jest.mock('@/hooks/useAgents', () => ({
 // GET /consultations/:id (japa#288: the full booking behind a 409's summary).
 // Returns the SAME object per id, as react-query does (a new object per
 // render would re-run the screen's effect forever).
-const mockDetail = jest.fn<(id: unknown) => { data: unknown }>();
+const mockDetail =
+  jest.fn<(id: unknown) => { data: unknown; isError?: boolean }>();
 jest.mock('@/hooks/useConsultations', () => ({
   useConsultation: (id: unknown) => mockDetail(id),
   getConsultationTypeLabel: (type: string) =>
@@ -939,6 +940,110 @@ describe('pay.tsx booking: resumed bookings (japa#288)', () => {
     expect(arg.params.free).toBe('');
     expect(arg.params.paidAmountMinor).toBe('4738940');
     expect(arg.params.paidCurrency).toBe('NGN');
+  });
+
+  it('a booking resumed 10 minutes into its lock keeps counting to its REAL expiry (20:00, not 30:00)', async () => {
+    // Device "now" is 10:02. The earlier booking was locked at 09:52 and
+    // expires at 10:22: 20 minutes are left, whatever `quoteLockedAt` says.
+    mockCreate.mockResolvedValue(
+      paidBooking({
+        id: 'cons-old',
+        resumed: true,
+        quoteLockedAt: '2026-11-14T09:52:00.000Z',
+        quoteExpiresAt: '2026-11-14T10:22:00.000Z',
+      }),
+    );
+    const tree = await render();
+    const t = text(tree);
+    expect(t).toContain('20:00');
+    expect(t).not.toContain('30:00');
+    expect(t).not.toContain(PAY_COPY.expired);
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦47,389.40');
+  });
+
+  it('a resumed booking whose lock has already passed shows "Refresh price", which re-prices the same booking', async () => {
+    // Locked 09:20, expired 09:50; device "now" is 10:02.
+    mockCreate.mockResolvedValue(
+      paidBooking({
+        id: 'cons-old',
+        resumed: true,
+        quoteLockedAt: '2026-11-14T09:20:00.000Z',
+        quoteExpiresAt: '2026-11-14T09:50:00.000Z',
+      }),
+    );
+    const tree = await render();
+    expect(text(tree)).toContain(PAY_COPY.expired);
+    expect(text(tree)).not.toContain('Your price is locked');
+    expect(cta(tree).props.accessibilityLabel).toBe('Refresh price');
+    expect(cta(tree).props.disabled).toBe(false);
+    mockCheckout.mockResolvedValue({
+      requiresPayment: true,
+      authorizationUrl: 'https://checkout.paystack.com/new',
+      reference: 'cons-ref-2',
+      consultation: summary({
+        chargedAmountMinor: 4_900_000,
+        quoteExpiresAt: '2026-11-14T10:32:00.000Z',
+      }),
+    });
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockCheckout).toHaveBeenCalledWith('cons-old');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockOpenAuth).not.toHaveBeenCalled();
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦49,000.00');
+  });
+
+  it('a NEW booking still measures the server clock from its lock (device 2 minutes fast → 30:00)', async () => {
+    mockCreate.mockResolvedValue(paidBooking());
+    const tree = await render();
+    expect(text(tree)).toContain('30:00');
+  });
+
+  it('a failed fetch of a 409-named booking never crashes: the 409 summary’s type, and the note anyway', async () => {
+    const failed = { data: undefined, isError: true };
+    mockDetail.mockImplementation((id) =>
+      id === 'cons-old' ? failed : NO_DETAIL,
+    );
+    // Same type as the pick ("Initial consultation" → general): nothing
+    // differs on its own, so only the failed fetch brings the note up.
+    mockCreate.mockRejectedValue({
+      code: 'CHECKOUT_OPENING',
+      status: 409,
+      data: { consultation: summary({ type: 'general' }) },
+    });
+    const tree = await render();
+    const t = text(tree);
+    expect(t).toContain(PAY_COPY.resumedDetails);
+    expect(t).toContain(PAY_COPY.opening);
+    expect(t).toContain('Initial consultation');
+    // The retry still targets the named booking.
+    mockCheckout.mockResolvedValue({
+      requiresPayment: true,
+      authorizationUrl: CHECKOUT,
+      reference: 'cons-ref-old',
+      consultation: summary(),
+    });
+    await act(async () => {
+      await tryAgain(tree)!.props.onPress();
+    });
+    expect(mockCheckout).toHaveBeenCalledWith('cons-old');
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦47,389.40');
+  });
+
+  it('a failed fetch keeps the type the 409 summary gave', async () => {
+    const failed = { data: undefined, isError: true };
+    mockDetail.mockImplementation((id) =>
+      id === 'cons-old' ? failed : NO_DETAIL,
+    );
+    mockCreate.mockRejectedValue({
+      code: 'CHECKOUT_OPENING',
+      status: 409,
+      data: { consultation: summary({ type: 'document_review' }) },
+    });
+    const tree = await render();
+    expect(text(tree)).toContain('Document Review');
+    expect(text(tree)).toContain(PAY_COPY.resumedDetails);
   });
 
   it('create 409 CHECKOUT_OPENING: "Try again" goes through /:id/checkout for THAT booking, not a new create', async () => {

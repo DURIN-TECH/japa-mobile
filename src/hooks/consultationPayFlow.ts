@@ -73,12 +73,22 @@ type SnapshotSource = Pick<
  * @param receivedAtMs device time when the response arrived
  * @param prevOffsetMs the offset measured earlier, used when this source has
  *                   no `quoteLockedAt` to measure a new one from
+ * @param lockIsFresh true (default) when the server locked this quote while
+ *                   answering THIS request, so `quoteLockedAt` is "server
+ *                   now" and measures the clock offset. Pass false for a
+ *                   RESUMED booking (japa#288): its `quoteLockedAt` is when
+ *                   the earlier booking was locked, minutes ago. Measuring
+ *                   from it would shift the clock back by the booking's age
+ *                   and restart the countdown at the full 30:00. Then
+ *                   `prevOffsetMs` is used (0 = the device clock), and the
+ *                   countdown runs to the booking's real `quoteExpiresAt`.
  */
 export function lockedQuoteFrom(
   source: SnapshotSource | null | undefined,
   checkout: { authorizationUrl?: string | null; reference?: string | null },
   receivedAtMs: number,
   prevOffsetMs = 0,
+  lockIsFresh = true,
 ): LockedQuote | null {
   if (!source?.id) return null;
   const amount = source.chargedAmountMinor;
@@ -94,8 +104,11 @@ export function lockedQuoteFrom(
   ) {
     return null;
   }
-  // The lock time is SERVER "now" at pricing, so it measures the offset.
-  const lockedAt = toDate(source.quoteLockedAt ?? null)?.getTime();
+  // The lock time is SERVER "now" at pricing, so it measures the offset,
+  // but ONLY for a quote locked by this very request (see `lockIsFresh`).
+  const lockedAt = lockIsFresh
+    ? toDate(source.quoteLockedAt ?? null)?.getTime()
+    : undefined;
   const expiresAt = toDate(source.quoteExpiresAt ?? null)?.getTime();
   return {
     consultationId: source.id,
