@@ -9,9 +9,11 @@ import { describe, expect, it } from '@jest/globals';
 import {
   COUNTDOWN_WARN_SECONDS,
   PAY_COPY,
+  bookingDisplay,
   chargeChanged,
   classifyConsultationPayError,
   isBookingPaidResult,
+  isResumedBooking,
   formatCountdown,
   lockedQuoteFrom,
   lockedRateLine,
@@ -21,7 +23,11 @@ import {
   paymentRequestParts,
   REQUEST_NOT_PAYABLE_MESSAGE,
 } from '../paymentRequestFlow';
-import { priceInline } from '@/components/explorer/content';
+import {
+  isUsableRate,
+  priceInline,
+  usdAtRateLine,
+} from '@/components/explorer/content';
 
 const LOCKED = Date.parse('2026-11-14T10:00:00Z');
 const booking = {
@@ -29,7 +35,7 @@ const booking = {
   priceUsdCents: 3500,
   chargedCurrency: 'NGN',
   chargedAmountMinor: 4_738_940,
-  fxRate: 1353.97,
+  effectiveRate: 1353.97,
   quoteLockedAt: { _seconds: LOCKED / 1000, _nanoseconds: 0 },
   quoteExpiresAt: '2026-11-14T10:30:00Z',
 };
@@ -88,7 +94,61 @@ describe('lockedRateLine / chargeChanged', () => {
   it('shows the server rate verbatim in the charged currency', () => {
     const q = lockedQuoteFrom(booking, checkout, LOCKED)!;
     expect(lockedRateLine(q)).toBe('$35.00 at ₦1,353.97 per $1');
-    expect(lockedRateLine({ ...q, fxRate: null })).toBe('$35.00');
+    expect(lockedRateLine({ ...q, effectiveRate: null })).toBe('$35.00');
+  });
+
+  // ── japa#332: the rate is the server's `effectiveRate`, never `fxRate` ──
+  it('the issue example: $6.00 charged ₦8,123.84 reads "$6.00 at ₦1,353.97 per $1"', () => {
+    // effectiveRate = 812384 kobo ÷ 600 cents = 1353.973333 (6 decimals, as
+    // the backend sends it); shown to the naira's 2 decimals.
+    const q = lockedQuoteFrom(
+      {
+        ...booking,
+        priceUsdCents: 600,
+        chargedAmountMinor: 812_384,
+        effectiveRate: 1353.973333,
+      },
+      checkout,
+      LOCKED,
+    )!;
+    expect(q.effectiveRate).toBe(1353.973333);
+    expect(lockedRateLine(q)).toBe('$6.00 at ₦1,353.97 per $1');
+  });
+  it('ignores a raw `fxRate`: only `effectiveRate` is ever read', () => {
+    // An older backend (or a leak) sending the raw mid-market rate must not
+    // put it on screen: with no effectiveRate the line is dollars only.
+    // Built as a variable: `fxRate` is no longer part of the typed shape.
+    const leaky = { ...booking, effectiveRate: undefined, fxRate: 1320.95 };
+    const q = lockedQuoteFrom(leaky, checkout, LOCKED)!;
+    expect(q.effectiveRate).toBeNull();
+    expect(q).not.toHaveProperty('fxRate');
+    expect(lockedRateLine(q)).toBe('$35.00');
+  });
+  it('a legacy booking with no / unusable effectiveRate shows the dollar price only, without throwing', () => {
+    for (const bad of [undefined, null, NaN, Infinity, 0, -5, '1353.97']) {
+      const q = lockedQuoteFrom(
+        { ...booking, effectiveRate: bad as unknown as number },
+        checkout,
+        LOCKED,
+      )!;
+      // The quote itself is still usable (amount, expiry, checkout).
+      expect(q.charged.amountMinor).toBe(4_738_940);
+      expect(q.effectiveRate).toBeNull();
+      expect(lockedRateLine(q)).toBe('$35.00');
+    }
+  });
+  it('a USD charge has no "per $1" line', () => {
+    const q = lockedQuoteFrom(
+      {
+        ...booking,
+        chargedCurrency: 'USD',
+        chargedAmountMinor: 3500,
+        effectiveRate: 1,
+      },
+      checkout,
+      LOCKED,
+    )!;
+    expect(lockedRateLine(q)).toBe('$35.00');
   });
   it('detects a re-priced amount', () => {
     const q = lockedQuoteFrom(booking, checkout, LOCKED)!;
@@ -309,6 +369,62 @@ describe('paymentRequestParts', () => {
       ),
     ).toBe('₦150,000.00 · $100.00');
   });
+
+  // ── japa#332: a priced request carries the server's `effectiveRate` ─────
+  it('approved with effectiveRate: "$100.00 at ₦1,500.00 per $1" under the amount', () => {
+    const parts = paymentRequestParts({
+      ...base,
+      status: 'approved',
+      charge: { amountMinor: 15_000_000, currency: 'NGN' },
+      effectiveRate: 1500,
+    });
+    expect(parts.primary).toBe('₦150,000');
+    expect(parts.secondary).toBe('$100.00 at ₦1,500.00 per $1');
+  });
+  it('the issue example on a paid request: "$6.00 at ₦1,353.97 per $1"', () => {
+    const parts = paymentRequestParts({
+      ...base,
+      amount: 600,
+      priceUsd: { amountMinor: 600, currency: 'USD' },
+      status: 'paid',
+      charge: { amountMinor: 812_384, currency: 'NGN' },
+      effectiveRate: 1353.973333,
+    });
+    expect(parts.primary).toBe('₦8,123.84');
+    expect(parts.secondary).toBe('$6.00 at ₦1,353.97 per $1');
+  });
+  it('a pending request never shows a rate, even if one were sent', () => {
+    // No charge yet = nothing was priced, so there is no rate to show.
+    expect(
+      priceInline(paymentRequestParts({ ...base, effectiveRate: 1500 })),
+    ).toBe('$100.00');
+  });
+  it('priced but no usable effectiveRate (older record): the dollar-only line, no throw', () => {
+    for (const bad of [undefined, null, NaN, 0, -1]) {
+      expect(
+        priceInline(
+          paymentRequestParts({
+            ...base,
+            status: 'paid',
+            charge: { amountMinor: 15_000_000, currency: 'NGN' },
+            effectiveRate: bad as unknown as number,
+          }),
+        ),
+      ).toBe('₦150,000.00 · $100.00');
+    }
+  });
+  it('a USD charge keeps "$100.00" alone', () => {
+    expect(
+      priceInline(
+        paymentRequestParts({
+          ...base,
+          status: 'paid',
+          charge: { amountMinor: 10000, currency: 'USD' },
+          effectiveRate: 1,
+        }),
+      ),
+    ).toBe('$100.00');
+  });
   it('legacy: its own amount and currency', () => {
     expect(
       priceInline(
@@ -322,5 +438,251 @@ describe('paymentRequestParts', () => {
       ),
     ).toBe('₦5,000.00');
     expect(REQUEST_NOT_PAYABLE_MESSAGE).toMatch(/can’t be paid/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// japa#288: resumed bookings and the booking a 409 names.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('409s that name the booking (japa#288)', () => {
+  const consultation = { id: 'cons-old', type: 'general' };
+
+  it('CHECKOUT_OPENING carries data.consultation (its id is the retry target)', () => {
+    for (const stage of ['create', 'checkout'] as const) {
+      const v = classifyConsultationPayError(
+        { code: 'CHECKOUT_OPENING', status: 409, data: { consultation } },
+        stage,
+      );
+      expect(v).toMatchObject({
+        kind: 'opening',
+        message: PAY_COPY.opening,
+        consultation: { id: 'cons-old' },
+        authorizationUrl: null,
+        reference: null,
+      });
+    }
+  });
+
+  it('PAYMENT_IN_PROGRESS carries the booking and its current checkout', () => {
+    const v = classifyConsultationPayError(
+      {
+        code: 'PAYMENT_IN_PROGRESS',
+        status: 409,
+        data: { authorizationUrl: 'https://x', reference: 'r1', consultation },
+      },
+      'create',
+    );
+    expect(v).toMatchObject({
+      kind: 'in_progress',
+      message: PAY_COPY.inProgress,
+      authorizationUrl: 'https://x',
+      reference: 'r1',
+      consultation: { id: 'cons-old' },
+    });
+  });
+
+  it('missing or malformed data gives nulls, never a throw', () => {
+    for (const data of [
+      undefined,
+      null,
+      'x',
+      42,
+      {},
+      { consultation: 'cons-old' },
+      { consultation: {} },
+      { consultation: { id: 7 } },
+      { consultation: { id: '' } },
+      { reference: 9, authorizationUrl: {} },
+    ]) {
+      for (const code of ['CHECKOUT_OPENING', 'PAYMENT_IN_PROGRESS']) {
+        const v = classifyConsultationPayError(
+          { code, status: 409, data },
+          'create',
+        );
+        expect(v).toMatchObject({
+          consultation: null,
+          authorizationUrl: null,
+          reference: null,
+        });
+      }
+    }
+  });
+
+  it('QUOTE_EXPIRED / CHECKOUT_REPLACED still hand over their checkout', () => {
+    const v = classifyConsultationPayError(
+      {
+        code: 'QUOTE_EXPIRED',
+        status: 409,
+        data: { authorizationUrl: 'https://n', reference: 'r2', consultation },
+      },
+      'verify',
+    );
+    expect(v).toMatchObject({
+      kind: 'new_checkout',
+      authorizationUrl: 'https://n',
+      reference: 'r2',
+      consultation: { id: 'cons-old' },
+    });
+  });
+});
+
+describe('lockedQuoteFrom: a resumed booking’s clock (japa#288)', () => {
+  // Locked at 10:00, expires 10:30, handed back at 10:10 device time.
+  const TEN_PAST = LOCKED + 10 * 60_000;
+
+  it('does not take an old quoteLockedAt as "now": 20:00 left, not 30:00', () => {
+    const q = lockedQuoteFrom(booking, checkout, TEN_PAST, 0, false)!;
+    expect(q.clockOffsetMs).toBe(0);
+    expect(quoteSecondsLeft(q, TEN_PAST)).toBe(20 * 60);
+    // What the default (fresh lock) would wrongly have shown here.
+    const fresh = lockedQuoteFrom(booking, checkout, TEN_PAST)!;
+    expect(quoteSecondsLeft(fresh, TEN_PAST)).toBe(30 * 60);
+  });
+
+  it('already past its expiry: 0 seconds left at once', () => {
+    const late = LOCKED + 45 * 60_000;
+    const q = lockedQuoteFrom(booking, checkout, late, 0, false)!;
+    expect(quoteSecondsLeft(q, late)).toBe(0);
+  });
+
+  it('keeps an offset measured earlier when one is passed', () => {
+    const q = lockedQuoteFrom(booking, checkout, TEN_PAST, -5000, false)!;
+    expect(q.clockOffsetMs).toBe(-5000);
+  });
+});
+
+describe('isResumedBooking', () => {
+  it('is true only for resumed: true', () => {
+    expect(isResumedBooking({ id: 'c', resumed: true })).toBe(true);
+    for (const v of [
+      { id: 'c' },
+      { resumed: false },
+      { resumed: 'true' },
+      { resumed: 1 },
+      null,
+      undefined,
+      'resumed',
+    ]) {
+      expect(isResumedBooking(v)).toBe(false);
+    }
+  });
+});
+
+describe('bookingDisplay', () => {
+  const picked = {
+    topic: 'Document check',
+    type: 'document_review' as const,
+    durLabel: '30 min',
+  };
+  const label = (t: string) => `label:${t}`;
+
+  it('shows the pick while the server has said nothing', () => {
+    for (const actual of [null, undefined, {}]) {
+      expect(bookingDisplay(picked, actual, label)).toEqual({
+        topic: 'Document check',
+        dur: '30 min',
+        differs: false,
+      });
+    }
+  });
+
+  it('keeps the pick (its own wording) when the booking matches it', () => {
+    expect(
+      bookingDisplay(
+        picked,
+        { type: 'document_review', durationMinutes: 30 },
+        label,
+      ),
+    ).toEqual({ topic: 'Document check', dur: '30 min', differs: false });
+  });
+
+  it('shows the resumed booking’s type and duration when they differ', () => {
+    expect(
+      bookingDisplay(picked, { type: 'general', durationMinutes: 45 }, label),
+    ).toEqual({ topic: 'label:general', dur: '45 min', differs: true });
+  });
+
+  it('replaces only the line that differs', () => {
+    expect(
+      bookingDisplay(
+        picked,
+        { type: 'document_review', durationMinutes: 45 },
+        label,
+      ),
+    ).toEqual({ topic: 'Document check', dur: '45 min', differs: true });
+    // A 409 summary: type only, the duration is not known yet.
+    expect(bookingDisplay(picked, { type: 'initial' }, label)).toEqual({
+      topic: 'label:initial',
+      dur: '30 min',
+      differs: true,
+    });
+  });
+
+  it('ignores a duration that is not a positive number', () => {
+    for (const durationMinutes of [0, -5, NaN, Infinity]) {
+      expect(bookingDisplay(picked, { durationMinutes }, label).dur).toBe(
+        '30 min',
+      );
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// usdAtRateLine / isUsableRate (japa#332): the one formatter behind the rate
+// line on the pay screen, the confirmation and a priced payment request.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('usdAtRateLine / isUsableRate', () => {
+  const usd = { amountMinor: 600, currency: 'USD' };
+  it('formats the rate in the charged currency', () => {
+    expect(usdAtRateLine(usd, 'NGN', 1353.973333)).toBe(
+      '$6.00 at ₦1,353.97 per $1',
+    );
+  });
+  it('a rate below 10 keeps 4 decimals, so it reproduces the charge (GBP)', () => {
+    // $100.00 charged £78.83: "£0.79" would read as £79.00.
+    const hundred = { amountMinor: 10_000, currency: 'USD' };
+    expect(usdAtRateLine(hundred, 'GBP', 0.7883)).toBe(
+      '$100.00 at £0.7883 per $1',
+    );
+    expect(usdAtRateLine(hundred, 'GBP', 0.788349)).toBe(
+      '$100.00 at £0.7883 per $1',
+    );
+    expect(usdAtRateLine(hundred, 'CAD', 1.4)).toBe(
+      '$100.00 at CA$1.4000 per $1',
+    );
+  });
+  it('a rate of 10 or more keeps 2 decimals, thousands grouped (NGN, KES, UGX)', () => {
+    expect(usdAtRateLine(usd, 'NGN', 1353.97)).toBe(
+      '$6.00 at ₦1,353.97 per $1',
+    );
+    expect(usdAtRateLine(usd, 'NGN', 1500)).toBe('$6.00 at ₦1,500.00 per $1');
+    expect(usdAtRateLine(usd, 'KES', 129.456)).toBe(
+      '$6.00 at KSh129.46 per $1',
+    );
+    // A zero-decimal currency: the rate still shows 2 decimals.
+    expect(usdAtRateLine(usd, 'UGX', 3712.5)).toBe(
+      '$6.00 at USh3,712.50 per $1',
+    );
+    expect(usdAtRateLine(usd, 'GHS', 10)).toBe('$6.00 at GH₵10.00 per $1');
+  });
+  it('falls back to the dollar price when there is no usable rate or currency', () => {
+    expect(usdAtRateLine(usd, 'NGN', undefined)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'NGN', null)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'NGN', NaN)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'NGN', 0)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'NGN', '1353.97')).toBe('$6.00');
+    expect(usdAtRateLine(usd, undefined, 1353.97)).toBe('$6.00');
+    expect(usdAtRateLine(usd, '', 1353.97)).toBe('$6.00');
+    expect(usdAtRateLine(usd, 'usd', 1)).toBe('$6.00');
+  });
+  it('gives an empty string (never "undefined at …") without a dollar price', () => {
+    expect(usdAtRateLine(null, 'NGN', 1353.97)).toBe('');
+    expect(usdAtRateLine(undefined, 'NGN', 1353.97)).toBe('');
+  });
+  it('isUsableRate accepts only finite numbers above zero', () => {
+    expect(isUsableRate(1353.97)).toBe(true);
+    for (const bad of [0, -1, NaN, Infinity, null, undefined, '1', {}]) {
+      expect(isUsableRate(bad)).toBe(false);
+    }
   });
 });

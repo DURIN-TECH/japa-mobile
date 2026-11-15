@@ -93,6 +93,36 @@ describe('useCreateConsultation', () => {
   });
 });
 
+describe('useCreateConsultation: resumed booking (japa#288)', () => {
+  it('resolves a 200 `resumed: true` answer like a 201: the existing booking, no throw', async () => {
+    // apiService resolves any 2xx; the hook must hand the body on untouched.
+    const resumed = {
+      id: 'cons-old',
+      type: 'document_review',
+      durationMinutes: 45,
+      requiresPayment: true,
+      authorizationUrl: 'https://checkout.paystack.com/old',
+      reference: 'cons-ref-old',
+      resumed: true,
+    };
+    api.post.mockResolvedValue({ success: true, data: resumed });
+    const h = mount(() => useCreateConsultation(), qc);
+    let out: unknown;
+    await act(async () => {
+      out = await h.current.mutateAsync({
+        agentId: 'agent-1',
+        type: 'initial',
+        scheduledDate: '2026-12-01',
+        scheduledTime: '10:00',
+        durationMinutes: 30,
+        timezone: 'Africa/Lagos',
+      });
+    });
+    expect(out).toEqual(resumed);
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('useConsultationCheckout', () => {
   it("POSTs only returnTo: 'app' to the booking's checkout route", async () => {
     api.post.mockResolvedValue({
