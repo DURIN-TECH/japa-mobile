@@ -44,6 +44,8 @@ import {
   loadErrorCopy,
 } from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import { NeedAVisaCard } from '@/components/explorer/NeedAVisaCard';
 import {
   Flag,
@@ -201,6 +203,9 @@ function PathCard({
 
 export default function DestinationDetail() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides the agent path card and the
+  // "Top agents" strip. Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
   const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
 
@@ -255,7 +260,9 @@ export default function DestinationDetail() {
 
   // Top agents rail (GET /agents/top). japa#145: no demo agents; the rail is
   // hidden when the backend has none (or the call failed).
-  const topAgentsQ = useTopAgents(3);
+  // Self-service-only build (japa#334): no agent rail and no "Work with an
+  // agent" card, so the call is skipped (topAgents stays empty).
+  const topAgentsQ = useTopAgents(3, !selfServiceOnly);
   const topAgents = useMemo(
     () => (topAgentsQ.data ?? []).map(mapAgent),
     [topAgentsQ.data],
@@ -507,20 +514,25 @@ export default function DestinationDetail() {
             Choose your path
           </Text>
           <View style={{ gap: 10 }}>
-            <PathCard
-              dark
-              icon={Ic.users}
-              title="Work with an agent"
-              // japa#145: no invented expert count; open the top agent when
-              // there is one, else the Agents tab.
-              sub="Guided by a verified expert"
-              badge="Popular"
-              onPress={() =>
-                topAgents[0]
-                  ? router.push(`/agent/${topAgents[0].id}`)
-                  : router.push('/(tabs)/agents')
-              }
-            />
+            {/* Hidden in a self-service-only build (japa#334): Self-service
+                is then the one path, and the heading above still reads fine
+                over a single option. */}
+            {selfServiceOnly ? null : (
+              <PathCard
+                dark
+                icon={Ic.users}
+                title="Work with an agent"
+                // japa#145: no invented expert count; open the top agent when
+                // there is one, else the Agents tab.
+                sub="Guided by a verified expert"
+                badge="Popular"
+                onPress={() =>
+                  topAgents[0]
+                    ? router.push(`/agent/${topAgents[0].id}`)
+                    : router.push('/(tabs)/agents')
+                }
+              />
+            )}
             <PathCard
               icon={Ic.docs}
               title="Self-service"
@@ -748,8 +760,9 @@ export default function DestinationDetail() {
             <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />
           </Pressable>
 
-          {/* Top agents (hidden when the backend has none, japa#145) */}
-          {topAgents.length ? (
+          {/* Top agents (hidden when the backend has none, japa#145, and in a
+              self-service-only build, japa#334) */}
+          {!selfServiceOnly && topAgents.length ? (
             <>
               <Text
                 style={{

@@ -144,10 +144,13 @@ export function useAgents() {
  * Used on: Home screen agent carousel.
  *
  * @param limit - Max number of agents to return (default 5)
+ * @param enabled - False skips the call (a self-service-only build, japa#334,
+ *   hides every agent rail, so the request would be wasted). Default true.
  */
-export function useTopAgents(limit = 5) {
+export function useTopAgents(limit = 5, enabled = true) {
   return useQuery({
     queryKey: ['agents', 'top', limit],
+    enabled,
     queryFn: async () => {
       const response = await apiService.get<ApiAgent[]>(
         `/agents/top?limit=${limit}`,

@@ -21,10 +21,17 @@
  * The id is `relatedEntityId`, falling back to the deprecated `referenceId`
  * only for old records.
  *
+ * Self-service-only build (japa#334): with `{ selfServiceOnly: true }` a
+ * notice about a hidden feature (agents, booking, messaging, agent payments,
+ * identity, agent document requests) resolves to the fallback instead, and
+ * `isSelfServiceHiddenNotification` lets the inbox leave such rows out.
+ *
  * Never throws: a missing or empty id degrades to a list screen or the
  * fallback. A route to something that no longer exists (a deleted
  * application) is the target screen's own not-found state to handle.
  */
+
+import { isHiddenInSelfServiceOnly } from '@/config/selfServiceRoutes';
 
 /** Where the route will be used; only changes the "nothing matched" result. */
 export type NotificationRouteMode = 'push' | 'inbox';
@@ -48,6 +55,19 @@ export interface NotificationRouteInput {
   referenceId?: string | null;
 }
 
+/** Extra switches for the router. */
+export interface NotificationRouteOptions {
+  /**
+   * Self-service-only build (japa#334): notices about agents, booking,
+   * messaging, agent payments, identity checks and agent document requests
+   * resolve to the "nothing matched" result. Callers pass
+   * `isSelfServiceOnly()` from `config/env`; the router never reads the build
+   * itself, so tests cover both states. Default false (everything routes as
+   * before).
+   */
+  selfServiceOnly?: boolean;
+}
+
 /** Trim and turn blank/non-string values into undefined. */
 const clean = (v: unknown): string | undefined =>
   typeof v === 'string' && v.trim() ? v.trim() : undefined;
@@ -59,10 +79,32 @@ const clean = (v: unknown): string | undefined =>
 export function routeForNotification(
   input: NotificationRouteInput | null | undefined,
   mode: NotificationRouteMode = 'push',
+  options: NotificationRouteOptions = {},
 ): string | null {
   const fallback = mode === 'push' ? '/notifications' : null;
   if (!input) return fallback;
 
+  // ── 0. self-service-only build (japa#334) ────────────────────────────────
+  // A notice about a hidden feature resolves to "nothing matched", and so
+  // does any route the table in config/selfServiceRoutes.ts hides (a safety
+  // net for rules added later). With the flag off neither check runs and the
+  // result is exactly what it was before.
+  if (options.selfServiceOnly) {
+    if (isSelfServiceHiddenNotification(input)) return fallback;
+    const route = baseRoute(input, fallback);
+    return isHiddenInSelfServiceOnly(route, true) ? fallback : route;
+  }
+  return baseRoute(input, fallback);
+}
+
+/**
+ * The route the notice maps to with every feature on: the original rules
+ * (#265), unchanged. `fallback` is the mode's "nothing matched" result.
+ */
+function baseRoute(
+  input: NotificationRouteInput,
+  fallback: string | null,
+): string | null {
   const type = clean(input.type);
   const entityType = clean(input.relatedEntityType);
   const id = clean(input.relatedEntityId) ?? clean(input.referenceId);
@@ -160,4 +202,76 @@ function messageRoute(input: NotificationRouteInput, id?: string): string {
 /** `/consultation/<id>`, or the list when there is no id. */
 function consultationRoute(id?: string): string {
   return id ? `/consultation/${id}` : '/consultations';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Self-service-only notice filter (japa#334)
+//
+// Which notices belong to a feature the self-service-only build hides. Used
+// by the router above (hidden notices route to the fallback) and by the inbox
+// (`src/app/notifications.tsx`), which does not list them at all.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Types handled by a type rule above that stay visible (self-service). */
+const SELF_SERVICE_KEPT_TYPES: ReadonlySet<string> = new Set([
+  'readiness_review_ready',
+  'document_check_problems',
+  'document_check_could_not_check',
+  'document_check_passed',
+  'refusal_analysis_ready',
+  'visa_news',
+  'document_rejected',
+  'document_approved',
+  'rule_change_alert',
+  'application_update',
+]);
+
+/** Types of hidden features (any `consultation*` type is hidden too). */
+const SELF_SERVICE_HIDDEN_TYPES: ReadonlySet<string> = new Set([
+  'message_received',
+  'payment_request',
+  'payment_request_rejected',
+  'payment_received',
+  'identity_verified',
+  'identity_verification_failed',
+  // Document requests come from agents; self-service has its own checks.
+  'document_status',
+]);
+
+/** Entity types of hidden features, for notices no type rule claimed. */
+const SELF_SERVICE_HIDDEN_ENTITY_TYPES: ReadonlySet<string> = new Set([
+  'consultation',
+  'payment_request',
+  'payment',
+  'message',
+  // Bare document notices are agent document requests / shared documents.
+  'document',
+]);
+
+/**
+ * Whether a notice is about a feature the self-service-only build hides.
+ * Pure: says nothing about the flag; callers only ask when it is on.
+ *
+ * Order mirrors the router: a hidden type, or any `documentRequestId` (an
+ * agent asked for a document), wins; then a kept self-service type is
+ * visible whatever its entity type (e.g. `document_rejected` on a
+ * `document` entity still opens the application); only notices no type
+ * rule claimed fall through to the entity-type check.
+ */
+export function isSelfServiceHiddenNotification(
+  input: NotificationRouteInput | null | undefined,
+): boolean {
+  if (!input) return false;
+  const type = clean(input.type);
+  if (
+    type &&
+    (SELF_SERVICE_HIDDEN_TYPES.has(type) || type.startsWith('consultation'))
+  )
+    return true;
+  if (clean(input.documentRequestId)) return true;
+  if (type && SELF_SERVICE_KEPT_TYPES.has(type)) return false;
+  const entityType = clean(input.relatedEntityType);
+  return (
+    entityType !== undefined && SELF_SERVICE_HIDDEN_ENTITY_TYPES.has(entityType)
+  );
 }

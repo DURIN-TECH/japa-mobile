@@ -43,6 +43,8 @@ import {
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { useTopAgents } from '@/hooks/useAgents';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import { useStartVisa } from '@/hooks/useStartVisa';
 import { AlsoCoversCard } from '@/components/explorer/SharedRouteParts';
 import {
@@ -100,6 +102,9 @@ function StatCell({
 
 export default function VisaBreakdown() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides the "Boost your chances"
+  // specialist card. Start-application stays.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
   const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
 
@@ -127,7 +132,9 @@ export default function VisaBreakdown() {
 
   // "Boost your chances" nudge — the real #1 top agent (GET /agents/top).
   // None (or not loaded) → the nudge section is hidden, never a named demo.
-  const topAgentsQ = useTopAgents(1);
+  // Self-service-only build (japa#334): the nudge is hidden, so the call is
+  // skipped and `specialist` stays null.
+  const topAgentsQ = useTopAgents(1, !selfServiceOnly);
   const specialist = useMemo(
     () => (topAgentsQ.data ?? []).map(mapAgent)[0] ?? null,
     [topAgentsQ.data],
@@ -488,8 +495,9 @@ export default function VisaBreakdown() {
           ) : null}
 
           {/* ── Boost your chances (dark specialist nudge) ──────────────────── */}
-          {/* Only with a real top agent (GET /agents/top). */}
-          {specialist ? (
+          {/* Only with a real top agent (GET /agents/top), and never in a
+              self-service-only build (japa#334). */}
+          {!selfServiceOnly && specialist ? (
             <>
               <Text
                 style={{

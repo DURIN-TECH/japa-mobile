@@ -28,12 +28,31 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   useEmulator?: boolean;
   emulatorProjectId?: string;
   feedbackEnabled?: boolean;
+  selfServiceOnly?: boolean;
 };
 
 export const APP_ENV: AppEnv = extra.appEnv ?? 'development';
 // Whether this build ships the feedback button (issue #257); baked in by
 // app.config.ts from EXPO_PUBLIC_FEEDBACK_ENABLED. On unless explicitly false.
 export const FEEDBACK_ENABLED = extra.feedbackEnabled !== false;
+
+// ── Self-service-only launch build (japa#334) ───────────────────────────────
+// Baked in by app.config.ts from EXPO_PUBLIC_SELF_SERVICE_ONLY. OFF unless the
+// build explicitly set it to "true" (see src/config/selfServiceOnly.ts), so a
+// misconfigured or local build shows every feature, exactly as before.
+export const SELF_SERVICE_ONLY = extra.selfServiceOnly === true;
+
+/**
+ * Whether this build hides the agent / agency / booking / messaging features.
+ *
+ * Screens call this function rather than reading the constant at import time
+ * so jest can flip the flag per test with
+ * `jest.spyOn(env, 'isSelfServiceOnly').mockReturnValue(true)` (or a
+ * `jest.mock('@/config/env', ...)`) without rebuilding the app config.
+ */
+export function isSelfServiceOnly(): boolean {
+  return SELF_SERVICE_ONLY;
+}
 
 export const IS_PROD = APP_ENV === 'production';
 

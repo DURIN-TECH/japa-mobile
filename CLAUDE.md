@@ -80,6 +80,40 @@ EXPO_TOKEN=                     # EAS builds/submits (CI)
 # EXPO_PUBLIC_EMULATOR_PROJECT_ID=japa-platform # emulator's project id (default)
 ```
 
+### Self-service-only launch flag (`EXPO_PUBLIC_SELF_SERVICE_ONLY`)
+
+Temporary launch flag — remove when agent features are
+released (DURIN-TECH/japa#336).
+
+- `EXPO_PUBLIC_SELF_SERVICE_ONLY=true` makes a build show
+  only the self-service journey. Agents, agencies,
+  consultation booking, agent messaging, agent payment
+  requests and identity verification lose every entry point.
+  Their routes redirect to Home (`config/selfServiceRoutes.ts`,
+  guard in `app/_layout.tsx`), and their notifications neither
+  route, list nor pop up. Off unless the value is exactly
+  `true`; with it off the app is unchanged.
+- Set by the `production` and `tester` EAS profiles
+  (`eas.json`). `development`, `ios-simulator` and `preview`
+  leave it off, and so does a plain local `expo start`.
+- Baked in at build time: `app.config.ts` resolves it into
+  `extra.selfServiceOnly`, and runtime code reads it only via
+  `isSelfServiceOnly()` from `@/config/env`. An update
+  therefore carries whatever the shell had when it was built.
+  A hand-run `eas update` to the `tester` or `production`
+  channel must set the same env as the build, or it ships
+  the flag off (and the wrong backend):
+
+  ```bash
+  APP_ENV=staging EXPO_PUBLIC_SELF_SERVICE_ONLY=true \
+    eas update --channel tester
+  APP_ENV=production EXPO_PUBLIC_SELF_SERVICE_ONLY=true \
+    eas update --channel production
+  ```
+
+- To try it locally:
+  `EXPO_PUBLIC_SELF_SERVICE_ONLY=true npx expo start --clear`.
+
 The emulator API URL uses the **emulator's** project id
 (`japa-platform`, the backend's `singleProjectMode` id), not
 the app's Firebase project — `/durin-seli-dev/...` 404s on the
