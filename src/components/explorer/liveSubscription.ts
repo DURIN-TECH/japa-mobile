@@ -37,12 +37,22 @@ function titleCase(key: string): string {
 }
 
 // ── Self-service-only build (japa#334) ─────────────────────────────────────
-// Features of hidden flows (chat with agents, consultation booking). A
-// self-service-only build leaves them off the plan cards; the plans, their
-// prices and what the backend grants are unchanged.
-export const SELF_SERVICE_HIDDEN_FEATURES: ReadonlySet<string> = new Set([
-  'messaging',
-  'consultations.book',
+// What a plan card may list in a self-service-only build. An ALLOW-list, not
+// a deny-list: every key in the authz catalogue is either here (a feature
+// the self-service journey offers) or left off the card (agent / agency
+// features: Agent messaging, Book consultations, Invite agents, Payment
+// requests, Bulk applications, Analytics dashboard). A key the catalogue
+// adds later stays off until it is listed here, so an agent-side feature can
+// never reach a tester's plan card by accident. The plans, their prices and
+// what the backend grants are unchanged; only the card text is filtered.
+export const SELF_SERVICE_PLAN_FEATURES: ReadonlySet<string> = new Set<
+  FeatureKey | string
+>([
+  'applications.create',
+  'documents.upload',
+  'self_service',
+  'priority_support',
+  'news.alerts',
 ]);
 
 /**
@@ -57,7 +67,7 @@ export const SELF_SERVICE_HIDDEN_FEATURES: ReadonlySet<string> = new Set([
  * • features: FeatureKey[] → human labels (fallback: title-cased key).
  * • blurb:    the backend has no marketing blurb, so leave it empty.
  *
- * `opts.selfServiceOnly` (japa#334) drops SELF_SERVICE_HIDDEN_FEATURES from
+ * `opts.selfServiceOnly` (japa#334) keeps only SELF_SERVICE_PLAN_FEATURES in
  * `features`. Off (the default) maps every feature, exactly as before.
  */
 export function mapPlan(
@@ -73,9 +83,7 @@ export function mapPlan(
     interval,
     tag: p.id === popularId ? 'Most popular' : null,
     features: p.features
-      .filter(
-        (f) => !(opts.selfServiceOnly && SELF_SERVICE_HIDDEN_FEATURES.has(f)),
-      )
+      .filter((f) => !opts.selfServiceOnly || SELF_SERVICE_PLAN_FEATURES.has(f))
       .map((f) => FEATURE_LABEL[f] ?? titleCase(f)),
     blurb: '',
   };

@@ -10,6 +10,7 @@ import {
   isHiddenInSelfServiceOnly as hidden,
   SELF_SERVICE_HIDDEN_SEGMENTS,
   SELF_SERVICE_REDIRECT,
+  selfServiceRedirectState,
 } from '../selfServiceRoutes';
 
 // Hidden routes: [segments from useSegments(), the deep-link pathname].
@@ -160,5 +161,137 @@ describe('the route table', () => {
       .readdirSync(appDir)
       .map((name) => name.replace(/\.tsx?$/, ''));
     for (const route of routes) expect(known).toContain(route);
+  });
+});
+
+// ── The redirect state (QA round 1) ─────────────────────────────────────────
+// A hidden deep link from a warm app must end on the EXISTING tab shell's
+// Home tab: one `(tabs)` entry, nothing above it, Back with nowhere in-app
+// to go. Shapes follow what QA dumped: the container root holds `__root`,
+// whose stack holds the tab shell and the hidden screen.
+describe('selfServiceRedirectState', () => {
+  const tabs = (focused: string) => {
+    const names = ['home', 'explore', 'tracker', 'agents', 'profile'];
+    return {
+      key: 'tabs-1',
+      name: '(tabs)',
+      state: {
+        type: 'tab',
+        key: 'tab-state',
+        index: names.indexOf(focused),
+        routeNames: names,
+        routes: names.map((n) => ({ key: `${n}-k`, name: n })),
+        history: [
+          { type: 'route', key: 'home-k' },
+          { type: 'route', key: `${focused}-k` },
+        ],
+      },
+    };
+  };
+  const root = (stackRoutes: unknown[]) => ({
+    key: 'container',
+    index: 0,
+    routes: [
+      {
+        key: 'root-k',
+        name: '__root',
+        state: {
+          type: 'stack',
+          key: 'stack-k',
+          index: stackRoutes.length - 1,
+          routes: stackRoutes,
+        },
+      },
+    ],
+  });
+  type Shape = {
+    routes: {
+      state: {
+        index: number;
+        routes: {
+          name: string;
+          key: string;
+          state: {
+            index: number;
+            routes: { name: string }[];
+            history: unknown;
+          };
+        }[];
+      };
+    }[];
+  };
+  const stackOf = (s: unknown) => (s as Shape).routes[0].state;
+
+  it('from Profile, /messages: back to the one shell, on Home', () => {
+    const next = selfServiceRedirectState(
+      root([tabs('profile'), { key: 'm-k', name: 'messages' }]) as never,
+    );
+    const stack = stackOf(next);
+    expect(stack.routes.map((r) => r.name)).toEqual(['(tabs)']);
+    expect(stack.index).toBe(0);
+    // Same key: React Navigation keeps the existing shell, no new one.
+    expect(stack.routes[0].key).toBe('tabs-1');
+    const tabState = stack.routes[0].state;
+    expect(tabState.routes[tabState.index].name).toBe('home');
+    expect(tabState.history).toEqual([{ type: 'route', key: 'home-k' }]);
+  });
+
+  it('pops kept screens above the shell too (application, then messages)', () => {
+    const next = selfServiceRedirectState(
+      root([
+        tabs('tracker'),
+        { key: 'a-k', name: 'application/[id]' },
+        { key: 'm-k', name: 'messages/[id]' },
+      ]) as never,
+    );
+    expect(stackOf(next).routes.map((r) => r.name)).toEqual(['(tabs)']);
+  });
+
+  it('/agents (a tab inside the shell): same shell, switched to Home', () => {
+    const next = selfServiceRedirectState(root([tabs('agents')]) as never);
+    const stack = stackOf(next);
+    expect(stack.routes).toHaveLength(1);
+    const tabState = stack.routes[0].state;
+    expect(tabState.routes[tabState.index].name).toBe('home');
+  });
+
+  it('cold start with no shell below: null, so the guard replaces', () => {
+    expect(
+      selfServiceRedirectState(
+        root([{ key: 'm-k', name: 'messages' }]) as never,
+      ),
+    ).toBeNull();
+    expect(
+      selfServiceRedirectState(
+        root([
+          { key: 'i-k', name: 'index' },
+          { key: 'm-k', name: 'messages' },
+        ]) as never,
+      ),
+    ).toBeNull();
+  });
+
+  it('a shell whose tab state is not built yet: null', () => {
+    expect(
+      selfServiceRedirectState(
+        root([
+          { key: 't', name: '(tabs)' },
+          { key: 'm', name: 'messages' },
+        ]) as never,
+      ),
+    ).toBeNull();
+  });
+
+  it('never mutates the state it was given', () => {
+    const input = root([tabs('profile'), { key: 'm-k', name: 'messages' }]);
+    const before = JSON.stringify(input);
+    selfServiceRedirectState(input as never);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+
+  it('copes with missing input', () => {
+    expect(selfServiceRedirectState(undefined)).toBeNull();
+    expect(selfServiceRedirectState(null)).toBeNull();
+    expect(selfServiceRedirectState({ routes: [] })).toBeNull();
   });
 });

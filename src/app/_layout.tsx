@@ -4,7 +4,12 @@ import {
   SpaceGrotesk_600SemiBold,
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import {
+  Stack,
+  useNavigationContainerRef,
+  useRouter,
+  useSegments,
+} from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -33,6 +38,8 @@ import { isSelfServiceOnly } from '@/config/env';
 import {
   isHiddenInSelfServiceOnly,
   SELF_SERVICE_REDIRECT,
+  selfServiceRedirectState,
+  type NavStateLike,
 } from '@/config/selfServiceRoutes';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
@@ -56,6 +63,9 @@ export const unstable_settings = {
 function useProtectedRoute() {
   const segments = useSegments();
   const router = useRouter();
+  // Root navigation container: the self-service-only redirect (japa#334)
+  // resets its state instead of pushing a new tab shell.
+  const navigationRef = useNavigationContainerRef();
   const {
     isAuthenticated,
     profile,
@@ -108,13 +118,33 @@ function useProtectedRoute() {
       // ── Self-service-only build (japa#334) ──────────────────────────────
       // A hidden screen (agents, agencies, booking, messaging, agent
       // payments: see config/selfServiceRoutes.ts) was opened by a deep
-      // link, a notification or a stray push → Home. `replace`, not `push`,
-      // so Back never returns to the hidden screen. Signed-out users never
+      // link, a notification or a stray push → Home. Signed-out users never
       // get here: the branch above already sent them to welcome. With the
       // flag off this branch never matches.
-      router.replace(SELF_SERVICE_REDIRECT);
+      //
+      // Warm app (QA round 1): cut the stack back to the EXISTING tab shell
+      // and switch it to Home, so there is one shell, the hidden screen is
+      // gone and Back does not step into an older shell. Cold start (no
+      // shell under the hidden screen yet): `replace`, which ends on Home
+      // with one shell.
+      const current = navigationRef.isReady()
+        ? (navigationRef.getRootState() as unknown as NavStateLike)
+        : null;
+      const next = selfServiceRedirectState(current);
+      if (next) {
+        navigationRef.resetRoot(next as never);
+      } else {
+        router.replace(SELF_SERVICE_REDIRECT);
+      }
     }
-  }, [isAuthenticated, isInitialized, profile, segments, router]);
+  }, [
+    isAuthenticated,
+    isInitialized,
+    profile,
+    segments,
+    router,
+    navigationRef,
+  ]);
 }
 
 function RootLayoutContent() {

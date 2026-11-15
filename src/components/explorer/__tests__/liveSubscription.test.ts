@@ -4,6 +4,7 @@
 // about the plan changes. Flag off: every feature, as before.
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, expect, it } from '@jest/globals';
+import { FEATURE_KEYS } from '@durin-tech/authz';
 import { mapPlan } from '../liveSubscription';
 import type { PlanDTO } from '@/hooks/useSubscription';
 
@@ -54,5 +55,52 @@ describe('mapPlan', () => {
     expect({ ...on, features: [] }).toEqual({ ...off, features: [] });
     expect(on.price).toBe(5000);
     expect(on.tag).toBe('Most popular');
+  });
+});
+
+// QA round 1 (japa#334): the Free plan still listed "Invite agents" and
+// "Payment requests". Flag on, no agent / agency feature in the whole
+// authz catalogue reaches a plan card.
+describe('mapPlan, every catalogue feature', () => {
+  const ALL: PlanDTO = { ...PLAN, id: 'free', features: [...FEATURE_KEYS] };
+
+  it('flag on: only the self-service features, in catalogue order', () => {
+    expect(mapPlan(ALL, undefined, { selfServiceOnly: true }).features).toEqual(
+      [
+        'Create applications',
+        'Document uploads',
+        'Self-service flow',
+        'Priority support',
+        'Visa news alerts',
+      ],
+    );
+  });
+
+  it('flag on: none of the agent-side labels', () => {
+    const labels = mapPlan(ALL, undefined, { selfServiceOnly: true }).features;
+    for (const hidden of [
+      'Agent messaging',
+      'Book consultations',
+      'Invite agents',
+      'Payment requests',
+      'Bulk applications',
+      'Analytics dashboard',
+    ]) {
+      expect(labels).not.toContain(hidden);
+    }
+  });
+
+  it('flag on: a key the catalogue adds later stays off the card', () => {
+    const future = {
+      ...PLAN,
+      features: ['agents.new_thing'],
+    } as unknown as PlanDTO;
+    expect(
+      mapPlan(future, undefined, { selfServiceOnly: true }).features,
+    ).toEqual([]);
+  });
+
+  it('flag off: every catalogue feature, as before', () => {
+    expect(mapPlan(ALL).features).toHaveLength(FEATURE_KEYS.length);
   });
 });

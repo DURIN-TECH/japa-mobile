@@ -79,3 +79,108 @@ export function isHiddenInSelfServiceOnly(
 
 /** Where the guard sends a hidden route (Home is always kept). */
 export const SELF_SERVICE_REDIRECT = '/(tabs)/home' as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The redirect itself (japa#334, QA round 1)
+//
+// A hidden deep link opened while the app runs pushes the hidden screen on
+// top of the existing tab shell: root stack `[(tabs), messages]`. A plain
+// `router.replace('/(tabs)/home')` swaps `messages` for a SECOND tab shell
+// (`[(tabs), (tabs)]`), so Back from Home stepped into the old shell and
+// every further hidden link added another one.
+//
+// Instead, the guard resets the navigation state to what it was below the
+// hidden screen: the stack is cut back to the nearest tab shell under it,
+// and that shell's focused tab is switched to Home. Route keys are kept, so
+// React Navigation keeps the existing screens mounted. Result: one `(tabs)`
+// entry, on Home, nothing above it, Back has nowhere in-app to go.
+//
+// When there is no tab shell below (a cold start straight into a hidden
+// link), this returns null and the guard falls back to `replace`, which
+// already ends on Home with one shell.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The parts of a React Navigation state this helper reads and rebuilds. */
+export interface NavStateLike {
+  index?: number;
+  routes: NavRouteLike[];
+  [key: string]: unknown;
+}
+export interface NavRouteLike {
+  name: string;
+  key?: string;
+  state?: NavStateLike;
+  [key: string]: unknown;
+}
+
+const TABS_ROUTE = '(tabs)';
+const HOME_TAB = 'home';
+
+/** Focused index of a state (React Navigation defaults to the last route). */
+const focusedIndex = (s: NavStateLike) =>
+  typeof s.index === 'number' ? s.index : s.routes.length - 1;
+
+/**
+ * The root state to reset to so a hidden route ends on the EXISTING tab
+ * shell's Home tab, or null when there is no tab shell to go back to (or the
+ * state is not the expected shape). Pure; never mutates `root`.
+ */
+export function selfServiceRedirectState(
+  root: NavStateLike | null | undefined,
+): NavStateLike | null {
+  if (!root || !Array.isArray(root.routes) || root.routes.length === 0)
+    return null;
+
+  // The app's Stack (src/app/_layout.tsx) is the first level, following the
+  // focused routes down from the container root (expo-router wraps it in a
+  // `__root` route), whose routes include the tab shell.
+  const level = (s: NavStateLike): NavStateLike | null => {
+    if (s.routes.some((r) => r.name === TABS_ROUTE)) {
+      // The tab shell at or below the focused route (the hidden screen sits
+      // on top of it; for `/agents` the shell itself is focused).
+      const top = focusedIndex(s);
+      let shell = -1;
+      for (let i = Math.min(top, s.routes.length - 1); i >= 0; i--) {
+        if (s.routes[i].name === TABS_ROUTE) {
+          shell = i;
+          break;
+        }
+      }
+      if (shell < 0) return null;
+      const tabs = s.routes[shell];
+      const tabState = tabs.state;
+      const home = tabState?.routes.findIndex((r) => r.name === HOME_TAB) ?? -1;
+      // Tab state not built yet or no Home tab: let the guard replace instead.
+      if (!tabState || home < 0) return null;
+      const routes = s.routes.slice(0, shell + 1);
+      // Tab routers keep a back history next to `index`; point it at Home
+      // too, so Back from Home cannot step to the tab the user came from.
+      const homeKey = tabState.routes[home].key;
+      const history = Array.isArray(tabState.history)
+        ? homeKey
+          ? [{ type: 'route', key: homeKey }]
+          : undefined
+        : tabState.history;
+      routes[shell] = {
+        ...tabs,
+        state: {
+          ...tabState,
+          index: home,
+          ...(history !== undefined ? { history } : {}),
+        },
+      };
+      return { ...s, routes, index: shell };
+    }
+    // Not this level: descend into the focused route's child state.
+    const i = focusedIndex(s);
+    const child = s.routes[i]?.state;
+    if (!child || !Array.isArray(child.routes)) return null;
+    const next = level(child);
+    if (!next) return null;
+    const routes = [...s.routes];
+    routes[i] = { ...routes[i], state: next };
+    return { ...s, routes };
+  };
+
+  return level(root);
+}
