@@ -30,6 +30,15 @@ export const FEATURE_LABEL: Record<FeatureKey, string> = {
   'payments.request': 'Payment requests',
 };
 
+// Labels for keys the backend's newer authz catalogue has but this app's
+// pinned @durin-tech/authz (v0.1.x) does not, so they are not `FeatureKey`s
+// here. `ai.case_officer` is the paid AI review the backend seeds on every
+// paid plan (seli-backend seed-plans.ts). Without this entry it fell back to
+// the title-cased "Ai Case Officer" (japa#334 review).
+const EXTRA_FEATURE_LABEL: Record<string, string> = {
+  'ai.case_officer': 'Full AI review',
+};
+
 // Title-case a raw feature key ("documents.upload" → "Documents Upload") as a
 // safe fallback for any key not present in FEATURE_LABEL.
 function titleCase(key: string): string {
@@ -53,6 +62,9 @@ export const SELF_SERVICE_PLAN_FEATURES: ReadonlySet<string> = new Set<
   'self_service',
   'priority_support',
   'news.alerts',
+  // The paid AI review (full cited review, per-upload checks, re-runs). The
+  // whole point of a paid plan in the self-service launch, so it must show.
+  'ai.case_officer',
 ]);
 
 /**
@@ -84,7 +96,7 @@ export function mapPlan(
     tag: p.id === popularId ? 'Most popular' : null,
     features: p.features
       .filter((f) => !opts.selfServiceOnly || SELF_SERVICE_PLAN_FEATURES.has(f))
-      .map((f) => FEATURE_LABEL[f] ?? titleCase(f)),
+      .map((f) => FEATURE_LABEL[f] ?? EXTRA_FEATURE_LABEL[f] ?? titleCase(f)),
     blurb: '',
   };
 }

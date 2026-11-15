@@ -4,8 +4,10 @@
 // The ONE place that says which screens a self-service-only build (flag
 // `EXPO_PUBLIC_SELF_SERVICE_ONLY=true`, see `selfServiceOnly.ts`) must never
 // show. Two consumers:
-//   - the root route guard in `src/app/_layout.tsx`, which redirects a hidden
-//     route to `/(tabs)/home` with `replace` (deep links, stray pushes);
+//   - the root route guard in `src/app/_layout.tsx`, which sends a hidden
+//     route (deep links, stray pushes) to Home: back to the existing tab
+//     shell's Home tab when there is one (`selfServiceRedirectState` below),
+//     else `replace` to `/(tabs)/home` (cold start);
 //   - the notification router (`services/notification-router.ts`), as a
 //     safety net so a notice can never resolve to a hidden screen.
 //
@@ -98,6 +100,11 @@ export const SELF_SERVICE_REDIRECT = '/(tabs)/home' as const;
 // When there is no tab shell below (a cold start straight into a hidden
 // link), this returns null and the guard falls back to `replace`, which
 // already ends on Home with one shell.
+//
+// Why not `Stack.Protected` around the hidden screens: it was considered,
+// but a link to a protected route was not verified to land on Home on this
+// expo-router version (56.2.x), and the acceptance criteria require Home.
+// This reset keeps the one route table above as the only source of truth.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The parts of a React Navigation state this helper reads and rebuilds. */
