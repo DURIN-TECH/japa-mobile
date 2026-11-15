@@ -76,6 +76,10 @@ const KEPT: [string[], string][] = [
   [['change-password'], '/change-password'],
   [['change-email'], '/change-email'],
   [['delete-account'], '/delete-account'],
+  // Dev-only App configuration screen (japa#330): not an agent feature, so
+  // kept; it guards itself in production. Missing here since #330 and #334
+  // merged separately, which broke the "every route classified" test.
+  [['dev-config'], '/dev-config'],
 ];
 
 describe('isHiddenInSelfServiceOnly, flag on', () => {
@@ -156,6 +160,10 @@ describe('the route table', () => {
       'index',
       '_layout',
       '__tests__',
+      // Not a route: expo-router's incoming-link hook (japa#375), ignored
+      // when routes are built. Its only link (/dev/self-service-only) is
+      // development-only; elsewhere it is an unknown route (+not-found).
+      '+native-intent',
     ]);
     const routes = fs
       .readdirSync(appDir)
