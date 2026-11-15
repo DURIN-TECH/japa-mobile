@@ -638,6 +638,33 @@ describe('usdAtRateLine / isUsableRate', () => {
       '$6.00 at ₦1,353.97 per $1',
     );
   });
+  it('a rate below 10 keeps 4 decimals, so it reproduces the charge (GBP)', () => {
+    // $100.00 charged £78.83: "£0.79" would read as £79.00.
+    const hundred = { amountMinor: 10_000, currency: 'USD' };
+    expect(usdAtRateLine(hundred, 'GBP', 0.7883)).toBe(
+      '$100.00 at £0.7883 per $1',
+    );
+    expect(usdAtRateLine(hundred, 'GBP', 0.788349)).toBe(
+      '$100.00 at £0.7883 per $1',
+    );
+    expect(usdAtRateLine(hundred, 'CAD', 1.4)).toBe(
+      '$100.00 at CA$1.4000 per $1',
+    );
+  });
+  it('a rate of 10 or more keeps 2 decimals, thousands grouped (NGN, KES, UGX)', () => {
+    expect(usdAtRateLine(usd, 'NGN', 1353.97)).toBe(
+      '$6.00 at ₦1,353.97 per $1',
+    );
+    expect(usdAtRateLine(usd, 'NGN', 1500)).toBe('$6.00 at ₦1,500.00 per $1');
+    expect(usdAtRateLine(usd, 'KES', 129.456)).toBe(
+      '$6.00 at KSh129.46 per $1',
+    );
+    // A zero-decimal currency: the rate still shows 2 decimals.
+    expect(usdAtRateLine(usd, 'UGX', 3712.5)).toBe(
+      '$6.00 at USh3,712.50 per $1',
+    );
+    expect(usdAtRateLine(usd, 'GHS', 10)).toBe('$6.00 at GH₵10.00 per $1');
+  });
   it('falls back to the dollar price when there is no usable rate or currency', () => {
     expect(usdAtRateLine(usd, 'NGN', undefined)).toBe('$6.00');
     expect(usdAtRateLine(usd, 'NGN', null)).toBe('$6.00');

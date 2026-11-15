@@ -572,13 +572,15 @@ export default function PayScreen() {
     fallback: LockedQuote | null,
   ) => {
     // Prefer the server's summary; fall back to the quote that was shown.
-    const charged: Money | null =
-      typeof summary?.chargedAmountMinor === 'number' && summary.chargedCurrency
-        ? {
-            amountMinor: summary.chargedAmountMinor,
-            currency: summary.chargedCurrency,
-          }
-        : (fallback?.charged ?? null);
+    const fromSummary =
+      typeof summary?.chargedAmountMinor === 'number' &&
+      !!summary.chargedCurrency;
+    const charged: Money | null = fromSummary
+      ? {
+          amountMinor: summary!.chargedAmountMinor!,
+          currency: summary!.chargedCurrency!,
+        }
+      : (fallback?.charged ?? null);
     const usdCents =
       summary?.priceUsdCents ?? fallback?.usd.amountMinor ?? null;
     if (charged) {
@@ -593,9 +595,13 @@ export default function PayScreen() {
     // this screen must not stay under the confirmation with a live "Pay".
     // Going back returns to the slot picker, and the booking analytics
     // above can only ever fire once per booking.
-    // The rate travels with the amount it belongs to: the summary's when the
-    // summary's charge is used, else the shown quote's (japa#332).
-    const effectiveRate = summary?.effectiveRate ?? fallback?.effectiveRate;
+    // The rate comes from the SAME object as the amount (japa#332): the
+    // summary's rate with the summary's charge, the shown quote's rate with
+    // the quote's charge. Never mixed, so a new amount is never shown next
+    // to an old rate; a summary charge with no rate shows dollars only.
+    const effectiveRate = fromSummary
+      ? summary?.effectiveRate
+      : fallback?.effectiveRate;
     goToConfirmation({ charged, usdCents, effectiveRate, replace: true });
   };
 

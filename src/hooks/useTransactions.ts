@@ -5,7 +5,8 @@
 // backend API. Backs the Explorer → Payments screen (payments.tsx).
 //
 // Backend endpoint used:
-//   GET /transactions?role=agent|owner|admin  → list transactions
+//   GET /transactions  → the signed-in client's own payments (the app sends
+//                        no `role`)
 //
 // A client (the payer) is answered with the backend's `ClientTransaction`
 // (functions/src/transactions/client-transaction.ts, japa#329): a
