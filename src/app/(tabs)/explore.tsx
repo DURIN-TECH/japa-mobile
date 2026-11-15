@@ -32,8 +32,9 @@ import { EX, displayText } from '@/components/explorer/theme';
 import type { Dest } from '@/types/explorer.type';
 import {
   destKey,
-  isNearEnd,
+  type LoadTrigger,
   mapVisaPagesToDests,
+  type ScrollMetrics,
   shouldLoadNextPage,
   visaTypeToDest,
 } from '@/components/explorer/liveExplore';
@@ -130,45 +131,64 @@ export default function ExploreScreen() {
   // ── Paging: load the next page near the end (japa#341) ──────────────────
   // The grid is a ScrollView (sticky glass header), not a FlatList, so "near
   // the end" is measured by hand: the latest scroll offset, viewport height
-  // and content height live in a ref, and `maybeLoadMore` asks the pure
-  // `shouldLoadNextPage` rule whether to fetch. It runs on scroll, on layout /
-  // content-size changes (a list too short to scroll still loads), and
-  // whenever the paging state or category changes (a selected category keeps
-  // loading until `total`).
-  const metrics = useRef({ offsetY: 0, viewportHeight: 0, contentHeight: 0 });
+  // and content height live in a ref, and `maybeLoadMore(trigger)` asks the
+  // pure `shouldLoadNextPage` rule whether to fetch. Who may trigger what
+  // (review of japa#341, rules + tests in liveExplore):
+  //   • "All": only scroll and content-size events, near the end of measured
+  //     content. Never the effect or a layout event, which can still hold the
+  //     content height of the previous content (first-load spinner, search
+  //     results, 0 on a cached mount) and would load page two unscrolled.
+  //   • a category chip: any trigger. The effect re-runs each time a page
+  //     lands (paging state changes), so a short filtered list keeps loading
+  //     without the user scrolling, until `total`.
+  // Every load goes through `loadNextPage()`, which checks the LIVE fetch
+  // status and never cancels a request in flight, so several triggers from
+  // one render ask for a page once.
+  const metrics = useRef<ScrollMetrics>({
+    offsetY: 0,
+    viewportHeight: 0,
+    contentHeight: 0,
+  });
   const {
     hasNextPage,
     isFetching,
     isFetchingNextPage,
     isFetchNextPageError,
-    fetchNextPage,
+    isRefreshing,
+    loadNextPage,
   } = visaQuery;
-  const maybeLoadMore = useCallback(() => {
-    // Wait for the first page (and its first-load states) before paging.
-    if (state !== 'ready' || firstRunEmpty) return;
-    const m = metrics.current;
-    const go = shouldLoadNextPage({
+  const maybeLoadMore = useCallback(
+    (trigger: LoadTrigger) => {
+      // Wait for the first page (and its first-load states) before paging.
+      if (state !== 'ready' || firstRunEmpty) return;
+      const go = shouldLoadNextPage({
+        trigger,
+        searchMode,
+        hasNextPage,
+        // Our pull-to-refresh fetches page one outside the query, so count
+        // it as in flight too.
+        isFetching: isFetching || isRefreshing,
+        nextPageFailed: isFetchNextPageError,
+        category: cat,
+        metrics: metrics.current,
+      });
+      if (go) loadNextPage();
+    },
+    [
+      state,
+      firstRunEmpty,
       searchMode,
       hasNextPage,
       isFetching,
-      nextPageFailed: isFetchNextPageError,
-      category: cat,
-      // No layout measured yet → not near the end (avoids a load on mount).
-      nearEnd: m.viewportHeight > 0 && isNearEnd(m),
-    });
-    if (go) fetchNextPage();
-  }, [
-    state,
-    firstRunEmpty,
-    searchMode,
-    hasNextPage,
-    isFetching,
-    isFetchNextPageError,
-    cat,
-    fetchNextPage,
-  ]);
+      isRefreshing,
+      isFetchNextPageError,
+      cat,
+      loadNextPage,
+    ],
+  );
+  // Category case only (see above): "All" ignores the 'effect' trigger.
   useEffect(() => {
-    maybeLoadMore();
+    maybeLoadMore('effect');
   }, [maybeLoadMore]);
 
   // Pass the country code so the detail screen can fetch the visa by
@@ -194,21 +214,25 @@ export default function ExploreScreen() {
             viewportHeight: layoutMeasurement.height,
             contentHeight: contentSize.height,
           };
-          maybeLoadMore();
+          maybeLoadMore('scroll');
         }}
         onLayout={(e) => {
           metrics.current.viewportHeight = e.nativeEvent.layout.height;
-          maybeLoadMore();
+          maybeLoadMore('layout');
         }}
         onContentSizeChange={(_w, h) => {
           metrics.current.contentHeight = h;
-          maybeLoadMore();
+          maybeLoadMore('contentSize');
         }}
         refreshControl={
           <RefreshControl
             // Only the pull itself shows the refresh spinner: loading a later
             // page also counts as "refetching" in TanStack Query.
-            refreshing={visaQuery.isRefetching && !isFetchingNextPage}
+            // `isRefreshing` = our page-one refresh with pages cached;
+            // `isRefetching` covers a pull with nothing cached yet.
+            refreshing={
+              isRefreshing || (visaQuery.isRefetching && !isFetchingNextPage)
+            }
             // japa#341: start over from page one and drop the later pages.
             onRefresh={() => visaQuery.refreshFromFirstPage()}
             tintColor={EX.color.primary}
@@ -472,7 +496,7 @@ export default function ExploreScreen() {
               {/* ── Paging footer (japa#341) ─────────────────────────────
                   Loading a later page: the coral spinner under the last
                   tile. That page failed: InlineError + "Try again", which
-                  retries that page only (`fetchNextPage` resumes from the
+                  retries that page only (`loadNextPage` resumes from the
                   same offset). Loaded tiles stay above in both cases. When
                   everything is loaded, nothing shows. */}
               {isFetchingNextPage ? (
@@ -482,7 +506,8 @@ export default function ExploreScreen() {
                   section
                   style={{ marginTop: 16 }}
                   message={loadErrorCopy('destinations')}
-                  onRetry={() => fetchNextPage()}
+                  // Same guarded call: retries that offset once.
+                  onRetry={loadNextPage}
                 />
               ) : null}
             </>

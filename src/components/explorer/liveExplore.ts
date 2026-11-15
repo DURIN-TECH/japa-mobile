@@ -181,49 +181,77 @@ export function mapVisaPagesToDests(
 }
 
 /**
- * Pixels from the bottom at which the next page is requested. About one row
- * of tiles, so the next page is usually in before the user reaches the end.
+ * Pixels from the bottom at which the next page is requested. A grid tile is
+ * about 214px tall plus a 13px row gap, so 600px is roughly two and a half
+ * rows: the next page is usually in before the user reaches the end.
  */
 export const LOAD_MORE_THRESHOLD = 600;
+
+/** The ScrollView measurements the near-end check needs. */
+export interface ScrollMetrics {
+  offsetY: number;
+  viewportHeight: number;
+  contentHeight: number;
+}
 
 /**
  * Is the scroll position "near the end" of the content? Also true when the
  * content is shorter than the viewport (nothing to scroll), so a short list
  * still pulls the next page without the user scrolling.
+ *
+ * Unmeasured counts as NOT near the end (review of japa#341): a zero viewport
+ * or zero content height means no layout has been reported yet, and
+ * `0 + viewport >= 0 - threshold` would otherwise read as "at the bottom".
  */
-export function isNearEnd(m: {
-  offsetY: number;
-  viewportHeight: number;
-  contentHeight: number;
-  threshold?: number;
-}): boolean {
+export function isNearEnd(m: ScrollMetrics & { threshold?: number }): boolean {
+  if (m.viewportHeight <= 0 || m.contentHeight <= 0) return false;
   const threshold = m.threshold ?? LOAD_MORE_THRESHOLD;
   return m.offsetY + m.viewportHeight >= m.contentHeight - threshold;
 }
 
 /**
- * Should Explore fetch the next page right now?
+ * What asked the screen to consider loading the next page:
+ *   • 'effect'      — paging state / chip / search changed (a React effect);
+ *   • 'scroll'      — the user scrolled (fresh offset + sizes in the event);
+ *   • 'contentSize' — the content was re-laid out (fresh content height);
+ *   • 'layout'      — the viewport itself was laid out.
+ */
+export type LoadTrigger = 'effect' | 'scroll' | 'contentSize' | 'layout';
+
+/**
+ * Should Explore fetch the next page right now? (japa#341)
+ *
  *   • never while searching (search has its own endpoints), when nothing is
  *     left (`hasNextPage` false, i.e. loaded >= total or an empty page), while
- *     ANY fetch is in flight (a later page, or a pull-to-refresh: starting a
- *     next-page fetch then would cancel the refresh), or after the next page
- *     failed: then the
- *     footer's "Try again" is the only way to retry, so a failure never loops;
- *   • with a category chip selected: always, until `total` is reached. The
- *     server has no category order, so the only way to know we have EVERY
- *     visa of that category is to load every page; and a short filtered list
- *     may not scroll at all;
- *   • with "All": only when the user is near the end of the tiles.
+ *     any fetch is in flight (a later page or a pull-to-refresh), or after the
+ *     next page failed: then the footer's "Try again" is the only way to
+ *     retry, so a failure never loops;
+ *   • with a category chip selected: on ANY trigger, until `total` is
+ *     reached. The server has no category order, so the only way to know we
+ *     have EVERY visa of that category is to load every page; and a short
+ *     filtered list may not scroll at all, so the effect (which runs again
+ *     each time a page lands) keeps it going without the user scrolling;
+ *   • with "All": only from a 'scroll' or 'contentSize' event, and only near
+ *     the end of MEASURED content. Never from the 'effect' or 'layout'
+ *     triggers. Those run with the content height from the PREVIOUS content
+ *     (the first-load spinner, the search results, or 0 on a mount with a
+ *     cached first page), which would read as "near the end" and load page
+ *     two with no scrolling. A content-size event always carries the height
+ *     of the content now on screen, so a grid that really is too short to
+ *     scroll still loads on.
  */
 export function shouldLoadNextPage(s: {
+  trigger: LoadTrigger;
   searchMode: boolean;
   hasNextPage: boolean;
   isFetching: boolean;
   nextPageFailed: boolean;
   category: string;
-  nearEnd: boolean;
+  metrics: ScrollMetrics;
 }): boolean {
   if (s.searchMode || !s.hasNextPage) return false;
   if (s.isFetching || s.nextPageFailed) return false;
-  return s.category !== 'All' || s.nearEnd;
+  if (s.category !== 'All') return true;
+  if (s.trigger !== 'scroll' && s.trigger !== 'contentSize') return false;
+  return isNearEnd(s.metrics);
 }

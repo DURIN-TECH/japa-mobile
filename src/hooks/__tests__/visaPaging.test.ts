@@ -47,4 +47,11 @@ describe('nextVisaOffset', () => {
     // Page two overlaps page one (same ids); offset still moves on to 120.
     expect(nextVisaOffset([page(60, 200), page(60, 200)])).toBe(120);
   });
+
+  it('treats a page without visaTypes as empty instead of throwing', () => {
+    expect(nextVisaOffset([{ total: 68 } as never])).toBeUndefined();
+    expect(
+      nextVisaOffset([page(60, 68), { total: 68 } as never]),
+    ).toBeUndefined();
+  });
 });

@@ -21,7 +21,7 @@ export const EXPLORE_PAGE_SIZE = 60;
 
 /** One page as GET /visas returns it. */
 export interface VisaPage<T = unknown> {
-  visaTypes: T[];
+  visaTypes?: T[];
   total: number;
 }
 
@@ -38,12 +38,15 @@ export interface VisaPage<T = unknown> {
  *   it is the freshest count the server reported.
  * • Stop when a page comes back empty, even if `total` says there should be
  *   more (rows removed mid-scroll): otherwise we would loop on empty pages.
+ *   A page with no `visaTypes` at all counts as empty.
  */
 export function nextVisaOffset(pages: VisaPage[]): number | undefined {
   if (pages.length === 0) return 0;
   const last = pages[pages.length - 1];
-  if (last.visaTypes.length === 0) return undefined;
-  const loaded = pages.reduce((n, p) => n + p.visaTypes.length, 0);
+  // `?.` / `?? 0`: a page without `visaTypes` counts as empty (it must never
+  // throw here: TanStack calls this during render).
+  if (!last.visaTypes?.length) return undefined;
+  const loaded = pages.reduce((n, p) => n + (p.visaTypes?.length ?? 0), 0);
   const total = last.total ?? 0;
   return loaded >= total ? undefined : loaded;
 }

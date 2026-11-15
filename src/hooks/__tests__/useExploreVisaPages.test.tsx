@@ -149,6 +149,64 @@ describe('useExploreVisaPages', () => {
   });
 });
 
+describe('useExploreVisaPages: review fixes', () => {
+  it('loadNextPage called several times at once requests the page once', async () => {
+    serveVisas(200);
+    const h = mount(() => useExploreVisaPages(), qc);
+    await flush();
+    api.get.mockClear();
+    // Same render, several triggers (scroll + content size + effect).
+    await act(async () => {
+      h.current.loadNextPage();
+      h.current.loadNextPage();
+      h.current.loadNextPage();
+    });
+    await flush();
+    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(api.get).toHaveBeenCalledWith('/visas?limit=60&offset=60');
+    expect(h.current.data!.pages).toHaveLength(2);
+  });
+
+  it('a stale fetchNextPage cannot cancel the request in flight', async () => {
+    serveVisas(200);
+    const h = mount(() => useExploreVisaPages(), qc);
+    await flush();
+    api.get.mockClear();
+    // Even a direct second fetchNextPage with cancelRefetch: false joins.
+    await act(async () => {
+      h.current.loadNextPage();
+      h.current.fetchNextPage({ cancelRefetch: false });
+    });
+    await flush();
+    expect(api.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed pull-to-refresh keeps every loaded page', async () => {
+    serveVisas(68);
+    const h = mount(() => useExploreVisaPages(), qc);
+    await flush();
+    await act(async () => {
+      await h.current.fetchNextPage();
+    });
+    await flush();
+    api.get.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => {
+      await h.current.refreshFromFirstPage();
+    });
+    await flush();
+    expect(h.current.data!.pages).toHaveLength(2);
+    expect(h.current.isRefreshing).toBe(false);
+  });
+
+  it('a response with no visaTypes is an empty page, not a crash', async () => {
+    api.get.mockResolvedValue({ success: true, data: { total: 68 } });
+    const h = mount(() => useExploreVisaPages(), qc);
+    await flush();
+    expect(h.current.data!.pages[0].visaTypes).toEqual([]);
+    expect(h.current.hasNextPage).toBe(false);
+  });
+});
+
 describe('useVisaTypes (Home, unchanged)', () => {
   it('still makes one plain GET /visas?limit=30', async () => {
     serveVisas(68);

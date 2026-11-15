@@ -3,7 +3,8 @@
 //   • duplicates across pages are dropped (country code + visa id)
 //   • the featured tile is chosen from page one and stays put
 //   • category chips can come from later pages
-//   • when to fetch the next page (near the end, category, search, failure)
+//   • when to fetch the next page, per trigger (scroll / content size /
+//     layout / effect): the review's no-scroll cases never load page two
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, expect, it } from '@jest/globals';
@@ -11,6 +12,7 @@ import {
   dedupeVisaPages,
   destKey,
   isNearEnd,
+  type LoadTrigger,
   mapVisaPagesToDests,
   shouldLoadNextPage,
   visaKey,
@@ -138,40 +140,126 @@ describe('isNearEnd', () => {
       isNearEnd({ offsetY: 0, viewportHeight: 800, contentHeight: 500 }),
     ).toBe(true);
   });
+
+  it('is false while unmeasured (zero viewport or content height)', () => {
+    expect(
+      isNearEnd({ offsetY: 0, viewportHeight: 800, contentHeight: 0 }),
+    ).toBe(false);
+    expect(
+      isNearEnd({ offsetY: 0, viewportHeight: 0, contentHeight: 500 }),
+    ).toBe(false);
+  });
 });
 
 describe('shouldLoadNextPage', () => {
+  // A long, measured grid scrolled to the top: NOT near the end.
+  const top = { offsetY: 0, viewportHeight: 800, contentHeight: 6000 };
+  // The same grid scrolled to the bottom.
+  const bottom = { offsetY: 5200, viewportHeight: 800, contentHeight: 6000 };
+  // Content height left over from the first-load spinner / search results:
+  // shorter than the viewport, so it reads as "at the end".
+  const stale = { offsetY: 0, viewportHeight: 800, contentHeight: 300 };
   const base = {
+    trigger: 'scroll' as LoadTrigger,
     searchMode: false,
     hasNextPage: true,
     isFetching: false,
     nextPageFailed: false,
     category: 'All',
-    nearEnd: true,
+    metrics: bottom,
   };
 
-  it('loads near the end of the "All" grid', () => {
+  it('loads near the end of the "All" grid on scroll / content size', () => {
     expect(shouldLoadNextPage(base)).toBe(true);
-    expect(shouldLoadNextPage({ ...base, nearEnd: false })).toBe(false);
+    expect(shouldLoadNextPage({ ...base, trigger: 'contentSize' })).toBe(true);
+    expect(shouldLoadNextPage({ ...base, metrics: top })).toBe(false);
+  });
+
+  it('"All": a grid that really is too short to scroll loads on', () => {
+    // The content-size event carries the CURRENT content's height.
+    expect(
+      shouldLoadNextPage({ ...base, trigger: 'contentSize', metrics: stale }),
+    ).toBe(true);
+  });
+
+  // The three review cases (japa#341): page two must NOT load with "All" and
+  // no scrolling.
+  it('"All", first load: the effect ignores the spinner-era height', () => {
+    expect(
+      shouldLoadNextPage({ ...base, trigger: 'effect', metrics: stale }),
+    ).toBe(false);
+  });
+
+  it('"All", clearing a search: the effect ignores the results height', () => {
+    // Search mode just ended; metrics still hold the short results list.
+    expect(
+      shouldLoadNextPage({
+        ...base,
+        trigger: 'effect',
+        searchMode: false,
+        metrics: stale,
+      }),
+    ).toBe(false);
+  });
+
+  it('"All", mount with a cached page: layout with no content height', () => {
+    const unmeasured = { offsetY: 0, viewportHeight: 800, contentHeight: 0 };
+    expect(
+      shouldLoadNextPage({ ...base, trigger: 'layout', metrics: unmeasured }),
+    ).toBe(false);
+    expect(
+      shouldLoadNextPage({ ...base, trigger: 'effect', metrics: unmeasured }),
+    ).toBe(false);
+    // Even a content-size event without a viewport yet does not load.
+    expect(
+      shouldLoadNextPage({
+        ...base,
+        trigger: 'contentSize',
+        metrics: { offsetY: 0, viewportHeight: 0, contentHeight: 3000 },
+      }),
+    ).toBe(false);
+  });
+
+  it('"All": layout / effect never load, even at the bottom', () => {
+    expect(shouldLoadNextPage({ ...base, trigger: 'layout' })).toBe(false);
+    expect(shouldLoadNextPage({ ...base, trigger: 'effect' })).toBe(false);
+  });
+
+  it('a category chip keeps loading from the effect, without scrolling', () => {
+    (['effect', 'layout', 'scroll', 'contentSize'] as LoadTrigger[]).forEach(
+      (trigger) =>
+        expect(
+          shouldLoadNextPage({
+            ...base,
+            trigger,
+            category: 'Study',
+            metrics: top,
+          }),
+        ).toBe(true),
+    );
   });
 
   it('sends nothing once everything is loaded', () => {
     expect(shouldLoadNextPage({ ...base, hasNextPage: false })).toBe(false);
     expect(
-      shouldLoadNextPage({ ...base, hasNextPage: false, category: 'Work' }),
+      shouldLoadNextPage({
+        ...base,
+        trigger: 'effect',
+        hasNextPage: false,
+        category: 'Work',
+      }),
     ).toBe(false);
-  });
-
-  it('keeps loading with a category chip, without scrolling', () => {
-    expect(
-      shouldLoadNextPage({ ...base, category: 'Study', nearEnd: false }),
-    ).toBe(true);
   });
 
   it('never loads browse pages while searching', () => {
     expect(shouldLoadNextPage({ ...base, searchMode: true })).toBe(false);
     expect(
-      shouldLoadNextPage({ ...base, searchMode: true, category: 'Work' }),
+      shouldLoadNextPage({
+        ...base,
+        trigger: 'effect',
+        searchMode: true,
+        category: 'Work',
+      }),
     ).toBe(false);
   });
 
@@ -180,7 +268,12 @@ describe('shouldLoadNextPage', () => {
     // After a failed page only "Try again" retries, so it never loops.
     expect(shouldLoadNextPage({ ...base, nextPageFailed: true })).toBe(false);
     expect(
-      shouldLoadNextPage({ ...base, nextPageFailed: true, category: 'Work' }),
+      shouldLoadNextPage({
+        ...base,
+        trigger: 'effect',
+        nextPageFailed: true,
+        category: 'Work',
+      }),
     ).toBe(false);
   });
 });
