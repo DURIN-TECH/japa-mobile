@@ -263,10 +263,15 @@ export function isSelfServiceHiddenNotification(
 ): boolean {
   if (!input) return false;
   const type = clean(input.type);
-  if (type && (SELF_SERVICE_HIDDEN_TYPES.has(type) || type.startsWith('consultation')))
+  if (
+    type &&
+    (SELF_SERVICE_HIDDEN_TYPES.has(type) || type.startsWith('consultation'))
+  )
     return true;
   if (clean(input.documentRequestId)) return true;
   if (type && SELF_SERVICE_KEPT_TYPES.has(type)) return false;
   const entityType = clean(input.relatedEntityType);
-  return entityType !== undefined && SELF_SERVICE_HIDDEN_ENTITY_TYPES.has(entityType);
+  return (
+    entityType !== undefined && SELF_SERVICE_HIDDEN_ENTITY_TYPES.has(entityType)
+  );
 }

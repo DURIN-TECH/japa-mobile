@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Self-service-only build flag parser (japa#334).
+// Temporary launch flag — remove when agent features are released (DURIN-TECH/japa#336).
 //
 // `EXPO_PUBLIC_SELF_SERVICE_ONLY=true` in a build's environment turns the app
 // into the self-service-only launch build: agents, agencies, consultation

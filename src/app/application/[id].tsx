@@ -1463,45 +1463,45 @@ export default function AppDetail() {
       {/* Not shown in a self-service-only build when there is no next step
           (it would only message the agent, japa#334). */}
       {showStickyCta ? (
-      <BlurView
-        intensity={30}
-        tint="light"
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          paddingTop: 15,
-          paddingHorizontal: 22,
-          paddingBottom: Math.max(insets.bottom, 16) + 8,
-          backgroundColor: 'rgba(251,247,240,0.8)',
-          borderTopWidth: 1,
-          borderTopColor: EX.color.line06,
-        }}
-      >
-        <Pressable
-          onPress={onNext}
+        <BlurView
+          intensity={30}
+          tint="light"
           style={{
-            height: 54,
-            borderRadius: 16,
-            backgroundColor: EX.color.primary,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            shadowColor: EX.color.primary,
-            shadowOpacity: 0.5,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 12 },
-            elevation: 6,
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingTop: 15,
+            paddingHorizontal: 22,
+            paddingBottom: Math.max(insets.bottom, 16) + 8,
+            backgroundColor: 'rgba(251,247,240,0.8)',
+            borderTopWidth: 1,
+            borderTopColor: EX.color.line06,
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-            {app.next.cta ?? 'Message your agent'}
-          </Text>
-          <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-        </Pressable>
-      </BlurView>
+          <Pressable
+            onPress={onNext}
+            style={{
+              height: 54,
+              borderRadius: 16,
+              backgroundColor: EX.color.primary,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              shadowColor: EX.color.primary,
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 12 },
+              elevation: 6,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+              {app.next.cta ?? 'Message your agent'}
+            </Text>
+            <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
+          </Pressable>
+        </BlurView>
       ) : null}
 
       {/* ── Reject-reason modal (agent request → client must give a reason) ───── */}

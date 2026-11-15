@@ -98,6 +98,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     feedbackEnabled:
       process.env.EXPO_PUBLIC_FEEDBACK_ENABLED?.trim().toLowerCase() !==
       'false',
+    // Temporary launch flag — remove when agent features are released (DURIN-TECH/japa#336).
     // Self-service-only launch flag (japa#334). EXPO_PUBLIC_SELF_SERVICE_ONLY=true
     // hides agents, agencies, booking, agent messaging and agent payments.
     // OFF unless the value is exactly "true" (case and spaces ignored): the same

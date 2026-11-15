@@ -109,13 +109,10 @@ describe('isHiddenInSelfServiceOnly, flag on', () => {
 });
 
 describe('isHiddenInSelfServiceOnly, flag off', () => {
-  it.each([...HIDDEN, ...KEPT])(
-    'never hides %j (%s)',
-    (segments, pathname) => {
-      expect(hidden(segments, false)).toBe(false);
-      expect(hidden(pathname, false)).toBe(false);
-    },
-  );
+  it.each([...HIDDEN, ...KEPT])('never hides %j (%s)', (segments, pathname) => {
+    expect(hidden(segments, false)).toBe(false);
+    expect(hidden(pathname, false)).toBe(false);
+  });
 });
 
 describe('the route table', () => {

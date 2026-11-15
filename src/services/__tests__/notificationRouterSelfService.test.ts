@@ -56,7 +56,11 @@ const HIDDEN: [string, NotificationRouteInput, string][] = [
     },
     '/payments',
   ],
-  ['payment_request_rejected', { type: 'payment_request_rejected' }, '/payments'],
+  [
+    'payment_request_rejected',
+    { type: 'payment_request_rejected' },
+    '/payments',
+  ],
   ['payment_received', { type: 'payment_received' }, '/payments'],
   ['identity_verified', { type: 'identity_verified' }, '/verify-identity'],
   [
