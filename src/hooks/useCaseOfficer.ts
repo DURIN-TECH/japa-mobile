@@ -69,6 +69,9 @@ export const isNoRubric = (e: unknown) =>
 // ── Whitelist builders ────────────────────────────────────────────────────────
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+/** A non-empty string, or undefined (optional fields stay absent). */
+const optStr = (v: unknown): string | undefined =>
+  typeof v === 'string' && v ? v : undefined;
 
 const STAGES: string[] = [
   'validity',
@@ -94,6 +97,8 @@ function pickCited(raw: unknown): CitedFinding {
     sourceQuote: str(r.sourceQuote),
     detail: str(r.detail),
     whatWouldHelp: str(r.whatWouldHelp),
+    // japa#308: was dropped, so the layer pill (japa#237) never showed.
+    layerKey: optStr(r.layerKey),
   };
 }
 
@@ -125,15 +130,28 @@ function pickStatementFinding(raw: unknown): StatementFinding {
     detail: str(r.detail) || str(r.comment),
     stage: stageOf(r.stage),
     nodePath: validPath,
+    // japa#308: was dropped, so the layer pill (japa#237) never showed.
+    layerKey: optStr(r.layerKey),
   };
 }
 
+/**
+ * A "could not tell" item (japa#308). `notAssessed` MUST be carried: it is what
+ * `couldntTell` (reviewCopy.ts) uses to keep staff-only items (`no_trigger`,
+ * `not_in_documents`) and their staff wording off the screen. Any string is
+ * kept as sent, so a marker this build doesn't know is still seen as a marker
+ * and hidden. `documentId` is set only on an unread-upload item
+ * (`criterionId` "document:<id>"); nothing renders it yet.
+ */
 function pickInsufficient(raw: unknown): InsufficientItem {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     criterionId: str(r.criterionId),
     title: str(r.title),
     reason: str(r.reason),
+    layerKey: optStr(r.layerKey),
+    notAssessed: optStr(r.notAssessed) as InsufficientItem['notAssessed'],
+    documentId: optStr(r.documentId),
   };
 }
 
