@@ -187,7 +187,15 @@ export type Consult = {
 /** One notification row. */
 export type Notif = {
   id: string;
-  kind: 'status' | 'message' | 'action' | 'consult';
+  kind:
+    | 'status'
+    | 'message'
+    | 'action'
+    | 'consult'
+    | 'verified'
+    | 'payment'
+    | 'alert'
+    | 'news';
   unread: boolean;
   ago: string;
   title: string;

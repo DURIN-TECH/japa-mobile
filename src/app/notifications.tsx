@@ -12,10 +12,20 @@
 // and an InlineError shows at the top. Loading → coral spinner; failed load →
 // InlineError + "Try again"; none → "You’re all caught up" (no "Mark all
 // read").
+//
+// #269: the list is re-read on every focus and when the polled bell count
+// changes (useInboxNotifications), and the list has pull-to-refresh.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
@@ -33,7 +43,7 @@ import { IconChip } from '@/components/explorer/primitives';
 // ── Live data (backend) ───────────────────────────────────────────────────────
 import {
   useDeleteNotification,
-  useNotifications,
+  useInboxNotifications,
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
 } from '@/hooks/useNotifications';
@@ -47,13 +57,37 @@ type IconType = React.ComponentType<{
   strokeWidth?: number;
 }>;
 
-// Kind → icon + tinted IconChip colors.
+// Kind → icon + tinted IconChip colors (design spec #269; all EX tokens).
 const KIND: Record<Notif['kind'], { icon: IconType; fg: string; bg: string }> =
   {
-    status: { icon: Ic.gauge, fg: '#2F62A0', bg: '#DCEBF7' }, // blue
-    message: { icon: Ic.msg, fg: EX.color.primary, bg: EX.color.primaryTint10 }, // coral — source rgba(244,81,108,0.1)
-    action: { icon: Ic.upload, fg: EX.color.amber, bg: '#FCEAC8' }, // amber — source #FCEAC8
-    consult: { icon: Ic.cal, fg: EX.color.success, bg: '#D6F2E2' }, // green
+    status: {
+      icon: Ic.gauge,
+      fg: EX.status.review.fg,
+      bg: EX.status.review.bg,
+    },
+    message: { icon: Ic.msg, fg: EX.color.primary, bg: EX.color.primaryTint10 },
+    action: {
+      icon: Ic.upload,
+      fg: EX.status.documents.fg,
+      bg: EX.status.documents.bg,
+    },
+    consult: {
+      icon: Ic.cal,
+      fg: EX.status.approved.fg,
+      bg: EX.status.approved.bg,
+    },
+    verified: {
+      icon: Ic.check2,
+      fg: EX.status.submitted.fg,
+      bg: EX.status.submitted.bg,
+    },
+    payment: { icon: Ic.cards, fg: EX.color.primary, bg: EX.color.cream },
+    alert: {
+      icon: Ic.alert,
+      fg: EX.status.documents.fg,
+      bg: EX.status.documents.bg,
+    },
+    news: { icon: Ic.globe, fg: EX.color.ink2, bg: EX.color.cream },
   };
 
 export default function NotificationsView() {
@@ -61,7 +95,16 @@ export default function NotificationsView() {
   const insets = useSafeAreaInsets();
 
   // ── Live notifications → Notif[] ──────────────────────────────────────────
-  const notifsQ = useNotifications();
+  // Re-read on every focus and when the polled bell count changes (#269), so
+  // the list never lags behind the badge.
+  const notifsQ = useInboxNotifications();
+  // Pull-to-refresh spinner only for the user's own pull (focus / count reads
+  // run quietly in the background).
+  const [pulling, setPulling] = useState(false);
+  const pullToRefresh = () => {
+    setPulling(true);
+    notifsQ.refetch().finally(() => setPulling(false));
+  };
   const state = queryState(notifsQ);
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
@@ -201,6 +244,14 @@ export default function NotificationsView() {
       {/* ── Notification list ─────────────────────────────────────────────── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={pulling}
+            onRefresh={pullToRefresh}
+            tintColor={EX.color.primary}
+            colors={[EX.color.primary]}
+          />
+        }
         contentContainerStyle={{
           // Source list: padding '6px 16px 40px', column gap 4.
           paddingHorizontal: 16,

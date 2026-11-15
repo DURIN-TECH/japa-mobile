@@ -38,6 +38,12 @@ export interface NotificationRouteInput {
   conversationId?: string | null;
   /** Sent with document-request notices. Presence alone means "documents". */
   documentRequestId?: string | null;
+  /**
+   * Push-only (#268): the refusal analysis id. The inbox record does not
+   * store `data`, so inbox taps never have it; the refusal-letter screen
+   * then falls back to the id saved on the phone.
+   */
+  analysisId?: string | null;
   /** @deprecated Old records only. `relatedEntityId` wins. */
   referenceId?: string | null;
 }
@@ -73,6 +79,34 @@ export function routeForNotification(
     case 'document_check_passed':
       return id ? `/self-service/${id}` : fallback;
 
+    // Refusal-letter analysis ready (#268): the refusal-letter screen for the
+    // application, with the analysis id when the push carried it so the
+    // result shows on any phone.
+    case 'refusal_analysis_ready': {
+      if (!id) return fallback;
+      const analysisId = clean(input.analysisId);
+      return `/self-service/refusal-letter?applicationId=${encodeURIComponent(id)}${
+        analysisId ? `&analysisId=${encodeURIComponent(analysisId)}` : ''
+      }`;
+    }
+
+    // Document decisions on an application → that application (explicit so
+    // they do not rely on the entity fallback).
+    case 'document_rejected':
+    case 'document_approved':
+      return id ? `/application/${id}` : fallback;
+
+    // Identity check result → the verification screen (it shows the verified
+    // state, or the reason and the form again). The backend sends no entity.
+    case 'identity_verified':
+    case 'identity_verification_failed':
+      return '/verify-identity';
+
+    // Visa news: the app has no news screen (the backend's /news/<id> does
+    // not exist here), so never pick up an entity rule; just fall back.
+    case 'visa_news':
+      return fallback;
+
     // Messages: the conversation id, then the entity id, else the list.
     case 'message_received':
       return messageRoute(input, id);
@@ -92,7 +126,7 @@ export function routeForNotification(
     case 'application_update':
       return id ? `/application/${id}` : fallback;
   }
-  // consultation_reminder, consultation_booked, ...
+  // consultation_reminder, consultation_booking, ...
   if (type?.startsWith('consultation')) return consultationRoute(id);
 
   // A documentRequestId on any other type still means "documents".

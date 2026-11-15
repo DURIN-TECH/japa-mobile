@@ -31,6 +31,7 @@ import { mapApplication } from '@/components/explorer/liveApplications';
 import { mapVisasToDests } from '@/components/explorer/liveExplore';
 import { useApplications } from '@/hooks/useApplications';
 import { useVisaTypes, useCountriesWithVisas } from '@/hooks/useVisaTypes';
+import { UnreadBadge, bellLabel } from '@/components/explorer/UnreadBadge';
 import { useUnreadNotificationCount } from '@/hooks/useNotifications';
 import { useMe } from '@/hooks/useMe';
 import { profileName, profileSeed } from '@/components/explorer/liveProfile';
@@ -264,21 +265,29 @@ function RecoCard({ d, onPress }: { d: Dest; onPress: () => void }) {
   );
 }
 
-// Small circular header button (message / bell) with unread dot.
-// `showDot` gates the coral unread indicator: the message button keeps it always
-// on (default true); the bell passes the live unread-notification count.
+// Small circular header button (message / bell).
+// The message button keeps the coral dot (`showDot`, default true). The bell
+// passes `badgeCount` (the live unread-notification count, #269): a number
+// badge replaces the dot, and its `accessibilityLabel` carries the count.
 function HeaderButton({
   icon: IconCmp,
   onPress,
   showDot = true,
+  badgeCount,
+  accessibilityLabel,
 }: {
   icon: React.ElementType;
   onPress: () => void;
   showDot?: boolean;
+  /** When set, a number badge replaces the dot (#269). */
+  badgeCount?: number;
+  accessibilityLabel?: string;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       style={{
         width: 42,
         height: 42,
@@ -291,7 +300,8 @@ function HeaderButton({
       }}
     >
       <IconCmp size={19} color={EX.color.ink} strokeWidth={1.8} />
-      {showDot ? (
+      <UnreadBadge count={badgeCount} />
+      {showDot && badgeCount === undefined ? (
         <View
           style={{
             position: 'absolute',
@@ -353,7 +363,9 @@ export default function HomeScreen() {
 
   // ── Unread notification count — gates the coral dot on the bell ────────────
   const unread = useUnreadNotificationCount();
-  const hasUnread = (unread.data ?? 0) > 0;
+  // Badge only when the poll succeeded and the count is above 0 (a failed poll
+  // hides it rather than showing an old number).
+  const unreadCount = unread.isSuccess ? (unread.data ?? 0) : 0;
 
   // "Check eligibility" needs a real visa: with an application it opens that
   // application's visa; with none it goes to the Explore tab to pick one
@@ -411,11 +423,14 @@ export default function HomeScreen() {
           <HeaderButton
             icon={Ic.msg}
             onPress={() => router.push('/messages')}
+            accessibilityLabel="Messages"
           />
           <HeaderButton
             icon={Ic.bell}
             onPress={() => router.push('/notifications')}
-            showDot={hasUnread}
+            showDot={false}
+            badgeCount={unreadCount}
+            accessibilityLabel={bellLabel(unreadCount)}
           />
           {/* Portrait initials come from the real name once it has loaded. */}
           {myName ? (

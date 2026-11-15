@@ -2,7 +2,7 @@
 // Notifications — live backend adapter.
 //
 // Maps the backend's ApiNotification onto the Explorer's `Notif` shape. The
-// backend `type` enum collapses into the Explorer's four visual `kind`s (which
+// backend `type` enum collapses into the Explorer's eight visual `kind`s (which
 // drive the IconChip color). Timestamps are ISO strings → a compact relative
 // label (we strip date-fns' "about "/"less than " prefixes so it reads like the
 // design's terse "2h"/"1d"). For routing we only surface `agentId` on message
@@ -14,23 +14,40 @@ import { agoFrom } from './liveDate';
 import { Notif } from '@/types/explorer.type';
 import { ApiNotification } from '@/hooks/useNotifications';
 
-// Backend `type` → Explorer visual `kind`.
-function toKind(type: ApiNotification['type']): Notif['kind'] {
+// Backend `type` → Explorer visual `kind` (drives the IconChip icon + colour).
+// One meaning per kind: what happened and whether the applicant must act.
+// Unknown types and `system` default to `status`.
+export function toKind(type: ApiNotification['type']): Notif['kind'] {
   switch (type) {
-    case 'application_update':
-    case 'document_status':
-      return 'status';
     case 'message_received':
       return 'message';
+    // A document to upload or fix.
+    case 'document_status':
+    case 'document_rejected':
+    case 'document_check_problems':
+    case 'document_check_could_not_check':
+      return 'action';
+    // Something passed or was approved.
+    case 'document_approved':
+    case 'document_check_passed':
+    case 'identity_verified':
+      return 'verified';
+    // Money.
     case 'payment_request':
     case 'payment_request_rejected':
     case 'payment_received':
-      return 'action';
-    case 'consultation_reminder':
-      return 'consult';
-    case 'system':
+      return 'payment';
+    // Changed or failed, needs attention but not a document.
+    case 'rule_change_alert':
+    case 'identity_verification_failed':
+      return 'alert';
+    case 'visa_news':
+      return 'news';
     default:
-      return 'status';
+      // consultation* (any variant), else status.
+      return typeof type === 'string' && type.startsWith('consultation')
+        ? 'consult'
+        : 'status';
   }
 }
 

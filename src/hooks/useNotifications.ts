@@ -14,20 +14,30 @@
  * stays relatively up-to-date without WebSocket complexity.
  */
 
+import { useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect } from 'expo-router';
 import { apiService } from '@/services/api.service';
 
 /**
  * Notification type matching the backend model.
  *
- * The `type` field determines the icon and deep-link behavior:
- * - application_update → navigates to /me/applications/:referenceId
- * - document_status → navigates to document in application
- * - consultation_reminder → navigates to /me/consultations/:referenceId
- * - payment_received → shows payment confirmation
- * - payment_request → navigates to /me/applications/:referenceId
- * - payment_request_rejected → navigates to /me/applications/:referenceId
- * - system → general system announcement
+ * The `type` field picks the inbox icon (toKind) and the tap target
+ * (`routeForNotification(record, 'inbox')` in notification-router.ts):
+ * - application_update, rule_change_alert, document_rejected,
+ *   document_approved → /application/:id
+ * - readiness_review_ready → /self-service/:id/review
+ * - document_check_* → /self-service/:id
+ * - refusal_analysis_ready → /self-service/refusal-letter?applicationId=:id
+ * - document_status → /documents
+ * - consultation_* → /consultation/:id (or /consultations with no id)
+ * - payment_request, payment_request_rejected, payment_received → /payments
+ * - message_received → /messages/:conversationId (or /messages)
+ * - identity_verified, identity_verification_failed → /verify-identity
+ * - visa_news → nothing opens, ever (the app has no news screen); the row
+ *   just marks itself read
+ * - system and unknown types → the related entity's screen when the router
+ *   knows the entity type, else nothing opens (row just marks read)
  */
 export interface ApiNotification {
   id: string;
@@ -35,7 +45,12 @@ export interface ApiNotification {
   type:
     | 'application_update'
     | 'document_status'
+    | 'consultation_booking'
     | 'consultation_reminder'
+    | 'consultation_confirmed'
+    | 'consultation_rescheduled'
+    | 'consultation_cancelled'
+    | 'consultation_completed'
     | 'payment_received'
     | 'payment_request'
     | 'payment_request_rejected'
@@ -45,7 +60,14 @@ export interface ApiNotification {
     | 'document_check_problems'
     | 'document_check_could_not_check'
     | 'document_check_passed'
-    | 'system';
+    | 'refusal_analysis_ready'
+    | 'document_approved'
+    | 'document_rejected'
+    | 'identity_verified'
+    | 'identity_verification_failed'
+    | 'visa_news'
+    | 'system'
+    | (string & {}); // unknown future types fall back to `status` in toKind
   title: string;
   /** Notification body text — matches backend field name */
   body: string;
@@ -57,7 +79,14 @@ export interface ApiNotification {
     | 'consultation'
     | 'document'
     | 'message'
-    | 'payment_request';
+    | 'news_article'
+    | 'payment_request'
+    | 'subscription'
+    | 'agency'
+    | 'agent'
+    | 'verification'
+    | 'review'
+    | 'visa';
   /** Deep linking — ID of the related entity */
   relatedEntityId?: string;
   /** @deprecated Use relatedEntityId instead */
@@ -116,6 +145,45 @@ export function useUnreadNotificationCount() {
     // Keep refetching even when the app tab is in the background
     refetchIntervalInBackground: false,
   });
+}
+
+/**
+ * The inbox screen's list (#269 e2e fix). The list query inherits the app's
+ * 5-minute staleTime, while the bell count polls every 30s, so the inbox could
+ * show an old cached list under a newer badge number. This keeps them in step:
+ *   1. every time the inbox gains focus (first open AND coming back from a
+ *      screen pushed on top of it) the list is re-read from the server;
+ *   2. while the inbox is open, a change in the polled unread count re-reads
+ *      the list too (inbox-only notices arrive without a push to invalidate it).
+ * `cancelRefetch: false` joins a read already in flight instead of restarting
+ * it, so a focus read on first open, or a count change caused by a mark-read
+ * invalidation, never doubles the request.
+ */
+export function useInboxNotifications(limit = 20) {
+  const listQ = useNotifications(limit);
+  const countQ = useUnreadNotificationCount();
+  const { refetch } = listQ;
+
+  // ── 1. Fresh on every focus ───────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      refetch({ cancelRefetch: false });
+    }, [refetch]),
+  );
+
+  // ── 2. Re-read when the polled count changes ──────────────────────────────
+  // Only a successful count counts; the first value seen is the baseline.
+  const count = countQ.isSuccess ? countQ.data : undefined;
+  const lastCount = useRef<number | undefined>(count);
+  useEffect(() => {
+    if (count === undefined) return;
+    if (lastCount.current !== undefined && lastCount.current !== count) {
+      refetch({ cancelRefetch: false });
+    }
+    lastCount.current = count;
+  }, [count, refetch]);
+
+  return listQ;
 }
 
 // ─────────────────────────────────────────────
