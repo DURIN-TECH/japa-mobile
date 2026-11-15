@@ -51,9 +51,12 @@ export default function DevConfigScreen() {
 
   useEffect(() => {
     // Release-build guard: a deep link to /dev-config outside a development
-    // build goes straight back.
+    // build goes straight back — or, on a cold start through the link with
+    // nothing to go back to, to Home (otherwise the user would be left on
+    // this empty screen).
     if (!isDevBuild()) {
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)/home');
       return;
     }
     load();

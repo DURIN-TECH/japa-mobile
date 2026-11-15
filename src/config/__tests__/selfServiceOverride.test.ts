@@ -410,6 +410,20 @@ describe('in development (__DEV__ true)', () => {
     expect(mockStore.get(KEY)).toBe('on');
   });
 
+  it('menu callbacks swallow a synchronous throw and a rejection', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { runSelfServiceRequest } = load().menu;
+    expect(() =>
+      runSelfServiceRequest(() => {
+        throw new Error('storage exploded');
+      }),
+    ).not.toThrow();
+    runSelfServiceRequest(() => Promise.reject(new Error('write failed')));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
   it('a storage read that never settles falls back to no override', async () => {
     jest.useFakeTimers();
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});

@@ -7,8 +7,16 @@
 // development it renders nothing, goes back and never reads the config.
 // ─────────────────────────────────────────────────────────────────────────────
 const mockBack = jest.fn();
+const mockReplace = jest.fn();
+// Whether there is a screen to go back to (false = cold start via the link).
+let mockCanGoBack = true;
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: mockBack }),
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: mockReplace,
+    back: mockBack,
+    canGoBack: () => mockCanGoBack,
+  }),
 }));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -41,7 +49,9 @@ function render() {
 afterEach(() => {
   g.__DEV__ = realDev;
   mockBack.mockClear();
+  mockReplace.mockClear();
   mockCollect.mockClear();
+  mockCanGoBack = true;
 });
 
 describe('dev-config screen gate', () => {
@@ -49,6 +59,16 @@ describe('dev-config screen gate', () => {
     g.__DEV__ = false;
     expect(render()).toBeNull();
     expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockCollect).not.toHaveBeenCalled();
+  });
+
+  it('outside a development build, cold start via the link: goes to Home', () => {
+    g.__DEV__ = false;
+    mockCanGoBack = false;
+    expect(render()).toBeNull();
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith('/(tabs)/home');
     expect(mockCollect).not.toHaveBeenCalled();
   });
 
@@ -56,6 +76,7 @@ describe('dev-config screen gate', () => {
     g.__DEV__ = true;
     expect(render()).not.toBeNull();
     expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
     expect(mockCollect).toHaveBeenCalledTimes(1);
   });
 });
