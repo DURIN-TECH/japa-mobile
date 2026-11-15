@@ -125,7 +125,7 @@ async function connect(target, port, timeoutMs) {
     new QaError(
       'the debugger connection closed before the app answered. If the app crashed ' +
         '(a crash inside hermes::vm::Debugger is the driver, not the app), relaunch it ' +
-        'with `sim.mjs open-dev-client` and redo the step.',
+        'with `sim.mjs terminate` then `sim.mjs open-dev-client --port <port>`, and redo the step.',
     );
 
   await new Promise((resolve, reject) => {

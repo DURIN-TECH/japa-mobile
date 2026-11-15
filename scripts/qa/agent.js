@@ -376,18 +376,27 @@
    */
   qa.press = function (match, opts) {
     opts = opts || {};
-    // A button's label and its inner text both match and resolve to the same
-    // handler; keep one match per onPress owner so --index counts buttons.
+    // Count only ACTIONABLE matches, one per onPress owner:
+    //   - a button's label and its inner text resolve to the same handler
+    //     and count once, so --index counts buttons;
+    //   - text that matches but has no onPress above it (a subtitle such as
+    //     "Log in to pick up…" next to the "Log in" button) is dropped, so
+    //     "match 1 of N" never overstates how many buttons there are.
+    var matched = findText(match, opts);
+    if (!matched.length) {
+      return { ok: false, reason: 'not-found', candidates: pressCandidates(opts.all) };
+    }
     var seenOwners = [];
-    var found = findText(match, opts).filter(function (m) {
+    var found = [];
+    matched.forEach(function (m) {
       var owner = ancestorWith(m.fiber, 'onPress');
-      if (!owner) return true; // kept so the miss is reported as no-onpress
-      if (seenOwners.indexOf(owner) !== -1) return false;
+      if (!owner || seenOwners.indexOf(owner) !== -1) return;
       seenOwners.push(owner);
-      return true;
+      found.push(m);
     });
     if (!found.length) {
-      return { ok: false, reason: 'not-found', candidates: pressCandidates(opts.all) };
+      // On screen, but nothing above any match handles a press.
+      return { ok: false, reason: 'no-onpress', text: matched[0].text };
     }
     var idx = opts.index || 0;
     if (idx >= found.length) {

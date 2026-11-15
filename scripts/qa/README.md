@@ -61,8 +61,23 @@ node scripts/qa/sim.mjs create 342     # clones a SHUT-DOWN device that has the 
 export QA_UDID=<udid printed above>
 
 node scripts/qa/sim.mjs boot             # simctl boot only: no Simulator window
-node scripts/qa/sim.mjs approve-schemes  # no "Open in Seli?" alert on openurl
+node scripts/qa/sim.mjs approve-schemes  # no "Open in Seli?" alert on openurl,
+                                         # and no dev-menu welcome sheet
 ```
+
+`approve-schemes` (and `create --app`) also sets the user default that turns
+off Expo's dev-menu welcome sheet. Without it, the sheet covers the bottom of
+every screen on a fresh device and needs a tap to dismiss:
+
+```bash
+xcrun simctl spawn $QA_UDID defaults write com.durintech.japamobile EXDevMenuIsOnboardingFinished -bool YES
+```
+
+A blank device (`create --app`) also shows iOS's "Seli would like to send
+you notifications" prompt after sign-in. It can't be dismissed headlessly
+(`simctl privacy` has no notifications service). The app keeps working
+underneath it, so the walk can go on, but screenshots show the prompt.
+Mention it in the verdict, or clone a device where it was already answered.
 
 `create` refuses a source device that is booted, because a booted device is
 probably someone else's walk. The source is only read, never booted. Bundle
@@ -74,7 +89,7 @@ client is the app with an `exp+…` scheme, matched to this repo's
 
 ```bash
 CI=1 EXPO_PUBLIC_SELF_SERVICE_ONLY=true \
-  npx expo start --dev-client --localhost --port $PORT 2>&1 | tee $SCRATCH/metro-on.log
+  npx expo start --port $PORT 2>&1 | tee $SCRATCH/metro-on.log
 ```
 
 Run it in the background and note its PID so you can stop exactly this
@@ -96,17 +111,37 @@ The device connection line only shows when Metro's debug logging is on
 doesn't appear in **your** log, the app is on someone else's server: stop
 and relaunch.
 
+If the first bundle request on a freshly `--clear`ed Metro times out ("There
+was a problem loading the project"), wait for the bundle to finish building
+and run `open-dev-client` again.
+
 ### 3. Walk
 
 ```bash
-W="node scripts/qa/walk.mjs --port $PORT"   # bash; in zsh use a function
-$W dump                       # route, stack, rendered text, a11y labels, input placeholders
-$W fill Email "$QA_EMAIL"     # matches placeholder, accessibilityLabel or testID
-$W fill Password "$QA_PASSWORD"
-$W press "Sign in"            # matches text or accessibilityLabel; exact matches first
-$W wait-for "Explore visas"   # poll until a line shows up (after a fetch)
-$W step 01-home --out $SCRATCH/shots   # screenshot + dump -> 01-home.png / 01-home.txt
+# Works in bash and zsh (a plain W="node ..." variable does not split in zsh).
+W() { node scripts/qa/walk.mjs --port "$PORT" "$@"; }
+
+W dump                          # route, stack, rendered text, a11y labels, input placeholders
+W press "I already have an account"
+W fill you@email.com "$QA_EMAIL"         # the login screen's placeholders
+W fill "Your password" "$QA_PASSWORD"
+W press "Log in"                # the login button's text
+W wait-for "Explore visas"      # poll until a line shows up (after a fetch)
+W step 01-home --out "$SCRATCH/shots"    # needs --udid or QA_UDID (set in step 1)
 ```
+
+**Matching is case-sensitive.** `fill Password` doesn't find "Your password".
+
+- `press` matches a `<Text>`'s text or an accessibility label. Exact matches
+  come first, then partial ones.
+- `fill` matches a field's placeholder, accessibility label or `testID`.
+  It doesn't match the visible label above the field: on the login screen
+  "Email" is that label and "you@email.com" is the placeholder.
+- Run `dump` or `inputs` first and copy the exact strings.
+
+`step` takes the screenshot of the device named by `--udid`, or by
+`QA_UDID` when `--udid` is left out. It writes `<name>.png` and `<name>.txt`
+into `--out` (or `QA_OUT`).
 
 `step` output (`.txt`), the same shape as `dump`:
 
@@ -136,8 +171,15 @@ Other commands:
 - `eval '<js>'` or `eval --file x.js`: anything else, with `__qa` available.
 
 `press` won't press a disabled control, because a real tap would do nothing
-(`--force` overrides this). When several elements match, `--index n` picks
-one. A miss lists the near matches on screen.
+(`--force` overrides this).
+
+- When several elements match, `--index n` picks one. The count in
+  `match 1 of N` only includes things that can be pressed: one per button,
+  with text that has no `onPress` (such as a subtitle) left out.
+- A miss lists the near matches on screen.
+- Right after a navigation, the screen that is still animating in can be
+  counted twice for a moment. If a count looks too high, run the command
+  again after a second.
 
 **Look at every screenshot.** A dump can read fine while the screen is
 blank, covered or crashed.
@@ -146,13 +188,18 @@ Deep links and cold starts:
 
 ```bash
 node scripts/qa/sim.mjs open durintech://messages        # warm deep link
-node scripts/qa/sim.mjs terminate                        # kill the app...
-node scripts/qa/sim.mjs open durintech://messages        # ...and cold start through a link
-node scripts/qa/sim.mjs open-dev-client --port $PORT     # plain relaunch on your Metro
+
+# Cold start through a link:
+node scripts/qa/sim.mjs terminate                        # 1. kill the app
+node scripts/qa/sim.mjs open durintech://messages        # 2. the dev client's launcher opens
+node scripts/qa/sim.mjs open-dev-client --port $PORT     # 3. load the bundle
 ```
 
-On a cold start the dev client's launcher shows first. The bundle loads
-after it.
+The bundle doesn't load by itself on a cold start through a link. After
+step 2 the dev client's launcher stays up ("No development servers found").
+Step 3 loads your bundle, and the launcher hands the pending link to the app
+as its initial URL. On #334, the app's `Linking.getInitialURL()` returned
+`durintech://messages`.
 
 ### 4. Metro, flag off
 
@@ -161,7 +208,7 @@ with `--clear`. `EXPO_PUBLIC_*` values are inlined into the bundle, so a
 cached bundle would keep the old value.
 
 ```bash
-CI=1 npx expo start --dev-client --localhost --port $PORT --clear 2>&1 | tee $SCRATCH/metro-off.log
+CI=1 npx expo start --port $PORT --clear 2>&1 | tee $SCRATCH/metro-off.log
 node scripts/qa/sim.mjs open-dev-client --port $PORT
 ```
 
@@ -219,12 +266,18 @@ $W eval '(function () {
   session at once: `Debugger … disconnected` shows in its log and no reply
   comes back. `walk.mjs` always sends the right header. Keep it if you write
   your own client.
-- **A crash inside Hermes's debugger means relaunch and redo the step.** The
-  crash log names `hermes::vm::Debugger::runDebugger`, and `walk.mjs`
-  reports "the debugger connection closed before the app answered". The
-  debugger connection caused it, not the app. Relaunch with
-  `open-dev-client`, sign in again if needed, redo the step, and mention the
-  crash in the verdict's notes.
+- **A crash inside Hermes's debugger means relaunch and redo the step.**
+  Expect it: it happened twice in one day, both times shortly after a `fill`
+  or after pressing Sign out.
+  - The crash log names `hermes::vm::Debugger::runDebugger`. `walk.mjs`
+    reports "the debugger connection closed before the app answered". The
+    next command says no app is attached.
+  - The debugger connection caused it, not the app.
+  - Relaunch in two steps: `sim.mjs terminate`, then `sim.mjs
+    open-dev-client --port $PORT`. Running `open-dev-client` alone straight
+    after a crash can fail with "Failed to load app from http://…".
+  - Sign in again if needed, redo the step, and mention the crash in the
+    verdict's notes.
 - **Virtualised lists only mount the rows on screen.** A row further down a
   `FlatList`/`FlashList` isn't in the tree, so `dump` doesn't show it and
   `press` can't find it. Scroll the list first (for example

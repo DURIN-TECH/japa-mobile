@@ -225,6 +225,31 @@ function requireDevClient(d, bundleId) {
 // Commands
 // -----------------------------------------------------------------------------
 
+/**
+ * Turn off the Expo dev menu's first-run welcome sheet. On a fresh device it
+ * covers the bottom of every screen (and screenshot) and needs a tap to
+ * dismiss, which a headless walk can't do. Expo reads this user default from
+ * the app's own domain on launch, so set it before opening the dev client.
+ */
+function skipDevMenuOnboarding(d, bundleId) {
+  simctl([
+    'spawn',
+    d.udid,
+    'defaults',
+    'write',
+    bundleId,
+    'EXDevMenuIsOnboardingFinished',
+    '-bool',
+    'YES',
+  ]);
+  console.log(`dev-menu welcome sheet turned off for ${bundleId}`);
+}
+
+/** Synchronous pause (the CLI is sequential; no need for async here). */
+function pause(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 /** Exported for walk.mjs `step`: screenshot an owned device to a path. */
 export function screenshot(ref, outPath) {
   const d = ownedDevice(ref);
@@ -277,6 +302,10 @@ const commands = {
       simctl(['boot', udid]);
       simctl(['bootstatus', udid]);
       simctl(['install', udid, path.resolve(opts.app)]);
+      const installed = installedApps({ dataPath: resolveDevice(udid).dataPath }).find(
+        (a) => a.appPath.endsWith(path.basename(opts.app)),
+      );
+      if (installed?.bundleId) skipDevMenuOnboarding({ udid }, installed.bundleId);
       console.log(`created ${name} ${udid} (booted, ${opts.app} installed)`);
       console.log(udid);
       return;
@@ -332,7 +361,8 @@ const commands = {
   /**
    * Pre-approve every URL scheme the dev client declares, so `simctl openurl`
    * opens the app directly instead of stopping at an "Open in <app>?" alert
-   * (which a headless walk cannot tap).
+   * (which a headless walk cannot tap). Also turns off the dev menu's
+   * welcome sheet (see skipDevMenuOnboarding).
    */
   'approve-schemes'(args, opts) {
     const d = ownedDevice(args[0]);
@@ -351,6 +381,7 @@ const commands = {
       ]);
     }
     console.log(`approved ${app.schemes.join(', ')} for ${app.bundleId}`);
+    skipDevMenuOnboarding(d, app.bundleId);
   },
 
   /**
@@ -365,6 +396,9 @@ const commands = {
     const port = checkPort(opts.port);
     const app = requireDevClient(d, opts['bundle-id']);
     simctl(['terminate', d.udid, app.bundleId], { quiet: true }); // fine if not running
+    // Give the old process (or a crashed one) a moment to go away; opening
+    // straight after a debugger crash showed "Failed to load app" in QA.
+    pause(1500);
     const metro = encodeURIComponent(`http://127.0.0.1:${port}`);
     const url = `${app.devClientScheme}://expo-development-client/?url=${metro}`;
     simctl(['openurl', d.udid, url]);
