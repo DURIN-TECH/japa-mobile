@@ -43,7 +43,7 @@ const TAB_META: { name: string; label: string; icon: IcName }[] = [
 // Explore, Tracker, Profile). Its route still exists (no code is deleted);
 // the root guard in src/app/_layout.tsx redirects `/agents` to Home. With the
 // flag off all five tabs show, as before.
-function visibleTabs(selfServiceOnly: boolean) {
+export function visibleTabs(selfServiceOnly: boolean) {
   return selfServiceOnly
     ? TAB_META.filter((m) => m.name !== 'agents')
     : TAB_META;
