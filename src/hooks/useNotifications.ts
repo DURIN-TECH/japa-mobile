@@ -14,7 +14,9 @@
  * stays relatively up-to-date without WebSocket complexity.
  */
 
+import { useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useFocusEffect } from 'expo-router';
 import { apiService } from '@/services/api.service';
 
 /**
@@ -143,6 +145,45 @@ export function useUnreadNotificationCount() {
     // Keep refetching even when the app tab is in the background
     refetchIntervalInBackground: false,
   });
+}
+
+/**
+ * The inbox screen's list (#269 e2e fix). The list query inherits the app's
+ * 5-minute staleTime, while the bell count polls every 30s, so the inbox could
+ * show an old cached list under a newer badge number. This keeps them in step:
+ *   1. every time the inbox gains focus (first open AND coming back from a
+ *      screen pushed on top of it) the list is re-read from the server;
+ *   2. while the inbox is open, a change in the polled unread count re-reads
+ *      the list too (inbox-only notices arrive without a push to invalidate it).
+ * `cancelRefetch: false` joins a read already in flight instead of restarting
+ * it, so a focus read on first open, or a count change caused by a mark-read
+ * invalidation, never doubles the request.
+ */
+export function useInboxNotifications(limit = 20) {
+  const listQ = useNotifications(limit);
+  const countQ = useUnreadNotificationCount();
+  const { refetch } = listQ;
+
+  // ── 1. Fresh on every focus ───────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      refetch({ cancelRefetch: false });
+    }, [refetch]),
+  );
+
+  // ── 2. Re-read when the polled count changes ──────────────────────────────
+  // Only a successful count counts; the first value seen is the baseline.
+  const count = countQ.isSuccess ? countQ.data : undefined;
+  const lastCount = useRef<number | undefined>(count);
+  useEffect(() => {
+    if (count === undefined) return;
+    if (lastCount.current !== undefined && lastCount.current !== count) {
+      refetch({ cancelRefetch: false });
+    }
+    lastCount.current = count;
+  }, [count, refetch]);
+
+  return listQ;
 }
 
 // ─────────────────────────────────────────────
