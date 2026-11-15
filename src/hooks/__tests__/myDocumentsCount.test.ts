@@ -104,3 +104,45 @@ describe('My documents count', () => {
     expect(uploadedFileCount(await fetchMyDocuments())).toBe(0);
   });
 });
+
+// ── Review note (japa#346): uploads and deletes refresh the count ───────────
+// The cross-application key is not under ['documents', applicationId], so the
+// mutations must invalidate it explicitly.
+describe('document mutations invalidate the "mine" query', () => {
+  it('create and delete both invalidate ["documents", "mine"]', () => {
+    const { QueryClient } = jest.requireActual<
+      typeof import('@tanstack/react-query')
+    >('@tanstack/react-query');
+    const qc = new QueryClient();
+    const spy = jest.spyOn(qc, 'invalidateQueries');
+    // No rendering: in an isolated module registry, `useMutation` hands back
+    // its options and `useQueryClient` the spied client, so each hook's
+    // onSuccess can be called directly.
+    jest.isolateModules(() => {
+      jest.doMock('@tanstack/react-query', () => {
+        const actual = jest.requireActual<
+          typeof import('@tanstack/react-query')
+        >('@tanstack/react-query');
+        return {
+          ...actual,
+          useQueryClient: () => qc,
+          useMutation: (opts: { onSuccess: (d: unknown) => void }) => opts,
+        };
+      });
+      const hooks =
+        jest.requireActual<typeof import('../useDocuments')>('../useDocuments');
+      const create = hooks.useCreateDocument() as unknown as {
+        onSuccess: (d: unknown) => void;
+      };
+      const del = hooks.useDeleteDocument() as unknown as {
+        onSuccess: (d: unknown) => void;
+      };
+      create.onSuccess({ id: 'd1', applicationId: 'a1' });
+      del.onSuccess({ documentId: 'd1', applicationId: 'a1' });
+    });
+    const mineCalls = spy.mock.calls.filter(
+      ([f]) => JSON.stringify(f?.queryKey) === '["documents","mine"]',
+    );
+    expect(mineCalls).toHaveLength(2);
+  });
+});

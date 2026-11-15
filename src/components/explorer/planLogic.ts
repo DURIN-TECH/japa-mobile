@@ -48,23 +48,29 @@ export function resolveCurrentPlan(
  * design spec, japa#346): a yearly plan is ranked at the price of the monthly
  * plan in its `billingGroup`. Without that, a ₦2,500/month Pro user would be
  * offered "Client Standard (Yearly)" at ₦10,800 — fewer features, "higher"
- * price. When a yearly plan has no monthly twin in the list (no billing group,
- * or the monthly plan is inactive) we fall back to its per-month price.
+ * price.
+ *
+ * A yearly plan with NO monthly twin in the list (no billing group, or the
+ * monthly plan is inactive) can't be ranked → undefined, and the banner hides.
+ * Its per-month price is not a safe stand-in: yearly plans are discounted
+ * (seeded at 10.8 months for 12), so ÷12 ranks it BELOW its own monthly tier
+ * and would offer the user the plan they already have (review note, japa#346).
  */
-function rankPrice(plan: PlanDTO, plans: PlanDTO[]): number {
+function rankPrice(plan: PlanDTO, plans: PlanDTO[]): number | undefined {
   if (plan.interval !== 'year') return plan.priceKobo;
   const twin = plan.billingGroup
     ? plans.find(
         (p) => p.interval === 'month' && p.billingGroup === plan.billingGroup,
       )
     : undefined;
-  return twin ? twin.priceKobo : plan.priceKobo / 12;
+  return twin?.priceKobo;
 }
 
 /**
  * The plan the upgrade banner offers: the cheapest active monthly plan priced
  * above the user's current plan. Undefined when there is none (the user is on
- * the top plan) or when the current plan is unknown.
+ * the top plan), when the current plan is unknown, or when it is a yearly plan
+ * that can't be ranked (see `rankPrice`).
  *
  * `plans` is already filtered to active plans by `usePlans`.
  */
@@ -74,6 +80,7 @@ export function upgradeTarget(
 ): PlanDTO | undefined {
   if (!current || !plans) return undefined;
   const floor = rankPrice(current, plans);
+  if (floor === undefined) return undefined;
   return plans
     .filter((p) => p.interval === 'month' && p.id !== current.id)
     .filter((p) => p.priceKobo > floor)

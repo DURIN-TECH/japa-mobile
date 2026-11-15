@@ -11,7 +11,10 @@ import {
 } from '../profileLogic';
 import type { ApiTransaction } from '@/hooks/useTransactions';
 
-const tx = (status: ApiTransaction['status']) => ({ status });
+const tx = (
+  status: ApiTransaction['status'],
+  type: ApiTransaction['type'] = 'consultation_fee',
+) => ({ status, type });
 
 describe('fileCountLabel', () => {
   it('0 files / 1 file / N files', () => {
@@ -43,6 +46,15 @@ describe('paidCount / paidLabel', () => {
   });
   it('failed and refunded are not counted', () => {
     expect(paidLabel([tx('failed'), tx('refunded')])).toBe('0 paid');
+  });
+  it('a refund row is never a payment, even when completed or released', () => {
+    expect(
+      paidLabel([
+        tx('completed', 'refund'),
+        tx('released', 'refund'),
+        tx('completed', 'service_fee'),
+      ]),
+    ).toBe('1 paid');
   });
   it('none → "0 paid"; loading / error → "–"', () => {
     expect(paidLabel([])).toBe('0 paid');

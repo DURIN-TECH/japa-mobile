@@ -135,15 +135,23 @@ describe('upgradeTarget (monthly plans only)', () => {
     expect(upgradeTarget(PRO, PLANS)).toBeUndefined();
     expect(upgradeTarget(PRO_YEARLY, PLANS)).toBeUndefined();
   });
-  it('a yearly plan with no monthly twin is ranked at its per-month price', () => {
+  it('a yearly plan with no monthly twin → no target (banner hidden)', () => {
+    // Client Standard (Yearly) as seeded — discounted to 10.8 months, so its
+    // ÷12 price (₦900) is BELOW monthly Standard (₦1,000). With its monthly
+    // twin gone (inactive), ranking it at ÷12 would offer "Upgrade to Client
+    // Standard": the plan the user already has. It must offer nothing.
+    const plansWithoutTwin = [FREE, PRO, STANDARD_YEARLY, PRO_YEARLY].concat(
+      plan({ ...STANDARD, billingGroup: undefined, id: 'standard_ungrouped' }),
+    );
+    expect(upgradeTarget(STANDARD_YEARLY, plansWithoutTwin)).toBeUndefined();
+    expect(upgradeBanner(STANDARD_YEARLY, plansWithoutTwin)).toBeNull();
+    // No billing group at all → same.
     const lone = plan({
       id: 'lone_yearly',
-      priceKobo: 1200000, // ₦1,000 a month
+      priceKobo: 1080000,
       interval: 'year' as PlanDTO['interval'],
     });
-    expect(upgradeTarget(lone, [FREE, STANDARD, PRO, lone])?.id).toBe(
-      'client_pro',
-    );
+    expect(upgradeTarget(lone, [FREE, STANDARD, PRO, lone])).toBeUndefined();
   });
 });
 

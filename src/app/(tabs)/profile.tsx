@@ -32,6 +32,7 @@ import { useMe } from '@/hooks/useMe';
 import { useMyDocumentsCount } from '@/hooks/useDocuments';
 import { useTransactions } from '@/hooks/useTransactions';
 import { useCurrentPlan } from '@/hooks/useCurrentPlan';
+import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
 import { upgradeBanner } from '@/components/explorer/planLogic';
 import {
   fileCountLabel,
@@ -201,14 +202,22 @@ export default function ProfileScreen() {
   // Documents screen lists under "All". "–" while loading, and whenever the
   // count could be short (a request failed, or more applications than the
   // fan-out fetches): an undercount must never read as a real number.
-  const documentsValue = fileCountLabel(useMyDocumentsCount().data);
+  const documentsQ = useMyDocumentsCount();
+  const documentsValue = fileCountLabel(documentsQ.data);
 
   // ── "Payments" value (japa#346) ──────────────────────────────────────────
   // Completed payments ("N paid"), no money amount (see profileLogic.ts).
   // Skipped in a self-service-only build, where the row is hidden.
-  const paymentsValue = paidLabel(
-    useTransactions({ enabled: !selfServiceOnly }).data,
-  );
+  const transactionsQ = useTransactions({ enabled: !selfServiceOnly });
+  const paymentsValue = paidLabel(transactionsQ.data);
+
+  // ── Fresh counts on return (japa#346 review) ─────────────────────────────
+  // The tab stays mounted, so without this "N files" / "N paid" would keep
+  // the value from first load after an upload or payment elsewhere, and a
+  // "–" from a passing network failure would never recover. Refetch both on
+  // every re-focus (not the first, which already fetched).
+  useRefetchOnFocus(documentsQ.refetch);
+  useRefetchOnFocus(transactionsQ.refetch, !selfServiceOnly);
 
   // ── Subscription row + upgrade banner (japa#346) ─────────────────────────
   // Same hook as Settings, so both screens name the same plan. The banner

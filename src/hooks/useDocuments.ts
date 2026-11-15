@@ -209,6 +209,10 @@ export function useCreateDocument() {
           queryKey: ['application', data.applicationId],
         });
         queryClient.invalidateQueries({ queryKey: ['applications'] });
+        // japa#346: the cross-application list + Profile's "N files" count.
+        // (Its key is not under ['documents', applicationId], so the call
+        // above does not reach it.)
+        queryClient.invalidateQueries({ queryKey: MY_DOCUMENTS_KEY });
         // #114: an upload against a checklist item flips it to "uploaded", so
         // the checklist re-reads without a manual refresh.
         queryClient.invalidateQueries({
@@ -249,6 +253,8 @@ export function useDeleteDocument() {
         queryKey: ['application', data.applicationId],
       });
       queryClient.invalidateQueries({ queryKey: ['applications'] });
+      // japa#346: the cross-application list + Profile's "N files" count.
+      queryClient.invalidateQueries({ queryKey: MY_DOCUMENTS_KEY });
     },
   });
 }

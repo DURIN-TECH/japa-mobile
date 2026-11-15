@@ -31,9 +31,16 @@ const PAID_STATUSES: ReadonlySet<ApiTransaction['status']> = new Set([
   'released',
 ]);
 
-/** How many of the user's payments completed. */
-export function paidCount(txns: Pick<ApiTransaction, 'status'>[]): number {
-  return txns.filter((t) => PAID_STATUSES.has(t.status)).length;
+/**
+ * How many of the user's payments completed. A `refund` row is money coming
+ * BACK to the user, not a payment they made, so it never counts — even when
+ * its own status is `completed` (review note, japa#346).
+ */
+export function paidCount(
+  txns: Pick<ApiTransaction, 'status' | 'type'>[],
+): number {
+  return txns.filter((t) => t.type !== 'refund' && PAID_STATUSES.has(t.status))
+    .length;
 }
 
 /**
@@ -42,7 +49,7 @@ export function paidCount(txns: Pick<ApiTransaction, 'status'>[]): number {
  * Payments screen already shows the per-currency totals.
  */
 export function paidLabel(
-  txns: Pick<ApiTransaction, 'status'>[] | null | undefined,
+  txns: Pick<ApiTransaction, 'status' | 'type'>[] | null | undefined,
 ): string {
   if (!txns) return UNKNOWN_VALUE;
   return `${paidCount(txns)} paid`;
