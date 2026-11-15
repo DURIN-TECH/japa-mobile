@@ -63,7 +63,6 @@ import {
   proposedOption,
   questionToAsk,
   sheetState,
-  unknownNote,
 } from '@/components/explorer/sharedRouteLogic';
 import { useApplication } from '@/hooks/useApplications';
 import {
@@ -430,7 +429,6 @@ export default function ApplyThroughSheet() {
     const proposed = state === 'proposal' ? proposedOption(view) : null;
     const asked = state === 'ask' ? questionToAsk(view) : null;
     const done = answeredQuestions(view, answers);
-    const unknown = state === 'list' ? unknownNote(view) : null;
     // In the ask state the list waits for the answer (dimmed, inert).
     const inert = state === 'ask';
 
@@ -544,8 +542,10 @@ export default function ApplyThroughSheet() {
 
         {/* ── Notes for the plain list ──────────────────────────────────────── */}
         {state === 'list' ? (
-          <View style={{ marginTop: 18, gap: 10 }}>
-            {unknown ? <InfoNote>{unknown}</InfoNote> : null}
+          // One note only. A second, longer note ("We can't tell from your
+          // answers...") used to sit above this one and said the same thing,
+          // so it was removed (owner review, 2026-11-15).
+          <View style={{ marginTop: 18 }}>
             <InfoNote>{SHARED_COPY.noRule}</InfoNote>
           </View>
         ) : null}

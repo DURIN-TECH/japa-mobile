@@ -17,7 +17,6 @@ import {
   otherCovers,
   sheetState,
   showRoutePill,
-  unknownNote,
   visibleCovers,
 } from '../sharedRouteLogic';
 import type { ApplyThroughView, StackLayer } from '@/types/sharedRoute.type';
@@ -118,16 +117,6 @@ describe('sheet state, proposal and choice note', () => {
       'The rule points to Alpha. You chose Beta. We’ll keep a note that this was your choice.',
     );
     expect(choiceNote(view(), 'BB', 'list')).toBeNull();
-  });
-  it('unknown note keeps `why` only when present', () => {
-    const base =
-      'We can’t tell from your answers which country the rule points to.';
-    expect(unknownNote(view())).toBe(base);
-    expect(
-      unknownNote(
-        view({ result: { status: 'unknown', reason: 'x', why: 'Because.' } }),
-      ),
-    ).toBe(`${base} Because.`);
   });
   it('cta labels', () => {
     const a = opt('AA', 'Alpha');
