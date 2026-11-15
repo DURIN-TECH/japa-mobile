@@ -143,6 +143,12 @@ export interface InsufficientItem {
   reason: string;
   layerKey?: string;
   notAssessed?: NotAssessedReason;
+  /**
+   * Set only on an item about an UPLOAD that could not be read, not a rule:
+   * `criterionId` is then `document:<documentId>` and it has no `notAssessed`
+   * (the applicant can act on it). Carried, not rendered yet.
+   */
+  documentId?: string;
 }
 
 /**
