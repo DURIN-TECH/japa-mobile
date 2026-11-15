@@ -2,9 +2,20 @@
 // Explore — editorial, image-led destination grid (prototype grid.jsx GridView).
 // Sticky glass header (greeting + search + category chips) over a featured tile
 // and a 2-column grid of uniform destination tiles.
+//
+// japa#341: the browse grid pages through GET /visas (60 per request) instead
+// of stopping at the first 60, so every visible visa can be reached by
+// scrolling. A coral spinner / InlineError + "Try again" sit below the tiles
+// while a later page loads or after it fails.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -20,14 +31,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import type { Dest } from '@/types/explorer.type';
 import {
-  mapVisasToDests,
+  destKey,
+  type LoadTrigger,
+  mapVisaPagesToDests,
+  type ScrollMetrics,
+  shouldLoadNextPage,
   visaTypeToDest,
 } from '@/components/explorer/liveExplore';
 import {
   useCountriesWithVisas,
+  useExploreVisaPages,
   useVisaSearch,
   useVisasForCountries,
-  useVisaTypes,
 } from '@/hooks/useVisaTypes';
 import { matchCountries, mergeSearchVisas } from '@/utils/countrySearch';
 import { Ic } from '@/components/explorer/icons';
@@ -53,11 +68,15 @@ export default function ExploreScreen() {
   // ── Live data (GET /visas + /countries) ─────────────────────────────────
   // japa#145: no sample destinations. The grid shows the backend's visas, or a
   // loading / empty / error state (spec section 2, Explore row).
-  const visaQuery = useVisaTypes({ limit: 60 });
+  // japa#341: paged — page one is `limit=60&offset=0`, each later page asks
+  // for the next 60 from `offset` = visas loaded so far, until `total`.
+  const visaQuery = useExploreVisaPages();
   const { data: countries } = useCountriesWithVisas();
+  // All loaded pages → tiles, de-duplicated by country code + visa id, with
+  // the featured tile fixed from page one (see liveExplore.ts, japa#341).
   const source = useMemo(() => {
-    const visas = visaQuery.data?.visaTypes ?? [];
-    return mapVisasToDests(visas, countries ?? []);
+    const pages = (visaQuery.data?.pages ?? []).map((p) => p.visaTypes ?? []);
+    return mapVisaPagesToDests(pages, countries ?? []);
   }, [visaQuery.data, countries]);
   // 'loading' (first load, nothing cached) | 'error' (failed, nothing cached)
   // | 'ready'. A background refetch with cached rows stays silent.
@@ -75,7 +94,8 @@ export default function ExploreScreen() {
   const searchQ = useVisaSearch(query.trim());
   // japa#254: also resolve the query to countries (name / alias / code) and
   // fetch THEIR visas, so typing "UK" or "ire" lists that country's visas.
-  // (Not filtered from the browse list: that is capped at limit 60.)
+  // (Not filtered from the browse list: that is loaded page by page as the
+  // user scrolls (japa#341), so it may not hold every visa yet.)
   const matchedCountries = useMemo(
     () => matchCountries(query, countries ?? []),
     [query, countries],
@@ -98,7 +118,8 @@ export default function ExploreScreen() {
   }, [query, searchQ.data, countryVisas.visas, countries]);
   const searchMode = searchResults !== null;
 
-  // Category chips derive from whatever data is showing.
+  // Category chips derive from ALL loaded pages, so a category first seen on a
+  // later page gets its chip once that page arrives (japa#341).
   const cats = useMemo(
     () => ['All', ...Array.from(new Set(source.map((d) => d.cat)))],
     [source],
@@ -107,6 +128,69 @@ export default function ExploreScreen() {
   const list = source.filter((d) => cat === 'All' || d.cat === cat);
   const featured = list.find((d) => d.featured) ?? list[0];
   const rest = list.filter((d) => d !== featured);
+  // ── Paging: load the next page near the end (japa#341) ──────────────────
+  // The grid is a ScrollView (sticky glass header), not a FlatList, so "near
+  // the end" is measured by hand: the latest scroll offset, viewport height
+  // and content height live in a ref, and `maybeLoadMore(trigger)` asks the
+  // pure `shouldLoadNextPage` rule whether to fetch. Who may trigger what
+  // (review of japa#341, rules + tests in liveExplore):
+  //   • "All": only scroll and content-size events, near the end of measured
+  //     content. Never the effect or a layout event, which can still hold the
+  //     content height of the previous content (first-load spinner, search
+  //     results, 0 on a cached mount) and would load page two unscrolled.
+  //   • a category chip: any trigger. The effect re-runs each time a page
+  //     lands (paging state changes), so a short filtered list keeps loading
+  //     without the user scrolling, until `total`.
+  // Every load goes through `loadNextPage()`, which checks the LIVE fetch
+  // status and never cancels a request in flight, so several triggers from
+  // one render ask for a page once.
+  const metrics = useRef<ScrollMetrics>({
+    offsetY: 0,
+    viewportHeight: 0,
+    contentHeight: 0,
+  });
+  const {
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    isRefreshing,
+    loadNextPage,
+  } = visaQuery;
+  const maybeLoadMore = useCallback(
+    (trigger: LoadTrigger) => {
+      // Wait for the first page (and its first-load states) before paging.
+      if (state !== 'ready' || firstRunEmpty) return;
+      const go = shouldLoadNextPage({
+        trigger,
+        searchMode,
+        hasNextPage,
+        // Our pull-to-refresh fetches page one outside the query, so count
+        // it as in flight too.
+        isFetching: isFetching || isRefreshing,
+        nextPageFailed: isFetchNextPageError,
+        category: cat,
+        metrics: metrics.current,
+      });
+      if (go) loadNextPage();
+    },
+    [
+      state,
+      firstRunEmpty,
+      searchMode,
+      hasNextPage,
+      isFetching,
+      isRefreshing,
+      isFetchNextPageError,
+      cat,
+      loadNextPage,
+    ],
+  );
+  // Category case only (see above): "All" ignores the 'effect' trigger.
+  useEffect(() => {
+    maybeLoadMore('effect');
+  }, [maybeLoadMore]);
+
   // Pass the country code so the detail screen can fetch the visa by
   // (countryCode, visaId).
   const open = (dd: Dest) =>
@@ -121,10 +205,36 @@ export default function ExploreScreen() {
         stickyHeaderIndices={[0]}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: EX.space.tabClear }}
+        scrollEventThrottle={100}
+        onScroll={(e) => {
+          const { contentOffset, layoutMeasurement, contentSize } =
+            e.nativeEvent;
+          metrics.current = {
+            offsetY: contentOffset.y,
+            viewportHeight: layoutMeasurement.height,
+            contentHeight: contentSize.height,
+          };
+          maybeLoadMore('scroll');
+        }}
+        onLayout={(e) => {
+          metrics.current.viewportHeight = e.nativeEvent.layout.height;
+          maybeLoadMore('layout');
+        }}
+        onContentSizeChange={(_w, h) => {
+          metrics.current.contentHeight = h;
+          maybeLoadMore('contentSize');
+        }}
         refreshControl={
           <RefreshControl
-            refreshing={visaQuery.isRefetching}
-            onRefresh={() => visaQuery.refetch()}
+            // Only the pull itself shows the refresh spinner: loading a later
+            // page also counts as "refetching" in TanStack Query.
+            // `isRefreshing` = our page-one refresh with pages cached;
+            // `isRefetching` covers a pull with nothing cached yet.
+            refreshing={
+              isRefreshing || (visaQuery.isRefetching && !isFetchingNextPage)
+            }
+            // japa#341: start over from page one and drop the later pages.
+            onRefresh={() => visaQuery.refreshFromFirstPage()}
             tintColor={EX.color.primary}
           />
         }
@@ -375,11 +485,31 @@ export default function ExploreScreen() {
                 }}
               >
                 {rest.map((d) => (
-                  <View key={d.id} style={{ width: '48.4%' }}>
+                  // Keyed by country code + visa id: visa ids are only
+                  // unique within a country (japa#341).
+                  <View key={destKey(d)} style={{ width: '48.4%' }}>
                     <Tile d={d} onPress={() => open(d)} />
                   </View>
                 ))}
               </View>
+
+              {/* ── Paging footer (japa#341) ─────────────────────────────
+                  Loading a later page: the coral spinner under the last
+                  tile. That page failed: InlineError + "Try again", which
+                  retries that page only (`loadNextPage` resumes from the
+                  same offset). Loaded tiles stay above in both cases. When
+                  everything is loaded, nothing shows. */}
+              {isFetchingNextPage ? (
+                <StateLoading section />
+              ) : isFetchNextPageError && hasNextPage ? (
+                <StateError
+                  section
+                  style={{ marginTop: 16 }}
+                  message={loadErrorCopy('destinations')}
+                  // Same guarded call: retries that offset once.
+                  onRetry={loadNextPage}
+                />
+              ) : null}
             </>
           )}
         </View>

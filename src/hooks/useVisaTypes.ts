@@ -1,5 +1,13 @@
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useQuery,
+  useQueries,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { retryUnlessNotFound } from './queryErrors';
+import { EXPLORE_PAGE_SIZE, nextVisaOffset } from './visaPaging';
 import { apiService } from '@/services/api.service';
 import {
   VisaType,
@@ -42,6 +50,101 @@ export function useVisaTypes(options?: {
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
+}
+
+// ── Explore grid: paged browse list (japa#341) ───────────────────────────────
+
+/** Query key of the paged Explore list (own key: never shares the plain one). */
+export const EXPLORE_VISAS_KEY = ['visaTypes', 'explorePaged'] as const;
+
+/**
+ * GET one Explore page. Normalised so a response without `visaTypes` or
+ * `total` can never crash the paging rule (review of japa#341): a missing list
+ * is an empty page, which ends paging.
+ */
+async function fetchExplorePage(offset: number): Promise<GetAllVisasResponse> {
+  const endpoint = `/visas?limit=${EXPLORE_PAGE_SIZE}&offset=${offset}`;
+  const response = await apiService.get<GetAllVisasResponse>(endpoint);
+  return {
+    visaTypes: response.data?.visaTypes ?? [],
+    total: response.data?.total ?? 0,
+  };
+}
+
+/**
+ * Every active, visible visa for the Explore grid, fetched in pages of
+ * `EXPLORE_PAGE_SIZE` (60) with `limit` + `offset` until `total` is reached.
+ *
+ * A separate hook rather than a mode of `useVisaTypes`, so Home's
+ * `useVisaTypes({ limit: 30 })` keeps its exact behaviour and cache entry.
+ *
+ * Returns the TanStack infinite query plus:
+ *
+ * • `loadNextPage()`: the ONLY way the screen should ask for the next page.
+ *   Two guards against requesting the same offset twice (review of japa#341):
+ *     1. it reads the query's LIVE fetch status from the cache, not the
+ *        `isFetching` captured at render time, so several callers firing
+ *        from one render (scroll, content-size, effect) cannot slip through;
+ *     2. it passes `cancelRefetch: false`. TanStack's default (`true`) makes
+ *        a second call cancel the fetch in flight and start it again
+ *        (query-core `queryObserver.fetch` → `query.fetch`); the cancelled
+ *        request still runs on the server, since `apiService` gets no abort
+ *        signal. With `false`, a second call just joins the one in flight.
+ *   It also backs the footer's "Try again": after a failure the status is
+ *   idle again, so the retry goes through and re-requests that offset only.
+ *
+ * • `refreshFromFirstPage()` + `isRefreshing`: pull-to-refresh starts over
+ *   (criterion: "reloads from the first page and drops the later pages"). A
+ *   plain `refetch()` would re-fetch EVERY loaded page. So we fetch page one
+ *   on its own and only on SUCCESS replace the cache with it; if the refresh
+ *   fails (offline), every loaded page stays as it was. Any next-page fetch
+ *   in flight is cancelled first, so it cannot append to the old pages after
+ *   we replace them.
+ */
+export function useExploreVisaPages() {
+  const queryClient = useQueryClient();
+  const query = useInfiniteQuery({
+    queryKey: EXPLORE_VISAS_KEY,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => fetchExplorePage(pageParam),
+    // The stop / next-offset rule lives in a pure, tested helper.
+    getNextPageParam: (_last, allPages) => nextVisaOffset(allPages),
+    staleTime: 1000 * 60 * 5, // 5 minutes, as the plain list
+  });
+  // `refetch` / `fetchNextPage` are stable; the whole `query` object is not.
+  const { refetch, fetchNextPage } = query;
+  const [isRefreshing, setRefreshing] = useState(false);
+
+  const loadNextPage = useCallback(() => {
+    const live = queryClient.getQueryState(EXPLORE_VISAS_KEY);
+    if (live?.fetchStatus === 'fetching') return;
+    fetchNextPage({ cancelRefetch: false });
+  }, [queryClient, fetchNextPage]);
+
+  const refreshFromFirstPage = useCallback(async () => {
+    const cached = queryClient.getQueryData(EXPLORE_VISAS_KEY);
+    // Nothing loaded yet (first page failed / pending): an ordinary refetch
+    // IS a first-page load.
+    if (!cached) {
+      await refetch();
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const first = await fetchExplorePage(0);
+      await queryClient.cancelQueries({ queryKey: EXPLORE_VISAS_KEY });
+      queryClient.setQueryData<InfiniteData<GetAllVisasResponse, number>>(
+        EXPLORE_VISAS_KEY,
+        { pages: [first], pageParams: [0] },
+      );
+    } catch {
+      // Silent, as any background refetch with cached rows: keep them all.
+    } finally {
+      setRefreshing(false);
+    }
+  }, [queryClient, refetch]);
+
+  return { ...query, loadNextPage, refreshFromFirstPage, isRefreshing };
 }
 
 /**
