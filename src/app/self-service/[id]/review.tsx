@@ -10,6 +10,8 @@
 //         then a STATIC upgrade panel. Nothing locked is drawn from data.
 //   full  the cited review: rules not met yet, officer questions, statement
 //         notes, what we couldn't tell, strengths, what to do next.
+//   Both tiers, unless a fixed rule blocks: "Then you apply" (japa#312), the
+//   closing words that Seli doesn't send the application.
 //
 // Route-neutral: every rule string (titles, references, quotes, links) is
 // rendered from the data as received.
@@ -71,10 +73,15 @@ import {
   BAND_SUMMARY,
   DISCLAIMER,
   failedReasonLine,
+  fullTierBlocked,
+  isFixedRuleFinding,
+  nextSteps,
   NO_REVIEW_BODY,
   NO_REVIEW_TITLE,
+  showsThenYouApply,
   staleCopy,
 } from '@/components/explorer/review/reviewCopy';
+import { ThenYouApply } from '@/components/explorer/review/ThenYouApply';
 import { useApplication } from '@/hooks/useApplications';
 import {
   assessmentKey,
@@ -88,41 +95,16 @@ import {
 import { analyticsService } from '@/services/analytics.service';
 import type {
   AssessmentView,
-  CitedFinding,
   FullAssessmentData,
 } from '@/types/assessment.type';
 
 /** After this long the waiting line changes to the "still working" copy. */
 const STILL_WORKING_MS = 3 * 60 * 1000;
 
-/** True for the entry a fixed (mandatory-bar) rule produced. */
-const isBar = (f: CitedFinding) =>
-  f.isMandatoryBar === true || f.kind === 'mandatory_bar';
-
-/** "Fix the rule…" etc.: built in the app from which sections are non-empty. */
-function nextSteps(d: FullAssessmentData): string[] {
-  const steps: string[] = [];
-  const g = d.refusalGrounds.length;
-  if (g > 0)
-    steps.push(
-      g === 1
-        ? 'Fix the rule that isn’t met yet.'
-        : `Fix the ${g} rules that aren’t met yet.`,
-    );
-  if (d.insufficientInformation.length > 0)
-    steps.push('Add what we couldn’t check.');
-  const q = d.credibilityFlags.length;
-  if (q > 0)
-    steps.push(
-      q === 1
-        ? 'Get ready for the question an officer may ask.'
-        : `Get ready for the ${q} questions an officer may ask.`,
-    );
-  if (steps.length === 0)
-    steps.push('Keep your documents up to date until you apply.');
-  steps.push('Run the review again to see where you stand.');
-  return steps;
-}
+// The fixed-rule check (`isFixedRuleFinding`, `fullTierBlocked`) and
+// `nextSteps` ("Fix the rule…" etc.) live in reviewCopy.ts since japa#312, so
+// they are unit-tested together with the "Then you apply" rule that depends on
+// the same blocking check.
 
 export default function ReviewScreen() {
   const router = useRouter();
@@ -429,8 +411,10 @@ export default function ReviewScreen() {
   const free = view.tier === 'free' ? view.data : null;
 
   // Full tier: a fixed rule blocks the application.
-  const barItem = full?.refusalGrounds.find(isBar) ?? null;
-  const fullBlocked = !!full && (barItem !== null || full.hasBlockingRule);
+  const barItem = full?.refusalGrounds.find(isFixedRuleFinding) ?? null;
+  const fullBlocked = !!full && fullTierBlocked(full);
+  // japa#312: closing "Then you apply" words, finished + unblocked only.
+  const thenYouApply = showsThenYouApply(view) ? <ThenYouApply /> : null;
 
   const disclaimer = (
     <Text
@@ -606,6 +590,8 @@ export default function ReviewScreen() {
                     <CheckRow label="Nothing stood out as a priority in what you’ve given us." />
                   )}
                 </View>
+                {/* japa#312: below "Start with these", above the upgrade panel */}
+                {thenYouApply}
                 <View style={{ marginTop: 22 }}>
                   <UpgradePanel onPress={() => goPlans('panel')} />
                 </View>
@@ -628,6 +614,8 @@ export default function ReviewScreen() {
                 }
               />
             ) : null}
+            {/* japa#312: full tier, after "What to do next" (FullSections ends with it) */}
+            {full && !fullBlocked ? thenYouApply : null}
           </View>
         </Animated.View>
       </ScrollView>

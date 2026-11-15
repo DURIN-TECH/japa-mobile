@@ -11,6 +11,9 @@
 
 import type {
   AssessmentMeta,
+  AssessmentView,
+  CitedFinding,
+  FullAssessmentData,
   ReadinessBand,
   StaleReason,
 } from '@/types/assessment.type';
@@ -131,3 +134,64 @@ export function savedLabel(iso: string | null | undefined): string {
 export const NO_REVIEW_TITLE = 'Review not available for this visa yet';
 export const NO_REVIEW_BODY =
   'Seli doesn’t have a review for this visa yet. You can still prepare your answers and upload your documents here.';
+
+// ── After the review: "Then you apply" (japa#312) ────────────────────────────
+// Self-service has no end state in the app yet (recording "I’ve applied" is
+// japa#298), so the review screen says in words what happens next: Seli has
+// checked against the published rules, Seli does NOT send the application,
+// and the applicant applies on the official site, whose link sits on the
+// self-service screen under the card titled "Where you apply".
+export const THEN_YOU_APPLY_TITLE = 'Then you apply';
+export const THEN_YOU_APPLY_BODY =
+  'We’ve checked what you’ve given us against the published rules for this visa. We don’t send your application for you. When you’re ready, you apply yourself on the official government site. The link is under “Where you apply” on your application.';
+
+/** True for the entry a fixed (mandatory-bar) rule produced. */
+export const isFixedRuleFinding = (f: CitedFinding) =>
+  f.isMandatoryBar === true || f.kind === 'mandatory_bar';
+
+/** Full tier: a fixed rule blocks the application, so the review stops early. */
+export const fullTierBlocked = (d: FullAssessmentData) =>
+  d.hasBlockingRule || d.refusalGrounds.some(isFixedRuleFinding);
+
+/**
+ * Whether the review screen shows the "Then you apply" section (japa#312).
+ *
+ * Only for a finished result (free or full) that no fixed rule blocks. A
+ * blocked result keeps its own wording and "Find an agent": telling that
+ * applicant to go and apply would be wrong. Every other state (waiting,
+ * failed, no data) has nothing to follow up on yet.
+ */
+export function showsThenYouApply(view: AssessmentView | null): boolean {
+  if (!view || view.meta.status !== 'succeeded' || !view.data) return false;
+  if (view.tier === 'free') return !view.data.hasBlockingRule;
+  return !fullTierBlocked(view.data);
+}
+
+/**
+ * Full tier "What to do next", built in the app from which sections are
+ * non-empty. With nothing left to fix, the closing step points at the official
+ * site (japa#312), and "run the review again" always ends the list.
+ */
+export function nextSteps(d: FullAssessmentData): string[] {
+  const steps: string[] = [];
+  const g = d.refusalGrounds.length;
+  if (g > 0)
+    steps.push(
+      g === 1
+        ? 'Fix the rule that isn’t met yet.'
+        : `Fix the ${g} rules that aren’t met yet.`,
+    );
+  if (d.insufficientInformation.length > 0)
+    steps.push('Add what we couldn’t check.');
+  const q = d.credibilityFlags.length;
+  if (q > 0)
+    steps.push(
+      q === 1
+        ? 'Get ready for the question an officer may ask.'
+        : `Get ready for the ${q} questions an officer may ask.`,
+    );
+  if (steps.length === 0)
+    steps.push('When you’re happy with it, apply on the official site.');
+  steps.push('Run the review again to see where you stand.');
+  return steps;
+}
