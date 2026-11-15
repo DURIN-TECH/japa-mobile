@@ -59,6 +59,7 @@ import {
   ctaState,
   fromPrice,
   initialSelection,
+  listNote,
   orderedOptions,
   proposedOption,
   questionToAsk,
@@ -542,11 +543,10 @@ export default function ApplyThroughSheet() {
 
         {/* ── Notes for the plain list ──────────────────────────────────────── */}
         {state === 'list' ? (
-          // One note only. A second, longer note ("We can't tell from your
-          // answers...") used to sit above this one and said the same thing,
-          // so it was removed (owner review, 2026-11-15).
+          // One note only, chosen by `listNote` so it is true for the case:
+          // no rule, a rule that could not decide, or a skipped question.
           <View style={{ marginTop: 18 }}>
-            <InfoNote>{SHARED_COPY.noRule}</InfoNote>
+            <InfoNote>{listNote(view)}</InfoNote>
           </View>
         ) : null}
 
