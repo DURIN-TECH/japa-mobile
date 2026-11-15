@@ -31,10 +31,17 @@ export const CATS = ['All', 'Work', 'Study', 'PR', 'Family'];
 
 // ── Status display maps ──────────────────────────────────────────────────────
 // Application status (Explorer bucket) → pill label + colours.
+// Neutral pill colours (muted text on a 6% ink wash), shared by the statuses
+// that are neither in progress nor a decision: Draft and Withdrawn.
+const NEUTRAL_PILL = { fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' };
+
 export const STATUS: Record<string, { label: string; fg: string; bg: string }> =
   {
     // japa#174: a started, unsubmitted application is a Draft, not "Under review".
-    draft: { label: 'Draft', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
+    draft: { label: 'Draft', ...NEUTRAL_PILL },
+    // japa#259: an application its applicant withdrew. Same neutral colours
+    // as Draft; it used to fall into 'review' and read "Under review".
+    withdrawn: { label: 'Withdrawn', ...NEUTRAL_PILL },
     documents: { label: 'Documents required', fg: '#B26A14', bg: '#FCEAC8' },
     review: { label: 'Under review', fg: '#2F62A0', bg: '#DCEBF7' },
     interview: { label: 'Interview scheduled', fg: '#5A49C4', bg: '#ECE9FB' },

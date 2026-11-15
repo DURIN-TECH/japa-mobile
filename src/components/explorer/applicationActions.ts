@@ -5,6 +5,8 @@
 // `/application/:id` says and where it goes. Kept out of the screen so the
 // rules can be unit-tested, and so other work on the same screen (japa#259,
 // withdraw) can reuse "is this a self-service application / is it closed".
+// japa#259 adds, on the same two tests: `canWithdraw` (is the withdraw action
+// shown), `withoutWithdrawn` (the list filter) and the withdraw copy.
 //
 // The rules:
 //   - Self-service application (mode 'self', no agent, no agency), open
@@ -50,6 +52,56 @@ export function isSelfServiceApplication(
   if (!app) return false;
   return app.mode === 'self' && !app.agentId && !app.agencyId;
 }
+
+// ── Withdraw (japa#259) ──────────────────────────────────────────────────────
+/**
+ * Whether the screen offers "Withdraw application": only on a self-service
+ * application that is still open. An agent-managed application never shows it
+ * (whether a client may withdraw one is an open product decision), and a
+ * closed one has nothing left to withdraw. The backend enforces the same
+ * "open only" rule (409 once closed), so this only decides what is SHOWN.
+ */
+export function canWithdraw(
+  app:
+    | Pick<Application, 'mode' | 'agentId' | 'agencyId' | 'status'>
+    | null
+    | undefined,
+): boolean {
+  if (!app) return false;
+  return isSelfServiceApplication(app) && !isClosedStatus(app.status);
+}
+
+/**
+ * The applicant's lists (journey tab, Home, the Profile count) leave out
+ * withdrawn applications: the user took them off their journey. Applied in
+ * ONE place, the `select` of `useApplications`, so no list can forget it.
+ * Other closed statuses (approved, rejected, expired) stay listed.
+ * Generic so it keeps the caller's element type; returns a new array.
+ */
+export function withoutWithdrawn<T extends { status: ApplicationStatus }>(
+  apps: readonly T[],
+): T[] {
+  return apps.filter((a) => a.status !== 'withdrawn');
+}
+
+/** True when a rejected withdraw is the backend's 409 "already closed". */
+export function isAlreadyClosedError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { status?: unknown }).status === 409
+  );
+}
+
+// Copy for the withdraw action and its confirmation (issue #259, verbatim).
+export const WITHDRAW_LABEL = 'Withdraw application';
+export const WITHDRAW_CONFIRM_TITLE = 'Withdraw this application?';
+export const WITHDRAW_CONFIRM_MESSAGE =
+  'It leaves your journey and stops counting toward your plan. You can’t undo this.';
+export const WITHDRAW_CONFIRM_CANCEL = 'Cancel';
+export const WITHDRAW_CONFIRM_ACTION = 'Withdraw';
+export const WITHDRAW_ERROR_MESSAGE =
+  'We couldn’t withdraw this application. Check your connection and try again.';
 
 // ── Sticky button ────────────────────────────────────────────────────────────
 /** Where the sticky button goes: the self-service steps, or the agent chat. */
