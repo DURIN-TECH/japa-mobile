@@ -1,5 +1,13 @@
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useQuery,
+  useQueries,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { retryUnlessNotFound } from './queryErrors';
+import { EXPLORE_PAGE_SIZE, nextVisaOffset } from './visaPaging';
 import { apiService } from '@/services/api.service';
 import {
   VisaType,
@@ -42,6 +50,58 @@ export function useVisaTypes(options?: {
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
+}
+
+// ── Explore grid: paged browse list (japa#341) ───────────────────────────────
+
+/** Query key of the paged Explore list (own key: never shares the plain one). */
+export const EXPLORE_VISAS_KEY = ['visaTypes', 'explorePaged'] as const;
+
+/**
+ * Every active, visible visa for the Explore grid, fetched in pages of
+ * `EXPLORE_PAGE_SIZE` (60) with `limit` + `offset` until `total` is reached.
+ *
+ * A separate hook rather than a mode of `useVisaTypes`, so Home's
+ * `useVisaTypes({ limit: 30 })` keeps its exact behaviour and cache entry.
+ *
+ * Returns the TanStack infinite query plus `refreshFromFirstPage()`: a plain
+ * `refetch()` on an infinite query re-fetches EVERY loaded page, but
+ * pull-to-refresh should start over (criterion: "reloads from the first page
+ * and drops the later pages"). So we first trim the cache to page one, then
+ * refetch, which now re-fetches only that page; scrolling loads the rest again.
+ */
+export function useExploreVisaPages() {
+  const queryClient = useQueryClient();
+  const query = useInfiniteQuery({
+    queryKey: EXPLORE_VISAS_KEY,
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const endpoint = `/visas?limit=${EXPLORE_PAGE_SIZE}&offset=${pageParam}`;
+      const response = await apiService.get<GetAllVisasResponse>(endpoint);
+      return response.data ?? { visaTypes: [], total: 0 };
+    },
+    // The stop / next-offset rule lives in a pure, tested helper.
+    getNextPageParam: (_last, allPages) => nextVisaOffset(allPages),
+    staleTime: 1000 * 60 * 5, // 5 minutes, as the plain list
+  });
+  // `refetch` is stable across renders; the whole `query` object is not.
+  const { refetch } = query;
+
+  const refreshFromFirstPage = useCallback(async () => {
+    queryClient.setQueryData<InfiniteData<GetAllVisasResponse, number>>(
+      EXPLORE_VISAS_KEY,
+      (data) =>
+        data
+          ? {
+              pages: data.pages.slice(0, 1),
+              pageParams: data.pageParams.slice(0, 1),
+            }
+          : data,
+    );
+    await refetch();
+  }, [queryClient, refetch]);
+
+  return { ...query, refreshFromFirstPage };
 }
 
 /**
