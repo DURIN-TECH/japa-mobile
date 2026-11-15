@@ -212,13 +212,6 @@ export function choiceNote(
   return `The rule points to ${view.proposal.countryName}. You chose ${chosen.countryName}. We’ll keep a note that this was your choice.`;
 }
 
-/** Note for an "unknown" rule result: "We can't tell ... {why}" (why omitted when empty). */
-export function unknownNote(view: ApplyThroughView): string | null {
-  if (view.result?.status !== 'unknown') return null;
-  const why = (view.result.why ?? '').trim();
-  return `We can’t tell from your answers which country the rule points to.${why ? ` ${why}` : ''}`;
-}
-
 /** "From $120" (USD, as the visa screen shows), or null without a price. */
 export function fromPrice(option: ApplyThroughOption): string | null {
   const c = option.baseCostUsd;
