@@ -9,7 +9,10 @@
  * - GET /consultations           → list user's consultations (paginated)
  * - GET /consultations/:id       → single consultation detail
  * - POST /consultations          → create/book a new consultation; the server
- *                                   prices it and LOCKS the quote (japa#183)
+ *                                   prices it and LOCKS the quote (japa#183).
+ *                                   Hands back the client's unpaid booking of
+ *                                   the same slot instead of a duplicate
+ *                                   (200, `resumed: true`, japa#288)
  * - POST /consultations/:id/checkout → resume paying a pending booking
  * - POST /consultations/public/verify → confirm a Paystack charge by reference
  * - PUT /consultations/:id/status → update status (cancel, complete, etc.)
@@ -125,9 +128,18 @@ export interface CreateConsultationInput {
  * What POST /consultations returns: the booking (with its locked snapshot)
  * plus the checkout to open. A free booking (`requiresPayment: false`) is
  * already scheduled and paid, `priceUsdCents: 0`, with no Paystack.
+ *
+ * japa#288: when the client already has an UNPAID pending booking with this
+ * agent at this date and time, the server creates nothing and answers 200
+ * with THAT booking in this same shape plus `resumed: true` (matched on
+ * agent + date + time only, so its `type` / `durationMinutes` may differ
+ * from the input). A resumed booking with `requiresPayment: false` was paid
+ * meanwhile; it is not a free booking.
  */
-export type CreateConsultationResult = ApiConsultation &
-  (
+export type CreateConsultationResult = ApiConsultation & {
+  /** True when an earlier pending booking was handed back (HTTP 200). */
+  resumed?: boolean;
+} & (
     | { requiresPayment: false }
     | {
         requiresPayment: true;

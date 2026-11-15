@@ -12,7 +12,11 @@
  * directly; pay.tsx wires it to the hooks in useConsultations.ts.
  */
 
-import type { ApiTimestamp, BookingSummary } from './useConsultations';
+import type {
+  ApiConsultation,
+  ApiTimestamp,
+  BookingSummary,
+} from './useConsultations';
 import { toDate } from '@/components/explorer/liveDate';
 import {
   formatMoney,
@@ -193,6 +197,11 @@ export const PAY_COPY = {
   verifyFailed:
     'We couldn’t check your payment just now. If you paid, don’t pay again. Tap Check again.',
   error: 'We couldn’t complete that. Nothing was charged. Try again.',
+  // japa#288: the server handed back an EARLIER unpaid booking of this slot
+  // whose topic or length is not what was just picked. Shown under the
+  // summary card, which then lists that booking's own details.
+  resumedDetails:
+    'You’ve already started booking this slot. These are the details of that booking.',
 } as const;
 
 /**
@@ -210,8 +219,13 @@ export type PayStage = 'create' | 'checkout' | 'verify';
 export type PayErrorVerdict =
   /** 503 PRICING_UNAVAILABLE: nothing written; show dollars only + retry. */
   | { kind: 'pricing_unavailable'; message: string }
-  /** 409 PAYMENT_IN_PROGRESS: keep everything, do NOT reopen checkout. */
-  | { kind: 'in_progress'; message: string }
+  /**
+   * 409 PAYMENT_IN_PROGRESS: keep everything, do NOT reopen checkout. Carries
+   * the booking and its CURRENT checkout from `data` (japa#288), so a create
+   * that ran into an earlier booking of the same slot can adopt it and offer
+   * "Check again" on that reference instead of booking the slot twice.
+   */
+  | ({ kind: 'in_progress'; message: string } & ConflictCheckout)
   /** 409 QUOTE_EXPIRED / CHECKOUT_REPLACED: use the checkout in `data`. */
   | {
       kind: 'new_checkout';
@@ -222,8 +236,13 @@ export type PayErrorVerdict =
     }
   /** 409 BOOKING_NOT_PAYABLE: the booking is closed; a retry books anew. */
   | { kind: 'not_payable'; message: string }
-  /** 409 CHECKOUT_OPENING: another request is opening it; retry shortly. */
-  | { kind: 'opening'; message: string }
+  /**
+   * 409 CHECKOUT_OPENING: another request is opening it; retry shortly.
+   * `consultation` names the booking (japa#288): the retry goes through
+   * POST /consultations/:id/checkout for THAT booking, never a new create.
+   * No checkout exists yet, so `authorizationUrl` / `reference` are null.
+   */
+  | ({ kind: 'opening'; message: string } & ConflictCheckout)
   /** Verify 400 "Payment has not been completed": genuinely not paid yet. */
   | { kind: 'not_completed'; message: string }
   /** Create 400 VALIDATION_ERROR: the booking was refused; nothing to pay. */
@@ -243,6 +262,44 @@ export type PayErrorVerdict =
   | { kind: 'unconfirmed'; message: string }
   /** Anything else (404, 502 BILLING_PROVIDER_ERROR, network, 5xx). */
   | { kind: 'error'; message: string };
+
+/**
+ * What a 409's `data` may carry (backend `sendCheckoutConflict` /
+ * CHECKOUT_OPENING): the booking's payer-safe summary and, when one exists,
+ * the checkout to use. Every field is null when the backend sent none.
+ */
+export interface ConflictCheckout {
+  authorizationUrl: string | null;
+  reference: string | null;
+  consultation: BookingSummary | null;
+}
+
+/**
+ * Read `{ authorizationUrl, reference, consultation }` out of an error's
+ * `data`, type-checking each field (never trusts the shape, never throws).
+ * A `consultation` without a string `id` is useless to the caller (it cannot
+ * name the booking), so it is dropped.
+ */
+function conflictCheckoutFrom(raw: unknown): ConflictCheckout {
+  const data = (typeof raw === 'object' && raw !== null ? raw : {}) as {
+    authorizationUrl?: unknown;
+    reference?: unknown;
+    consultation?: unknown;
+  };
+  const c = data.consultation;
+  return {
+    authorizationUrl:
+      typeof data.authorizationUrl === 'string' ? data.authorizationUrl : null,
+    reference: typeof data.reference === 'string' ? data.reference : null,
+    consultation:
+      c &&
+      typeof c === 'object' &&
+      typeof (c as { id?: unknown }).id === 'string' &&
+      (c as { id: string }).id
+        ? (c as BookingSummary)
+        : null,
+  };
+}
 
 /**
  * The backend's wording for a genuinely unpaid checkout on verify. It shares
@@ -296,33 +353,28 @@ export function classifyConsultationPayError(
     return { kind: 'limit_reached', message: PAY_COPY.limitReached };
   }
   if (code === 'PAYMENT_IN_PROGRESS') {
-    return { kind: 'in_progress', message: PAY_COPY.inProgress };
+    return {
+      kind: 'in_progress',
+      message: PAY_COPY.inProgress,
+      ...conflictCheckoutFrom(e.data),
+    };
   }
   if (code === 'QUOTE_EXPIRED' || code === 'CHECKOUT_REPLACED') {
-    const data = (e.data ?? {}) as {
-      authorizationUrl?: unknown;
-      reference?: unknown;
-      consultation?: unknown;
-    };
     return {
       kind: 'new_checkout',
       message: PAY_COPY.newPrice,
-      authorizationUrl:
-        typeof data.authorizationUrl === 'string'
-          ? data.authorizationUrl
-          : null,
-      reference: typeof data.reference === 'string' ? data.reference : null,
-      consultation:
-        data.consultation && typeof data.consultation === 'object'
-          ? (data.consultation as BookingSummary)
-          : null,
+      ...conflictCheckoutFrom(e.data),
     };
   }
   if (code === 'BOOKING_NOT_PAYABLE') {
     return { kind: 'not_payable', message: PAY_COPY.notPayable };
   }
   if (code === 'CHECKOUT_OPENING') {
-    return { kind: 'opening', message: PAY_COPY.opening };
+    return {
+      kind: 'opening',
+      message: PAY_COPY.opening,
+      ...conflictCheckoutFrom(e.data),
+    };
   }
   if (code === 'VALIDATION_ERROR') {
     // Create: the booking itself was refused; there is no checkout to open.
@@ -353,4 +405,88 @@ export function isBookingPaidResult(data: unknown): boolean {
     consultation?: { paymentStatus?: unknown } | null;
   };
   return d.verified === true || d.consultation?.paymentStatus === 'paid';
+}
+
+// ─────────────────────────────────────────────
+// RESUMED BOOKINGS (japa#288)
+// ─────────────────────────────────────────────
+//
+// POST /consultations no longer books a slot twice. When the client already
+// has an UNPAID pending booking with the same agent at the same date and
+// time, the server answers 200 (not 201) with THAT booking in the create
+// shape plus `resumed: true`. The app treats it exactly like a fresh create.
+//
+// DECISION (documented on the issue): the server matches on agent + date +
+// time ONLY, not on consultation type or duration, and the app follows it.
+// So a resumed booking may have a different type / length than the one just
+// picked. The price is the same either way (the agent's fee does not depend
+// on them), but the screen must show what is actually booked: the resumed
+// booking's own type, duration and locked price, never the fresh pick.
+
+/**
+ * True when a POST /consultations answer is an earlier booking handed back
+ * (`resumed: true`) rather than a new one. Matters in one place only: a
+ * resumed booking with `requiresPayment: false` was PAID meanwhile (free
+ * bookings are never resumed), so it must not be shown as "Free".
+ */
+export function isResumedBooking(res: unknown): boolean {
+  return (
+    typeof res === 'object' &&
+    res !== null &&
+    (res as { resumed?: unknown }).resumed === true
+  );
+}
+
+/** What the user picked on the booking screen (route params). */
+export interface PickedBooking {
+  /** The free-text topic chip, e.g. "Document review". */
+  topic: string;
+  /** The backend type that topic maps to (what a create would send). */
+  type: ApiConsultation['type'];
+  /** The duration chip, e.g. "30 min". */
+  durLabel: string;
+}
+
+/**
+ * What the server says is booked. Both fields are optional: a 409's summary
+ * carries `type` only, `durationMinutes` arrives with the full booking.
+ */
+export interface ActualBooking {
+  type?: ApiConsultation['type'];
+  durationMinutes?: number;
+}
+
+/**
+ * The topic and duration lines the pay / confirmation screens show: the
+ * user's own pick, unless the server's booking says otherwise (a resumed
+ * booking, see the DECISION above). A field the server did not send keeps
+ * the pick, so a fresh booking renders exactly as before.
+ *
+ * @param picked    the route params
+ * @param actual    the booking as the server holds it (null = not known yet)
+ * @param typeLabel maps a backend type to its label (`getConsultationTypeLabel`;
+ *                  passed in so this file stays free of the API client)
+ * @returns `differs` is true when either line was replaced
+ */
+export function bookingDisplay(
+  picked: PickedBooking,
+  actual: ActualBooking | null | undefined,
+  typeLabel: (type: ApiConsultation['type']) => string,
+): { topic: string; dur: string; differs: boolean } {
+  // Topic: the picked chip text is nicer than a category label, so it stays
+  // whenever it maps to the SAME type the booking has.
+  const typeDiffers = !!actual?.type && actual.type !== picked.type;
+  // Duration: compared as whole minutes ("30 min" → 30).
+  const pickedMinutes = parseInt(picked.durLabel, 10);
+  const minutes = actual?.durationMinutes;
+  const durDiffers =
+    typeof minutes === 'number' &&
+    Number.isFinite(minutes) &&
+    minutes > 0 &&
+    minutes !== pickedMinutes;
+  return {
+    topic: typeDiffers ? typeLabel(actual!.type!) : picked.topic,
+    dur: durDiffers ? `${minutes} min` : picked.durLabel,
+    differs: typeDiffers || durDiffers,
+  };
 }

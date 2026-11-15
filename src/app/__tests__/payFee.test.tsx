@@ -60,7 +60,16 @@ jest.mock('@/hooks/useAgents', () => ({
     data: { consultationFeeUsd: { amountMinor: 3500, currency: 'USD' } },
   }),
 }));
+// GET /consultations/:id (japa#288: the full booking behind a 409's summary).
+// Returns the SAME object per id, as react-query does (a new object per
+// render would re-run the screen's effect forever).
+const mockDetail = jest.fn<(id: unknown) => { data: unknown }>();
 jest.mock('@/hooks/useConsultations', () => ({
+  useConsultation: (id: unknown) => mockDetail(id),
+  getConsultationTypeLabel: (type: string) =>
+    ({ document_review: 'Document Review', general: 'General Consultation' })[
+      type
+    ] ?? type,
   useCreateConsultation: () => ({ mutateAsync: mockCreate }),
   useConsultationCheckout: () => ({ mutateAsync: mockCheckout }),
   useVerifyConsultation: () => ({ mutateAsync: mockVerify }),
@@ -106,6 +115,9 @@ const paidBooking = (over: Record<string, unknown> = {}) => ({
   reference: 'cons-ref-1',
   ...over,
 });
+
+/** useConsultation with nothing fetched (stable object, see mockDetail). */
+const NO_DETAIL = { data: undefined };
 
 // Mounted trees, unmounted after each test (stops the countdown interval).
 const mounted: TestRenderer.ReactTestRenderer[] = [];
@@ -173,6 +185,8 @@ beforeEach(() => {
   mockPush.mockReset();
   mockReplace.mockReset();
   mockTrackBooked.mockReset();
+  mockDetail.mockReset();
+  mockDetail.mockReturnValue(NO_DETAIL);
   // Device clock = 2 minutes after the server locked the quote.
   jest
     .spyOn(Date, 'now')
@@ -789,5 +803,332 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
     expect(tryAgain(tree)).toBeUndefined();
     expect(cta(tree).props.disabled).toBe(true);
     expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// japa#288: the server hands back the client's unpaid booking of the same
+// slot (200 `resumed: true`) instead of booking it twice, and names the
+// booking on a 409 CHECKOUT_OPENING / PAYMENT_IN_PROGRESS.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('pay.tsx booking: resumed bookings (japa#288)', () => {
+  /** The "Try again" link under the CTA, if it is on screen. */
+  const tryAgain = (tree: TestRenderer.ReactTestRenderer) =>
+    pressables(tree).find(
+      (n) => n.findAll((c) => c.props.children === 'Try again').length > 0,
+    );
+
+  /** A payer-safe summary as a 409's `data.consultation` carries it. */
+  const summary = (over: Record<string, unknown> = {}) => ({
+    id: 'cons-old',
+    agentName: 'Ada Obi',
+    type: 'general',
+    scheduledDate: '2026-12-01',
+    scheduledTime: '10:00',
+    status: 'pending_payment',
+    paymentStatus: 'pending',
+    priceUsdCents: 3500,
+    chargedCurrency: 'NGN',
+    chargedAmountMinor: 4_738_940,
+    fxRate: 1353.97,
+    quoteExpiresAt: EXPIRES_AT,
+    ...over,
+  });
+
+  it('a resumed 200 is handled exactly like a 201: its pay screen, one create, no error', async () => {
+    mockCreate.mockResolvedValue(
+      paidBooking({
+        id: 'cons-old',
+        reference: 'cons-ref-old',
+        resumed: true,
+        type: 'general',
+        durationMinutes: 30,
+      }),
+    );
+    mockOpenAuth.mockResolvedValue({ type: 'cancel' });
+    mockVerify.mockResolvedValue({
+      verified: true,
+      consultation: summary({ paymentStatus: 'paid', status: 'scheduled' }),
+    });
+    const tree = await render();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const t = text(tree);
+    expect(t).toContain('₦47,389.40');
+    // Same type and length as the pick: no error, and no "earlier booking" note.
+    expect(t).not.toContain(PAY_COPY.resumedDetails);
+    for (const msg of [PAY_COPY.error, PAY_COPY.bookingInvalid]) {
+      expect(t).not.toContain(msg);
+    }
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦47,389.40');
+    // Pay opens the RESUMED booking's checkout and verifies its reference.
+    await chooseMethod(tree);
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockOpenAuth.mock.calls[0][0]).toBe(CHECKOUT);
+    expect(mockVerify).toHaveBeenCalledWith('cons-ref-old');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it('a resumed booking shows ITS type, duration and price, not what was just picked', async () => {
+    // Picked: "Initial consultation" (general), 30 min. Booked earlier: a
+    // 45-minute document review at an older locked price.
+    mockCreate.mockResolvedValue(
+      paidBooking({
+        id: 'cons-old',
+        resumed: true,
+        type: 'document_review',
+        durationMinutes: 45,
+        chargedAmountMinor: 4_900_000,
+      }),
+    );
+    mockOpenAuth.mockResolvedValue({ type: 'cancel' });
+    mockVerify.mockResolvedValue({
+      verified: true,
+      consultation: summary({
+        type: 'document_review',
+        paymentStatus: 'paid',
+        chargedAmountMinor: 4_900_000,
+      }),
+    });
+    const tree = await render();
+    const t = text(tree);
+    expect(t).toContain('10:00 AM · 45 min');
+    expect(t).not.toContain('· 30 min');
+    expect(t).toContain('Document Review');
+    expect(t).not.toContain('Initial consultation');
+    expect(t).toContain(PAY_COPY.resumedDetails);
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦49,000.00');
+    // The confirmation and the analytics carry the booked values too.
+    await chooseMethod(tree);
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    const arg = mockReplace.mock.calls[0][0] as {
+      params: Record<string, string>;
+    };
+    expect(arg.params.dur).toBe('45 min');
+    expect(arg.params.topic).toBe('Document Review');
+    expect(arg.params.paidAmountMinor).toBe('4900000');
+    expect(mockTrackBooked).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'document_review' }),
+    );
+  });
+
+  it('resumed with requiresPayment: false was PAID meanwhile: confirmation with the amount, never "Free"', async () => {
+    mockCreate.mockResolvedValue(
+      paidBooking({
+        id: 'cons-old',
+        resumed: true,
+        status: 'scheduled',
+        paymentStatus: 'paid',
+        requiresPayment: false,
+        authorizationUrl: undefined,
+        reference: undefined,
+      }),
+    );
+    await render();
+    expect(mockOpenAuth).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    const arg = mockReplace.mock.calls[0][0] as {
+      pathname: string;
+      params: Record<string, string>;
+    };
+    expect(arg.pathname).toBe('/confirmation');
+    expect(arg.params.free).toBe('');
+    expect(arg.params.paidAmountMinor).toBe('4738940');
+    expect(arg.params.paidCurrency).toBe('NGN');
+  });
+
+  it('create 409 CHECKOUT_OPENING: "Try again" goes through /:id/checkout for THAT booking, not a new create', async () => {
+    mockCreate.mockRejectedValue({
+      code: 'CHECKOUT_OPENING',
+      status: 409,
+      data: { consultation: summary() },
+    });
+    const tree = await render();
+    expect(text(tree)).toContain(PAY_COPY.opening);
+    expect(cta(tree).props.disabled).toBe(true);
+    mockCheckout.mockResolvedValue({
+      requiresPayment: true,
+      authorizationUrl: CHECKOUT,
+      reference: 'cons-ref-old',
+      consultation: summary(),
+    });
+    await act(async () => {
+      await tryAgain(tree)!.props.onPress();
+    });
+    expect(mockCheckout).toHaveBeenCalledTimes(1);
+    expect(mockCheckout).toHaveBeenCalledWith('cons-old');
+    // Still the ONE create from arrival.
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(text(tree)).not.toContain(PAY_COPY.opening);
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦47,389.40');
+  });
+
+  it('CHECKOUT_OPENING again on the retry keeps retrying the same booking', async () => {
+    const opening = {
+      code: 'CHECKOUT_OPENING',
+      status: 409,
+      data: { consultation: summary() },
+    };
+    mockCreate.mockRejectedValue(opening);
+    const tree = await render();
+    mockCheckout.mockRejectedValue(opening);
+    await act(async () => {
+      await tryAgain(tree)!.props.onPress();
+    });
+    await act(async () => {
+      await tryAgain(tree)!.props.onPress();
+    });
+    expect(mockCheckout).toHaveBeenCalledTimes(2);
+    expect(mockCheckout).toHaveBeenLastCalledWith('cons-old');
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(text(tree)).toContain(PAY_COPY.opening);
+  });
+
+  it('a 409-named booking shows its real duration once the booking is fetched', async () => {
+    // The summary has no duration: the screen reads GET /consultations/:id.
+    const detail = {
+      data: { id: 'cons-old', type: 'document_review', durationMinutes: 45 },
+    };
+    mockDetail.mockImplementation((id) =>
+      id === 'cons-old' ? detail : NO_DETAIL,
+    );
+    mockCreate.mockRejectedValue({
+      code: 'CHECKOUT_OPENING',
+      status: 409,
+      data: { consultation: summary({ type: 'document_review' }) },
+    });
+    const tree = await render();
+    const t = text(tree);
+    expect(t).toContain('10:00 AM · 45 min');
+    expect(t).toContain('Document Review');
+    expect(t).toContain(PAY_COPY.resumedDetails);
+  });
+
+  it('CHECKOUT_OPENING without a booking in data falls back to a plain retry (create)', async () => {
+    // An older backend: nothing to adopt, so the retry is the create, which
+    // the server resumes by itself.
+    mockCreate.mockRejectedValue({ code: 'CHECKOUT_OPENING', status: 409 });
+    const tree = await render();
+    mockCreate.mockResolvedValue(paidBooking({ resumed: true }));
+    await act(async () => {
+      await tryAgain(tree)!.props.onPress();
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockCheckout).not.toHaveBeenCalled();
+  });
+
+  it('create 409 PAYMENT_IN_PROGRESS: the in-progress message, the booking’s amount, and "Check again" only', async () => {
+    mockCreate.mockRejectedValue({
+      code: 'PAYMENT_IN_PROGRESS',
+      status: 409,
+      data: {
+        authorizationUrl: CHECKOUT,
+        reference: 'cons-ref-old',
+        consultation: summary(),
+      },
+    });
+    const tree = await render();
+    const t = text(tree);
+    expect(t).toContain(PAY_COPY.inProgress);
+    expect(t).toContain('₦47,389.40');
+    expect(t).not.toContain('Nothing was charged');
+    // Live without a payment method: it only checks, it does not pay.
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+    expect(cta(tree).props.disabled).toBe(false);
+    expect(tryAgain(tree)).toBeUndefined();
+    // Check again = verify THAT reference. No browser, no create, no checkout.
+    mockVerify.mockRejectedValue({ code: 'PAYMENT_IN_PROGRESS', status: 409 });
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockVerify).toHaveBeenCalledWith('cons-ref-old');
+    expect(mockOpenAuth).not.toHaveBeenCalled();
+    expect(mockCheckout).not.toHaveBeenCalled();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(text(tree)).toContain(PAY_COPY.inProgress);
+    expect(cta(tree).props.accessibilityLabel).toBe('Check again');
+    // The payment lands: confirmation.
+    mockVerify.mockResolvedValue({
+      verified: true,
+      consultation: summary({ paymentStatus: 'paid' }),
+    });
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it('in progress, then found unpaid: "Open checkout" reopens through /:id/checkout of the same booking', async () => {
+    mockCreate.mockRejectedValue({
+      code: 'PAYMENT_IN_PROGRESS',
+      status: 409,
+      data: {
+        authorizationUrl: CHECKOUT,
+        reference: 'cons-ref-old',
+        consultation: summary(),
+      },
+    });
+    const tree = await render();
+    mockVerify.mockRejectedValue({
+      code: 'VALIDATION_ERROR',
+      status: 400,
+      message: 'Payment has not been completed',
+    });
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(text(tree)).toContain(PAY_COPY.notCompleted);
+    expect(cta(tree).props.accessibilityLabel).toBe('Open checkout');
+    mockCheckout.mockResolvedValue({
+      requiresPayment: true,
+      authorizationUrl: CHECKOUT,
+      reference: 'cons-ref-old',
+      consultation: summary(),
+    });
+    mockOpenAuth.mockResolvedValue({ type: 'cancel' });
+    await chooseMethod(tree);
+    await act(async () => {
+      await cta(tree).props.onPress();
+    });
+    expect(mockCheckout).toHaveBeenCalledWith('cons-old');
+    expect(mockOpenAuth).toHaveBeenCalledTimes(1);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('PAYMENT_IN_PROGRESS with no booking in data: the message and a retry, nothing else', async () => {
+    mockCreate.mockRejectedValue({ code: 'PAYMENT_IN_PROGRESS', status: 409 });
+    const tree = await render();
+    expect(text(tree)).toContain(PAY_COPY.inProgress);
+    expect(cta(tree).props.disabled).toBe(true);
+    expect(tryAgain(tree)).toBeDefined();
+  });
+
+  it('an adopted booking that closed (409 BOOKING_NOT_PAYABLE) is dropped: the next try books anew', async () => {
+    mockCreate.mockRejectedValue({
+      code: 'CHECKOUT_OPENING',
+      status: 409,
+      data: { consultation: summary({ type: 'document_review' }) },
+    });
+    const tree = await render();
+    mockCheckout.mockRejectedValue({
+      code: 'BOOKING_NOT_PAYABLE',
+      status: 409,
+    });
+    await act(async () => {
+      await tryAgain(tree)!.props.onPress();
+    });
+    expect(text(tree)).toContain(PAY_COPY.notPayable);
+    // Back to the user's own pick (the old booking's details are gone).
+    expect(text(tree)).toContain('Initial consultation');
+    mockCreate.mockResolvedValue(paidBooking({ id: 'cons-new' }));
+    await act(async () => {
+      await tryAgain(tree)!.props.onPress();
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(cta(tree).props.accessibilityLabel).toBe('Pay ₦47,389.40');
   });
 });

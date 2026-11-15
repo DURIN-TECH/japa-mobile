@@ -9,9 +9,11 @@ import { describe, expect, it } from '@jest/globals';
 import {
   COUNTDOWN_WARN_SECONDS,
   PAY_COPY,
+  bookingDisplay,
   chargeChanged,
   classifyConsultationPayError,
   isBookingPaidResult,
+  isResumedBooking,
   formatCountdown,
   lockedQuoteFrom,
   lockedRateLine,
@@ -322,5 +324,166 @@ describe('paymentRequestParts', () => {
       ),
     ).toBe('₦5,000.00');
     expect(REQUEST_NOT_PAYABLE_MESSAGE).toMatch(/can’t be paid/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// japa#288: resumed bookings and the booking a 409 names.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('409s that name the booking (japa#288)', () => {
+  const consultation = { id: 'cons-old', type: 'general' };
+
+  it('CHECKOUT_OPENING carries data.consultation (its id is the retry target)', () => {
+    for (const stage of ['create', 'checkout'] as const) {
+      const v = classifyConsultationPayError(
+        { code: 'CHECKOUT_OPENING', status: 409, data: { consultation } },
+        stage,
+      );
+      expect(v).toMatchObject({
+        kind: 'opening',
+        message: PAY_COPY.opening,
+        consultation: { id: 'cons-old' },
+        authorizationUrl: null,
+        reference: null,
+      });
+    }
+  });
+
+  it('PAYMENT_IN_PROGRESS carries the booking and its current checkout', () => {
+    const v = classifyConsultationPayError(
+      {
+        code: 'PAYMENT_IN_PROGRESS',
+        status: 409,
+        data: { authorizationUrl: 'https://x', reference: 'r1', consultation },
+      },
+      'create',
+    );
+    expect(v).toMatchObject({
+      kind: 'in_progress',
+      message: PAY_COPY.inProgress,
+      authorizationUrl: 'https://x',
+      reference: 'r1',
+      consultation: { id: 'cons-old' },
+    });
+  });
+
+  it('missing or malformed data gives nulls, never a throw', () => {
+    for (const data of [
+      undefined,
+      null,
+      'x',
+      42,
+      {},
+      { consultation: 'cons-old' },
+      { consultation: {} },
+      { consultation: { id: 7 } },
+      { consultation: { id: '' } },
+      { reference: 9, authorizationUrl: {} },
+    ]) {
+      for (const code of ['CHECKOUT_OPENING', 'PAYMENT_IN_PROGRESS']) {
+        const v = classifyConsultationPayError(
+          { code, status: 409, data },
+          'create',
+        );
+        expect(v).toMatchObject({
+          consultation: null,
+          authorizationUrl: null,
+          reference: null,
+        });
+      }
+    }
+  });
+
+  it('QUOTE_EXPIRED / CHECKOUT_REPLACED still hand over their checkout', () => {
+    const v = classifyConsultationPayError(
+      {
+        code: 'QUOTE_EXPIRED',
+        status: 409,
+        data: { authorizationUrl: 'https://n', reference: 'r2', consultation },
+      },
+      'verify',
+    );
+    expect(v).toMatchObject({
+      kind: 'new_checkout',
+      authorizationUrl: 'https://n',
+      reference: 'r2',
+      consultation: { id: 'cons-old' },
+    });
+  });
+});
+
+describe('isResumedBooking', () => {
+  it('is true only for resumed: true', () => {
+    expect(isResumedBooking({ id: 'c', resumed: true })).toBe(true);
+    for (const v of [
+      { id: 'c' },
+      { resumed: false },
+      { resumed: 'true' },
+      { resumed: 1 },
+      null,
+      undefined,
+      'resumed',
+    ]) {
+      expect(isResumedBooking(v)).toBe(false);
+    }
+  });
+});
+
+describe('bookingDisplay', () => {
+  const picked = {
+    topic: 'Document check',
+    type: 'document_review' as const,
+    durLabel: '30 min',
+  };
+  const label = (t: string) => `label:${t}`;
+
+  it('shows the pick while the server has said nothing', () => {
+    for (const actual of [null, undefined, {}]) {
+      expect(bookingDisplay(picked, actual, label)).toEqual({
+        topic: 'Document check',
+        dur: '30 min',
+        differs: false,
+      });
+    }
+  });
+
+  it('keeps the pick (its own wording) when the booking matches it', () => {
+    expect(
+      bookingDisplay(
+        picked,
+        { type: 'document_review', durationMinutes: 30 },
+        label,
+      ),
+    ).toEqual({ topic: 'Document check', dur: '30 min', differs: false });
+  });
+
+  it('shows the resumed booking’s type and duration when they differ', () => {
+    expect(
+      bookingDisplay(picked, { type: 'general', durationMinutes: 45 }, label),
+    ).toEqual({ topic: 'label:general', dur: '45 min', differs: true });
+  });
+
+  it('replaces only the line that differs', () => {
+    expect(
+      bookingDisplay(
+        picked,
+        { type: 'document_review', durationMinutes: 45 },
+        label,
+      ),
+    ).toEqual({ topic: 'Document check', dur: '45 min', differs: true });
+    // A 409 summary: type only, the duration is not known yet.
+    expect(bookingDisplay(picked, { type: 'initial' }, label)).toEqual({
+      topic: 'label:initial',
+      dur: '30 min',
+      differs: true,
+    });
+  });
+
+  it('ignores a duration that is not a positive number', () => {
+    for (const durationMinutes of [0, -5, NaN, Infinity]) {
+      expect(bookingDisplay(picked, { durationMinutes }, label).dur).toBe(
+        '30 min',
+      );
+    }
   });
 });

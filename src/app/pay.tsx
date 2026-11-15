@@ -35,7 +35,25 @@
 //     PAYMENT_MISMATCH (they PAID, the amount is wrong) and the 402 monthly
 //     plan limit END the screen ('blocked': message only, no Pay, no retry),
 //     so nobody who paid is ever asked to pay again.
-// Coming back to this screen (back, then Continue again) books a new quote.
+//
+// ── One booking per slot: the server resumes (japa#288) ────────────────────
+// Coming back to this screen (back, then Continue again) calls POST
+// /consultations again, but the server no longer books the slot twice: when
+// this client already has an UNPAID pending booking with this agent at this
+// date and time it answers 200 with THAT booking and `resumed: true`, in the
+// create shape. The screen treats it exactly like a 201 (same code path).
+//   • The server matches on agent + date + time only (not topic / length),
+//     and the app follows it: the summary card then shows the RESUMED
+//     booking's own type, duration and locked price, with a one-line note
+//     when they differ from what was just picked (`bookingDisplay`);
+//   • resumed with `requiresPayment: false` = paid meanwhile → confirmation
+//     with the paid amount (never "Free");
+//   • 409 CHECKOUT_OPENING on create names the booking in
+//     `data.consultation`: the id is kept, so "Try again" goes through POST
+//     /consultations/:id/checkout for that booking, never a second create;
+//   • 409 PAYMENT_IN_PROGRESS on create (a payment may still land on the
+//     earlier checkout): #183's in-progress message, the booking's locked
+//     amount, and "Check again" (re-verify that reference; opens nothing).
 //
 // Return to the app (backend #285): the hooks send `returnTo: 'app'` on POST
 // /consultations and /:id/checkout, so Paystack lands on the backend's app
@@ -80,6 +98,8 @@ import { CenteredState } from '@/components/explorer/CenteredState';
 import { InlineError } from '@/components/explorer/AccountForm';
 import { Ic } from '@/components/explorer/icons';
 import {
+  getConsultationTypeLabel,
+  useConsultation,
   useConsultationCheckout,
   useCreateConsultation,
   useVerifyConsultation,
@@ -106,13 +126,16 @@ import {
 import {
   COUNTDOWN_WARN_SECONDS,
   PAY_COPY,
+  bookingDisplay,
   chargeChanged,
   classifyConsultationPayError,
   formatCountdown,
   isBookingPaidResult,
+  isResumedBooking,
   lockedQuoteFrom,
   lockedRateLine,
   quoteSecondsLeft,
+  type ActualBooking,
   type LockedQuote,
   type PayErrorVerdict,
   type PayStage,
@@ -383,6 +406,54 @@ export default function PayScreen() {
   const paidSummaryRef = useRef<BookingSummary | null>(null);
   const paidRequestRef = useRef<VerifyPaymentRequestResult | null>(null);
 
+  // ── What is ACTUALLY booked (japa#288) ─────────────────────────────────────
+  // The server may hand back an earlier booking of this slot whose type or
+  // length differs from the pick. `actual` holds the server's values (state
+  // for rendering, a ref for async handlers that navigate before a render).
+  const [actual, setActual] = useState<ActualBooking | null>(null);
+  const actualRef = useRef<ActualBooking | null>(null);
+  /** Merge in what a response says about the booking (unknown fields stay). */
+  const noteActual = (part: ActualBooking | null) => {
+    const next: ActualBooking | null = part
+      ? {
+          type: part.type ?? actualRef.current?.type,
+          durationMinutes:
+            part.durationMinutes ?? actualRef.current?.durationMinutes,
+        }
+      : null;
+    actualRef.current = next;
+    setActual(next);
+  };
+  // A booking this screen learned about from a 409 (CHECKOUT_OPENING /
+  // PAYMENT_IN_PROGRESS on create). The 409's summary has no duration, so
+  // the full booking is fetched (GET /consultations/:id) to show its real
+  // length. Null (query disabled) for a booking a 200 / 201 described fully.
+  const [adoptedId, setAdoptedId] = useState<string | null>(null);
+  const adoptedQ = useConsultation(adoptedId ?? undefined);
+  const adopted = adoptedQ.data;
+  useEffect(() => {
+    // Only for the booking still on screen (a reset clears `adoptedId`).
+    if (!adopted || adopted.id !== adoptedId) return;
+    noteActual({
+      type: adopted.type,
+      durationMinutes: adopted.durationMinutes,
+    });
+    // `noteActual` only touches a ref and a setter: safe to leave out.
+  }, [adopted, adoptedId]);
+
+  /** The topic / duration to show: the pick, or the server's booking. */
+  const displayFor = (a: ActualBooking | null) =>
+    bookingDisplay(
+      {
+        topic: topic ?? '',
+        type: mapTopicToConsultationType(topic),
+        durLabel: dur ?? '',
+      },
+      a,
+      getConsultationTypeLabel,
+    );
+  const display = displayFor(actual);
+
   /** Show a newly locked quote (and remember which booking it belongs to). */
   const applyQuote = (q: LockedQuote) => {
     quoteRef.current = q;
@@ -401,6 +472,9 @@ export default function PayScreen() {
     setQuote(null);
     setAttempted(false);
     setRecheck(false);
+    // The next booking is a new one: back to showing the user's own pick.
+    noteActual(null);
+    setAdoptedId(null);
   };
 
   /**
@@ -444,6 +518,10 @@ export default function PayScreen() {
     free?: boolean;
     replace?: boolean;
   }) => {
+    // japa#288: the confirmation shows what was BOOKED (a resumed booking's
+    // own topic / length), read from the ref so a response handled in this
+    // same tick is already counted.
+    const shown = displayFor(actualRef.current);
     const target = {
       pathname: '/confirmation' as const,
       params: {
@@ -451,9 +529,9 @@ export default function PayScreen() {
         agentId,
         dateIso,
         time,
-        topic,
+        topic: isApp ? topic : shown.topic,
         mode,
-        dur,
+        dur: isApp ? dur : shown.dur,
         method: isApp ? 'Paystack' : (method ?? ''),
         paidAmountMinor: paid.charged ? String(paid.charged.amountMinor) : '',
         paidCurrency: paid.charged?.currency ?? '',
@@ -484,7 +562,8 @@ export default function PayScreen() {
     if (charged) {
       void analyticsService.trackConsultationBooked({
         agentId,
-        type: mapTopicToConsultationType(topic),
+        // The booked type (a resumed booking may differ from the pick).
+        type: actualRef.current?.type ?? mapTopicToConsultationType(topic),
         charged,
       });
     }
@@ -550,9 +629,41 @@ export default function PayScreen() {
         // again), or the plan limit is reached (a retry cannot succeed).
         blockBooking();
         break;
+      case 'opening':
+      case 'in_progress': {
+        // japa#288: with NO quote on screen, this 409 came from the create
+        // (or its retry) and names an EARLIER booking of this slot in
+        // `data.consultation`. Adopt it: every later call goes through
+        // /consultations/:id/checkout for that booking, never a new create
+        // (which would only resume the same booking, or book a duplicate).
+        const found = v.consultation;
+        if (!prev && found) {
+          bookingIdRef.current = found.id;
+          setAdoptedId(found.id); // fetch its real duration for the summary
+          noteActual({ type: found.type });
+          if (v.kind === 'in_progress') {
+            // A payment may still land on its current checkout. Show the
+            // booking's locked amount and offer ONLY "Check again", which
+            // re-verifies that reference and opens nothing (as #183 does
+            // after a verify that answered "in progress").
+            const q = lockedQuoteFrom(found, v, Date.now());
+            if (q?.reference) {
+              applyQuote(q);
+              // If the check finds it unpaid, reopen through /checkout.
+              resumeRef.current = true;
+              setRecheck(true); // after applyQuote, which clears it
+              break;
+            }
+          }
+        }
+        // Opening (no checkout to show yet), or nothing usable in `data`:
+        // keep the quote when there is one, else message + "Try again".
+        setPhase(prev ? 'locked' : 'failed');
+        break;
+      }
       default:
-        // In progress / opening / booking refused / any other failure: keep
-        // the quote on screen when there is one, else offer the retry.
+        // Booking refused / any other failure: keep the quote on screen
+        // when there is one, else offer the retry.
         setPhase(prev ? 'locked' : 'failed');
     }
     setPayError(v.message);
@@ -560,7 +671,8 @@ export default function PayScreen() {
 
   // ── Get (or refresh) the locked quote ──────────────────────────────────────
   // First call books: POST /consultations (no fee). Later calls (refresh
-  // after expiry) re-price the SAME booking: POST /consultations/:id/checkout.
+  // after expiry, or "Try again" once a 409 named the booking, japa#288)
+  // go to the SAME booking: POST /consultations/:id/checkout.
   const requestQuote = async () => {
     // In-flight guard (a ref, so it holds before the next render): a double
     // tap on "Try again" / "Refresh price" must not send two create calls,
@@ -589,8 +701,25 @@ export default function PayScreen() {
           durationMinutes: parseInt(dur, 10) || 30, // "30 min" → 30
           timezone: resolveTimezone(),
         };
+        // 201 (new) and 200 `resumed: true` (the client's earlier unpaid
+        // booking of this slot, japa#288) arrive here alike and take the
+        // same path below: nothing is created twice, nothing is an error.
         const res = await createConsultation.mutateAsync(input);
+        // What is booked, as the server holds it. For a resumed booking the
+        // type / length may differ from `input`; the summary shows these.
+        noteActual({
+          type: res.type,
+          durationMinutes: res.durationMinutes,
+        });
         if (!res.requiresPayment) {
+          if (isResumedBooking(res)) {
+            // The earlier booking was PAID meanwhile (free bookings are
+            // never resumed): confirmation with what it charged, not "Free".
+            // Leave 'loading' first, as the checkout branch below does.
+            setPhase('unavailable');
+            bookingPaid(res, null);
+            return;
+          }
           bookingFree();
           return;
         }
@@ -1031,12 +1160,45 @@ export default function PayScreen() {
           ) : (
             <>
               <SummaryRow icon={Ic.cal} label={dateLabel} />
-              <SummaryRow icon={Ic.clock} label={`${time} · ${dur}`} />
+              {/* Duration and topic are the BOOKED ones (japa#288): the
+                  user's pick, or a resumed booking's own values. */}
+              <SummaryRow icon={Ic.clock} label={`${time} · ${display.dur}`} />
               <SummaryRow icon={isVideo ? Ic.video : Ic.phone} label={mode} />
-              <SummaryRow icon={Ic.msg} label={topic} />
+              <SummaryRow icon={Ic.msg} label={display.topic} />
             </>
           )}
         </View>
+
+        {/* ── Resumed booking differs from the pick (japa#288) ─────────────── */}
+        {/* Same InfoNote anatomy as the lock note below (cream panel, coral
+            icon): says why the card above does not match what was chosen. */}
+        {!isApp && display.differs ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              backgroundColor: EX.color.cream,
+              borderWidth: 1,
+              borderColor: EX.color.line08,
+              borderRadius: 16,
+              padding: 14,
+              marginTop: 12,
+            }}
+          >
+            <Ic.cal size={17} color={EX.color.primary} strokeWidth={1.9} />
+            <Text
+              style={{
+                flex: 1,
+                fontSize: 13,
+                lineHeight: 19,
+                color: EX.color.ink2,
+              }}
+            >
+              {PAY_COPY.resumedDetails}
+            </Text>
+          </View>
+        ) : null}
 
         {/* ── Payment method (bookings only) ───────────────────────────────── */}
         {isApp ? null : (

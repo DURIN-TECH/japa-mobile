@@ -59,6 +59,10 @@ jest.mock('@/hooks/usePaymentRequests', () => ({
   }),
 }));
 jest.mock('@/hooks/useConsultations', () => ({
+  // japa#288: the screen also reads a 409-named booking and labels its type
+  // (booking path only; never used on this payment-request path).
+  useConsultation: () => ({ data: undefined }),
+  getConsultationTypeLabel: (type: string) => type,
   useCreateConsultation: () => ({ mutateAsync: jest.fn() }),
   useConsultationCheckout: () => ({ mutateAsync: jest.fn() }),
   useVerifyConsultation: () => ({ mutateAsync: jest.fn() }),
