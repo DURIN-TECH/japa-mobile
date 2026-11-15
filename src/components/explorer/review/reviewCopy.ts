@@ -78,7 +78,10 @@ export function staleCopy(
 //                       true for it, and only for it.
 //   too_many_documents  the application has more documents than one review can
 //   review_too_large    read, or is too large for one review for another
-//                       reason. The same inputs fail the same way every time,
+//                       reason (the rules or the text, or its files together
+//                       are over 60 MB). "This application is larger than one
+//                       review can read." is true of each of these, so one
+//                       sentence covers them. The same inputs fail the same way,
 //                       and the app cannot remove a document yet (japa#314), so
 //                       there is no "Try again": the applicant is pointed at
 //                       support instead.

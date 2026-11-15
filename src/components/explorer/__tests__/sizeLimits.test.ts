@@ -18,10 +18,12 @@ jest.mock('react-native-reanimated', () => ({
 }));
 
 import {
-  FILE_MAX_BYTES,
-  IMAGE_MAX_BYTES,
+  OTHER_MAX_BYTES,
+  PDF_MAX_BYTES,
   WRONG_TYPE_COPY,
   isHeic,
+  isPdfFile,
+  maxUploadBytes,
   pickedContentType,
   pickedFileProblem,
   tooLargeCopy,
@@ -41,20 +43,43 @@ import {
 } from '@/types/assessment.type';
 
 const MB = 1024 * 1024;
+const LINE_7 = 'This file is larger than 7 MB. Upload a smaller copy.';
+const LINE_10 = 'This file is larger than 10 MB. Upload a smaller copy.';
 
 // ── Limits match the backend's numbers ──────────────────────────────────────
+// The backend picks the limit from the file's real bytes: a real PDF gets
+// 10 MB, everything else (images, unknown types) 7 MB.
 describe('upload limits', () => {
-  it('are 7 MB for images and 10 MB for anything else, in bytes', () => {
-    expect(IMAGE_MAX_BYTES).toBe(7340032);
-    expect(FILE_MAX_BYTES).toBe(10485760);
+  it('are 10 MB for a PDF and 7 MB for anything else, in bytes', () => {
+    expect(PDF_MAX_BYTES).toBe(10485760);
+    expect(OTHER_MAX_BYTES).toBe(7340032);
   });
 
-  it('give the right number per type', () => {
-    expect(tooLargeCopy(true)).toBe(
-      'This file is larger than 7 MB. Upload a smaller copy.',
+  it('a PDF is application/pdf, or a .pdf name with no type', () => {
+    expect(isPdfFile({ contentType: 'application/pdf' })).toBe(true);
+    expect(isPdfFile({ contentType: 'APPLICATION/PDF' })).toBe(true);
+    expect(isPdfFile({ contentType: '', name: 'Bank.PDF' })).toBe(true);
+    expect(
+      isPdfFile({ contentType: 'application/octet-stream', name: 'a.pdf' }),
+    ).toBe(true);
+    // A declared type wins over the name.
+    expect(isPdfFile({ contentType: 'image/jpeg', name: 'a.pdf' })).toBe(false);
+    expect(isPdfFile({ contentType: 'application/octet-stream' })).toBe(false);
+  });
+
+  it('give 10 MB only for a PDF, 7 MB for everything else', () => {
+    expect(maxUploadBytes({ contentType: 'application/pdf' })).toBe(
+      PDF_MAX_BYTES,
     );
-    expect(tooLargeCopy(false)).toBe(
-      'This file is larger than 10 MB. Upload a smaller copy.',
+    for (const t of ['image/jpeg', 'image/png', 'application/octet-stream', ''])
+      expect(maxUploadBytes({ contentType: t })).toBe(OTHER_MAX_BYTES);
+  });
+
+  it('word the number per limit', () => {
+    expect(tooLargeCopy(OTHER_MAX_BYTES)).toBe(LINE_7);
+    expect(tooLargeCopy(PDF_MAX_BYTES)).toBe(LINE_10);
+    expect(tooLargeCopy(7.5 * MB)).toBe(
+      'This file is larger than 7.5 MB. Upload a smaller copy.',
     );
   });
 });
@@ -64,12 +89,12 @@ describe('pickedFileProblem', () => {
   it('lets a PDF up to 10 MB and an image up to 7 MB through', () => {
     expect(
       pickedFileProblem({
-        size: FILE_MAX_BYTES,
+        size: PDF_MAX_BYTES,
         contentType: 'application/pdf',
       }),
     ).toBeNull();
     expect(
-      pickedFileProblem({ size: IMAGE_MAX_BYTES, contentType: 'image/jpeg' }),
+      pickedFileProblem({ size: OTHER_MAX_BYTES, contentType: 'image/jpeg' }),
     ).toBeNull();
     // A 2-4 MB phone photo is fine.
     expect(
@@ -80,22 +105,29 @@ describe('pickedFileProblem', () => {
   it('refuses a PDF over 10 MB with the 10 MB line', () => {
     expect(
       pickedFileProblem({
-        size: FILE_MAX_BYTES + 1,
+        size: PDF_MAX_BYTES + 1,
         contentType: 'application/pdf',
       }),
-    ).toBe(tooLargeCopy(false));
+    ).toBe(LINE_10);
   });
 
-  it('refuses an 8 MB image with the 7 MB line', () => {
+  it('refuses an image over 7 MB with the 7 MB line', () => {
     expect(pickedFileProblem({ size: 8 * MB, contentType: 'image/jpeg' })).toBe(
-      'This file is larger than 7 MB. Upload a smaller copy.',
+      LINE_7,
     );
     expect(
       pickedFileProblem({
-        size: IMAGE_MAX_BYTES + 1,
+        size: OTHER_MAX_BYTES + 1,
         contentType: 'image/png',
       }),
-    ).toBe(tooLargeCopy(true));
+    ).toBe(LINE_7);
+  });
+
+  it('a nameless-type .pdf gets the PDF limit through pickedContentType', () => {
+    const contentType = pickedContentType({ mimeType: null, name: 'a.pdf' });
+    expect(
+      pickedFileProblem({ size: 9 * MB, contentType, name: 'a.pdf' }),
+    ).toBeNull();
   });
 
   it('lets an unknown size through (the backend checks the real size)', () => {
@@ -185,38 +217,63 @@ describe('pickedContentType', () => {
 // ── The line for a failed upload ────────────────────────────────────────────
 describe('uploadFailureCopy', () => {
   // What apiService rejects with for the backend's 413.
-  const tooLarge = (isImage: boolean) => ({
+  const tooLarge = (details: Record<string, unknown> | undefined) => ({
     code: 'FILE_TOO_LARGE',
     status: 413,
-    message: 'This file is larger than 10 MB. Upload a smaller copy, …',
-    body: {
-      success: false,
-      error: 'FILE_TOO_LARGE',
-      details: {
-        maxBytes: isImage ? IMAGE_MAX_BYTES : FILE_MAX_BYTES,
-        sizeBytes: 22020096,
-        isImage,
-      },
-    },
+    message: 'This file is larger than 7 MB. Upload a smaller copy, …',
+    body: { success: false, error: 'FILE_TOO_LARGE', details },
   });
 
-  it('413 FILE_TOO_LARGE shows the size line, not the generic one', () => {
-    expect(uploadFailureCopy(tooLarge(false), 'a.pdf', 'application/pdf')).toBe(
-      tooLargeCopy(false),
-    );
-    expect(uploadFailureCopy(tooLarge(true), 'a.jpg', 'image/jpeg')).toBe(
-      tooLargeCopy(true),
-    );
-  });
-
-  it('413 without details falls back to the picked type', () => {
+  it('413 shows the size line with the server’s maxBytes', () => {
     expect(
       uploadFailureCopy(
-        { code: 'FILE_TOO_LARGE', status: 413, message: '' },
+        tooLarge({ maxBytes: 7340032, sizeBytes: 8388608, isPdf: false }),
         'a.jpg',
         'image/jpeg',
       ),
-    ).toBe(tooLargeCopy(true));
+    ).toBe(LINE_7);
+    expect(
+      uploadFailureCopy(
+        tooLarge({ maxBytes: 10485760, sizeBytes: 22020096, isPdf: true }),
+        'a.pdf',
+        'application/pdf',
+      ),
+    ).toBe(LINE_10);
+  });
+
+  it('maxBytes wins over the picked type (a "PDF" whose bytes are not one)', () => {
+    expect(
+      uploadFailureCopy(
+        tooLarge({ maxBytes: 7340032, sizeBytes: 8388608, isPdf: false }),
+        'fake.pdf',
+        'application/pdf',
+      ),
+    ).toBe(LINE_7);
+  });
+
+  it('without maxBytes, isPdf decides', () => {
+    expect(
+      uploadFailureCopy(tooLarge({ isPdf: true }), 'x', 'image/jpeg'),
+    ).toBe(LINE_10);
+    expect(
+      uploadFailureCopy(tooLarge({ isPdf: false }), 'x.pdf', 'application/pdf'),
+    ).toBe(LINE_7);
+  });
+
+  it('without details, the picked type and name decide', () => {
+    expect(uploadFailureCopy(tooLarge(undefined), 'a.jpg', 'image/jpeg')).toBe(
+      LINE_7,
+    );
+    expect(
+      uploadFailureCopy(tooLarge(undefined), 'a.pdf', 'application/pdf'),
+    ).toBe(LINE_10);
+    expect(
+      uploadFailureCopy(
+        { code: 'FILE_TOO_LARGE', status: 413, message: '' },
+        'b.pdf',
+        'application/octet-stream',
+      ),
+    ).toBe(LINE_10);
   });
 
   it('a wrong-type 400 from the upload URL shows the type line', () => {

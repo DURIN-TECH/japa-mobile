@@ -47,7 +47,8 @@ export type StaleReason = 'inputs_changed' | 'rules_updated';
 //                       read; the same inputs fail the same way, so a retry
 //                       cannot succeed
 //   review_too_large    this application is too large for one review for another
-//                       reason (the rules or the text); a retry cannot succeed
+//                       reason (the rules, the text, or files together over
+//                       60 MB); a retry cannot succeed
 //   cost_cap_exceeded   only on failures stored before japa#310; a retry now
 //                       goes through the new checks and can succeed
 export const ASSESSMENT_ERROR_CODES = [

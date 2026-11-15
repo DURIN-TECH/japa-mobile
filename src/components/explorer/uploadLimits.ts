@@ -3,12 +3,14 @@
 // for a file it would refuse (japa#310).
 //
 // The backend (`POST /documents`) reads the stored file's REAL size and refuses
-// one over the limit with 413 FILE_TOO_LARGE (and deletes it). The limit is
-// 10 MB for a PDF or any other file, but 7 MB for an image: the model that
-// reads the documents cannot take a larger image. The app checks the picked
-// file's size first, with the same numbers, so an oversized file is never
-// uploaded at all; the 413 is the backstop (for example a picker that gave no
-// size) and shows the same line.
+// one over the limit with 413 FILE_TOO_LARGE (and deletes it). It picks the
+// limit from the file's real first bytes, not its declared type: a real PDF
+// gets 10 MB, everything else 7 MB (the most the model that reads documents
+// can take for an image), including a file with no type. The app checks the
+// picked file's size first, with the same numbers (10 MB only for a PDF by
+// type, or by a `.pdf` name when the picker gives no type), so an oversized
+// file is never uploaded at all. The 413 is the backstop (a picker that gave
+// no size, or a "PDF" whose bytes are not one) and its number always wins.
 //
 // The signed upload URL (`POST /documents/upload-url`) only takes the types in
 // `UPLOAD_CONTENT_TYPES`; anything else is a 400 VALIDATION_ERROR. The picker
@@ -18,10 +20,11 @@
 // Pure helpers only, so they are unit-tested without the screen.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Largest image the backend accepts (7 MB, same as its `MODEL_IMAGE_MAX_BYTES`). */
-export const IMAGE_MAX_BYTES = 7 * 1024 * 1024;
-/** Largest PDF or other file the backend accepts (10 MB, its `maxFileBytes`). */
-export const FILE_MAX_BYTES = 10 * 1024 * 1024;
+const MiB = 1024 * 1024;
+/** Largest PDF the backend accepts (10 MB, its `maxFileBytes`). */
+export const PDF_MAX_BYTES = 10 * MiB;
+/** Largest file of any other kind (7 MB, its `MODEL_IMAGE_MAX_BYTES`). */
+export const OTHER_MAX_BYTES = 7 * MiB;
 
 /**
  * Content types the app uploads: the backend's upload-URL list
@@ -48,18 +51,29 @@ export function isHeic(f: { contentType: string; name?: string }): boolean {
   return /\.hei[cf]$/i.test(f.name ?? '');
 }
 
-/** True for an image content type ("image/jpeg", "image/heic", ...). */
-export const isImageType = (contentType: string) =>
-  contentType.toLowerCase().startsWith('image/');
+/**
+ * True for a PDF as far as the app can tell: `application/pdf`, or a `.pdf`
+ * name when the picker gave no type (empty or `application/octet-stream`).
+ */
+export function isPdfFile(f: { contentType: string; name?: string }): boolean {
+  const t = f.contentType.toLowerCase();
+  if (t === 'application/pdf') return true;
+  if (t && t !== 'application/octet-stream') return false;
+  return /\.pdf$/i.test(f.name ?? '');
+}
 
-/** The size limit that applies to a file of this type, in bytes. */
-export const maxUploadBytes = (contentType: string) =>
-  isImageType(contentType) ? IMAGE_MAX_BYTES : FILE_MAX_BYTES;
+/** The size limit for a picked file, in bytes: 10 MB for a PDF, else 7 MB. */
+export const maxUploadBytes = (f: { contentType: string; name?: string }) =>
+  isPdfFile(f) ? PDF_MAX_BYTES : OTHER_MAX_BYTES;
 
-/** "This file is larger than 7 MB. Upload a smaller copy." (the number per type). */
-export function tooLargeCopy(isImage: boolean): string {
-  const mb = (isImage ? IMAGE_MAX_BYTES : FILE_MAX_BYTES) / (1024 * 1024);
-  return `This file is larger than ${mb} MB. Upload a smaller copy.`;
+/**
+ * "This file is larger than 7 MB. Upload a smaller copy." for a limit in
+ * bytes (a whole number of MB, else one decimal).
+ */
+export function tooLargeCopy(maxBytes: number): string {
+  const mb = maxBytes / MiB;
+  const shown = Number.isInteger(mb) ? String(mb) : mb.toFixed(1);
+  return `This file is larger than ${shown} MB. Upload a smaller copy.`;
 }
 
 /** Wrong type, including HEIC/HEIF (the review cannot read it, see above). */
@@ -102,16 +116,18 @@ export function pickedFileProblem(f: {
 }): string | null {
   if (isHeic(f) || !UPLOAD_CONTENT_TYPES.includes(f.contentType.toLowerCase()))
     return WRONG_TYPE_COPY;
-  if (typeof f.size === 'number' && f.size > maxUploadBytes(f.contentType))
-    return tooLargeCopy(isImageType(f.contentType));
+  const max = maxUploadBytes(f);
+  if (typeof f.size === 'number' && f.size > max) return tooLargeCopy(max);
   return null;
 }
 
 /**
  * The in-card line for a failed upload. `err` is what apiService rejects with
  * (`{ code, status, body }`) or anything else (a storage PUT error).
- *   413 FILE_TOO_LARGE  → the size line, with the number from the backend's
- *                         `details.isImage` (else from the picked type)
+ *   413 FILE_TOO_LARGE  → the size line. The number is the server's own, so
+ *                         the app never disagrees with it: `details.maxBytes`
+ *                         when present, else `details.isPdf` (true = 10 MB,
+ *                         false = 7 MB), else the picked file's type and name
  *   400 "Invalid content type" from the upload URL → the wrong-type line
  *   anything else       → the generic line
  */
@@ -120,6 +136,7 @@ export function uploadFailureCopy(
   fileName: string,
   contentType: string,
 ): string {
+  // The picked file's name doubles as the `.pdf` hint for the fallback limit.
   const e =
     err && typeof err === 'object'
       ? (err as {
@@ -130,13 +147,20 @@ export function uploadFailureCopy(
         })
       : null;
   if (e?.status === 413 || e?.code === 'FILE_TOO_LARGE') {
-    const details = (e.body as { details?: { isImage?: unknown } } | undefined)
-      ?.details;
-    const isImage =
-      typeof details?.isImage === 'boolean'
-        ? details.isImage
-        : isImageType(contentType);
-    return tooLargeCopy(isImage);
+    const details = (
+      e.body as
+        | { details?: { maxBytes?: unknown; isPdf?: unknown } }
+        | undefined
+    )?.details;
+    const maxBytes =
+      typeof details?.maxBytes === 'number' && details.maxBytes > 0
+        ? details.maxBytes
+        : typeof details?.isPdf === 'boolean'
+          ? details.isPdf
+            ? PDF_MAX_BYTES
+            : OTHER_MAX_BYTES
+          : maxUploadBytes({ contentType, name: fileName });
+    return tooLargeCopy(maxBytes);
   }
   if (
     e?.status === 400 &&
