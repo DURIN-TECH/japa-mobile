@@ -76,7 +76,8 @@ describe('costTimelineRows', () => {
       }),
     );
     expect(rows.map((r) => [r.label, r.value, r.hint])).toEqual([
-      ['Visa cost', '$1,200', undefined],
+      // japa#183: a government fee, in US dollars, labelled as such.
+      ['Government fee', '$1,200', 'Paid in US dollars'],
       ['Processing time', '30 to 60 days', undefined],
       ['Valid for', '2 years', undefined],
       ['Extension', 'Can be extended', 'Up to 2 times'],
@@ -182,8 +183,9 @@ describe('sections', () => {
     expect(t).toEqual(
       expect.arrayContaining([
         'Cost & timeline',
-        'Visa cost',
+        'Government fee',
         '$99',
+        'Paid in US dollars',
         'Eligibility',
         'Be 18',
       ]),

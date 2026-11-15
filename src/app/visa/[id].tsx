@@ -565,7 +565,7 @@ export default function VisaBreakdown() {
         </View>
       </ScrollView>
 
-      {/* ── Sticky CTA: Starting at $price / Start application, plus the
+      {/* ── Sticky CTA: Government fee from $price / Start application, plus the
           start-failure states (japa#174) ──────────────────────────────────── */}
       <StartApplicationBar
         price={d.price}

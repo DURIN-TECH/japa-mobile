@@ -10,7 +10,9 @@
 
 import { agoFrom, fmtDate } from './liveDate';
 import { countryArt } from './liveExplore';
+import { formatMoney, minorUnitFactor } from './content';
 import { App, AppStep, Dest } from '@/types/explorer.type';
+import type { Money } from '@/types/money.type';
 import {
   Application,
   ApplicationStatus,
@@ -64,6 +66,33 @@ export function resolveVisaTitle(
   return app.countryName ?? app.countryCode;
 }
 
+/**
+ * The case's total cost as money in its own currency (japa#183 / backend
+ * #181): `totalCost` is integer MINOR units of `costCurrency` (absent on
+ * older docs = USD). Null when the case has no usable cost.
+ */
+export function caseCost(
+  app: Pick<Application, 'totalCost' | 'costCurrency'>,
+): Money | null {
+  const amountMinor = app.totalCost;
+  if (typeof amountMinor !== 'number' || !Number.isFinite(amountMinor)) {
+    return null;
+  }
+  const currency = (app.costCurrency ?? 'USD').trim().toUpperCase() || 'USD';
+  return { amountMinor, currency };
+}
+
+/**
+ * The cost as whole US dollars for `Dest.price` (5,000,000 cents → 50,000),
+ * through the currency's own factor, never a literal 100. A non-USD cost is
+ * 0: `Dest.price` is printed with "$", so putting another currency's figure
+ * there would show e.g. naira as dollars.
+ */
+function caseCostUsdWhole(cost: Money | null): number {
+  if (!cost || cost.currency !== 'USD') return 0;
+  return Math.round(cost.amountMinor / minorUnitFactor(cost.currency));
+}
+
 export function mapApplication(
   app: Application,
   agentSeed?: number,
@@ -72,6 +101,8 @@ export function mapApplication(
   void agentSeed; // reserved for call-site parity; not used
 
   const art = countryArt(app.countryCode);
+  // The case cost in its OWN currency (never assumed to be dollars).
+  const cost = caseCost(app);
   const dest: Dest = {
     id: app.visaTypeId,
     country: app.countryName ?? app.countryCode,
@@ -84,7 +115,11 @@ export function mapApplication(
     img: art.img,
     tone: art.tone,
     processing: '',
-    price: Math.round(app.totalCost ?? 0),
+    // `Dest.price` is a whole-DOLLAR figure that screens print with "$"
+    // (japa#183), so it only ever carries a USD cost. A case priced in
+    // another currency gets 0 here and is shown through `cost` /
+    // `costLabel` below, in its own currency.
+    price: caseCostUsdWhole(cost),
     approval: '',
     applied: 0,
   };
@@ -107,6 +142,9 @@ export function mapApplication(
           : null,
     },
     steps: [], // list rows carry no steps; the detail screen fetches the timeline
+    cost,
+    // Formatted by the one money helper: right symbol, right decimals.
+    costLabel: formatMoney(cost),
     dest,
   };
 }

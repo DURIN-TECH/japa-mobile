@@ -19,8 +19,12 @@ import { apiService } from '@/services/api.service';
 
 /**
  * Transaction shape matching the backend `Transaction` interface
- * (functions/src/types/index.ts). `amount` is in kobo/cents — divide by 100
- * for the ₦ display value. Optional fields are only present on some txn types.
+ * (functions/src/types/index.ts). `amount` is minor units of `currency`: the
+ * amount ACTUALLY charged (kobo for an NGN charge, cents for USD). japa#183:
+ * a priced charge also carries its snapshot (`priceUsdCents` = the dollar
+ * price, `chargedCurrency` / `chargedAmountMinor` repeat the charge, `fxRate`).
+ * Never divide by a literal 100: format through `formatMoney`.
+ * Optional fields are only present on some txn types.
  */
 export interface ApiTransaction {
   id: string;
@@ -37,8 +41,16 @@ export interface ApiTransaction {
     | 'refund'
     | 'escrow_release'
     | 'withdrawal';
-  amount: number; // In kobo/cents
+  /** Minor units of `currency` (what was actually charged). */
+  amount: number;
   currency: string;
+  // ── Charge snapshot (japa#183; absent on older transactions) ──────────────
+  /** The dollar price behind this charge, in US cents. */
+  priceUsdCents?: number;
+  chargedCurrency?: string;
+  chargedAmountMinor?: number;
+  /** Local units per 1 USD used for the charge. */
+  fxRate?: number;
 
   // Lifecycle status of the transaction.
   status:

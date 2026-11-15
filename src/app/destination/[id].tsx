@@ -17,6 +17,10 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
+import {
+  GOV_FEE_COPY,
+  formatCostUsd,
+} from '@/components/explorer/visaBreakdownLogic';
 import type { Dest, Req } from '@/types/explorer.type';
 import {
   mapRequirements,
@@ -452,9 +456,10 @@ export default function DestinationDetail() {
             <View
               style={{ width: 1, height: 30, backgroundColor: EX.color.line08 }}
             />
+            {/* Government fee, US dollars only (japa#183). */}
             <StatCell
-              value={`$${d.price.toLocaleString()}`}
-              label="Starting at"
+              value={formatCostUsd(d.price)}
+              label={GOV_FEE_COPY.statLabel}
               accent={EX.color.primary}
             />
             <View

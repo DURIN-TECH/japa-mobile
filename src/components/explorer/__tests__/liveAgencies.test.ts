@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Unit tests: agency "Visas they handle" mappers (japa#106).
-// Prices are WHOLE NAIRA (no /100); agency-only visas are chipped and not
+// Prices (japa#183) are the server's `priceLocal` + `priceUsd` (no mobile
+// conversion, "Contact for pricing" without a dollar price); agency-only visas are chipped and not
 // tappable; a missing / malformed `visaPrices` never throws.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -13,13 +14,24 @@ import {
 } from '../liveAgencies';
 import type { PublicVisaPrice } from '@/hooks/useAgencies';
 
+/** $9.00 service price, and the server's ₦12,500.00 local figure for it. */
+const USD_9 = { amountMinor: 900, currency: 'USD' };
+const NGN_12500 = {
+  amountMinor: 1_250_000,
+  currency: 'NGN',
+  rate: 1388.89,
+  asOf: '2026-11-13T00:00:00Z',
+  available: true,
+};
+
 /** One `visaPrices[]` entry as the backend sends it. */
 const entry = (over: Partial<PublicVisaPrice> = {}): PublicVisaPrice => ({
   visaTypeId: 'uk-sw',
   countryCode: 'GB',
   visaName: 'Skilled Worker visa',
   category: 'work',
-  price: 12500,
+  priceUsd: USD_9,
+  priceLocal: NGN_12500,
   isAgencyVisa: false,
   visibility: 'global',
   processingTime: '3 to 8 weeks',
@@ -50,17 +62,20 @@ describe('normalizeVisaPrices', () => {
     expect(out.map((v) => v.visaTypeId)).toEqual(['a', 'c']);
   });
 
-  it('turns a non-number price into null and keeps naira as-is', () => {
+  it('turns a malformed dollar price into null and keeps a valid one as-is', () => {
+    const bad = (amountMinor: unknown) =>
+      entry({ priceUsd: { amountMinor, currency: 'USD' } as never });
     const [a, b, c, d] = normalizeVisaPrices([
-      entry({ price: '12500' as unknown as number }),
-      entry({ price: NaN }),
-      entry({ price: -1 }),
-      entry({ price: 12500 }),
+      bad('900'),
+      bad(NaN),
+      bad(-1),
+      entry(),
     ]);
-    expect(a.price).toBeNull();
-    expect(b.price).toBeNull();
-    expect(c.price).toBeNull();
-    expect(d.price).toBe(12500);
+    expect(a.priceUsd).toBeNull();
+    expect(b.priceUsd).toBeNull();
+    expect(c.priceUsd).toBeNull();
+    expect(d.priceUsd).toEqual(USD_9);
+    expect(d.priceLocal).toEqual(NGN_12500);
   });
 
   it('defaults visibility to global and isAgencyVisa to false', () => {
@@ -69,7 +84,8 @@ describe('normalizeVisaPrices', () => {
     ]);
     expect(v.visibility).toBe('global');
     expect(v.isAgencyVisa).toBe(false);
-    expect(v.price).toBeNull();
+    expect(v.priceUsd).toBeNull();
+    expect(v.priceLocal).toBeNull();
     expect(v.processingTime).toBeNull();
   });
 });
@@ -86,15 +102,37 @@ describe('countryNameFor', () => {
 });
 
 describe('mapAgencyVisaRows', () => {
-  it('formats the price in whole naira with a Service fee caption', () => {
-    const [row] = mapAgencyVisaRows([entry({ price: 12500 })], COUNTRIES);
-    // No cents conversion: 12500 → ₦12,500 (not ₦125).
-    expect(row.priceLabel).toBe('₦12,500');
+  it('shows the local price with "about $" and a Service fee caption', () => {
+    const [row] = mapAgencyVisaRows([entry()], COUNTRIES);
+    // Kobo from the server → ₦12,500; the dollar side is the server's $9.
+    expect(row.priceLabel).toBe('₦12,500 · about $9');
+    expect(row.priceCaption).toBe('Service fee');
+  });
+
+  it('shows the dollar price only when the server has no local rate', () => {
+    const [row] = mapAgencyVisaRows(
+      [
+        entry({
+          priceLocal: {
+            amountMinor: null,
+            currency: 'NGN',
+            rate: null,
+            asOf: null,
+            available: false,
+          },
+        }),
+      ],
+      COUNTRIES,
+    );
+    expect(row.priceLabel).toBe('$9.00');
     expect(row.priceCaption).toBe('Service fee');
   });
 
   it('shows Contact for pricing with no caption when there is no price', () => {
-    const [row] = mapAgencyVisaRows([entry({ price: null })], COUNTRIES);
+    const [row] = mapAgencyVisaRows(
+      [entry({ priceUsd: null, priceLocal: null })],
+      COUNTRIES,
+    );
     expect(row.priceLabel).toBe('Contact for pricing');
     expect(row.priceCaption).toBeNull();
   });
