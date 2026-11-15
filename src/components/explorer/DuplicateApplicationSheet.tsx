@@ -17,7 +17,7 @@ import React from 'react';
 import { Modal, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
-import { EX, displayText } from '@/components/explorer/theme';
+import { EX, EXScrim, displayText } from '@/components/explorer/theme';
 import type { DuplicateApplication } from '@/hooks/useStartApplication';
 
 /** Copy lives here (exported) so tests and screens agree. */
@@ -89,7 +89,7 @@ export function DuplicateApplicationSheet({
             right: 0,
             top: 0,
             bottom: 0,
-            backgroundColor: 'rgba(12,10,8,0.45)',
+            backgroundColor: EXScrim.sheet,
           }}
         />
         <View
