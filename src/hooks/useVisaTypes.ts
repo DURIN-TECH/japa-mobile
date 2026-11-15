@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueries,
   useQueryClient,
+  type UseQueryResult,
 } from '@tanstack/react-query';
 import { retryUnlessNotFound } from './queryErrors';
 import { EXPLORE_PAGE_SIZE, nextVisaOffset } from './visaPaging';
@@ -256,9 +257,7 @@ export function useVisasForCountries(countryCodes: string[]) {
  * A category is a fraction of the whole list, so this is usually one or two
  * requests. The stop rule is the same tested `nextVisaOffset` as the grid.
  */
-async function fetchWholeCategory(
-  category: VisaCategory,
-): Promise<VisaType[]> {
+async function fetchWholeCategory(category: VisaCategory): Promise<VisaType[]> {
   const pages: GetAllVisasResponse[] = [];
   let offset: number | undefined = 0;
   while (offset !== undefined) {
@@ -272,6 +271,23 @@ async function fetchWholeCategory(
     offset = nextVisaOffset(pages);
   }
   return pages.flatMap((p) => p.visaTypes);
+}
+
+/** Folds the per-country / per-category results into one queryState shape. */
+function combineFilteredVisas(results: UseQueryResult<VisaType[]>[]) {
+  const allHaveData =
+    results.length > 0 && results.every((r) => r.data !== undefined);
+  return {
+    data: allHaveData
+      ? results.flatMap((r) => (r.data as VisaType[]) ?? [])
+      : undefined,
+    isLoading: results.some((r) => r.isLoading),
+    isError: results.some((r) => r.isError && r.data === undefined),
+    isFetching: results.some((r) => r.isFetching),
+    isRefetching: results.some((r) => r.isRefetching),
+    /** "Try again" and pull-to-refresh: refetch every part. */
+    refetch: () => Promise.all(results.map((r) => r.refetch())),
+  };
 }
 
 /** What a filtered Explore grid needs to fetch (see `filterFetchPlan`). */
@@ -319,21 +335,9 @@ export function useFilteredExploreVisas(plan: FilteredVisasPlan) {
         : [];
   return useQueries({
     queries,
-    combine: (results) => {
-      const allHaveData =
-        results.length > 0 && results.every((r) => r.data !== undefined);
-      return {
-        data: allHaveData
-          ? results.flatMap((r) => (r.data as VisaType[]) ?? [])
-          : undefined,
-        isLoading: results.some((r) => r.isLoading),
-        isError: results.some((r) => r.isError && r.data === undefined),
-        isFetching: results.some((r) => r.isFetching),
-        isRefetching: results.some((r) => r.isRefetching),
-        /** "Try again" and pull-to-refresh: refetch every part. */
-        refetch: () => Promise.all(results.map((r) => r.refetch())),
-      };
-    },
+    // Module-level (stable) so TanStack re-runs it only when a result
+    // changes, keeping `data` the same array between unrelated renders.
+    combine: combineFilteredVisas,
   });
 }
 

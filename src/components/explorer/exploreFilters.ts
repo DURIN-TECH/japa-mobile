@@ -19,13 +19,13 @@
 // network so it is unit tested in `__tests__/exploreFilters.test.ts`.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { CATEGORY_LABEL } from './liveExplore';
+import { COUNTRY_ALIASES, normalizeQuery } from '@/utils/countrySearch';
 import type { Country } from '@/types/country.type';
 import type { Dest } from '@/types/explorer.type';
 import type { VisaCategory } from '@/types/visas.type';
 // Type only (no runtime import): the plan shape the fetch hook takes.
 import type { FilteredVisasPlan } from '@/hooks/useVisaTypes';
-import { CATEGORY_LABEL } from './liveExplore';
-import { COUNTRY_ALIASES, normalizeQuery } from '@/utils/countrySearch';
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -62,7 +62,10 @@ function toggle(list: string[], item: string): string[] {
 }
 
 /** A category chip in the sheet: add or remove that category. */
-export function toggleCategory(f: ExploreFilters, label: string): ExploreFilters {
+export function toggleCategory(
+  f: ExploreFilters,
+  label: string,
+): ExploreFilters {
   return { ...f, categories: toggle(f.categories, label) };
 }
 
@@ -107,7 +110,10 @@ export function matchesFilters(d: Dest, f: ExploreFilters): boolean {
 }
 
 /** Narrow a list of tiles (browse or search results) to the filters. */
-export function applyFilters<T extends Dest>(list: T[], f: ExploreFilters): T[] {
+export function applyFilters<T extends Dest>(
+  list: T[],
+  f: ExploreFilters,
+): T[] {
   if (!hasFilters(f)) return list;
   return list.filter((d) => matchesFilters(d, f));
 }

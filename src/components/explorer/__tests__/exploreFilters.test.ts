@@ -244,12 +244,8 @@ describe('sheet country rows', () => {
       'CA',
       'IE',
     ]);
-    expect(searchSheetCountries(rows, 'uk').map((r) => r.code)).toEqual([
-      'GB',
-    ]);
-    expect(searchSheetCountries(rows, 'at').map((r) => r.code)).toEqual([
-      'AT',
-    ]);
+    expect(searchSheetCountries(rows, 'uk').map((r) => r.code)).toEqual(['GB']);
+    expect(searchSheetCountries(rows, 'at').map((r) => r.code)).toEqual(['AT']);
     expect(searchSheetCountries(rows, '  ')).toBe(rows);
     expect(searchSheetCountries(rows, 'xyzzy')).toEqual([]);
   });

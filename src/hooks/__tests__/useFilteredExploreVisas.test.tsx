@@ -117,7 +117,10 @@ describe('useFilteredExploreVisas', () => {
         data: { visaTypes: all.slice(offset, offset + 60), total: 70 },
       };
     });
-    const plan: FilteredVisasPlan = { kind: 'categories', categories: ['work'] };
+    const plan: FilteredVisasPlan = {
+      kind: 'categories',
+      categories: ['work'],
+    };
     const h = mount(() => useFilteredExploreVisas(plan), qc);
     await flush();
     expect(api.get).toHaveBeenCalledWith(
