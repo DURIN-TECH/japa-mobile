@@ -55,6 +55,8 @@ import {
   mapApplication,
   mapTimeline,
 } from '@/components/explorer/liveApplications';
+// japa#307: what the sticky button says and where it goes.
+import { stickyAction } from '@/components/explorer/applicationActions';
 import { fmtDate } from '@/components/explorer/liveDate';
 import {
   useApplication,
@@ -533,14 +535,21 @@ export default function AppDetail() {
       },
     });
 
-  // Sticky / nudge action: perform the next step (self-service flow) when
-  // actionable, otherwise open the agent conversation.
+  // ── Sticky button (japa#307) ───────────────────────────────────────────────
+  // The label and target come from the pure `stickyAction` helper, which
+  // reads the raw backend case (it needs `mode` / `agencyId`, which the
+  // mapped `App` doesn't carry). A self-service case always gets a way back
+  // into its steps while it is open; a case without an agent never offers
+  // "Message your agent"; `null` → no sticky button at all.
+  const sticky = stickyAction(liveQ.data);
   const openConvo = () => {
     if (convo) router.push(`/messages/${convo.id}`);
   };
   const onNext = () => {
+    if (!sticky) return;
     // self-service/[id] takes the APPLICATION id (japa#145).
-    if (actionable) router.push(`/self-service/${app.id}`);
+    if (sticky.target === 'self-service')
+      router.push(`/self-service/${app.id}`);
     else openConvo();
   };
 
@@ -1390,46 +1399,50 @@ export default function AppDetail() {
         </View>
       </Animated.ScrollView>
 
-      {/* ── Sticky coral CTA (bar padding 15/22, glass rgba(251,247,240,0.8)) ── */}
-      <BlurView
-        intensity={30}
-        tint="light"
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          paddingTop: 15,
-          paddingHorizontal: 22,
-          paddingBottom: Math.max(insets.bottom, 16) + 8,
-          backgroundColor: 'rgba(251,247,240,0.8)',
-          borderTopWidth: 1,
-          borderTopColor: EX.color.line06,
-        }}
-      >
-        <Pressable
-          onPress={onNext}
+      {/* ── Sticky coral CTA (bar padding 15/22, glass rgba(251,247,240,0.8)) ──
+          japa#307: hidden when `stickyAction` returns null (closed
+          self-service case, or no agent and not self-service). */}
+      {sticky ? (
+        <BlurView
+          intensity={30}
+          tint="light"
           style={{
-            height: 54,
-            borderRadius: 16,
-            backgroundColor: EX.color.primary,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            shadowColor: EX.color.primary,
-            shadowOpacity: 0.5,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 12 },
-            elevation: 6,
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingTop: 15,
+            paddingHorizontal: 22,
+            paddingBottom: Math.max(insets.bottom, 16) + 8,
+            backgroundColor: 'rgba(251,247,240,0.8)',
+            borderTopWidth: 1,
+            borderTopColor: EX.color.line06,
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-            {app.next.cta ?? 'Message your agent'}
-          </Text>
-          <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-        </Pressable>
-      </BlurView>
+          <Pressable
+            onPress={onNext}
+            style={{
+              height: 54,
+              borderRadius: 16,
+              backgroundColor: EX.color.primary,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              shadowColor: EX.color.primary,
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 12 },
+              elevation: 6,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+              {sticky.label}
+            </Text>
+            <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
+          </Pressable>
+        </BlurView>
+      ) : null}
 
       {/* ── Reject-reason modal (agent request → client must give a reason) ───── */}
       <Modal
