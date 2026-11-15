@@ -280,6 +280,10 @@ export function reviewableDocumentCount(
  *
  * `intakeOpen`: the number of open required questions, `'none'` when the
  * route has no intake, `'unknown'` when it could not be loaded.
+ * `intakeEditable`: the intake response's `editable`. Once the intake can no
+ * longer be saved (the backend allows edits only in draft, pending_payment and
+ * pending_documents), open questions are not counted as missing: the
+ * applicant could not answer them, and the backend does not count them either.
  * `documents`: the reviewable document count, or `'unknown'` when the list
  * could not be loaded.
  *
@@ -288,13 +292,15 @@ export function reviewableDocumentCount(
  */
 export function reviewContent(input: {
   intakeOpen: number | 'none' | 'unknown' | 'loading';
+  intakeEditable: boolean;
   documents: number | 'unknown' | 'loading';
 }): ReviewContent {
-  const { intakeOpen, documents } = input;
+  const { intakeOpen, intakeEditable, documents } = input;
   if (intakeOpen === 'loading' || documents === 'loading')
     return { status: 'loading' };
   const missing: ReviewGap[] = [];
-  const open = typeof intakeOpen === 'number' ? intakeOpen : 0;
+  const open =
+    intakeEditable && typeof intakeOpen === 'number' ? intakeOpen : 0;
   if (open > 0) missing.push('intake');
   if (documents === 0) missing.push('documents');
   return missing.length === 0

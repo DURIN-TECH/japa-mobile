@@ -67,56 +67,129 @@ describe('reviewableDocumentCount', () => {
 // ── reviewContent ───────────────────────────────────────────────────────────
 describe('reviewContent', () => {
   it('empty application: both parts are missing, intake first', () => {
-    expect(reviewContent({ intakeOpen: 2, documents: 0 })).toEqual({
+    expect(
+      reviewContent({ intakeOpen: 2, intakeEditable: true, documents: 0 }),
+    ).toEqual({
       status: 'missing',
       gaps: { missing: ['intake', 'documents'], openRequiredCount: 2 },
     });
   });
 
   it('intake done but no documents: documents only', () => {
-    expect(reviewContent({ intakeOpen: 0, documents: 0 })).toEqual({
+    expect(
+      reviewContent({ intakeOpen: 0, intakeEditable: true, documents: 0 }),
+    ).toEqual({
       status: 'missing',
       gaps: { missing: ['documents'], openRequiredCount: 0 },
     });
   });
 
   it('documents but open required questions: intake only', () => {
-    expect(reviewContent({ intakeOpen: 1, documents: 3 })).toEqual({
+    expect(
+      reviewContent({ intakeOpen: 1, intakeEditable: true, documents: 3 }),
+    ).toEqual({
       status: 'missing',
       gaps: { missing: ['intake'], openRequiredCount: 1 },
     });
   });
 
   it('a route with no intake and one document is enough', () => {
-    expect(reviewContent({ intakeOpen: 'none', documents: 1 })).toEqual({
+    expect(
+      reviewContent({ intakeOpen: 'none', intakeEditable: true, documents: 1 }),
+    ).toEqual({
       status: 'enough',
     });
   });
 
   it('a route with no intake and no document still needs a document', () => {
-    expect(reviewContent({ intakeOpen: 'none', documents: 0 })).toEqual({
+    expect(
+      reviewContent({ intakeOpen: 'none', intakeEditable: true, documents: 0 }),
+    ).toEqual({
       status: 'missing',
       gaps: { missing: ['documents'], openRequiredCount: 0 },
     });
   });
 
   it('is loading while either part is loading', () => {
-    expect(reviewContent({ intakeOpen: 'loading', documents: 0 })).toEqual({
+    expect(
+      reviewContent({
+        intakeOpen: 'loading',
+        intakeEditable: true,
+        documents: 0,
+      }),
+    ).toEqual({
       status: 'loading',
     });
-    expect(reviewContent({ intakeOpen: 0, documents: 'loading' })).toEqual({
+    expect(
+      reviewContent({
+        intakeOpen: 0,
+        intakeEditable: true,
+        documents: 'loading',
+      }),
+    ).toEqual({
       status: 'loading',
     });
   });
 
+  // Code review (japa#309): past the editable statuses (e.g. under_review) the
+  // intake can no longer be saved, so its open questions never block.
+  it('a non-editable intake with open questions and a document: enough', () => {
+    expect(
+      reviewContent({ intakeOpen: 2, intakeEditable: false, documents: 1 }),
+    ).toEqual({ status: 'enough' });
+    // …so the run button is offered.
+    const check = reviewContent({
+      intakeOpen: 2,
+      intakeEditable: false,
+      documents: 1,
+    });
+    expect(
+      deriveReviewCta(
+        deriveReviewState(undefined, false, { check, submitted: false }),
+        false,
+      ),
+    ).toEqual({
+      label: 'Review my application',
+      action: 'run',
+      withArrow: true,
+    });
+  });
+
+  it('a non-editable intake with open questions and no document: documents only', () => {
+    expect(
+      reviewContent({ intakeOpen: 2, intakeEditable: false, documents: 0 }),
+    ).toEqual({
+      status: 'missing',
+      gaps: { missing: ['documents'], openRequiredCount: 0 },
+    });
+  });
+
   it('a part that failed to load never blocks (the backend decides)', () => {
-    expect(reviewContent({ intakeOpen: 'unknown', documents: 1 })).toEqual({
+    expect(
+      reviewContent({
+        intakeOpen: 'unknown',
+        intakeEditable: true,
+        documents: 1,
+      }),
+    ).toEqual({
       status: 'enough',
     });
-    expect(reviewContent({ intakeOpen: 0, documents: 'unknown' })).toEqual({
+    expect(
+      reviewContent({
+        intakeOpen: 0,
+        intakeEditable: true,
+        documents: 'unknown',
+      }),
+    ).toEqual({
       status: 'enough',
     });
-    expect(reviewContent({ intakeOpen: 2, documents: 'unknown' })).toEqual({
+    expect(
+      reviewContent({
+        intakeOpen: 2,
+        intakeEditable: true,
+        documents: 'unknown',
+      }),
+    ).toEqual({
       status: 'missing',
       gaps: { missing: ['intake'], openRequiredCount: 2 },
     });
