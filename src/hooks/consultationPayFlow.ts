@@ -19,8 +19,8 @@ import type {
 } from './useConsultations';
 import { toDate } from '@/components/explorer/liveDate';
 import {
-  formatMoney,
-  minorUnitFactor,
+  isUsableRate,
+  usdAtRateLine,
   usdCents,
 } from '@/components/explorer/content';
 import type { Money } from '@/types/money.type';
@@ -37,8 +37,13 @@ export interface LockedQuote {
   charged: Money;
   /** The agent's dollar fee (US cents). */
   usd: Money;
-  /** Local units per 1 USD the server used; null when it sent none. */
-  fxRate: number | null;
+  /**
+   * The server's `effectiveRate` (japa#332): local units per 1 USD the
+   * client effectively pays (amount charged ÷ dollar price, markup
+   * included). Null when the server sent none (a legacy booking). The raw
+   * `fxRate` is no longer sent to clients and is never read here.
+   */
+  effectiveRate: number | null;
   /** When the lock ends, in SERVER milliseconds; null = no expiry known. */
   expiresAtMs: number | null;
   /**
@@ -58,7 +63,7 @@ type SnapshotSource = Pick<
   | 'priceUsdCents'
   | 'chargedCurrency'
   | 'chargedAmountMinor'
-  | 'fxRate'
+  | 'effectiveRate'
   | 'quoteExpiresAt'
 > & { quoteLockedAt?: ApiTimestamp };
 
@@ -114,10 +119,11 @@ export function lockedQuoteFrom(
     consultationId: source.id,
     charged: { amountMinor: amount, currency },
     usd,
-    fxRate:
-      typeof source.fxRate === 'number' && Number.isFinite(source.fxRate)
-        ? source.fxRate
-        : null,
+    // Display only (the rate line). A missing or malformed rate is null, so
+    // the screen shows the dollar price alone instead of a broken line.
+    effectiveRate: isUsableRate(source.effectiveRate)
+      ? source.effectiveRate
+      : null,
     expiresAtMs: expiresAt ?? null,
     clockOffsetMs:
       typeof lockedAt === 'number' ? lockedAt - receivedAtMs : prevOffsetMs,
@@ -146,23 +152,13 @@ export function formatCountdown(seconds: number): string {
 export const COUNTDOWN_WARN_SECONDS = 5 * 60;
 
 /**
- * "$35.00 at ₦1,353.97 per $1": the dollar price and the server's rate,
- * shown verbatim (the rate is FORMATTED in the charged currency, not used to
- * compute anything). Just "$35.00" when the server sent no rate.
+ * "$35.00 at ₦1,353.97 per $1": the dollar price and the server's EFFECTIVE
+ * rate (japa#332), formatted by the shared `usdAtRateLine` (the rate is
+ * shown in the charged currency, never used to compute anything). Just
+ * "$35.00" when the server sent no rate.
  */
 export function lockedRateLine(q: LockedQuote): string {
-  const usd = formatMoney(q.usd);
-  if (q.fxRate === null || q.charged.currency.toUpperCase() === 'USD') {
-    return usd;
-  }
-  // A rate may carry more decimals than money: shown to the currency's own
-  // decimals (₦1,353.97; a zero-decimal currency as a whole number). This
-  // only formats the server's figure; nothing is multiplied by it.
-  const rate = formatMoney({
-    amountMinor: Math.round(q.fxRate * minorUnitFactor(q.charged.currency)),
-    currency: q.charged.currency,
-  });
-  return `${usd} at ${rate} per $1`;
+  return usdAtRateLine(q.usd, q.charged.currency, q.effectiveRate);
 }
 
 /** True when two quotes would charge a different amount or currency. */

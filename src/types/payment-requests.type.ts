@@ -61,6 +61,12 @@ export interface PaymentRequest {
   priceUsdCents?: number;
   chargedCurrency?: string;
   chargedAmountMinor?: number;
+  /**
+   * Local units per 1 USD the client effectively pays once priced: amount
+   * charged ÷ dollar price, markup included (japa#332). Absent on a pending
+   * (not yet priced) or legacy request. The raw rate is never sent.
+   */
+  effectiveRate?: number;
   description: string;
   category: PaymentRequestCategory;
   status: PaymentRequestStatus;

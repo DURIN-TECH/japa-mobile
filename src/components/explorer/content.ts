@@ -269,6 +269,76 @@ export function priceParts(
 }
 
 /**
+ * "$6.00 at ₦1,353.97 per $1" (japa#332): the dollar price and the rate the
+ * payer EFFECTIVELY pays, on the pay screen, the confirmation and a priced
+ * payment request.
+ *
+ * `effectiveRate` is the server's `effectiveRate` field: local units per
+ * 1 USD, amount charged ÷ dollar price, Seli's markup already included. It
+ * is the ONLY rate a client is sent (the raw mid-market rate and the markup
+ * stay on the server), and the only rate that agrees with the amount on
+ * screen. It is only FORMATTED here (`formatRate`: "₦1,353.97", "£0.7883"):
+ * nothing is multiplied by it and the app never works a rate out itself.
+ *
+ * Falls back to the dollar price alone ("$6.00") when there is no usable
+ * rate: a free booking, a legacy record priced before rates were stored, a
+ * malformed value, or a charge in USD (where "per $1" says nothing).
+ *
+ * @param usd           the dollar price (`Money` in USD); null gives ''
+ * @param currency      the currency the client is charged in, e.g. "NGN"
+ * @param effectiveRate the server's `effectiveRate`; anything that is not a
+ *                      finite number above zero counts as "no rate"
+ */
+export function usdAtRateLine(
+  usd: Money | null | undefined,
+  currency: string | null | undefined,
+  effectiveRate: unknown,
+): string {
+  const usdText = formatMoney(usd);
+  if (
+    !usdText ||
+    !currency ||
+    currency.toUpperCase() === 'USD' ||
+    !isUsableRate(effectiveRate)
+  ) {
+    return usdText;
+  }
+  return `${usdText} at ${formatRate(effectiveRate, currency)} per $1`;
+}
+
+/**
+ * A rate in `currency`, with enough decimals that "dollar price × rate"
+ * gives back the amount charged:
+ *  - below 10 (GBP, EUR, CAD...): 4 decimals, "£0.7883". Money's usual 2
+ *    would print "£0.79", which turns $100.00 into £79.00 instead of the
+ *    £78.83 really charged;
+ *  - 10 and above (NGN, KES, UGX...): 2 decimals, "₦1,353.97".
+ *
+ * A rate is NOT an amount of money, so the currency's own decimals do not
+ * apply (a zero-decimal currency still shows 2). Rounded half up, once, on
+ * the server's figure; thousands grouped like `formatMoney`.
+ */
+function formatRate(rate: number, currency: string): string {
+  const decimals = rate < 10 ? 4 : 2;
+  const factor = 10 ** decimals;
+  // Whole "rate units" at the chosen precision, then split like money.
+  const scaled = Math.round(rate * factor);
+  const whole = Math.floor(scaled / factor);
+  const fraction = String(scaled % factor).padStart(decimals, '0');
+  const { symbol } = currencyDisplay(currency);
+  return `${symbol}${groupThousands(String(whole))}.${fraction}`;
+}
+
+/**
+ * True for a rate that can be shown: a finite number above zero. Takes
+ * `unknown` because the value comes straight off an API response or a route
+ * param, so absent, null, a string, NaN, 0 and negatives are all "no rate".
+ */
+export function isUsableRate(rate: unknown): rate is number {
+  return typeof rate === 'number' && Number.isFinite(rate) && rate > 0;
+}
+
+/**
  * The calm note shown when the server could not give a local figure:
  * "Naira price unavailable" for NGN, else "Local price unavailable".
  */

@@ -220,5 +220,26 @@ describe('pay.tsx return to app', () => {
     expect(params.paidAmountMinor).toBe('3384925');
     expect(params.paidCurrency).toBe('NGN');
     expect(params.priceUsdCents).toBe('2500');
+    // No effectiveRate on this (older) request: '' = dollar price only.
+    expect(params.effectiveRate).toBe('');
+  });
+
+  it('paid → confirmation carries the request’s effectiveRate (japa#332)', async () => {
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockResolvedValue({
+      status: 'paid',
+      amount: 600,
+      currency: 'USD',
+      priceUsd: { amountMinor: 600, currency: 'USD' },
+      charge: { amountMinor: 812_384, currency: 'NGN' },
+      effectiveRate: 1353.973333,
+    });
+    await render();
+    const params = (
+      mockPush.mock.calls[0][0] as { params: Record<string, string> }
+    ).params;
+    expect(params.paidAmountMinor).toBe('812384');
+    expect(params.priceUsdCents).toBe('600');
+    expect(params.effectiveRate).toBe('1353.973333');
   });
 });

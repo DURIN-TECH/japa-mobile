@@ -32,10 +32,15 @@ const TYPE_LABEL: Record<ApiTransaction['type'], string> = {
 };
 
 // Friendly payment-method label from the processor. `manual` (bank
-// transfer/escrow) has no card, so it reads as an em dash.
+// transfer/escrow) has no card, so it reads as an em dash. Paystack is the
+// processor every checkout in the app goes through today; its rows read
+// "Paystack" (the same word the confirmation screen uses), not "Card",
+// because a Paystack checkout can also be paid by bank transfer or USSD and
+// the row does not say which (japa#332; these rows used to show "—").
 const METHOD_LABEL: Record<ApiTransaction['paymentProvider'], string> = {
   stripe: 'Card',
   paypal: 'PayPal',
+  paystack: 'Paystack',
   manual: '—',
 };
 
