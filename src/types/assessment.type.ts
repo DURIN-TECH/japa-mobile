@@ -119,12 +119,30 @@ export interface StatementFinding extends PlainFinding {
   nodePath?: number[];
 }
 
+/**
+ * Why the engine did not assess a rule (mirror of the backend's
+ * `InsufficientItem.notAssessed`, japa#308). Absent on an item the applicant
+ * can help with (an unreadable document, a judgement call that could not be
+ * completed) and on results stored before the field existed.
+ *   unanswered        the rule's trigger question isn't answered yet
+ *   missing_fact      a fact the rule needs is missing
+ *   no_trigger        the guidance names no answer the rule depends on (staff only)
+ *   not_in_documents  no document in the rulebook would show it (staff only)
+ */
+export type NotAssessedReason =
+  | 'unanswered'
+  | 'no_trigger'
+  | 'missing_fact'
+  | 'not_in_documents';
+
 /** Something the engine could not decide. */
 export interface InsufficientItem {
   criterionId: string;
   title: string;
+  /** For `no_trigger` / `not_in_documents` items this is staff text: never shown. */
   reason: string;
   layerKey?: string;
+  notAssessed?: NotAssessedReason;
 }
 
 /**

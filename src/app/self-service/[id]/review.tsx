@@ -59,6 +59,7 @@ import {
   RuleQuote,
   SolidButton,
 } from '@/components/explorer/review/ReviewParts';
+import { CouldntTell } from '@/components/explorer/review/CouldntTell';
 import { StickyBar } from '@/components/explorer/StickyBar';
 import { LayerPill } from '@/components/explorer/SharedRouteParts';
 import {
@@ -581,7 +582,7 @@ export default function ReviewScreen() {
                       .slice(0, 3)
                       .map((t, i) => (
                         <NumberedRow
-                          key={t.criterionId || i}
+                          key={`${t.criterionId}:${i}`}
                           n={i + 1}
                           label={t.title}
                         />
@@ -671,9 +672,10 @@ function FullSections({
         {d.refusalGrounds.length === 0 ? (
           <CheckRow label="No rule-based issues in what you’ve given us." />
         ) : (
-          d.refusalGrounds.map((g) => (
+          d.refusalGrounds.map((g, i) => (
+            // japa#308: criterionId alone isn't promised unique; add the index.
             <FindingCard
-              key={g.criterionId}
+              key={`${g.criterionId}:${i}`}
               kind="rule"
               layer={<LayerPill label={layerLabel(layers, g.layerKey)} />}
               title={g.title}
@@ -700,9 +702,10 @@ function FullSections({
             to understand better, and you can prepare for them.
           </Caption>
           <View style={{ gap: 10 }}>
-            {d.credibilityFlags.map((f) => (
+            {d.credibilityFlags.map((f, i) => (
+              // japa#308: criterionId alone isn't promised unique; add the index.
               <FindingCard
-                key={f.criterionId}
+                key={`${f.criterionId}:${i}`}
                 kind="question"
                 layer={<LayerPill label={layerLabel(layers, f.layerKey)} />}
                 title={f.title}
@@ -740,35 +743,17 @@ function FullSections({
         </>
       ) : null}
 
-      {/* What we couldn't tell */}
-      {d.insufficientInformation.length > 0 ? (
-        <>
-          <SectionTitle>What we couldn’t tell</SectionTitle>
-          <Caption>
-            We didn’t have enough to check these. Add what’s missing and the
-            next review will cover them.
-          </Caption>
-          <View style={{ gap: 10 }}>
-            {d.insufficientInformation.map((i) => (
-              <FindingCard
-                key={i.criterionId}
-                kind="unknown"
-                layer={<LayerPill label={layerLabel(layers, i.layerKey)} />}
-                title={i.title}
-                body={i.reason}
-              />
-            ))}
-          </View>
-        </>
-      ) : null}
+      {/* What we couldn't tell: only what the applicant can act on (japa#308) */}
+      <CouldntTell items={d.insufficientInformation} layers={layers} />
 
       {/* What you've got */}
       {d.strengths.length > 0 ? (
         <>
           <SectionTitle>What you’ve got</SectionTitle>
           <View style={{ gap: 9 }}>
-            {d.strengths.map((s) => (
-              <CheckRow key={s.criterionId} label={s.title} />
+            {/* japa#308: criterionId alone isn't promised unique; add the index. */}
+            {d.strengths.map((s, i) => (
+              <CheckRow key={`${s.criterionId}:${i}`} label={s.title} />
             ))}
           </View>
         </>

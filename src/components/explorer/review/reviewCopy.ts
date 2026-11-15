@@ -14,6 +14,7 @@ import type {
   AssessmentView,
   CitedFinding,
   FullAssessmentData,
+  InsufficientItem,
   ReadinessBand,
   StaleReason,
 } from '@/types/assessment.type';
@@ -167,6 +168,46 @@ export function showsThenYouApply(view: AssessmentView | null): boolean {
   return !fullTierBlocked(view.data);
 }
 
+// ── "What we couldn't tell": only what the applicant can act on (japa#308) ──
+// The engine also stores rules it never checked because they can't be tied to
+// the applicant: specialist rules whose guidance names no answer they depend
+// on (`no_trigger`) and rules no document in the rulebook would show
+// (`not_in_documents`). On UK Standard Visitor v2 that is about two hundred
+// items, so listing them buried the few real ones. They are kept for staff;
+// the applicant sees one calm line instead, naming no rule and giving no count.
+// Their `reason` text is written for staff and is never shown.
+
+/**
+ * Closing line of "What we couldn’t tell" when items were left out. Route
+ * neutral on purpose ("most people", not "most visitors"): this screen serves
+ * every visa.
+ */
+export const COULDNT_TELL_SKIPPED_LINE =
+  'Some rules in the guidance don’t apply to most people, so we didn’t check them.';
+
+/**
+ * Splits `insufficientInformation` into the items to list and whether any were
+ * left out. Kept: `notAssessed` absent (unreadable document, judgement call not
+ * completed, and every item of a result stored before the field existed),
+ * `unanswered` and `missing_fact`. Any other value, including one a newer
+ * backend may add, is left out: an unknown reason is staff text by default.
+ *
+ * Tolerates a missing array (older or odd payloads).
+ */
+export function couldntTell(items: InsufficientItem[] | null | undefined): {
+  shown: InsufficientItem[];
+  anyHidden: boolean;
+} {
+  const all = items ?? [];
+  const shown = all.filter(
+    (i) =>
+      i.notAssessed == null ||
+      i.notAssessed === 'unanswered' ||
+      i.notAssessed === 'missing_fact',
+  );
+  return { shown, anyHidden: shown.length < all.length };
+}
+
 /**
  * Full tier "What to do next", built in the app from which sections are
  * non-empty. With nothing left to fix, the closing step points at the official
@@ -181,7 +222,9 @@ export function nextSteps(d: FullAssessmentData): string[] {
         ? 'Fix the rule that isn’t met yet.'
         : `Fix the ${g} rules that aren’t met yet.`,
     );
-  if (d.insufficientInformation.length > 0)
+  // japa#308: only when something the applicant can act on is listed, never
+  // for the staff-only items "What we couldn’t tell" leaves out.
+  if (couldntTell(d.insufficientInformation).shown.length > 0)
     steps.push('Add what we couldn’t check.');
   const q = d.credibilityFlags.length;
   if (q > 0)
