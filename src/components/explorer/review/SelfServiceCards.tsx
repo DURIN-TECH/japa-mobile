@@ -225,16 +225,23 @@ export type ReviewState =
  * `content` (japa#309) only refines "never run": every other state (running,
  * failed, ready, out of date, offline, no rubric) is unchanged. Omitted, it
  * counts as enough, as before.
+ *
+ * `submitted` is required with it on purpose: a submitted or closed
+ * application (`SUBMITTED_STATUSES`) is view only, so the applicant can no
+ * longer add what is missing. Its card stays exactly as before this issue
+ * ("See how ready you are", no action), whatever the content check says.
  */
 export function deriveReviewState(
   result: AssessmentResult | undefined,
   isError: boolean,
-  content: ReviewContent = { status: 'enough' },
+  content?: { check: ReviewContent; submitted: boolean },
 ): ReviewState {
+  const check: ReviewContent =
+    content && !content.submitted ? content.check : { status: 'enough' };
   const never = (): ReviewState =>
-    content.status === 'loading'
+    check.status === 'loading'
       ? 'checking'
-      : content.status === 'missing'
+      : check.status === 'missing'
         ? 'needs_content'
         : 'none';
   if (!result) return isError ? 'load_error' : never();

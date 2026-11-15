@@ -1037,11 +1037,12 @@ export default function SelfServiceView() {
       : localContent;
     const contentGaps: ReviewGaps | null =
       content.status === 'missing' ? content.gaps : null;
-    const reviewState = deriveReviewState(
-      reviewQ.data,
-      reviewQ.isError,
-      content,
-    );
+    // View only once submitted: the content check is ignored there (see
+    // `deriveReviewState`), so the card is as it was before japa#309.
+    const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError, {
+      check: content,
+      submitted,
+    });
     const reviewCta = deriveReviewCta(reviewState, submitted);
     // Step numbers are computed from the steps that are present: the intake
     // (#113) only exists for routes with questions, and it shifts the rest. The

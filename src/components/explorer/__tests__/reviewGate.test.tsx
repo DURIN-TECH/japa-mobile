@@ -31,6 +31,7 @@ import {
   reviewContent,
   reviewGapLines,
   reviewableDocumentCount,
+  type ReviewContent,
   type ReviewGaps,
 } from '../review/reviewCopy';
 import {
@@ -229,8 +230,11 @@ const review = (m: AssessmentMeta, tier: 'free' | 'full' = 'full') =>
     view: { meta: m, tier, data: null },
   }) as unknown as AssessmentResult;
 
-const MISSING = { status: 'missing', gaps: BOTH } as const;
-const LOADING = { status: 'loading' } as const;
+const MISSING = {
+  check: { status: 'missing', gaps: BOTH },
+  submitted: false,
+} as const;
+const LOADING = { check: { status: 'loading' }, submitted: false } as const;
 
 describe('deriveReviewState with the content check', () => {
   it('never run + something missing → needs_content, and no run button', () => {
@@ -251,9 +255,12 @@ describe('deriveReviewState with the content check', () => {
   });
 
   it('never run + enough (or no content given) → the run button as before', () => {
-    expect(deriveReviewState(undefined, false, { status: 'enough' })).toBe(
-      'none',
-    );
+    expect(
+      deriveReviewState(undefined, false, {
+        check: { status: 'enough' },
+        submitted: false,
+      }),
+    ).toBe('none');
     expect(deriveReviewState(undefined, false)).toBe('none');
     expect(deriveReviewCta('none', false)).toEqual({
       label: 'Review my application',
@@ -290,6 +297,28 @@ describe('deriveReviewState with the content check', () => {
   it('submitted (view only): no CTA for a never-run review, whatever the content', () => {
     expect(deriveReviewCta('needs_content', true)).toBeNull();
     expect(deriveReviewCta('checking', true)).toBeNull();
+  });
+
+  it('submitted (view only): the content check is ignored, so the state is as before', () => {
+    const documentsOnly: { check: ReviewContent; submitted: boolean } = {
+      check: {
+        status: 'missing',
+        gaps: { missing: ['documents'], openRequiredCount: 0 },
+      },
+      submitted: true,
+    };
+    expect(deriveReviewState(undefined, false, documentsOnly)).toBe('none');
+    expect(
+      deriveReviewState({ kind: 'empty', reason: 'none' }, false, {
+        ...MISSING,
+        submitted: true,
+      }),
+    ).toBe('none');
+    expect(
+      deriveReviewState(undefined, false, { ...LOADING, submitted: true }),
+    ).toBe('none');
+    // …and a submitted never-run review still has no sticky bar.
+    expect(deriveReviewCta('none', true)).toBeNull();
   });
 });
 
@@ -340,6 +369,44 @@ describe('ReviewCard needs_content', () => {
     );
     act(() => byLabel('Upload at least one document.').props.onPress());
     expect(onOpenGap.mock.calls).toEqual([['intake'], ['documents']]);
+    act(() => r.unmount());
+  });
+
+  it('a submitted application missing content draws the card as before: no lines, no action', () => {
+    // What the hub does for e.g. `submitted_to_embassy`, never reviewed, with
+    // no documents and open questions.
+    const state = deriveReviewState(undefined, false, {
+      check: { status: 'missing', gaps: BOTH },
+      submitted: true,
+    });
+    let r!: ReactTestRenderer;
+    act(() => {
+      r = create(
+        <ReviewCard
+          state={state}
+          offlineCached={false}
+          onSeeLast={() => undefined}
+          onRetryLoad={() => undefined}
+          gaps={BOTH}
+          intakeStep={1}
+          onOpenGap={() => undefined}
+        />,
+      );
+    });
+    const shown = texts(r);
+    expect(shown).toContain('See how ready you are');
+    expect(shown.join(' ')).toContain('shows you what to fix first');
+    expect(shown).not.toContain(NEEDS_CONTENT_BODY);
+    expect(shown.join(' ')).not.toMatch(
+      /Upload at least one document|Answer the/,
+    );
+    expect(
+      r.root.findAll(
+        (n) =>
+          n.props.accessibilityRole === 'button' &&
+          typeof n.props.onPress === 'function',
+      ),
+    ).toHaveLength(0);
     act(() => r.unmount());
   });
 
