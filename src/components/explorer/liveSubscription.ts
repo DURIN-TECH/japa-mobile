@@ -36,6 +36,15 @@ function titleCase(key: string): string {
   return key.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// ── Self-service-only build (japa#334) ─────────────────────────────────────
+// Features of hidden flows (chat with agents, consultation booking). A
+// self-service-only build leaves them off the plan cards; the plans, their
+// prices and what the backend grants are unchanged.
+export const SELF_SERVICE_HIDDEN_FEATURES: ReadonlySet<string> = new Set([
+  'messaging',
+  'consultations.book',
+]);
+
 /**
  * One backend PlanDTO → the Explorer's `Plan`.
  *
@@ -47,8 +56,15 @@ function titleCase(key: string): string {
  *             `popularId` (the middle-priced paid plan; see subscription.tsx).
  * • features: FeatureKey[] → human labels (fallback: title-cased key).
  * • blurb:    the backend has no marketing blurb, so leave it empty.
+ *
+ * `opts.selfServiceOnly` (japa#334) drops SELF_SERVICE_HIDDEN_FEATURES from
+ * `features`. Off (the default) maps every feature, exactly as before.
  */
-export function mapPlan(p: PlanDTO, popularId?: string): Plan {
+export function mapPlan(
+  p: PlanDTO,
+  popularId?: string,
+  opts: { selfServiceOnly?: boolean } = {},
+): Plan {
   const interval = p.interval && p.interval !== 'none' ? p.interval : null;
   return {
     id: p.id,
@@ -56,7 +72,11 @@ export function mapPlan(p: PlanDTO, popularId?: string): Plan {
     price: Math.round(p.priceKobo / 100),
     interval,
     tag: p.id === popularId ? 'Most popular' : null,
-    features: p.features.map((f) => FEATURE_LABEL[f] ?? titleCase(f)),
+    features: p.features
+      .filter(
+        (f) => !(opts.selfServiceOnly && SELF_SERVICE_HIDDEN_FEATURES.has(f)),
+      )
+      .map((f) => FEATURE_LABEL[f] ?? titleCase(f)),
     blurb: '',
   };
 }

@@ -354,8 +354,10 @@ export default function SubscriptionView() {
     const popularId = paid.length
       ? paid[Math.floor((paid.length - 1) / 2)].id
       : undefined;
-    return dtos.map((p) => mapPlan(p, popularId));
-  }, [plansQ.data]);
+    // Self-service-only build (japa#334): agent messaging and consultation
+    // booking are left off the plan cards.
+    return dtos.map((p) => mapPlan(p, popularId, { selfServiceOnly }));
+  }, [plansQ.data, selfServiceOnly]);
   const plansState = queryState(plansQ);
 
   // ── Current plan (GET /subscriptions/me) ────────────────────────────────────

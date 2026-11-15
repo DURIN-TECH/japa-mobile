@@ -37,6 +37,12 @@ jest.mock('@/services/api.service', () => ({
     delete: jest.fn(async () => ({})),
   },
 }));
+// Self-service-only flag (japa#334), flipped per test; off by default so the
+// existing tests run against today's behaviour.
+let mockSelfServiceOnly = false;
+jest.mock('@/config/env', () => ({
+  isSelfServiceOnly: () => mockSelfServiceOnly,
+}));
 jest.mock('@/providers/QueryProvider', () => ({
   queryClient: { invalidateQueries: (...a: unknown[]) => mockInvalidate(...a) },
 }));
@@ -48,6 +54,7 @@ let mockAlert: ReturnType<typeof jest.spyOn>;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSelfServiceOnly = false;
   mockAlert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -158,5 +165,60 @@ describe('foreground push', () => {
     const handler = mockOnOpened.mock.calls[0][1] as (m: unknown) => void;
     handler({ data: { type: 'payment_request', relatedEntityId: 'a1' } });
     expect(mockPush).toHaveBeenCalledWith('/payments');
+  });
+});
+
+// ── Self-service-only build (japa#334) ───────────────────────────────────────
+describe('foreground push, self-service-only flag on', () => {
+  const foreground = async (data: Record<string, string>) => {
+    mockSelfServiceOnly = true;
+    await svc.initialize();
+    const handler = mockOnMessage.mock.calls[0][1] as (m: unknown) => void;
+    handler({ notification: { title: 'Title', body: 'Body' }, data });
+  };
+
+  it('shows no pop-up for a hidden-feature notice, but still refreshes the inbox', async () => {
+    await foreground({
+      type: 'message_received',
+      relatedEntityType: 'message',
+      conversationId: 'c7',
+    });
+    expect(mockInvalidate).toHaveBeenCalledWith({
+      queryKey: ['notifications'],
+    });
+    expect(mockAlert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ type: 'consultation_reminder', relatedEntityId: 'k1' }],
+    [{ type: 'payment_request', relatedEntityId: 'a1' }],
+    [{ type: 'identity_verified' }],
+    [{ type: 'system', documentRequestId: 'r1' }],
+  ])('no pop-up for %j', async (data) => {
+    await foreground(data);
+    expect(mockAlert).not.toHaveBeenCalled();
+  });
+
+  it('still shows the pop-up for a self-service notice, and View routes as before', async () => {
+    await foreground({
+      type: 'readiness_review_ready',
+      relatedEntityType: 'application',
+      relatedEntityId: 'a1',
+    });
+    expect(mockAlert).toHaveBeenCalledTimes(1);
+    const buttons = mockAlert.mock.calls[0][2] as {
+      text: string;
+      onPress?: () => void;
+    }[];
+    buttons.find((b) => b.text === 'View')!.onPress!();
+    expect(mockPush).toHaveBeenCalledWith('/self-service/a1/review');
+  });
+
+  it('a background tap on a hidden notice opens the inbox, not its screen', async () => {
+    mockSelfServiceOnly = true;
+    await svc.initialize();
+    const handler = mockOnOpened.mock.calls[0][1] as (m: unknown) => void;
+    handler({ data: { type: 'payment_request', relatedEntityId: 'a1' } });
+    expect(mockPush).toHaveBeenCalledWith('/notifications');
   });
 });

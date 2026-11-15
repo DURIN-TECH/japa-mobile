@@ -298,7 +298,12 @@ export default function NotificationsView() {
           <StateEmpty
             icon={Ic.bell}
             title="You’re all caught up"
-            body="Updates on your applications, documents and consultations land here."
+            // Self-service-only build (japa#334): no consultations to mention.
+            body={
+              selfServiceOnly
+                ? 'Updates on your applications, documents and reviews land here.'
+                : 'Updates on your applications, documents and consultations land here.'
+            }
           />
         ) : null}
         {visible.map((n) => {

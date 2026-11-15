@@ -22,6 +22,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 
 // ── OnboardTopBar — 4-segment progress bar + back button (see passport step) ──
 function OnboardTopBar({
@@ -182,7 +184,10 @@ export default function PersonalInfoStep() {
             maxWidth: 300,
           }}
         >
-          This is how agents and your documents will address you.
+          {/* Self-service-only build (japa#334): no agents to mention. */}
+          {isSelfServiceOnly()
+            ? 'This is the name your applications and documents will use.'
+            : 'This is how agents and your documents will address you.'}
         </Text>
 
         {/* ── Name fields ────────────────────────────────────────────────────── */}

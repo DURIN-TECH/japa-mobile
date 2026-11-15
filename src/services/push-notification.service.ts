@@ -34,7 +34,10 @@ import {
   deleteToken,
 } from '@react-native-firebase/messaging';
 import { apiService } from './api.service';
-import { routeForNotification } from './notification-router';
+import {
+  isSelfServiceHiddenNotification,
+  routeForNotification,
+} from './notification-router';
 // Self-service-only launch flag (japa#334): hidden-feature pushes open the inbox.
 import { isSelfServiceOnly } from '@/config/env';
 import { queryClient } from '@/providers/QueryProvider';
@@ -276,6 +279,17 @@ class PushNotificationService {
     //    in a service).
     const unsubMessage = onMessage(this.messaging, (remoteMessage) => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+
+      // Self-service-only build (japa#334): no pop-up for a notice about a
+      // hidden feature (message, consultation, agent payment, identity,
+      // agent document request). The inbox leaves it out too, so the user
+      // never sees it; the query refresh above still runs. Flag off: always
+      // shown, as before.
+      if (
+        isSelfServiceOnly() &&
+        isSelfServiceHiddenNotification(remoteMessage.data as NotificationData)
+      )
+        return;
 
       const { title, body } = remoteMessage.notification ?? {};
       if (title || body) {
