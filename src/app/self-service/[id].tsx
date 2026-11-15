@@ -851,7 +851,12 @@ export default function SelfServiceView() {
         // japa#310: refuse a file the backend would refuse (wrong type, or
         // over 7 MB for an image / 10 MB otherwise) before asking for an
         // upload URL, so nothing is uploaded. Shown in the card it came from.
-        const problem = pickedFileProblem({ size: f.size, contentType });
+        // HEIC/HEIF photos are refused too: the review cannot read them.
+        const problem = pickedFileProblem({
+          size: f.size,
+          contentType,
+          name: f.name,
+        });
         if (problem) {
           fail(problem);
           return;

@@ -21,6 +21,7 @@ import {
   FILE_MAX_BYTES,
   IMAGE_MAX_BYTES,
   WRONG_TYPE_COPY,
+  isHeic,
   pickedContentType,
   pickedFileProblem,
   tooLargeCopy,
@@ -92,7 +93,7 @@ describe('pickedFileProblem', () => {
     expect(
       pickedFileProblem({
         size: IMAGE_MAX_BYTES + 1,
-        contentType: 'image/heic',
+        contentType: 'image/png',
       }),
     ).toBe(tooLargeCopy(true));
   });
@@ -108,9 +109,60 @@ describe('pickedFileProblem', () => {
       expect(pickedFileProblem({ size: 100, contentType: t })).toBe(
         WRONG_TYPE_COPY,
       );
-    // HEIC is accepted at upload, so it is not refused here.
+    // HEIC is accepted by the backend but the review cannot read it.
+    expect(pickedFileProblem({ size: 100, contentType: 'image/heic' })).toBe(
+      WRONG_TYPE_COPY,
+    );
+  });
+});
+
+// HEIC/HEIF: refused until the app converts it (the model cannot read it).
+describe('HEIC and HEIF are refused before upload', () => {
+  it('by type', () => {
+    for (const t of [
+      'image/heic',
+      'image/heif',
+      'image/HEIC',
+      'image/heic-sequence',
+      'image/heif-sequence',
+    ]) {
+      expect(isHeic({ contentType: t })).toBe(true);
+      expect(
+        pickedFileProblem({ size: 3 * MB, contentType: t, name: 'IMG_1.HEIC' }),
+      ).toBe(WRONG_TYPE_COPY);
+    }
+  });
+
+  it('by extension, whatever type the picker reported', () => {
+    for (const name of ['IMG_0042.HEIC', 'photo.heic', 'scan.heif', 'a.HEIF']) {
+      expect(isHeic({ contentType: 'image/jpeg', name })).toBe(true);
+      expect(
+        pickedFileProblem({ size: 3 * MB, contentType: 'image/jpeg', name }),
+      ).toBe(WRONG_TYPE_COPY);
+    }
+    // No type from the picker: a .heic name does not map to an image type.
+    expect(pickedContentType({ name: 'IMG_1.heic' })).toBe(
+      'application/octet-stream',
+    );
+  });
+
+  it('a JPEG, PNG or PDF is not mistaken for HEIC', () => {
+    expect(isHeic({ contentType: 'image/jpeg', name: 'heic-notes.jpg' })).toBe(
+      false,
+    );
     expect(
-      pickedFileProblem({ size: 100, contentType: 'image/heic' }),
+      pickedFileProblem({
+        size: 3 * MB,
+        contentType: 'image/jpeg',
+        name: 'IMG_1.jpg',
+      }),
+    ).toBeNull();
+    expect(
+      pickedFileProblem({
+        size: MB,
+        contentType: 'application/pdf',
+        name: 'passport.pdf',
+      }),
     ).toBeNull();
   });
 });

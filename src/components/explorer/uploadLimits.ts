@@ -23,14 +23,30 @@ export const IMAGE_MAX_BYTES = 7 * 1024 * 1024;
 /** Largest PDF or other file the backend accepts (10 MB, its `maxFileBytes`). */
 export const FILE_MAX_BYTES = 10 * 1024 * 1024;
 
-/** Content types the backend's upload URL accepts (document.controller.ts). */
+/**
+ * Content types the app uploads: the backend's upload-URL list
+ * (document.controller.ts) WITHOUT HEIC. The backend accepts HEIC, but the
+ * model that reads documents takes only JPEG, PNG, GIF and WebP images, so a
+ * HEIC photo would be stored and never checked. Until the app converts HEIC
+ * before upload (follow-up), it is refused here with the wrong-type line.
+ */
 export const UPLOAD_CONTENT_TYPES: readonly string[] = [
   'application/pdf',
   'image/jpeg',
   'image/jpg',
   'image/png',
-  'image/heic',
 ];
+
+/**
+ * HEIC / HEIF (iPhone photos), by type ("image/heic", "image/heif",
+ * "image/heic-sequence", ...) or by extension (`.heic`, `.heif`). The
+ * extension is checked too because a picker can report a HEIC file with an
+ * empty or generic type.
+ */
+export function isHeic(f: { contentType: string; name?: string }): boolean {
+  if (/^image\/hei[cf]/i.test(f.contentType)) return true;
+  return /\.hei[cf]$/i.test(f.name ?? '');
+}
 
 /** True for an image content type ("image/jpeg", "image/heic", ...). */
 export const isImageType = (contentType: string) =>
@@ -46,10 +62,7 @@ export function tooLargeCopy(isImage: boolean): string {
   return `This file is larger than ${mb} MB. Upload a smaller copy.`;
 }
 
-/**
- * Wrong type. HEIC is accepted at upload but is left out of the list on
- * purpose: the review cannot read it, so the app does not suggest it.
- */
+/** Wrong type, including HEIC/HEIF (the review cannot read it, see above). */
 export const WRONG_TYPE_COPY =
   'We can’t take this type of file. Upload a PDF, JPEG or PNG.';
 
@@ -64,7 +77,6 @@ const BY_EXTENSION: Record<string, string> = {
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   png: 'image/png',
-  heic: 'image/heic',
 };
 
 /** The content type to send for a picked file. */
@@ -80,13 +92,15 @@ export function pickedContentType(f: {
 /**
  * The line to show before uploading anything, or null when the file can go.
  * An unknown size (`undefined`) is let through: the backend checks the real
- * size anyway and its 413 shows the same line.
+ * size anyway and its 413 shows the same line. `name` is the picked file's
+ * name, used to catch a HEIC/HEIF file by its extension.
  */
 export function pickedFileProblem(f: {
   size?: number | null;
   contentType: string;
+  name?: string;
 }): string | null {
-  if (!UPLOAD_CONTENT_TYPES.includes(f.contentType.toLowerCase()))
+  if (isHeic(f) || !UPLOAD_CONTENT_TYPES.includes(f.contentType.toLowerCase()))
     return WRONG_TYPE_COPY;
   if (typeof f.size === 'number' && f.size > maxUploadBytes(f.contentType))
     return tooLargeCopy(isImageType(f.contentType));
