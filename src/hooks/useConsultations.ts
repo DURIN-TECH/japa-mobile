@@ -192,7 +192,12 @@ export interface VerifyConsultationResult {
  *
  * @param status - Optional filter (e.g. 'scheduled', 'completed')
  */
-export function useConsultations(status?: string) {
+export function useConsultations(
+  status?: string,
+  // False skips the call: a self-service-only build (japa#334) hides
+  // consultations, so the Profile counts opt out. Default true.
+  opts: { enabled?: boolean } = {},
+) {
   // Must pass role=client so the backend queries by userId (client)
   // instead of the default role=agent which queries by agentId
   const params = new URLSearchParams({ role: 'client' });
@@ -200,6 +205,7 @@ export function useConsultations(status?: string) {
 
   return useQuery({
     queryKey: ['consultations', status],
+    enabled: opts.enabled ?? true,
     queryFn: async () => {
       const response = await apiService.get<ApiConsultation[]>(
         `/consultations?${params.toString()}`,

@@ -25,6 +25,8 @@ import { useConsultations } from '@/hooks/useConsultations';
 import { useConversations } from '@/hooks/useMessaging';
 import { useIdentityVerification } from '@/hooks/useVerification';
 import { useMe } from '@/hooks/useMe';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import {
   profileName,
   profileCity,
@@ -94,6 +96,12 @@ function ProfileRow({
 
 export default function ProfileScreen() {
   const router = useRouter();
+  // ── Self-service-only build (japa#334) ───────────────────────────────────
+  // Hides the My consultations, Messages, Verify identity and Payments rows
+  // and the Agents stat (Active and Saved stay), skips the queries that only
+  // fed them, and rewords the Plus card subtitle (no agent chat). Off =
+  // everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
 
   // ── Live data (hooks called unconditionally, before any early return) ───────
@@ -103,13 +111,17 @@ export default function ProfileScreen() {
   const { data: me } = useMe();
   const applicationsQ = useApplications();
   const applications = applicationsQ.data;
-  const consultationsQ = useConsultations();
+  const consultationsQ = useConsultations(undefined, {
+    enabled: !selfServiceOnly,
+  });
   const consultations = consultationsQ.data;
-  const conversationsQ = useConversations();
+  const conversationsQ = useConversations({ enabled: !selfServiceOnly });
   const conversations = conversationsQ.data;
   // Live identity-verification (KYC) status — powers the short hint shown on the
   // "Verify identity" row. Falls back to the profile's embedded field if present.
-  const idVerification = useIdentityVerification().data;
+  const idVerification = useIdentityVerification({
+    enabled: !selfServiceOnly,
+  }).data;
 
   // Header — real full name and city from GET /users/me. With no city, the
   // name shows alone (the pin row hides entirely — no dangling separator).
@@ -263,7 +275,8 @@ export default function ProfileScreen() {
           {[
             [String(activeCount), 'Active'],
             [String(savedCount), 'Saved'],
-            [String(agentsCount), 'Agents'],
+            // No Agents cell in a self-service-only build (japa#334).
+            ...(selfServiceOnly ? [] : [[String(agentsCount), 'Agents']]),
           ].map(([v, l], i) => (
             <React.Fragment key={l}>
               {i > 0 ? (
@@ -360,7 +373,11 @@ export default function ProfileScreen() {
                   marginTop: 1,
                 }}
               >
-                Agent chat, uploads &amp; priority support
+                {/* Self-service-only build (japa#334): no agent chat on
+                    offer, so the line names what Plus unlocks there. */}
+                {selfServiceOnly
+                  ? 'Full AI review, uploads & priority support'
+                  : 'Agent chat, uploads & priority support'}
               </Text>
             </View>
             <Ic.chevR size={20} color="#fff" strokeWidth={1.8} />
@@ -382,40 +399,55 @@ export default function ProfileScreen() {
             elevation: 1,
           }}
         >
-          <ProfileRow
-            icon={Ic.cal}
-            label="My consultations"
-            value={consultsValue}
-            onPress={() => router.push('/consultations')}
-          />
-          <ProfileRow
-            icon={Ic.msg}
-            label="Messages"
-            value={messagesValue}
-            divider
-            onPress={() => router.push('/messages')}
-          />
+          {/* Consultations + Messages: hidden in a self-service-only build
+              (japa#334). */}
+          {selfServiceOnly ? null : (
+            <>
+              <ProfileRow
+                icon={Ic.cal}
+                label="My consultations"
+                value={consultsValue}
+                onPress={() => router.push('/consultations')}
+              />
+              <ProfileRow
+                icon={Ic.msg}
+                label="Messages"
+                value={messagesValue}
+                divider
+                onPress={() => router.push('/messages')}
+              />
+            </>
+          )}
           <ProfileRow
             icon={Ic.docs}
             label="My documents"
             value="7 files"
-            divider
+            // First row of the card when the two above are hidden: no
+            // divider line along the card's top edge.
+            divider={!selfServiceOnly}
             onPress={() => router.push('/documents')}
           />
-          <ProfileRow
-            icon={Ic.shield}
-            label="Verify identity"
-            value={identityValue}
-            divider
-            onPress={() => router.push('/verify-identity')}
-          />
-          <ProfileRow
-            icon={Ic.cards}
-            label="Payments"
-            value="₦110,000"
-            divider
-            onPress={() => router.push('/payments')}
-          />
+          {/* Verify identity + Payments: hidden in a self-service-only build
+              (japa#334; no self-service screen needs KYC, and Payments lists
+              only consultation / agent fees). */}
+          {selfServiceOnly ? null : (
+            <>
+              <ProfileRow
+                icon={Ic.shield}
+                label="Verify identity"
+                value={identityValue}
+                divider
+                onPress={() => router.push('/verify-identity')}
+              />
+              <ProfileRow
+                icon={Ic.cards}
+                label="Payments"
+                value="₦110,000"
+                divider
+                onPress={() => router.push('/payments')}
+              />
+            </>
+          )}
           <ProfileRow
             icon={Ic.heart}
             label="Saved destinations"

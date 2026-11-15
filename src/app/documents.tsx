@@ -43,6 +43,8 @@ import {
   useGetDownloadUrl,
 } from '@/hooks/useDocuments';
 import { mapDocument } from '@/components/explorer/liveDocuments';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import {
   StateEmpty,
   StateError,
@@ -279,6 +281,9 @@ function CountCell({
 
 export default function DocumentsView() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides "Shared with you" (documents an
+  // agency shared) and skips its call. The user's own documents stay.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<FilterKey>('all');
 
@@ -305,7 +310,9 @@ export default function DocumentsView() {
   // ── Documents the agency shared with this client ──────────────────────────
   // Rich-text documents an agent wrote and shared (cover letters, SOPs), as
   // opposed to the uploaded files above. Fetched across every application.
-  const sharedQuery = useSharedDocuments();
+  const sharedQuery = useSharedDocuments(undefined, {
+    enabled: !selfServiceOnly,
+  });
   const shared = sharedQuery.data ?? [];
   const sharedState = queryState(sharedQuery);
 
@@ -549,7 +556,8 @@ export default function DocumentsView() {
             Documents the agency prepared and shared. Hidden entirely when
             there are none, so the screen is unchanged for clients whose
             agency doesn't use the feature. */}
-        {shared.length > 0 ? (
+        {/* Never in a self-service-only build (japa#334). */}
+        {!selfServiceOnly && shared.length > 0 ? (
           <View style={{ paddingHorizontal: 22, paddingTop: 26, gap: 10 }}>
             <View style={{ gap: 2 }}>
               <Text style={displayText(18, 'semibold')}>Shared with you</Text>
@@ -574,7 +582,7 @@ export default function DocumentsView() {
 
         {/* Shared documents failed with nothing cached: section error (the
             section stays hidden while it loads or when it is empty). */}
-        {sharedState === 'error' ? (
+        {!selfServiceOnly && sharedState === 'error' ? (
           <View style={{ paddingHorizontal: 22, paddingTop: 26 }}>
             <StateError
               section

@@ -227,9 +227,15 @@ export function useGetDownloadUrl() {
  * which is what the flat "My documents" library wants. Only documents an agent
  * has explicitly shared are ever returned — drafts stay invisible.
  */
-export function useSharedDocuments(applicationId?: string) {
+export function useSharedDocuments(
+  applicationId?: string,
+  // False skips the call: a self-service-only build (japa#334) hides the
+  // agency-shared documents section. Default true.
+  opts: { enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: ['documents', 'shared', applicationId ?? 'all'],
+    enabled: opts.enabled ?? true,
     queryFn: async (): Promise<SharedDocument[]> => {
       const endpoint = applicationId
         ? `/document-instances/shared?applicationId=${encodeURIComponent(applicationId)}`

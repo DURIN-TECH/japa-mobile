@@ -37,7 +37,8 @@ import { authService } from '@/services/auth.service';
 // the auth store (PATCH /users/me/notification-preferences).
 import { useAuthStore } from '@/stores/auth.store';
 // Feedback button toggle (issue #257).
-import { FEEDBACK_ENABLED } from '@/config/env';
+// isSelfServiceOnly: the self-service-only launch flag (japa#334).
+import { FEEDBACK_ENABLED, isSelfServiceOnly } from '@/config/env';
 import { FEEDBACK_COPY } from '@/components/feedback/feedbackLogic';
 import { useSettingsStore } from '@/stores/settings.store';
 // Privacy row value (#172): approved / included in plan / not approved / off for all.
@@ -173,6 +174,9 @@ function Card({ children }: { children: React.ReactNode }) {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides the "AI message access" row
+  // (consent for AI inside agent conversations). Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
 
   // ── Local (display-only) preference state ──────────────────────────────────
@@ -223,7 +227,8 @@ export default function SettingsScreen() {
 
   // AI message access state for the Privacy row. No value while loading or when
   // loading failed: the row still opens the screen, which shows the error.
-  const aiAccessState = useAiMessageAccessState();
+  // (Skipped in a self-service-only build: the row it feeds is hidden.)
+  const aiAccessState = useAiMessageAccessState(!selfServiceOnly);
   const aiAccessValue = settingsRowValue(aiAccessState.data);
   // #234: nationalities count for the "What you already hold" row.
   const holdingsQ = useHoldings();
@@ -403,16 +408,22 @@ export default function SettingsScreen() {
         </Card>
 
         {/* ── 2b. Privacy (AI message access, #172) ──────────────────────── */}
-        <View style={{ height: 22 }} />
-        <GroupLabel>{AI_COPY.settingsGroup}</GroupLabel>
-        <Card>
-          <SettingsRow
-            icon={Ic.spark}
-            label={AI_COPY.settingsRow}
-            value={aiAccessValue}
-            onPress={() => router.push('/ai-message-access')}
-          />
-        </Card>
+        {/* The group's only row is about agent conversations, so the whole
+            group goes in a self-service-only build (japa#334). */}
+        {selfServiceOnly ? null : (
+          <>
+            <View style={{ height: 22 }} />
+            <GroupLabel>{AI_COPY.settingsGroup}</GroupLabel>
+            <Card>
+              <SettingsRow
+                icon={Ic.spark}
+                label={AI_COPY.settingsRow}
+                value={aiAccessValue}
+                onPress={() => router.push('/ai-message-access')}
+              />
+            </Card>
+          </>
+        )}
 
         {/* ── 3. Billing ─────────────────────────────────────────────────── */}
         <View style={{ height: 22 }} />
