@@ -77,7 +77,7 @@ const KEPT: [string[], string][] = [
   [['change-email'], '/change-email'],
   [['delete-account'], '/delete-account'],
   // Dev-only App configuration screen (japa#330): not an agent feature, so
-  // kept; it guards itself in production. Missing here since #330 and #334
+  // kept; it renders nothing outside a development (`__DEV__`) build. Missing here since #330 and #334
   // merged separately, which broke the "every route classified" test.
   [['dev-config'], '/dev-config'],
 ];
