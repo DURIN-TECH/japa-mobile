@@ -22,9 +22,15 @@ import {
   EMULATOR_HOST,
   EMULATOR_PROJECT_ID,
   FEEDBACK_ENABLED,
+  SELF_SERVICE_ONLY,
+  isSelfServiceOnly,
 } from '@/config/env';
 
 import type { DevConfigSources } from '@/config/devConfigInfo';
+import {
+  getSelfServiceOverride,
+  selfServiceOnlySource,
+} from '@/config/selfServiceOverride';
 
 // ── Live collection (native reads, each one guarded) ─────────────────────────
 function safe<T>(read: () => T): T | undefined {
@@ -97,6 +103,10 @@ export async function collectDevConfigSources(): Promise<DevConfigSources> {
     emulatorHost: EMULATOR_HOST,
     emulatorProjectId: EMULATOR_PROJECT_ID,
     feedbackEnabled: FEEDBACK_ENABLED,
+    // japa#375: effective flag via the single read point, plus its source.
+    selfServiceOnly: isSelfServiceOnly(),
+    selfServiceOnlySource: selfServiceOnlySource(getSelfServiceOverride()),
+    selfServiceOnlyBuild: SELF_SERVICE_ONLY,
     appVersion: Constants.expoConfig?.version,
     buildNumber: platformBuild,
     bundleId:

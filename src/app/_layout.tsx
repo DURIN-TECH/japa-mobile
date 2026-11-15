@@ -41,6 +41,8 @@ import {
   selfServiceRedirectState,
   type NavStateLike,
 } from '@/config/selfServiceRoutes';
+// Dev-only override of that flag (japa#375): loaded before the first screen.
+import { useSelfServiceOverrideLoaded } from '@/config/selfServiceOverrideStore';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -60,7 +62,12 @@ export const unstable_settings = {
 //     (japa#334; the table lives in config/selfServiceRoutes.ts)
 // Onboarding, the tabs, and all detail screens are left alone (those flows drive
 // their own forward navigation).
-function useProtectedRoute() {
+//
+// `flagReady` (japa#375): false until the dev-only self-service-only override
+// has been read from storage (always true outside development). The redirect
+// effect waits for it so the hidden-route check never runs on the baked
+// value in a development build that overrides it.
+function useProtectedRoute(flagReady: boolean) {
   const segments = useSegments();
   const router = useRouter();
   // Root navigation container: the self-service-only redirect (japa#334)
@@ -97,7 +104,7 @@ function useProtectedRoute() {
 
   // Handle navigation based on auth state
   useEffect(() => {
-    if (!isInitialized) return;
+    if (!isInitialized || !flagReady) return;
 
     // Top-level segment names the route group: '(auth)' | '(onboard)' | '(tabs)'
     // | a detail screen. undefined = the '/' index redirect; '+not-found' = a
@@ -140,6 +147,7 @@ function useProtectedRoute() {
   }, [
     isAuthenticated,
     isInitialized,
+    flagReady,
     profile,
     segments,
     router,
@@ -160,21 +168,35 @@ function RootLayoutContent() {
   const authHydrated = useAuthHydration();
   const isDark = useSettingsStore((state) => state.isDark());
   const isInitialized = useAuthStore((state) => state.isInitialized);
+  // japa#375: the dev-only self-service-only override is read from storage
+  // once, before the first screen renders, so the synchronous
+  // `isSelfServiceOnly()` already returns it. Immediately true when
+  // `__DEV__` is false (production never reads the override).
+  const flagReady = useSelfServiceOverrideLoaded();
 
   // Set up auth-based navigation
-  useProtectedRoute();
+  useProtectedRoute(flagReady);
+
+  // Registered once the override is known: the self-service-only menu item's
+  // label shows the effective value (japa#375). A change reloads the app,
+  // which registers the menu again with the new label.
+  useEffect(() => {
+    if (flagReady) registerDevMenu();
+  }, [flagReady]);
 
   useEffect(() => {
-    registerDevMenu();
-  }, []);
-
-  useEffect(() => {
-    if (loaded && settingsHydrated && authHydrated && isInitialized) {
+    if (
+      loaded &&
+      settingsHydrated &&
+      authHydrated &&
+      isInitialized &&
+      flagReady
+    ) {
       SplashScreen.hideAsync();
     }
-  }, [loaded, settingsHydrated, authHydrated, isInitialized]);
+  }, [loaded, settingsHydrated, authHydrated, isInitialized, flagReady]);
 
-  if (!loaded || !settingsHydrated || !authHydrated) {
+  if (!loaded || !settingsHydrated || !authHydrated || !flagReady) {
     return null;
   }
 

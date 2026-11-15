@@ -17,6 +17,12 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+// Pure (no native imports): the dev-only override's in-memory value (japa#375).
+import {
+  getSelfServiceOverride,
+  resolveSelfServiceOnly,
+} from '@/config/selfServiceOverride';
+
 type AppEnv = 'development' | 'staging' | 'production';
 
 // Values injected by app.config.ts → expo `extra`. Typed + defaulted defensively so
@@ -49,9 +55,18 @@ export const SELF_SERVICE_ONLY = extra.selfServiceOnly === true;
  * so jest can flip the flag per test with
  * `jest.spyOn(env, 'isSelfServiceOnly').mockReturnValue(true)` (or a
  * `jest.mock('@/config/env', ...)`) without rebuilding the app config.
+ *
+ * Development-only override (japa#375): in a `__DEV__` build the value can
+ * be switched from the Expo dev menu or the link
+ * `durintech://dev/self-service-only?value=on|off|build` (see
+ * `selfServiceOverride.ts`). This stays the ONE read point — no screen reads
+ * the override itself. `getSelfServiceOverride()` is always undefined when
+ * `__DEV__` is false, so production / TestFlight builds return the baked
+ * value whatever is stored; with no override stored, every build behaves
+ * exactly as before.
  */
 export function isSelfServiceOnly(): boolean {
-  return SELF_SERVICE_ONLY;
+  return resolveSelfServiceOnly(SELF_SERVICE_ONLY, getSelfServiceOverride());
 }
 
 export const IS_PROD = APP_ENV === 'production';
