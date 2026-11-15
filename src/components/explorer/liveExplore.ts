@@ -15,8 +15,9 @@ import { VisaType, VisaCategory, VisaRequirement } from '@/types/visas.type';
 // Per-country art (city, hero photo, tone) lives in the reusable assets
 // module `@/assets/countries` (japa#145); this adapter only looks it up.
 
-// Backend visa category → the Explorer's short display label.
-const CATEGORY_LABEL: Record<VisaCategory, string> = {
+// Backend visa category → the Explorer's short display label. Exported for the
+// Explore filters (japa#347), which turn chosen labels back into categories.
+export const CATEGORY_LABEL: Record<VisaCategory, string> = {
   work: 'Work',
   student: 'Study',
   tourist: 'Tourist',
