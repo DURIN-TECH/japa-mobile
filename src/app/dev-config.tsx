@@ -6,8 +6,10 @@
 // signed-in user's role claim and token expiry, device. Rows flagged `warn`
 // (native Firebase project ≠ configured project, expired token) are tinted.
 //
-// Non-production only: in a production build the screen renders nothing and
-// sends the user back, and the Settings entry row is not rendered at all.
+// Opened from the Expo dev menu ("App configuration", src/utils/dev-menu.ts);
+// there is no in-app entry point. Non-production only: in a production build
+// the screen renders nothing and sends the user back (the dev menu itself
+// only exists in __DEV__ builds).
 // "Share" hands the whole block to the OS share sheet (Copy is one of its
 // options), so it can be pasted into a bug report — no native clipboard
 // module needed.

@@ -11,6 +11,17 @@ export function registerDevMenu() {
 
   registerDevMenuItems([
     {
+      // japa#330: what this running app is actually configured with
+      // (environment, API server, Firebase project, build/update, signed-in
+      // user's role claim + token expiry). Lives here, in the dev menu, not
+      // in the app's Settings — it is a developer tool, not a user feature.
+      name: 'App configuration',
+      shouldCollapse: true,
+      callback: () => {
+        router.push('/dev-config');
+      },
+    },
+    {
       name: 'Reset settings store',
       shouldCollapse: true,
       callback: () => {
