@@ -2,14 +2,18 @@
 // Settings screen (Explorer, coral/cream design).
 // Grouped white cards that reuse the profile.tsx `ProfileRow` visual language:
 //   36px cream icon chip · label 15/600 · optional muted value · chevron.
-// Sections: About you · Appearance · Notifications · Privacy · Billing · Legal · Security · Account.
+// Sections: About you · Notifications · Privacy · Billing · Legal · Support ·
+// Security · Account · footer. (The Appearance group / Theme row went in
+// japa#346: it did nothing. Dark mode is japa#355.)
 // Notification toggles + the security/account rows are LIVE (persist to the
-// backend); Appearance/Billing/Legal/Support remain display-only for now.
+// backend). Billing shows the live plan; Legal / Support open external links
+// and say so, with the address, when a link can't be opened (japa#346).
 // Native primitives only; safe-area aware.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Linking,
@@ -20,13 +24,22 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+// Version footer reads the app config's `expo.version` (japa#346).
+import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 // japa#145: the Subscription row shows the LIVE plan name (GET /subscriptions/me
 // matched against GET /plans), never a default "Free". Loading → small coral
-// spinner; failed → InlineError + "Try again" under the row.
-import { usePlans, useMySubscription } from '@/hooks/useSubscription';
+// spinner; failed → InlineError + "Try again" under the row. japa#346: worked
+// out by the hook Profile uses too, so both screens name the same plan.
+import { useCurrentPlan } from '@/hooks/useCurrentPlan';
+import {
+  SETTINGS_LINKS,
+  openSettingsLink,
+  versionLabel,
+  type SettingsLinkKey,
+} from '@/components/explorer/settingsLogic';
 import { InlineError } from '@/components/explorer/AccountForm';
 import { OutlineButton, RETRY_LABEL } from '@/components/explorer/states';
 // Real Firebase sign-out (invoked after the confirm dialog) + account state
@@ -179,11 +192,6 @@ export default function SettingsScreen() {
   const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
 
-  // ── Local (display-only) preference state ──────────────────────────────────
-  // The Explorer prototype renders light-only; theme selection is stored but not
-  // applied.
-  const [theme, setTheme] = useState<'System' | 'Light' | 'Dark'>('System');
-
   // ── Notification channel prefs (email/push) — real, persisted ───────────────
   // Seed from the cached profile (absent = both on, the opt-out default), and keep
   // the switches in sync if the profile is (re)hydrated after mount. Writes go
@@ -233,26 +241,13 @@ export default function SettingsScreen() {
   // #234: nationalities count for the "What you already hold" row.
   const holdingsQ = useHoldings();
 
-  // Subscription tier label from live data. A loaded `subscription: null`
-  // means no paid plan → the zero-price plan's real name from GET /plans.
-  const mine = useMySubscription();
-  const plansQ = usePlans('client');
-  const planLoading =
-    (mine.isLoading && !mine.data) || (plansQ.isLoading && !plansQ.data);
-  const planFailed =
-    (mine.isError && !mine.data) || (plansQ.isError && !plansQ.data);
-  const planId = mine.data?.subscription?.planId;
-  const currentPlanName = (() => {
-    if (!mine.data || !plansQ.data) return undefined;
-    const plan = planId
-      ? plansQ.data.find((p) => p.id === planId)
-      : plansQ.data.find((p) => p.priceKobo === 0);
-    return plan?.name;
-  })();
-  const retryPlan = () => {
-    if (mine.isError) mine.refetch();
-    if (plansQ.isError) plansQ.refetch();
-  };
+  // Subscription tier label from live data (shared with Profile). A loaded
+  // `subscription: null` means no paid plan → the zero-price plan's name.
+  const currentPlan = useCurrentPlan();
+  const planLoading = currentPlan.loading;
+  const planFailed = currentPlan.failed;
+  const currentPlanName = currentPlan.plan?.name;
+  const retryPlan = currentPlan.retry;
 
   // ── Account-security state ──────────────────────────────────────────────────
   // Password/email changes only apply to email/password accounts (phone-only users
@@ -264,24 +259,36 @@ export default function SettingsScreen() {
   // Coral track when a Switch is on; neutral hairline track when off.
   const switchTrack = { false: EX.color.line10, true: EX.color.primary };
 
-  // ── Theme action sheet ─────────────────────────────────────────────────────
-  const openThemeSheet = () => {
-    Alert.alert('Theme', 'Choose how Seli looks', [
-      { text: 'System', onPress: () => setTheme('System') },
-      { text: 'Light', onPress: () => setTheme('Light') },
-      { text: 'Dark', onPress: () => setTheme('Dark') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
-
-  // ── Open an external URL, swallowing failures (placeholder links) ───────────
-  const openUrl = async (url: string) => {
-    try {
-      await Linking.openURL(url);
-    } catch {
-      // Placeholder URLs may not resolve in the demo — fail silently.
+  // ── Legal / Support links (japa#346) ───────────────────────────────────────
+  // Which link last failed to open, if any. Its message (an InlineError with
+  // the address, selectable so it can be copied) shows under THAT row only:
+  // one message on screen at a time. Tapping a link clears it first, so a
+  // link that opens leaves nothing behind and a retry that fails again
+  // re-shows it. Local state, so leaving the screen clears it too.
+  const [failedLink, setFailedLink] = useState<SettingsLinkKey | null>(null);
+  const openLink = async (key: SettingsLinkKey) => {
+    setFailedLink(null);
+    const { url, failure } = SETTINGS_LINKS[key];
+    const opened = await openSettingsLink(Linking, url);
+    if (!opened) {
+      setFailedLink(key);
+      // Screen readers hear the message as it appears.
+      AccessibilityInfo.announceForAccessibility(failure);
     }
   };
+  // The message under a link row, rendered only for the row that failed.
+  // Same wrapper as the Subscription load failure below.
+  const linkError = (key: SettingsLinkKey) =>
+    failedLink === key ? (
+      <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
+        <InlineError message={SETTINGS_LINKS[key].failure} selectable />
+      </View>
+    ) : null;
+
+  // ── Version footer (japa#346) ──────────────────────────────────────────────
+  // From the app config, so bumping `expo.version` changes it. Null → the
+  // footer leaves the line out.
+  const version = versionLabel(Constants.expoConfig?.version);
 
   // ── Sign out: confirm, then real Firebase logout + return to auth entry ─────
   const confirmSignOut = () => {
@@ -361,20 +368,10 @@ export default function SettingsScreen() {
             onPress={() => router.push('/holdings')}
           />
         </Card>
-        <View style={{ height: 22 }} />
 
-        {/* ── 1. Appearance ──────────────────────────────────────────────── */}
-        <GroupLabel>Appearance</GroupLabel>
-        <Card>
-          <SettingsRow
-            icon={Ic.crown}
-            label="Theme"
-            value={theme}
-            onPress={openThemeSheet}
-          />
-        </Card>
-
-        {/* ── 2. Notifications ───────────────────────────────────────────── */}
+        {/* ── 1. Notifications ───────────────────────────────────────────── */}
+        {/* (The Appearance group that sat here went in japa#346: its Theme
+            row did nothing. One 22pt spacer between groups, as everywhere.) */}
         <View style={{ height: 22 }} />
         <GroupLabel>Notifications</GroupLabel>
         <Card>
@@ -407,7 +404,7 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        {/* ── 2b. Privacy (AI message access, #172) ──────────────────────── */}
+        {/* ── 2. Privacy (AI message access, #172) ───────────────────────── */}
         {/* The group's only row is about agent conversations, so the whole
             group goes in a self-service-only build (japa#334). */}
         {selfServiceOnly ? null : (
@@ -443,7 +440,7 @@ export default function SettingsScreen() {
           {planFailed ? (
             <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
               <InlineError message="We couldn’t load your plan. Try again." />
-              {mine.isRefetching || plansQ.isRefetching ? (
+              {currentPlan.refetching ? (
                 <ActivityIndicator
                   color={EX.color.primary}
                   style={{ alignSelf: 'flex-start' }}
@@ -466,14 +463,16 @@ export default function SettingsScreen() {
           <SettingsRow
             icon={Ic.shield}
             label="Privacy Policy"
-            onPress={() => openUrl('https://weareseli.com/privacy')}
+            onPress={() => openLink('privacy')}
           />
+          {linkError('privacy')}
           <SettingsRow
             icon={Ic.docs}
             label="Terms of Service"
             divider
-            onPress={() => openUrl('https://weareseli.com/terms')}
+            onPress={() => openLink('terms')}
           />
+          {linkError('terms')}
         </Card>
 
         {/* ── 5. Support ─────────────────────────────────────────────────── */}
@@ -483,14 +482,16 @@ export default function SettingsScreen() {
           <SettingsRow
             icon={Ic.help}
             label="Help Center"
-            onPress={() => openUrl('https://weareseli.com/help')}
+            onPress={() => openLink('help')}
           />
+          {linkError('help')}
           <SettingsRow
             icon={Ic.msg}
             label="Contact support"
             divider
-            onPress={() => openUrl('mailto:support@weareseli.com')}
+            onPress={() => openLink('contact')}
           />
+          {linkError('contact')}
           {/* Shown unless the build removed the feature (EXPO_PUBLIC_FEEDBACK_ENABLED=false). */}
           {FEEDBACK_ENABLED ? (
             <SettingsRow
@@ -578,11 +579,19 @@ export default function SettingsScreen() {
           >
             Seli
           </Text>
-          <Text
-            style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500' }}
-          >
-            Version 1.0.0
-          </Text>
+          {/* Version from the app config; the line is left out (no blank
+              gap) when it can't be read. */}
+          {version ? (
+            <Text
+              style={{
+                fontSize: 12.5,
+                color: EX.color.muted,
+                fontWeight: '500',
+              }}
+            >
+              {version}
+            </Text>
+          ) : null}
           <Text
             style={{ fontSize: 12.5, color: EX.color.muted, fontWeight: '500' }}
           >
