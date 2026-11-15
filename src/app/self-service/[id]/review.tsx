@@ -89,6 +89,7 @@ import {
 } from '@/components/explorer/review/reviewCopy';
 import { ThenYouApply } from '@/components/explorer/review/ThenYouApply';
 import { useApplication } from '@/hooks/useApplications';
+import { useVisaType } from '@/hooks/useVisaTypes';
 import {
   assessmentKey,
   isForbidden,
@@ -123,6 +124,15 @@ export default function ReviewScreen() {
   const q = useAssessment(applicationId);
   const { start, isStarting } = useStartReview(applicationId);
   const visaName = appQ.data?.visaTypeName;
+  // japa#312: the visa (same query and cache as the self-service screen), only
+  // to know whether it has an official link for "Then you apply".
+  const vtQ = useVisaType(
+    appQ.data?.countryCode ?? '',
+    appQ.data?.visaTypeId ?? '',
+  );
+  const hasOfficialLink: boolean | undefined = vtQ.data
+    ? !!vtQ.data.visaType?.applicationUrl?.trim()
+    : undefined;
 
   // Inline error for a failed start (offline / generic), shown above the CTA.
   const [startError, setStartError] = useState<string | null>(null);
@@ -433,7 +443,11 @@ export default function ReviewScreen() {
   const barItem = full?.refusalGrounds.find(isFixedRuleFinding) ?? null;
   const fullBlocked = !!full && fullTierBlocked(full);
   // japa#312: closing "Then you apply" words, finished + unblocked only.
-  const thenYouApply = showsThenYouApply(view) ? <ThenYouApply /> : null;
+  // The ending depends on whether the visa has an official link (the
+  // "Where you apply" card has no button without one); unknown until loaded.
+  const thenYouApply = showsThenYouApply(view) ? (
+    <ThenYouApply hasLink={hasOfficialLink} />
+  ) : null;
 
   const disclaimer = (
     <Text

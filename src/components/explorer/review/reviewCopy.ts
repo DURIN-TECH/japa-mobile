@@ -203,8 +203,34 @@ export const NO_REVIEW_BODY =
 // and the applicant applies on the official site, whose link sits on the
 // self-service screen under the card titled "Where you apply".
 export const THEN_YOU_APPLY_TITLE = 'Then you apply';
-export const THEN_YOU_APPLY_BODY =
-  'We’ve checked what you’ve given us against the published rules for this visa. We don’t send your application for you. When you’re ready, you apply yourself on the official government site. The link is under “Where you apply” on your application.';
+// The first two sentences are the same in every case; how it ends depends on
+// whether the visa has an official link (`applicationUrl`). Without one the
+// "Where you apply" card says "We don’t have the link for this visa yet." and
+// has no button, so this section must not send the applicant there for it.
+const THEN_YOU_APPLY_LEAD =
+  'We’ve checked what you’ve given us against the published rules for this visa. We don’t send your application for you.';
+
+/** The visa has an official link: it sits on the "Where you apply" card. */
+export const THEN_YOU_APPLY_BODY = `${THEN_YOU_APPLY_LEAD} When you’re ready, you apply yourself on the official government site. The link is under “Where you apply” on your application.`;
+
+/**
+ * The visa has no official link yet: point at the country's official
+ * government site without promising a link (route neutral, so no country
+ * name; same "We don’t have the link…" words as the card).
+ */
+export const THEN_YOU_APPLY_BODY_NO_LINK = `${THEN_YOU_APPLY_LEAD} When you’re ready, you apply yourself on the official government site of the country you’re going to. We don’t have the link for this visa yet.`;
+
+/** The visa could not be loaded, so whether there is a link is unknown. */
+export const THEN_YOU_APPLY_BODY_UNKNOWN = `${THEN_YOU_APPLY_LEAD} When you’re ready, you apply yourself on the official government site.`;
+
+/**
+ * "Then you apply" body. `hasLink` is whether the visa has an official link;
+ * `undefined` while unknown (not loaded or failed), which says neither.
+ */
+export function thenYouApplyBody(hasLink: boolean | undefined): string {
+  if (hasLink === undefined) return THEN_YOU_APPLY_BODY_UNKNOWN;
+  return hasLink ? THEN_YOU_APPLY_BODY : THEN_YOU_APPLY_BODY_NO_LINK;
+}
 
 /** True for the entry a fixed (mandatory-bar) rule produced. */
 export const isFixedRuleFinding = (f: CitedFinding) =>

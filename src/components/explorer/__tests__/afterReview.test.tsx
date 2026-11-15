@@ -23,7 +23,10 @@ import {
   nextSteps,
   showsThenYouApply,
   THEN_YOU_APPLY_BODY,
+  THEN_YOU_APPLY_BODY_NO_LINK,
+  THEN_YOU_APPLY_BODY_UNKNOWN,
   THEN_YOU_APPLY_TITLE,
+  thenYouApplyBody,
 } from '../review/reviewCopy';
 import { ThenYouApply } from '../review/ThenYouApply';
 import {
@@ -121,11 +124,64 @@ describe('"Then you apply" copy', () => {
   it('renders the title and body', () => {
     let r!: ReturnType<typeof create>;
     act(() => {
-      r = create(<ThenYouApply />);
+      r = create(<ThenYouApply hasLink />);
     });
     const t = texts(r);
     expect(t).toContain(THEN_YOU_APPLY_TITLE);
     expect(t).toContain(THEN_YOU_APPLY_BODY);
+  });
+});
+
+// ── No official link for the visa (carried over from japa#312's review) ─────
+// The "Where you apply" card then says "We don’t have the link for this visa
+// yet." and has no button, so "Then you apply" must not send the applicant
+// there for a link.
+describe('"Then you apply" without an official link', () => {
+  it('is the exact agreed wording', () => {
+    expect(THEN_YOU_APPLY_BODY_NO_LINK).toBe(
+      'We’ve checked what you’ve given us against the published rules for this visa. We don’t send your application for you. When you’re ready, you apply yourself on the official government site of the country you’re going to. We don’t have the link for this visa yet.',
+    );
+  });
+
+  it('promises no link and does not point at the card', () => {
+    expect(THEN_YOU_APPLY_BODY_NO_LINK).not.toContain(OFFICIAL_SITE_TITLE);
+    expect(THEN_YOU_APPLY_BODY_NO_LINK).not.toMatch(/the link is/i);
+    // Same words as the card body without a link.
+    expect(officialSiteBody(false, 'United Kingdom')).toContain(
+      'We don’t have the link for this visa yet.',
+    );
+  });
+
+  it('while the visa is unknown, names neither the card nor a missing link', () => {
+    expect(THEN_YOU_APPLY_BODY_UNKNOWN).not.toContain(OFFICIAL_SITE_TITLE);
+    expect(THEN_YOU_APPLY_BODY_UNKNOWN).not.toMatch(/link/i);
+  });
+
+  it('picks the wording by link', () => {
+    expect(thenYouApplyBody(true)).toBe(THEN_YOU_APPLY_BODY);
+    expect(thenYouApplyBody(false)).toBe(THEN_YOU_APPLY_BODY_NO_LINK);
+    expect(thenYouApplyBody(undefined)).toBe(THEN_YOU_APPLY_BODY_UNKNOWN);
+  });
+
+  it('uses curly punctuation, no decision words and no country name', () => {
+    for (const b of [
+      THEN_YOU_APPLY_BODY_NO_LINK,
+      THEN_YOU_APPLY_BODY_UNKNOWN,
+    ]) {
+      expect(b).not.toMatch(/['"]/);
+      expect(b).not.toMatch(/verdict|refus|approv|likel|chance|genuine|score/i);
+      expect(b).not.toMatch(/United Kingdom|Canada|Ireland/);
+    }
+  });
+
+  it('renders the no-link body', () => {
+    let r!: ReturnType<typeof create>;
+    act(() => {
+      r = create(<ThenYouApply hasLink={false} />);
+    });
+    const t = texts(r);
+    expect(t).toContain(THEN_YOU_APPLY_BODY_NO_LINK);
+    expect(t).not.toContain(THEN_YOU_APPLY_BODY);
   });
 });
 
