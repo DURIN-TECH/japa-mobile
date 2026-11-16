@@ -29,7 +29,10 @@ function loadEnv(extra: Extra): typeof import('@/config/env') {
 
 describe('emulator ports', () => {
   it('keep the firebase.json defaults (9099 / 5001) when unset', () => {
-    const env = loadEnv({ useEmulator: true, emulatorProjectId: 'japa-platform' });
+    const env = loadEnv({
+      useEmulator: true,
+      emulatorProjectId: 'japa-platform',
+    });
     expect(env.AUTH_EMULATOR_PORT).toBe(9099);
     expect(env.FUNCTIONS_EMULATOR_PORT).toBe(5001);
     expect(env.AUTH_EMULATOR_URL).toBe('http://localhost:9099');
