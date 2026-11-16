@@ -20,10 +20,6 @@ tags:
 - inputText: ${PASSWORD}
 - tapOn:
     id: "login\\.submit"
-- extendedWaitUntil:
-    visible:
-      id: "screen\\.home"
-    timeout: 45000
-- runFlow: ../../subflows/answer-permission.yaml
+- runFlow: ../../subflows/after-sign-in.yaml
 - assertVisible:
     id: "tab\\.home"

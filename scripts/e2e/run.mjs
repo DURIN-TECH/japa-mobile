@@ -58,6 +58,7 @@ import {
   PROJECT_ID,
   assertEmulatorHosts,
   cutOffEnv,
+  deadProxyEnv,
   emailSwitchProblems,
   fakeServiceAccount,
   planSecretFile,
@@ -99,6 +100,10 @@ const cleanups = [];
 let cleanedUp = false;
 /** The Maestro child in flight ({ name, pid }), stopped first on cleanup. */
 let maestroProc = null;
+/** Set when main() fails, so cleanup can keep a failure screenshot. */
+let runFailed = false;
+/** How often the dev-client load step was retried (reported in the summary). */
+let loadRetries = 0;
 /** Ports this run binds (emulators + Metro), checked free after teardown. */
 const runPorts = [];
 function onCleanup(what, fn) {
@@ -498,7 +503,7 @@ async function main() {
   log('seeding (full seed + e2e fixture)...');
   runLogged('seed:e2e', 'node', ['lib/scripts/seed-e2e.js'], {
     cwd: functionsDir,
-    env: emEnv,
+    env: { ...emEnv, ...deadProxyEnv() },
     logFile: path.join(outDir, 'seed.log'),
   });
 
@@ -534,6 +539,26 @@ async function main() {
     });
   }
   prepareDevice(device.udid, device.app);
+  // On any later failure, keep a picture of the simulator screen in the
+  // output folder (registered after the delete step, so it runs first).
+  onCleanup('screenshot the simulator on failure', () => {
+    if (runFailed) {
+      execFileSync(
+        'xcrun',
+        [
+          'simctl',
+          'io',
+          device.udid,
+          'screenshot',
+          path.join(outDir, 'failure-screen.png'),
+        ],
+        {
+          stdio: 'ignore',
+          timeout: 20_000,
+        },
+      );
+    }
+  });
   const devScheme = device.app.schemes.find((s) => s.startsWith('exp+'));
   log(
     `simulator ${device.udid} booted (headless), dev client ${device.app.bundleId}`,
@@ -551,6 +576,13 @@ async function main() {
     EXPO_PUBLIC_EMULATOR_FUNCTIONS_PORT: String(backend.ports.functions),
     EXPO_PUBLIC_SELF_SERVICE_ONLY: 'false',
     // No Expo account / update checks / telemetry: Metro serves locally only.
+    // `--localhost` binds "localhost", which Node resolves to ::1 first on
+    // this machine, while the manifest hands the app a 127.0.0.1 bundle URL
+    // (seen on the first runs: "Could not connect to development server").
+    // IPv4-first makes Metro listen where the app looks.
+    NODE_OPTIONS: [process.env.NODE_OPTIONS, '--dns-result-order=ipv4first']
+      .filter(Boolean)
+      .join(' '),
     EXPO_OFFLINE: '1',
     EXPO_NO_TELEMETRY: '1',
     CI: '1',
@@ -586,17 +618,8 @@ async function main() {
   // Load the bundle and confirm it came from OUR Metro.
   const metroUrl = `http://127.0.0.1:${metroPort}`;
   const devClientUrl = `${devScheme}://expo-development-client/?url=${encodeURIComponent(metroUrl)}`;
-  const bundledBefore = (readLog(metro).match(/iOS Bundled/g) ?? []).length;
-  openUrl(device.udid, devClientUrl);
   log('loading the bundle (the first build can take a few minutes)...');
-  await waitForLog(
-    metro,
-    (t) => (t.match(/iOS Bundled/g) ?? []).length > bundledBefore,
-    {
-      timeoutMs: 600_000,
-      what: 'the "iOS Bundled" line in this run\'s Metro log',
-    },
-  );
+  loadRetries = await loadBundle(device, metro, devClientUrl);
   log('bundle served by this run\'s Metro ("iOS Bundled" seen)');
 
   // 7-8. Maestro.
@@ -651,7 +674,10 @@ async function main() {
   console.log(`\n${formatSummary(rows, suiteSeconds)}`);
   // Dev-client "Failed to load app" retries (subflows/launch.yaml retries the
   // LOAD step once and leaves a `load-retry` screenshot). Said, not hidden.
-  const retries = countFiles(path.join(suite.dir, 'artifacts'), /load-retry/);
+  const retries =
+    countFiles(path.join(suite.dir, 'artifacts'), /load-retry/) +
+    countFiles(path.join(suite.dir, 'debug'), /load-retry/) +
+    loadRetries;
   console.log(
     retries
       ? `note: the dev client failed to load ${retries} time(s) and the load step was retried once each time`
@@ -662,6 +688,106 @@ async function main() {
     `logs, report${allPassed ? '' : ', failure screenshots'}: ${outDir}`,
   );
   return allPassed ? 0 : 1;
+}
+
+/**
+ * Opens the dev client on our Metro and waits for "iOS Bundled" in OUR Metro
+ * log. Returns how many times the load step had to be retried.
+ *
+ * The dev client ignores a link that cold-starts it (it opens its launcher,
+ * "No development servers found"; also QA of japa#375), so the app is
+ * launched first and the link sent once it runs. The link is resent once if
+ * Metro saw no bundle request within LOAD_RETRY_MS: the known ~1-in-8
+ * "Failed to load app" of the dev client. A retry is reported, never hidden.
+ */
+const LOAD_RETRY_MS = 90_000;
+async function loadBundle(device, metro, devClientUrl) {
+  const bundled = () => (readLog(metro).match(/iOS Bundled/g) ?? []).length;
+  // The app has asked for the bundle once it holds a connection to Metro
+  // (Metro logs nothing until the build is done, which can take minutes).
+  const port = Number(
+    new URL(decodeURIComponent(devClientUrl.split('url=')[1])).port,
+  );
+  const requested = () =>
+    /iOS (Bundling|Bundled)/.test(readLog(metro)) || connectedTo(port);
+  const before = bundled();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      execFileSync(
+        'xcrun',
+        ['simctl', 'terminate', device.udid, device.app.bundleId],
+        { stdio: 'ignore' },
+      );
+    } catch {
+      // not running yet
+    }
+    execFileSync(
+      'xcrun',
+      ['simctl', 'launch', device.udid, device.app.bundleId],
+      { stdio: 'ignore' },
+    );
+    // Wait for the app process to be up (a real condition), then a short
+    // settle so its link handler is registered before the link arrives.
+    await waitFor(() => appRunning(device), 30_000, 'the dev client to start');
+    await new Promise((r) => setTimeout(r, 2_000));
+    openUrl(device.udid, devClientUrl);
+    try {
+      // First the request (fast), then the finished bundle (slow build).
+      await waitForLog(metro, () => requested(), {
+        timeoutMs: LOAD_RETRY_MS,
+        what: 'a bundle request',
+      });
+      await waitForLog(metro, () => bundled() > before, {
+        timeoutMs: 600_000,
+        what: 'the "iOS Bundled" line in this run\'s Metro log',
+      });
+      return attempt;
+    } catch (e) {
+      if (attempt === 1 || requested()) throw e;
+      log(
+        'the dev client did not request the bundle; retrying the load step once',
+      );
+    }
+  }
+  return 1;
+}
+
+/** Whether any client holds an ESTABLISHED connection to a local port. */
+function connectedTo(port) {
+  try {
+    const out = execFileSync(
+      'lsof',
+      ['-nP', `-iTCP:${port}`, '-sTCP:ESTABLISHED', '-t'],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    return out.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function appRunning(device) {
+  try {
+    const out = execFileSync(
+      'xcrun',
+      ['simctl', 'spawn', device.udid, 'launchctl', 'list'],
+      { encoding: 'utf8' },
+    );
+    return out.includes(`UIKitApplication:${device.app.bundleId}[`);
+  } catch {
+    return false;
+  }
+}
+
+async function waitFor(check, timeoutMs, what) {
+  const until = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() > until) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }
 
 /**
@@ -782,7 +908,9 @@ function verifyPortsFree(ports) {
 let exitCode = 1;
 try {
   exitCode = await main();
+  runFailed = exitCode !== 0;
 } catch (e) {
+  runFailed = true;
   if (e instanceof SetupError) {
     console.error(`[e2e] ${e.message}`);
     exitCode = 2;

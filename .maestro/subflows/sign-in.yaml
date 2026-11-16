@@ -18,8 +18,4 @@ appId: ${APP_ID}
 - inputText: ${PASSWORD}
 - tapOn:
     id: "login\\.submit"
-- extendedWaitUntil:
-    visible:
-      id: "screen\\.home"
-    timeout: 45000
-- runFlow: answer-permission.yaml
+- runFlow: after-sign-in.yaml

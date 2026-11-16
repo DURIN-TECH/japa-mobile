@@ -17,10 +17,14 @@
  *      allow-list (no inherited FIREBASE_TOKEN, GOOGLE_*, API keys, ...), with
  *      a fake service account whose token_uri is unreachable, and empty temp
  *      CLOUDSDK_CONFIG / XDG_CONFIG_HOME (no gcloud / firebase login found).
- *   3. Belt and braces: HTTP(S)_PROXY points at a dead local port with
- *      NODE_USE_ENV_PROXY=1, so any outbound request Node makes from the
- *      functions or the seed fails locally instead of reaching Google,
- *      Anthropic, Paystack or Resend. Local hosts are exempt (NO_PROXY).
+ *   3. Belt and braces for the SEED process only (`deadProxyEnv`):
+ *      HTTP(S)_PROXY points at a dead local port with NODE_USE_ENV_PROXY=1,
+ *      so any outbound request Node makes there fails locally. Local hosts
+ *      are exempt (NO_PROXY). NOT for the emulators: firebase-tools sends
+ *      EVERY request through HTTPS_PROXY and ignores NO_PROXY (lib/apiv2.js
+ *      `proxyURIFromEnv`), so its own calls to the local Firestore emulator
+ *      fail and the suite does not start (seen on the first run). There the
+ *      dummy secrets and the fake credentials are the cut-off.
  *   4. The three *_EMULATOR_HOST variables must point at this machine before
  *      the seed runs (the backend's own guard checks again).
  *   5. No functions env file the emulator loads may switch local email on
@@ -196,7 +200,6 @@ const PASS_THROUGH = [
 export function cutOffEnv(base, tmp, ports) {
   const env = {};
   for (const k of PASS_THROUGH) if (base[k] !== undefined) env[k] = base[k];
-  const proxy = `http://127.0.0.1:${DEAD_PORT}`;
   Object.assign(env, {
     // Fake identity + no gcloud / firebase login.
     GOOGLE_APPLICATION_CREDENTIALS: tmp.credentials,
@@ -209,7 +212,22 @@ export function cutOffEnv(base, tmp, ports) {
     FIRESTORE_EMULATOR_HOST: `127.0.0.1:${ports.firestore}`,
     FIREBASE_AUTH_EMULATOR_HOST: `127.0.0.1:${ports.auth}`,
     FIREBASE_STORAGE_EMULATOR_HOST: `127.0.0.1:${ports.storage}`,
-    // Outbound requests from Node die on a dead local port.
+    // No CLI chatter to the network.
+    FIREBASE_CLI_DISABLE_UPDATE_CHECK: 'true',
+    NO_UPDATE_NOTIFIER: '1',
+    CI: '1',
+  });
+  return env;
+}
+
+/**
+ * The extra variables that make Node's outbound HTTP(S) die on a dead local
+ * port (Node 24 `NODE_USE_ENV_PROXY`), localhost exempt. Used for the seed
+ * process; see the header for why not for the emulators.
+ */
+export function deadProxyEnv() {
+  const proxy = `http://127.0.0.1:${DEAD_PORT}`;
+  return {
     HTTP_PROXY: proxy,
     HTTPS_PROXY: proxy,
     http_proxy: proxy,
@@ -217,10 +235,5 @@ export function cutOffEnv(base, tmp, ports) {
     NO_PROXY: LOCAL_HOSTS.join(','),
     no_proxy: LOCAL_HOSTS.join(','),
     NODE_USE_ENV_PROXY: '1',
-    // No CLI chatter to the network.
-    FIREBASE_CLI_DISABLE_UPDATE_CHECK: 'true',
-    NO_UPDATE_NOTIFIER: '1',
-    CI: '1',
-  });
-  return env;
+  };
 }

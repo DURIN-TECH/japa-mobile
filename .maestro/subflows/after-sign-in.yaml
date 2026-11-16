@@ -1,0 +1,26 @@
+# Subflow: right after tapping Log in (japa#361). Answers the iOS system
+# sheets that can cover Home, then waits for Home.
+#
+#  - "Save Password?" (iOS Passwords, because the field is a password field):
+#    "Not Now". Seen on every sign-in on a fresh simulator; it covers the
+#    whole screen, so Home is not "visible" until it is gone.
+#  - The notification-permission alert (pre-allowed by launch.yaml, but QA
+#    of japa#375 saw it on a fresh device anyway): "Allow".
+# The sheet appears a moment after Home, hence the bounded optional wait on
+# it (it passes as soon as it shows).
+appId: ${APP_ID}
+---
+- extendedWaitUntil:
+    visible: "Not Now"
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: "Not Now"
+    commands:
+      - tapOn: "Not Now"
+- runFlow: answer-permission.yaml
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.home"
+    timeout: 45000

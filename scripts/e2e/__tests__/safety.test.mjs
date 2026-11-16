@@ -11,6 +11,7 @@ import {
   DUMMY_SECRET,
   assertEmulatorHosts,
   cutOffEnv,
+  deadProxyEnv,
   emailSwitchProblems,
   fakeServiceAccount,
   isLocalHostPort,
@@ -104,8 +105,11 @@ test('cutOffEnv drops inherited credentials and points everything local', () => 
   assert.equal(env.CLOUDSDK_CONFIG, '/tmp/g');
   assert.equal(env.XDG_CONFIG_HOME, '/tmp/x');
   assert.equal(env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:19603');
-  assert.match(env.HTTPS_PROXY, /^http:\/\/127\.0\.0\.1:\d+$/);
-  assert.match(env.NO_PROXY, /localhost/);
+  // No proxy on the emulators' env (firebase-tools ignores NO_PROXY).
+  assert.equal(env.HTTPS_PROXY, undefined);
+  const px = deadProxyEnv();
+  assert.match(px.HTTPS_PROXY, /^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.match(px.NO_PROXY, /localhost/);
   assert.equal(env.PATH, '/bin');
 });
 

@@ -88,7 +88,7 @@ What one run does:
    own Metro log;
 6. **preflight** (`support/preflight.yaml`): signs in and reads the in-app
    App configuration screen; the running bundle's API server must be the
-   local Functions emulator and its bundle must come from this Metro port;
+   local Functions emulator and the signed-in user the emulator-only fixture user;
 7. runs the selected flows with Maestro on its simulator **by UDID**;
 8. sets the flag back to the build's value (`support/restore-flag.yaml`),
    prints a per-flow summary (flow, flag state, PASS/FAIL, duration) and
@@ -232,8 +232,12 @@ before anything starts, and refuses to start otherwise:
   `GOOGLE_APPLICATION_CREDENTIALS` = a throwaway service account whose
   `token_uri` is an unreachable local port, and empty temp
   `CLOUDSDK_CONFIG` / `XDG_CONFIG_HOME`.
-- Node's outbound HTTP(S) from the functions and the seed goes to a dead
-  local proxy (`NODE_USE_ENV_PROXY=1`); localhost is exempt.
+- The seed's outbound HTTP(S) goes to a dead local proxy
+  (`NODE_USE_ENV_PROXY=1`); localhost is exempt. The emulators cannot get
+  this: firebase-tools sends every request through `HTTPS_PROXY` and ignores
+  `NO_PROXY`, so its calls to the local Firestore emulator fail. For the
+  functions the dummy secrets and fake credentials are the cut-off, and no
+  flow triggers an AI review, a payment or an email.
 - `FIRESTORE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST` and
   `FIREBASE_STORAGE_EMULATOR_HOST` must be local before the seed runs (the
   backend's `seed:e2e` guard checks again).
