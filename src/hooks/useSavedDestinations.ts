@@ -14,8 +14,9 @@
  * - Writes are OPTIMISTIC (the heart changes at once). A failure applies the
  *   exact inverse edit (not a whole-list snapshot), so a concurrent write on
  *   another destination is not undone, and the list is never left wrong.
- * - After the last pending write settles, the list is refetched so the cache
- *   ends on the server's truth (order, hidden visas).
+ * - After the last pending write settles (an explicit in-flight counter), the
+ *   list is refetched once so the cache ends on the server's truth (order,
+ *   hidden visas).
  * - Each write carries a per-destination mutation key, so a screen can tell a
  *   write for ITS destination is in flight (`useSavedDestinationPending`).
  */
@@ -65,12 +66,28 @@ function itemPath(countryCode: string, visaId: string): string {
 }
 
 /**
- * Refetch the list, but only once no other saved-destination write is still
- * running (`isMutating` counts this one too until it fully settles). A refetch
- * mid-flight could overwrite another write's optimistic change.
+ * Saved-destination writes in flight, per QueryClient (shared by every save
+ * and remove hook, for every destination). Each write counts itself in at
+ * the very start of `onMutate` and out in `onSettled`; the one that brings
+ * the count to zero refetches the list. A refetch while another write is
+ * still running could overwrite that write's optimistic change.
+ *
+ * An explicit counter, not `qc.isMutating()`: two writes settling in the same
+ * tick could each still see the other as pending, and both skip the refetch
+ * (review note 1).
  */
-function refreshWhenIdle(qc: QueryClient) {
-  if (qc.isMutating({ mutationKey: WRITE_KEY }) <= 1) {
+const writesInFlight = new WeakMap<QueryClient, number>();
+
+/** A write started. */
+function beginWrite(qc: QueryClient) {
+  writesInFlight.set(qc, (writesInFlight.get(qc) ?? 0) + 1);
+}
+
+/** A write settled: refetch once the last one has. */
+function endWrite(qc: QueryClient) {
+  const left = Math.max(0, (writesInFlight.get(qc) ?? 1) - 1);
+  writesInFlight.set(qc, left);
+  if (left === 0) {
     void qc.invalidateQueries({ queryKey: SAVED_DESTINATIONS_KEY });
   }
 }
@@ -122,6 +139,7 @@ export function useSaveDestination(countryCode: string, visaId: string) {
       return res.data;
     },
     onMutate: async (input) => {
+      beginWrite(qc); // first, before any await (see writesInFlight)
       // Stop an in-flight GET from landing on top of the optimistic list.
       await qc.cancelQueries({ queryKey: SAVED_DESTINATIONS_KEY });
       const list = qc.getQueryData<SavedDestinationItem[]>(
@@ -158,7 +176,7 @@ export function useSaveDestination(countryCode: string, visaId: string) {
         l ? withServerItem(l, clean) : l,
       );
     },
-    onSettled: () => refreshWhenIdle(qc),
+    onSettled: () => endWrite(qc),
   });
 }
 
@@ -178,6 +196,7 @@ export function useRemoveDestination(countryCode: string, visaId: string) {
       return res.data;
     },
     onMutate: async () => {
+      beginWrite(qc); // first, before any await (see writesInFlight)
       await qc.cancelQueries({ queryKey: SAVED_DESTINATIONS_KEY });
       const list = qc.getQueryData<SavedDestinationItem[]>(
         SAVED_DESTINATIONS_KEY,
@@ -201,6 +220,6 @@ export function useRemoveDestination(countryCode: string, visaId: string) {
         l ? withRestored(l, item, ctx.index) : l,
       );
     },
-    onSettled: () => refreshWhenIdle(qc),
+    onSettled: () => endWrite(qc),
   });
 }

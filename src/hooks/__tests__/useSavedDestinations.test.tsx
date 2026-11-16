@@ -279,4 +279,44 @@ describe('remove', () => {
     // "a" is back, and "b" (saved meanwhile) is still there.
     expect(ids(qc).sort()).toEqual(['a', 'b']);
   });
+
+  it('two writes settling in the same tick refetch the list exactly once, after both', async () => {
+    qc.setQueryData(SAVED_DESTINATIONS_KEY, [item('GB', 'a')]);
+    const del = deferred<unknown>();
+    const put = deferred<unknown>();
+    api.delete.mockReturnValue(del.promise);
+    api.put.mockReturnValue(put.promise);
+    // The server's list once both writes landed; this fetch is let finish.
+    api.get.mockResolvedValue({ success: true, data: [item('CA', 'b', 500)] });
+    const h = mount(
+      () => ({
+        // A mounted list (as on a screen), so invalidation refetches it.
+        list: useSavedDestinations(),
+        remove: useRemoveDestination('GB', 'a'),
+        save: useSaveDestination('CA', 'b'),
+      }),
+      qc,
+    );
+    await flush();
+    expect(api.get).not.toHaveBeenCalled(); // cached + fresh: no fetch on mount
+    await act(async () => {
+      h.current.remove.mutate();
+      h.current.save.mutate({ visa: { name: 'b', category: 'student' } });
+    });
+    await flush();
+    // Both still in flight: no refetch yet.
+    expect(api.get).not.toHaveBeenCalled();
+    // Settle both in the same tick.
+    await act(async () => {
+      del.resolve({
+        success: true,
+        data: { countryCode: 'GB', visaId: 'a', saved: false },
+      });
+      put.resolve({ success: true, data: item('CA', 'b', 500) });
+    });
+    await flush();
+    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(ids(qc)).toEqual(['b']);
+    expect(h.current.list.data?.map((i) => i.visaId)).toEqual(['b']);
+  });
 });
