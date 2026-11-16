@@ -33,6 +33,9 @@ const extra = (Constants.expoConfig?.extra ?? {}) as {
   apiUrl?: string;
   useEmulator?: boolean;
   emulatorProjectId?: string;
+  // Raw EXPO_PUBLIC_EMULATOR_*_PORT values (japa#361); see emulatorPort().
+  emulatorAuthPort?: string | number;
+  emulatorFunctionsPort?: string | number;
   feedbackEnabled?: boolean;
   selfServiceOnly?: boolean;
 };
@@ -83,8 +86,42 @@ export const USE_EMULATOR = extra.useEmulator ?? false;
 export const EMULATOR_HOST =
   Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 
+// ── Emulator ports (japa#361) ───────────────────────────────────────────────
+// The firebase.json defaults. A build that does not set
+// EXPO_PUBLIC_EMULATOR_AUTH_PORT / EXPO_PUBLIC_EMULATOR_FUNCTIONS_PORT keeps
+// them, so every existing emulator set-up (`make mobile`, hand runs) is
+// unchanged. The Maestro e2e runner sets both to the firebase.e2e.json ports.
+export const DEFAULT_AUTH_EMULATOR_PORT = 9099;
+export const DEFAULT_FUNCTIONS_EMULATOR_PORT = 5001;
+
+/**
+ * A baked emulator port, or `fallback` when it is unset or not a valid TCP
+ * port (an integer 1–65535, digits only). Falling back rather than throwing
+ * keeps a typo from crashing the app at import time; the App configuration
+ * dev screen shows the URLs actually used.
+ */
+export function emulatorPort(
+  raw: string | number | undefined | null,
+  fallback: number,
+): number {
+  if (raw === undefined || raw === null) return fallback;
+  const text = String(raw).trim();
+  if (!/^\d{1,5}$/.test(text)) return fallback;
+  const port = Number(text);
+  return port >= 1 && port <= 65535 ? port : fallback;
+}
+
+export const AUTH_EMULATOR_PORT = emulatorPort(
+  extra.emulatorAuthPort,
+  DEFAULT_AUTH_EMULATOR_PORT,
+);
+export const FUNCTIONS_EMULATOR_PORT = emulatorPort(
+  extra.emulatorFunctionsPort,
+  DEFAULT_FUNCTIONS_EMULATOR_PORT,
+);
+
 // Firebase Auth emulator endpoint (used only when USE_EMULATOR is on).
-export const AUTH_EMULATOR_URL = `http://${EMULATOR_HOST}:9099`;
+export const AUTH_EMULATOR_URL = `http://${EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`;
 
 // Project id the local emulator suite runs under (see app.config.ts). Deliberately
 // NOT FIREBASE_PROJECT_ID: the backend emulators run in singleProjectMode as
@@ -97,6 +134,6 @@ export const EMULATOR_PROJECT_ID = extra.emulatorProjectId ?? 'japa-platform';
 // emulator under the EMULATOR's project id (it is part of the emulator URL path);
 // otherwise use the deployed URL baked in by app.config.ts.
 export const API_URL = USE_EMULATOR
-  ? `http://${EMULATOR_HOST}:5001/${EMULATOR_PROJECT_ID}/us-central1/api`
+  ? `http://${EMULATOR_HOST}:${FUNCTIONS_EMULATOR_PORT}/${EMULATOR_PROJECT_ID}/us-central1/api`
   : (extra.apiUrl ??
     'https://us-central1-durin-seli-dev.cloudfunctions.net/api');
