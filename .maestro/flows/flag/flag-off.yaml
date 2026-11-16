@@ -100,12 +100,9 @@ tags:
     element:
       id: "profile\\.row\\.payments"
     direction: DOWN
-- scrollUntilVisible:
-    element:
-      id: "profile\\.row\\.settings"
-    direction: DOWN
-- tapOn:
-    id: "profile\\.row\\.settings"
+# Settings by its link: a tap on the Settings row can land on the glass tab
+# bar when the row stops just above it (seen in a full run).
+- openLink: "durintech://settings"
 - extendedWaitUntil:
     visible:
       id: "screen\\.settings"

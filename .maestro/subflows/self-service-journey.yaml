@@ -29,6 +29,7 @@ appId: ${APP_ID}
     element:
       id: "destination\\.path\\.self"
     direction: DOWN
+    centerElement: true
 - tapOn:
     id: "destination\\.path\\.self"
 # Either the new application's hub opens, or (when this run already started
@@ -55,6 +56,7 @@ appId: ${APP_ID}
       id: "intakeStep\\.answer"
     direction: DOWN
     timeout: 30000
+    centerElement: true
 - tapOn:
     id: "intakeStep\\.answer"
 - extendedWaitUntil:
@@ -65,18 +67,21 @@ appId: ${APP_ID}
     element:
       id: "intake\\.q\\.e2e-visit-purpose\\.option\\.tourism"
     direction: DOWN
+    centerElement: true
 - tapOn:
     id: "intake\\.q\\.e2e-visit-purpose\\.option\\.tourism"
 - scrollUntilVisible:
     element:
       id: "intake\\.q\\.e2e-visited-before\\.no"
     direction: DOWN
+    centerElement: true
 - tapOn:
     id: "intake\\.q\\.e2e-visited-before\\.no"
 - scrollUntilVisible:
     element:
       id: "intake\\.q\\.e2e-accommodation\\.text"
     direction: DOWN
+    centerElement: true
 - tapOn:
     id: "intake\\.q\\.e2e-accommodation\\.text"
 - inputText: "A hotel in Dublin"
