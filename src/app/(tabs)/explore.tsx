@@ -781,7 +781,11 @@ export default function ExploreScreen() {
                       // Keyed by country code + visa id: visa ids are only
                       // unique within a country (japa#341).
                       <View key={destKey(d)} style={{ width: '48.4%' }}>
-                        <Tile d={d} testID={tileId(d)} onPress={() => open(d)} />
+                        <Tile
+                          d={d}
+                          testID={tileId(d)}
+                          onPress={() => open(d)}
+                        />
                       </View>
                     ))}
                   </View>
