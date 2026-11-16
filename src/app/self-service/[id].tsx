@@ -35,6 +35,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import Animated, {
+  useAnimatedRef,
   useAnimatedScrollHandler,
   type SharedValue,
   useAnimatedStyle,
@@ -79,7 +80,8 @@ import {
 } from '@/types/documents.type';
 import { VisaRequirement } from '@/types/visas.type';
 // Visitor intake (#113): Step 1 card driven by the approved rubric's questions.
-import { useIntake } from '@/hooks/useIntake';
+import { intakeKey, useIntake } from '@/hooks/useIntake';
+import { openRequired } from '@/components/explorer/intake/intakeLogic';
 import {
   IntakeStep,
   intakeOccupiesStep,
@@ -119,12 +121,41 @@ import {
   useAssessment,
   useStartReview,
 } from '@/hooks/useCaseOfficer';
+// japa#309: the "enough to review" rule and its "still needed" lines.
+import {
+  reviewContent,
+  reviewGapLines,
+  reviewableDocumentCount,
+  NEEDS_CONTENT_GENERIC,
+  // japa#310: a failure a retry cannot fix points at support instead.
+  failedCanRetry,
+  SUPPORT_MAILTO,
+  type ReviewContent,
+  type ReviewGap,
+  type ReviewGaps,
+} from '@/components/explorer/review/reviewCopy';
 import { PLANS_ROUTE } from '@/components/explorer/UpgradePrompt';
 import {
   SUBMITTED_STATUSES,
   isStatementLocked,
   useStatement,
 } from '@/hooks/useStatement';
+// japa#312: step numbering and the "Where you apply" card copy.
+import {
+  OFFICIAL_SITE_HEADING,
+  OFFICIAL_SITE_TITLE,
+  officialSiteBody,
+  selfServiceSteps,
+  stepNumberOf,
+  type SelfServiceStep,
+} from '@/components/explorer/selfServiceSteps';
+
+// japa#310: the size and type the backend accepts, checked before uploading.
+import {
+  pickedContentType,
+  pickedFileProblem,
+  uploadFailureCopy,
+} from '@/components/explorer/uploadLimits';
 
 // japa#174: requirement key for an upload tied to no requirement or checklist
 // item (the "upload what you already have" buttons). The backend only needs a
@@ -133,9 +164,8 @@ import {
 // not a listed requirement and not a checklist item, so these land there.
 const GENERAL_REQUIREMENT_ID = 'general';
 
-// japa#174: the one upload-failure line (replaces the old Alert).
-const uploadErrorCopy = (fileName: string) =>
-  `We couldn’t upload ${fileName}. Check your connection and try again.`;
+// japa#174: the upload-failure lines (they replace the old Alert) live in
+// uploadLimits.ts since japa#310, next to the size and type checks.
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
@@ -735,9 +765,21 @@ export default function SelfServiceView() {
   const reviewId = app ? app.id : '';
   const reviewQ = useAssessment(reviewId);
   const stmtQ = useStatement(reviewId);
-  const { start: startReview, isStarting } = useStartReview(reviewId);
+  const {
+    start: startReview,
+    isStarting,
+    notEnough: refusedGaps,
+  } = useStartReview(reviewId);
   // Inline error for the sticky bar when a start fails (offline / generic).
   const [ctaError, setCtaError] = useState<string | null>(null);
+  // japa#309: the inputs key (open questions | documents) at the moment the
+  // backend refused a start for missing content. While the screen's own inputs
+  // still match it, the backend's "still needed" lines win over the app's
+  // (its view was stale); as soon as either changes, the app's view is used.
+  const [refusedAtKey, setRefusedAtKey] = useState<string | null>(null);
+  // Scroll target for the "Upload at least one document." line.
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const [docsStepY, setDocsStepY] = useState(0);
   const queryClient = useQueryClient();
   // Returning to this screen (from the statement, the review or the plans screen)
   // refetches the review: the inputs or the plan may have changed meanwhile.
@@ -763,6 +805,8 @@ export default function SelfServiceView() {
     requirementId: string | null;
     documentRequestId?: string;
     fileName: string;
+    /** japa#310: the line to show (generic, too large or wrong type). */
+    message: string;
   } | null>(null);
 
   // Parallax driven by the sheet's scroll offset. The prototype translated the
@@ -783,6 +827,16 @@ export default function SelfServiceView() {
       // once it is known.
       const failureKey = documentRequestId ?? requirementId ?? 'general';
       let fileName = 'your file';
+      let contentType = 'application/octet-stream';
+      // The in-card failure for this upload, with its line.
+      const fail = (message: string) =>
+        setUploadFailure({
+          key: failureKey,
+          requirementId,
+          documentRequestId,
+          fileName,
+          message,
+        });
       setUploadFailure(null);
       try {
         const res = await DocumentPicker.getDocumentAsync({
@@ -792,7 +846,21 @@ export default function SelfServiceView() {
         if (res.canceled) return;
         const f = res.assets[0];
         fileName = f.name;
-        const contentType = f.mimeType ?? 'application/octet-stream';
+        contentType = pickedContentType(f);
+
+        // japa#310: refuse a file the backend would refuse (wrong type, or
+        // over 7 MB for an image / 10 MB otherwise) before asking for an
+        // upload URL, so nothing is uploaded. Shown in the card it came from.
+        // HEIC/HEIF photos are refused too: the review cannot read them.
+        const problem = pickedFileProblem({
+          size: f.size,
+          contentType,
+          name: f.name,
+        });
+        if (problem) {
+          fail(problem);
+          return;
+        }
 
         // Checklist uploads track the request id; requirement uploads the req id.
         if (documentRequestId) setUploadingItemId(documentRequestId);
@@ -830,15 +898,12 @@ export default function SelfServiceView() {
         // A new document changes the review's inputs: refresh the review state
         // so the card can show it as out of date.
         queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
-      } catch {
+      } catch (err) {
         // Signed URL, storage PUT or register failed: show it in the card the
         // upload came from (never an Alert), with a retry for the same target.
-        setUploadFailure({
-          key: failureKey,
-          requirementId,
-          documentRequestId,
-          fileName,
-        });
+        // japa#310: a 413 FILE_TOO_LARGE (the backend has already deleted the
+        // file) and a wrong-type 400 get their own line, not the generic one.
+        fail(uploadFailureCopy(err, fileName, contentType));
       } finally {
         setUploadingReqId(null);
         setUploadingItemId(null);
@@ -973,22 +1038,90 @@ export default function SelfServiceView() {
 
     // ── Review state (issue #43) ─────────────────────────────────────────────
     const submitted = SUBMITTED_STATUSES.includes(app.status as string);
-    const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError);
-    const reviewCta = deriveReviewCta(reviewState, submitted);
+    // japa#309: "enough to review", worked out from what the screen has loaded:
+    // the intake's open required questions (a route with no intake skips it)
+    // and the uploaded documents, not counting the refusal letter. A part that
+    // failed to load never blocks (the backend decides, see `refusedGaps`).
+    const intakeOpen: number | 'none' | 'unknown' | 'loading' =
+      intakeQ.isLoading
+        ? 'loading'
+        : intakeQ.isError || !intakeQ.data
+          ? 'unknown'
+          : !intakeQ.data.available
+            ? 'none'
+            : // The server's own count when it sends one (the rule the backend
+              // gates on), else the same rule worked out in the app.
+              Array.isArray(intakeQ.data.openRequiredIds)
+              ? intakeQ.data.openRequiredIds.length
+              : openRequired(intakeQ.data.questions, intakeQ.data.answers)
+                  .length;
+    const docCount: number | 'unknown' | 'loading' =
+      docsQ.isLoading && !docsQ.data
+        ? 'loading'
+        : docsQ.isError && !docsQ.data
+          ? 'unknown'
+          : reviewableDocumentCount(docs);
+    const contentKey = `${intakeOpen}|${docCount}`;
+    const localContent = reviewContent({
+      intakeOpen,
+      // A read-only intake (past the editable statuses) never blocks.
+      intakeEditable: intakeQ.data?.editable !== false,
+      documents: docCount,
+    });
+    // The backend's answer wins only while the inputs are what they were then.
+    const serverGaps =
+      refusedGaps && refusedAtKey === contentKey ? refusedGaps : null;
+    const content: ReviewContent = serverGaps
+      ? { status: 'missing', gaps: serverGaps }
+      : localContent;
+    const contentGaps: ReviewGaps | null =
+      content.status === 'missing' ? content.gaps : null;
+    // View only once submitted: the content check is ignored there (see
+    // `deriveReviewState`), so the card is as it was before japa#309.
+    const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError, {
+      check: content,
+      submitted,
+    });
+    // japa#310: a failure a retry cannot fix (too many documents, too large)
+    // offers "Contact support" instead of "Try again".
+    const reviewCta = deriveReviewCta(
+      reviewState,
+      submitted,
+      reviewQ.data?.kind === 'review'
+        ? failedCanRetry(reviewQ.data.view.meta)
+        : true,
+    );
     // Step numbers are computed from the steps that are present: the intake
     // (#113) only exists for routes with questions, and it shifts the rest. The
     // statement and review steps (#43) are always there on this live path.
-    const presentSteps = [
-      intakeStep ? 'intake' : null,
-      'official',
-      'documents',
-      'statement',
-      'review',
-    ].filter(Boolean) as string[];
-    const stepNo = (key: string) => presentSteps.indexOf(key) + 1;
+    // japa#312: the official-site card is not a step ("Where you apply").
+    const presentSteps = selfServiceSteps(intakeStep);
+    const stepNo = (key: SelfServiceStep) => stepNumberOf(presentSteps, key);
+    // japa#309: a refusal for missing content from a state the card keeps
+    // (e.g. "Run review again" after a document was removed), or one whose
+    // body named nothing usable, is said above the sticky button. It is never
+    // a generic error and never the upgrade screen.
+    const refusedNote =
+      refusedAtKey === contentKey && reviewState !== 'needs_content'
+        ? serverGaps
+          ? reviewGapLines(serverGaps, stepNo('intake'))
+              .map((l) => l.text)
+              .join(' ')
+          : NEEDS_CONTENT_GENERIC
+        : null;
     // A refetch failed but a cached review is on screen → offline note.
     const offlineCached = reviewQ.isError && !!reviewQ.data;
     const openReview = () => router.push(`/self-service/${app.id}/review`);
+    // A "still needed" line opens its step: the intake screen, or the
+    // documents step further up this screen.
+    const openGap = (gap: ReviewGap) => {
+      if (gap === 'intake')
+        return router.push(`/self-service/${app.id}/intake`);
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, HERO - 26 + docsStepY - 12),
+        animated: true,
+      });
+    };
     const openStatement = () =>
       router.push(`/self-service/${app.id}/statement`);
 
@@ -996,12 +1129,25 @@ export default function SelfServiceView() {
     const onReviewCta = async () => {
       if (!reviewCta || reviewCta.disabled || isStarting) return;
       setCtaError(null);
+      setRefusedAtKey(null);
       if (reviewCta.action === 'open') return openReview();
       if (reviewCta.action === 'upgrade') return router.push(PLANS_ROUTE);
+      if (reviewCta.action === 'contact') {
+        Linking.openURL(SUPPORT_MAILTO).catch(() => undefined);
+        return;
+      }
       const out = await startReview(
         reviewCta.action === 'retry' ? 'retry' : 'cta',
       );
       if (out === 'started') return openReview();
+      if (out === 'not_enough') {
+        // japa#309: the app's view was stale. Remember the inputs it was based
+        // on (the card then shows the backend's lines), and refresh them.
+        setRefusedAtKey(contentKey);
+        queryClient.invalidateQueries({ queryKey: intakeKey(app.id) });
+        queryClient.invalidateQueries({ queryKey: ['documents', app.id] });
+        return;
+      }
       if (out === 'offline')
         setCtaError(
           'You’re offline, so we couldn’t start your review. Reconnect and try again.',
@@ -1045,6 +1191,7 @@ export default function SelfServiceView() {
 
         {/* Scrolling content sheet */}
         <Animated.ScrollView
+          ref={scrollRef}
           onScroll={onScroll}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
@@ -1224,8 +1371,10 @@ export default function SelfServiceView() {
               lastReviewAt={lastReviewFinishedAt(reviewQ.data)}
               stepNumber={stepNo('intake')}
             />
-            {/* ── Official application ────────────────────────────────────────── */}
-            <SectionTitle>{`Step ${stepNo('official')} · Official application`}</SectionTitle>
+            {/* ── Where you apply (official site) ─────────────────────────────────
+                japa#312: not a numbered step. It stays here, but says the real
+                order: get ready in the app first, then apply on the official site. */}
+            <SectionTitle>{OFFICIAL_SITE_TITLE}</SectionTitle>
             <View
               style={{
                 backgroundColor: EX.color.cream, // #FFF6EC
@@ -1258,7 +1407,7 @@ export default function SelfServiceView() {
                       color: '#7A5A2E',
                     }}
                   >
-                    Complete the online form
+                    {OFFICIAL_SITE_HEADING}
                   </Text>
                   <Text
                     style={{
@@ -1268,9 +1417,7 @@ export default function SelfServiceView() {
                       marginTop: 2,
                     }}
                   >
-                    {officialUrl
-                      ? 'Fill in your application on the official government portal before uploading documents here.'
-                      : `Fill in your application on the ${country} government’s official site, then upload your documents here. We don’t have the link for this visa yet.`}
+                    {officialSiteBody(!!officialUrl, country)}
                   </Text>
                 </View>
               </View>
@@ -1302,6 +1449,11 @@ export default function SelfServiceView() {
             {/* ── Upload documents: the personal checklist (#114) with each item's
                 upload-check result (#115), then any leftover requirement cards.
                 japa#174: the empty / loading / error states of this step. ── */}
+            {/* japa#309: scroll target for "Upload at least one document." */}
+            <View
+              onLayout={(e) => setDocsStepY(e.nativeEvent.layout.y)}
+              pointerEvents="none"
+            />
             <SectionTitle>
               {`Step ${stepNo('documents')} · ${hasInfoItems ? 'Documents and details' : 'Upload documents'}`}
             </SectionTitle>
@@ -1338,9 +1490,7 @@ export default function SelfServiceView() {
                   style={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}
                 >
                   {uploadFailure?.key === 'general' ? (
-                    <InlineError
-                      message={uploadErrorCopy(uploadFailure.fileName)}
-                    />
+                    <InlineError message={uploadFailure.message} />
                   ) : null}
                   {uploadingGeneral ? (
                     <ActivityIndicator color={EX.color.primary} />
@@ -1371,7 +1521,7 @@ export default function SelfServiceView() {
                     uploadFailure?.documentRequestId
                       ? {
                           documentRequestId: uploadFailure.documentRequestId,
-                          message: uploadErrorCopy(uploadFailure.fileName),
+                          message: uploadFailure.message,
                         }
                       : null
                   }
@@ -1423,9 +1573,7 @@ export default function SelfServiceView() {
                   <View style={{ marginTop: 10, gap: 8 }}>
                     {/* Error above the button; label becomes Try again (#174). */}
                     {uploadFailure?.key === 'general' ? (
-                      <InlineError
-                        message={uploadErrorCopy(uploadFailure.fileName)}
-                      />
+                      <InlineError message={uploadFailure.message} />
                     ) : null}
                     {uploadingGeneral ? (
                       <ActivityIndicator color={EX.color.primary} />
@@ -1451,9 +1599,7 @@ export default function SelfServiceView() {
                 uploading={uploadingReqId === req.id}
                 onUpload={handleUpload}
                 uploadError={
-                  uploadFailure?.key === req.id
-                    ? uploadErrorCopy(uploadFailure.fileName)
-                    : null
+                  uploadFailure?.key === req.id ? uploadFailure.message : null
                 }
                 onRetryUpload={() => handleUpload(req.id)}
               />
@@ -1486,6 +1632,9 @@ export default function SelfServiceView() {
               offlineCached={offlineCached}
               onSeeLast={openReview}
               onRetryLoad={() => reviewQ.refetch()}
+              gaps={contentGaps}
+              intakeStep={stepNo('intake')}
+              onOpenGap={openGap}
             />
             {/* ── Ask about your review (issue #45) ─────────────────────────────
                 A clearly separated entry to the ask-anywhere chat. */}
@@ -1592,9 +1741,9 @@ export default function SelfServiceView() {
               borderTopColor: EX.color.line06,
             }}
           >
-            {ctaError ? (
+            {ctaError || refusedNote ? (
               <View style={{ marginBottom: 10 }}>
-                <InlineError message={ctaError} />
+                <InlineError message={(ctaError ?? refusedNote)!} />
               </View>
             ) : null}
             <PressableStatic

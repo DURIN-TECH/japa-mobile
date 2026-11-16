@@ -35,6 +35,41 @@ export type AssessmentStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 /** Why a stored review no longer matches the current state (server-computed). */
 export type StaleReason = 'inputs_changed' | 'rules_updated';
 
+// ── Failed-job codes (mirror of the backend's ASSESSMENT_ERROR_CODES) ─────────
+// `meta.error.code` stays typed as `string` because a newer backend may send a
+// code this build does not know; the copy helpers fall back to the generic
+// "Try again" wording for those. This list is what the app knows by name.
+//
+// japa#310: the codes the applicant sees differently from the generic failure:
+//   daily_cap_exceeded  the PLATFORM-WIDE daily limit is used up: a real pause,
+//                       "try again tomorrow" is true
+//   too_many_documents  this application has more documents than one review can
+//                       read; the same inputs fail the same way, so a retry
+//                       cannot succeed
+//   review_too_large    this application is too large for one review for another
+//                       reason (the rules, the text, or files together over
+//                       60 MB); a retry cannot succeed
+//   cost_cap_exceeded   only on failures stored before japa#310; a retry now
+//                       goes through the new checks and can succeed
+export const ASSESSMENT_ERROR_CODES = [
+  'inputs_changed',
+  'rubric_changed',
+  'timed_out',
+  'cost_cap_exceeded',
+  'daily_cap_exceeded',
+  'too_many_documents',
+  'review_too_large',
+  'settings_unavailable',
+  'disabled',
+  'provider_error',
+  'provider_refused',
+  'provider_stopped',
+  'invalid_model_output',
+  'internal_error',
+  'application_closed',
+] as const;
+export type AssessmentErrorCode = (typeof ASSESSMENT_ERROR_CODES)[number];
+
 /** Rubric criterion kind (copied from the rubric by the backend). */
 export type CriterionKind =
   | 'objective'
@@ -119,12 +154,36 @@ export interface StatementFinding extends PlainFinding {
   nodePath?: number[];
 }
 
+/**
+ * Why the engine did not assess a rule (mirror of the backend's
+ * `InsufficientItem.notAssessed`, japa#308). Absent on an item the applicant
+ * can help with (an unreadable document, a judgement call that could not be
+ * completed) and on results stored before the field existed.
+ *   unanswered        the rule's trigger question isn't answered yet
+ *   missing_fact      a fact the rule needs is missing
+ *   no_trigger        the guidance names no answer the rule depends on (staff only)
+ *   not_in_documents  no document in the rulebook would show it (staff only)
+ */
+export type NotAssessedReason =
+  | 'unanswered'
+  | 'no_trigger'
+  | 'missing_fact'
+  | 'not_in_documents';
+
 /** Something the engine could not decide. */
 export interface InsufficientItem {
   criterionId: string;
   title: string;
+  /** For `no_trigger` / `not_in_documents` items this is staff text: never shown. */
   reason: string;
   layerKey?: string;
+  notAssessed?: NotAssessedReason;
+  /**
+   * Set only on an item about an UPLOAD that could not be read, not a rule:
+   * `criterionId` is then `document:<documentId>` and it has no `notAssessed`
+   * (the applicant can act on it). Carried, not rendered yet.
+   */
+  documentId?: string;
 }
 
 /**

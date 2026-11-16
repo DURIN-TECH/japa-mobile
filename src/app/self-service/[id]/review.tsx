@@ -10,6 +10,8 @@
 //         then a STATIC upgrade panel. Nothing locked is drawn from data.
 //   full  the cited review: rules not met yet, officer questions, statement
 //         notes, what we couldn't tell, strengths, what to do next.
+//   Both tiers, unless a fixed rule blocks: "Then you apply" (japa#312), the
+//   closing words that Seli doesn't send the application.
 //
 // Route-neutral: every rule string (titles, references, quotes, links) is
 // rendered from the data as received.
@@ -27,6 +29,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Linking,
   ScrollView,
   Text,
   View,
@@ -57,6 +60,7 @@ import {
   RuleQuote,
   SolidButton,
 } from '@/components/explorer/review/ReviewParts';
+import { CouldntTell } from '@/components/explorer/review/CouldntTell';
 import { StickyBar } from '@/components/explorer/StickyBar';
 import { LayerPill } from '@/components/explorer/SharedRouteParts';
 import {
@@ -71,11 +75,21 @@ import {
   BAND_SUMMARY,
   DISCLAIMER,
   failedReasonLine,
+  failedCanRetry,
+  CONTACT_SUPPORT_LABEL,
+  SUPPORT_MAILTO,
+  fullTierBlocked,
+  isFixedRuleFinding,
+  nextSteps,
   NO_REVIEW_BODY,
   NO_REVIEW_TITLE,
+  showsThenYouApply,
   staleCopy,
+  NEEDS_CONTENT_ELSEWHERE,
 } from '@/components/explorer/review/reviewCopy';
+import { ThenYouApply } from '@/components/explorer/review/ThenYouApply';
 import { useApplication } from '@/hooks/useApplications';
+import { useVisaType } from '@/hooks/useVisaTypes';
 import {
   assessmentKey,
   isForbidden,
@@ -90,41 +104,16 @@ import { analyticsService } from '@/services/analytics.service';
 import { isSelfServiceOnly } from '@/config/env';
 import type {
   AssessmentView,
-  CitedFinding,
   FullAssessmentData,
 } from '@/types/assessment.type';
 
 /** After this long the waiting line changes to the "still working" copy. */
 const STILL_WORKING_MS = 3 * 60 * 1000;
 
-/** True for the entry a fixed (mandatory-bar) rule produced. */
-const isBar = (f: CitedFinding) =>
-  f.isMandatoryBar === true || f.kind === 'mandatory_bar';
-
-/** "Fix the rule…" etc.: built in the app from which sections are non-empty. */
-function nextSteps(d: FullAssessmentData): string[] {
-  const steps: string[] = [];
-  const g = d.refusalGrounds.length;
-  if (g > 0)
-    steps.push(
-      g === 1
-        ? 'Fix the rule that isn’t met yet.'
-        : `Fix the ${g} rules that aren’t met yet.`,
-    );
-  if (d.insufficientInformation.length > 0)
-    steps.push('Add what we couldn’t check.');
-  const q = d.credibilityFlags.length;
-  if (q > 0)
-    steps.push(
-      q === 1
-        ? 'Get ready for the question an officer may ask.'
-        : `Get ready for the ${q} questions an officer may ask.`,
-    );
-  if (steps.length === 0)
-    steps.push('Keep your documents up to date until you apply.');
-  steps.push('Run the review again to see where you stand.');
-  return steps;
-}
+// The fixed-rule check (`isFixedRuleFinding`, `fullTierBlocked`) and
+// `nextSteps` ("Fix the rule…" etc.) live in reviewCopy.ts since japa#312, so
+// they are unit-tested together with the "Then you apply" rule that depends on
+// the same blocking check.
 
 export default function ReviewScreen() {
   // Self-service-only build (japa#334): hides the "Find an agent" buttons and
@@ -140,6 +129,15 @@ export default function ReviewScreen() {
   const q = useAssessment(applicationId);
   const { start, isStarting } = useStartReview(applicationId);
   const visaName = appQ.data?.visaTypeName;
+  // japa#312: the visa (same query and cache as the self-service screen), only
+  // to know whether it has an official link for "Then you apply".
+  const vtQ = useVisaType(
+    appQ.data?.countryCode ?? '',
+    appQ.data?.visaTypeId ?? '',
+  );
+  const hasOfficialLink: boolean | undefined = vtQ.data
+    ? !!vtQ.data.visaType?.applicationUrl?.trim()
+    : undefined;
 
   // Inline error for a failed start (offline / generic), shown above the CTA.
   const [startError, setStartError] = useState<string | null>(null);
@@ -213,6 +211,8 @@ export default function ReviewScreen() {
       );
     else if (out === 'error')
       setStartError('We couldn’t start your review. Try again in a moment.');
+    // japa#309: nothing to review yet; the application screen lists what.
+    else if (out === 'not_enough') setStartError(NEEDS_CONTENT_ELSEWHERE);
     // 'upgrade' is not an error: the refetch shows the free out-of-date state.
   };
 
@@ -415,12 +415,23 @@ export default function ReviewScreen() {
               <InlineError message={startError} />
             </View>
           ) : null}
-          {/* A retry after a failed job is free on both tiers. */}
-          <SolidButton
-            label={isStarting ? 'Starting…' : 'Try again'}
-            loading={isStarting}
-            onPress={() => run('retry')}
-          />
+          {/* A retry after a failed job is free on both tiers. japa#310: when
+              a retry cannot succeed (the application is too big for one
+              review), the button opens support instead of failing again. */}
+          {failedCanRetry(meta) ? (
+            <SolidButton
+              label={isStarting ? 'Starting…' : 'Try again'}
+              loading={isStarting}
+              onPress={() => run('retry')}
+            />
+          ) : (
+            <SolidButton
+              label={CONTACT_SUPPORT_LABEL}
+              onPress={() =>
+                Linking.openURL(SUPPORT_MAILTO).catch(() => undefined)
+              }
+            />
+          )}
         </StickyBar>
       </View>
     );
@@ -434,8 +445,14 @@ export default function ReviewScreen() {
   const free = view.tier === 'free' ? view.data : null;
 
   // Full tier: a fixed rule blocks the application.
-  const barItem = full?.refusalGrounds.find(isBar) ?? null;
-  const fullBlocked = !!full && (barItem !== null || full.hasBlockingRule);
+  const barItem = full?.refusalGrounds.find(isFixedRuleFinding) ?? null;
+  const fullBlocked = !!full && fullTierBlocked(full);
+  // japa#312: closing "Then you apply" words, finished + unblocked only.
+  // The ending depends on whether the visa has an official link (the
+  // "Where you apply" card has no button without one); unknown until loaded.
+  const thenYouApply = showsThenYouApply(view) ? (
+    <ThenYouApply hasLink={hasOfficialLink} />
+  ) : null;
 
   const disclaimer = (
     <Text
@@ -610,7 +627,7 @@ export default function ReviewScreen() {
                       .slice(0, 3)
                       .map((t, i) => (
                         <NumberedRow
-                          key={t.criterionId || i}
+                          key={`${t.criterionId}:${i}`}
                           n={i + 1}
                           label={t.title}
                         />
@@ -619,6 +636,8 @@ export default function ReviewScreen() {
                     <CheckRow label="Nothing stood out as a priority in what you’ve given us." />
                   )}
                 </View>
+                {/* japa#312: below "Start with these", above the upgrade panel */}
+                {thenYouApply}
                 <View style={{ marginTop: 22 }}>
                   <UpgradePanel onPress={() => goPlans('panel')} />
                 </View>
@@ -641,6 +660,8 @@ export default function ReviewScreen() {
                 }
               />
             ) : null}
+            {/* japa#312: full tier, after "What to do next" (FullSections ends with it) */}
+            {full && !fullBlocked ? thenYouApply : null}
           </View>
         </Animated.View>
       </ScrollView>
@@ -696,9 +717,10 @@ function FullSections({
         {d.refusalGrounds.length === 0 ? (
           <CheckRow label="No rule-based issues in what you’ve given us." />
         ) : (
-          d.refusalGrounds.map((g) => (
+          d.refusalGrounds.map((g, i) => (
+            // japa#308: criterionId alone isn't promised unique; add the index.
             <FindingCard
-              key={g.criterionId}
+              key={`${g.criterionId}:${i}`}
               kind="rule"
               layer={<LayerPill label={layerLabel(layers, g.layerKey)} />}
               title={g.title}
@@ -725,9 +747,10 @@ function FullSections({
             to understand better, and you can prepare for them.
           </Caption>
           <View style={{ gap: 10 }}>
-            {d.credibilityFlags.map((f) => (
+            {d.credibilityFlags.map((f, i) => (
+              // japa#308: criterionId alone isn't promised unique; add the index.
               <FindingCard
-                key={f.criterionId}
+                key={`${f.criterionId}:${i}`}
                 kind="question"
                 layer={<LayerPill label={layerLabel(layers, f.layerKey)} />}
                 title={f.title}
@@ -765,35 +788,17 @@ function FullSections({
         </>
       ) : null}
 
-      {/* What we couldn't tell */}
-      {d.insufficientInformation.length > 0 ? (
-        <>
-          <SectionTitle>What we couldn’t tell</SectionTitle>
-          <Caption>
-            We didn’t have enough to check these. Add what’s missing and the
-            next review will cover them.
-          </Caption>
-          <View style={{ gap: 10 }}>
-            {d.insufficientInformation.map((i) => (
-              <FindingCard
-                key={i.criterionId}
-                kind="unknown"
-                layer={<LayerPill label={layerLabel(layers, i.layerKey)} />}
-                title={i.title}
-                body={i.reason}
-              />
-            ))}
-          </View>
-        </>
-      ) : null}
+      {/* What we couldn't tell: only what the applicant can act on (japa#308) */}
+      <CouldntTell items={d.insufficientInformation} layers={layers} />
 
       {/* What you've got */}
       {d.strengths.length > 0 ? (
         <>
           <SectionTitle>What you’ve got</SectionTitle>
           <View style={{ gap: 9 }}>
-            {d.strengths.map((s) => (
-              <CheckRow key={s.criterionId} label={s.title} />
+            {/* japa#308: criterionId alone isn't promised unique; add the index. */}
+            {d.strengths.map((s, i) => (
+              <CheckRow key={`${s.criterionId}:${i}`} label={s.title} />
             ))}
           </View>
         </>
