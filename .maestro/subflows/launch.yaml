@@ -9,9 +9,14 @@
 # exp+...://expo-development-client/?url=<this run's Metro> link).
 # Ends on the welcome screen (signed out) or Home (signed in).
 #
-# Known dev-client flake (QA of japa#375, ~1 in 8 relaunches): "Failed to
-# load app" without a crash; a second load works. The LOAD step (not the
-# flow) is retried once here, and the retry leaves a screenshot named
+# The link is sent only once the dev client's launcher is up: a link that
+# arrives while it is still starting got "Failed to load app" and then a
+# dead app in the first full run.
+#
+# Known dev-client flake (QA of japa#375, ~1 in 8 relaunches): "There was a
+# problem loading the project" / "Failed to load app" without a crash; a
+# second load works. The LOAD step (not the flow) is retried once here by
+# its own Reload button, and the retry leaves a screenshot named
 # `load-retry` that the runner counts and reports in its summary.
 #
 # Never relies on a cold start THROUGH an app link (not routed by the dev
@@ -24,6 +29,12 @@ appId: ${APP_ID}
     stopApp: true
     permissions:
       notifications: allow
+# The launcher ("Development servers"), or the app itself when the dev client
+# reopened the last server on its own.
+- extendedWaitUntil:
+    visible: "(?i).*development servers.*|Seli|Welcome back|Good morning.*"
+    timeout: 30000
+    optional: true
 - openLink: ${DEV_CLIENT_URL}
 - extendedWaitUntil:
     visible:
@@ -34,14 +45,10 @@ appId: ${APP_ID}
     optional: true
 - runFlow:
     when:
-      notVisible:
-        id: "welcome\\.login|screen\\.home"
+      visible: "There was a problem loading the project.*"
     commands:
       - takeScreenshot: load-retry
-      - launchApp:
-          appId: ${APP_ID}
-          stopApp: true
-      - openLink: ${DEV_CLIENT_URL}
+      - tapOn: "Reload"
 - extendedWaitUntil:
     visible:
       id: "welcome\\.login|screen\\.home"

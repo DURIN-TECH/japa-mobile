@@ -13,6 +13,11 @@ appId: ${APP_ID}
     id: "explore\\.search"
 - eraseText: 40
 - inputText: "Ireland"
+# Close the keyboard first (the search key submits and blurs): while it is
+# up, the first tap on a tile only dismisses it (seen in the first full run).
+- pressKey: Enter
+- waitForAnimationToEnd:
+    timeout: 3000
 - extendedWaitUntil:
     visible:
       id: "explore\\.dest\\.ie\\.short-stay-c"

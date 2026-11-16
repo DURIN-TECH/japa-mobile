@@ -70,8 +70,11 @@ tags:
     element:
       id: "destination\\.path\\.agent"
     direction: DOWN
-- assertVisible:
-    id: "destination\\.path\\.self"
+# The Self-service card sits under the agent card (maybe below the fold).
+- scrollUntilVisible:
+    element:
+      id: "destination\\.path\\.self"
+    direction: DOWN
 
 # ── Profile: the four rows and the Agents stat; Settings: Privacy ────────────
 - openLink: "durintech://profile"
