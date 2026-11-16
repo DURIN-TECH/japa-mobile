@@ -4,7 +4,7 @@
 //   • the featured tile is chosen from page one and stays put
 //   • category chips can come from later pages
 //   • when to fetch the next page, per trigger (scroll / content size /
-//     layout / effect): the review's no-scroll cases never load page two
+//     layout): the review's no-scroll cases never load page two
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, expect, it } from '@jest/globals';
@@ -165,7 +165,6 @@ describe('shouldLoadNextPage', () => {
     hasNextPage: true,
     isFetching: false,
     nextPageFailed: false,
-    category: 'All',
     metrics: bottom,
   };
 
@@ -182,33 +181,19 @@ describe('shouldLoadNextPage', () => {
     ).toBe(true);
   });
 
-  // The three review cases (japa#341): page two must NOT load with "All" and
-  // no scrolling.
-  it('"All", first load: the effect ignores the spinner-era height', () => {
+  // The three review cases (japa#341): page two must NOT load with no
+  // scrolling. (The old 'effect' trigger is gone, japa#347; a layout event
+  // is the one that can still carry a stale height.)
+  it('first load / cleared search: layout ignores the stale height', () => {
     expect(
-      shouldLoadNextPage({ ...base, trigger: 'effect', metrics: stale }),
+      shouldLoadNextPage({ ...base, trigger: 'layout', metrics: stale }),
     ).toBe(false);
   });
 
-  it('"All", clearing a search: the effect ignores the results height', () => {
-    // Search mode just ended; metrics still hold the short results list.
-    expect(
-      shouldLoadNextPage({
-        ...base,
-        trigger: 'effect',
-        searchMode: false,
-        metrics: stale,
-      }),
-    ).toBe(false);
-  });
-
-  it('"All", mount with a cached page: layout with no content height', () => {
+  it('mount with a cached page: layout with no content height', () => {
     const unmeasured = { offsetY: 0, viewportHeight: 800, contentHeight: 0 };
     expect(
       shouldLoadNextPage({ ...base, trigger: 'layout', metrics: unmeasured }),
-    ).toBe(false);
-    expect(
-      shouldLoadNextPage({ ...base, trigger: 'effect', metrics: unmeasured }),
     ).toBe(false);
     // Even a content-size event without a viewport yet does not load.
     expect(
@@ -220,23 +205,8 @@ describe('shouldLoadNextPage', () => {
     ).toBe(false);
   });
 
-  it('"All": layout / effect never load, even at the bottom', () => {
+  it('layout never loads, even at the bottom', () => {
     expect(shouldLoadNextPage({ ...base, trigger: 'layout' })).toBe(false);
-    expect(shouldLoadNextPage({ ...base, trigger: 'effect' })).toBe(false);
-  });
-
-  it('a category chip keeps loading from the effect, without scrolling', () => {
-    (['effect', 'layout', 'scroll', 'contentSize'] as LoadTrigger[]).forEach(
-      (trigger) =>
-        expect(
-          shouldLoadNextPage({
-            ...base,
-            trigger,
-            category: 'Study',
-            metrics: top,
-          }),
-        ).toBe(true),
-    );
   });
 
   it('sends nothing once everything is loaded', () => {
@@ -244,9 +214,8 @@ describe('shouldLoadNextPage', () => {
     expect(
       shouldLoadNextPage({
         ...base,
-        trigger: 'effect',
+        trigger: 'contentSize',
         hasNextPage: false,
-        category: 'Work',
       }),
     ).toBe(false);
   });
@@ -256,9 +225,8 @@ describe('shouldLoadNextPage', () => {
     expect(
       shouldLoadNextPage({
         ...base,
-        trigger: 'effect',
+        trigger: 'contentSize',
         searchMode: true,
-        category: 'Work',
       }),
     ).toBe(false);
   });
@@ -270,9 +238,8 @@ describe('shouldLoadNextPage', () => {
     expect(
       shouldLoadNextPage({
         ...base,
-        trigger: 'effect',
+        trigger: 'contentSize',
         nextPageFailed: true,
-        category: 'Work',
       }),
     ).toBe(false);
   });
