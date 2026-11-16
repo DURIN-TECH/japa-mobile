@@ -240,14 +240,27 @@ class AnalyticsService {
   // The application review: started, viewed, upgrade prompt tapped, rule source
   // opened. `tier` is the tier the SERVER answered with; `band` is the readiness
   // band word. Never send a number or any finding text.
+  //
+  // japa#384: `review_viewed` also carries `working` (the server's
+  // `meta.working`: the rule-by-rule working was in the response) and
+  // `hasNarrative` (a reading was drawn). `review_working_locked_seen` fires
+  // once per review when the locked "See how each rule was applied" panel first
+  // comes on screen: the demand signal for the working (priced in japa#385).
   // ─────────────────────────────────────────────
   async trackReviewEvent(
     name:
       | 'review_run_started'
       | 'review_viewed'
       | 'review_upgrade_prompt_tapped'
-      | 'review_rule_source_opened',
-    params: { tier?: string; band?: string; source?: string } = {},
+      | 'review_rule_source_opened'
+      | 'review_working_locked_seen',
+    params: {
+      tier?: string;
+      band?: string;
+      source?: string;
+      working?: boolean;
+      hasNarrative?: boolean;
+    } = {},
   ) {
     try {
       await logEvent(this.analytics, name, params);

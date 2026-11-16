@@ -101,6 +101,14 @@ export interface AssessmentMeta {
   error: { code: string; message: string } | null;
   /** japa#237: the rulebook layers (omitted for a single-layer route). */
   stackLayers?: StackLayer[];
+  /**
+   * japa#384: true exactly when `data` carries the rule-by-rule findings (the
+   * "working": `refusalGrounds`, `credibilityFlags`, `strengths`,
+   * `statementFindings`, `insufficientInformation`). The SERVER decides it from
+   * the `ai.review_working` entitlement. `toView` normalises it: anything other
+   * than exactly `true` from the wire becomes `false`, so screens can trust it.
+   */
+  working: boolean;
 }
 
 /** One of the (up to three) issues on the free tier: title only. */
@@ -211,17 +219,58 @@ export interface CountryContext {
 }
 
 /**
+ * japa#384: the caseworker-style reading of the applicant's own application,
+ * written by the server and checked there in code (banned wording, injection,
+ * every figure and quotation grounded in what was sent). Mirrors the backend's
+ * `AssessmentNarrative` exactly. The app renders it as received and never
+ * truncates it.
+ *   paragraphs  1 to 6 short paragraphs, in order
+ *   conclusion  the readiness conclusion, set apart under the paragraphs
+ *   nextSteps   0 to 5 things that would change the reading
+ */
+export interface AssessmentNarrative {
+  paragraphs: string[];
+  conclusion: string;
+  nextSteps: string[];
+}
+
+/**
+ * japa#384: the fixed (mandatory-bar) rule that stops the review. Sent on the
+ * full tier WHATEVER the working entitlement (blocking rules are never
+ * paywalled); copied by the server from the rubric, never model text. Mirrors
+ * the backend's `BlockingRule` exactly. The free tier never carries it.
+ */
+export interface BlockingRule {
+  criterionId: string;
+  title: string;
+  ruleRef: string | null;
+  sourceQuote: string;
+  sourceUrl: string;
+}
+
+/**
  * The full `data` object, trimmed to the fields mobile uses. Everything the
  * backend sends beyond these is ignored on purpose.
+ *
+ * japa#384: the finding arrays (the "working") are OPTIONAL. `pickFull` copies
+ * them only when `meta.working === true`; otherwise they are absent from the
+ * view even if a payload carries them, so nothing behind the working
+ * entitlement can be drawn from data the plan doesn't include.
  */
 export interface FullAssessmentData {
   readiness: ReadinessBand | null;
   hasBlockingRule: boolean;
-  refusalGrounds: CitedFinding[];
-  credibilityFlags: CitedFinding[];
-  strengths: PlainFinding[];
-  statementFindings: StatementFinding[];
-  insufficientInformation: InsufficientItem[];
+  /** japa#384: the bar's rule text; null when no fixed rule blocks. */
+  blockingRule: BlockingRule | null;
+  /** japa#384: the reading; null when it failed, was skipped or is older. */
+  narrative: AssessmentNarrative | null;
+  /** japa#384: up to three issue titles (the fallback "Start with these"). */
+  topIssues: TopIssue[];
+  refusalGrounds?: CitedFinding[];
+  credibilityFlags?: CitedFinding[];
+  strengths?: PlainFinding[];
+  statementFindings?: StatementFinding[];
+  insufficientInformation?: InsufficientItem[];
   /** Published figures note (#116). Absent unless the server sent one. */
   countryContext?: CountryContext;
 }

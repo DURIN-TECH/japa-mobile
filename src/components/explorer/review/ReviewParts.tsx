@@ -12,6 +12,10 @@
 //   BlockingRuleCard a fixed rule blocks the application
 //   (UpgradePanel and StickyBar moved to explorer/UpgradePrompt.tsx and explorer/StickyBar.tsx)
 //   NumberedRow / CheckRow / OutlineButton / SolidButton   small shared pieces
+//   ReadingCard      japa#384: the reading's paragraphs + the conclusion panel
+//   NextStepsCard    japa#384: "What would change this", numbered steps in a card
+//   LockedPanel      japa#384: static "See how each rule was applied" panel
+//   WorkingToggle    japa#384: disclosure row over the rule-by-rule working
 //
 // No number is ever drawn for readiness: only the band label and its level.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,6 +26,7 @@ import {
   Linking,
   Text,
   View,
+  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -38,12 +43,23 @@ import Animated, {
 import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
-import { GlassButton } from '@/components/explorer/primitives';
-import type { CountryContext, ReadinessBand } from '@/types/assessment.type';
+import { Card, GlassButton } from '@/components/explorer/primitives';
+import type {
+  AssessmentNarrative,
+  CountryContext,
+  ReadinessBand,
+} from '@/types/assessment.type';
 import {
   BAND_LABEL,
   BAND_LEVEL,
   fmtDate,
+  LOCKED_WORKING_BODY,
+  LOCKED_WORKING_TITLE,
+  READING_CONCLUSION_EYEBROW,
+  WORKING_HIDE,
+  WORKING_HINT,
+  WORKING_SHOW,
+  WORKING_SUBLINE,
 } from '@/components/explorer/review/reviewCopy';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -915,6 +931,243 @@ export function ReviewEmpty({
         </Text>
       ) : null}
     </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// japa#384: the reading, the locked panel and the working toggle (design spec
+// on the issue). All from existing tokens; coral is used on icons only, never
+// on text (coral text fails contrast on these surfaces).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 38px icon chip geometry (radius 12, the system's `radius-icon-chip`). */
+const ICON_CHIP = {
+  width: 38,
+  height: 38,
+  borderRadius: 12,
+  alignItems: 'center',
+  justifyContent: 'center',
+} as const;
+
+/**
+ * The reading: one card with every paragraph as its own Text, in order, then
+ * the conclusion set apart in a cream panel. It reads as a letter, so there are
+ * no bullets, chips, bold or icons inside, and nothing is ever truncated (no
+ * `numberOfLines`, no "read more"). `textBreakStrategy="simple"` lets a very
+ * long word (a URL, a reference number) wrap on Android.
+ *
+ * The conclusion carries no colour accent, so it doesn't read as a verdict.
+ */
+export function ReadingCard({ narrative }: { narrative: AssessmentNarrative }) {
+  return (
+    <Card style={{ padding: 18, gap: 14 }}>
+      {narrative.paragraphs.map((p, i) => (
+        <Text
+          // Paragraph text can repeat; the index keeps keys unique.
+          key={`p${i}`}
+          textBreakStrategy="simple"
+          style={{ fontSize: 14.5, lineHeight: 23, color: EX.color.ink2 }}
+        >
+          {p}
+        </Text>
+      ))}
+      {/* Conclusion panel: cream, hairline, 4 extra above (gap 14 + 4). */}
+      <View
+        style={{
+          backgroundColor: EX.color.cream,
+          borderWidth: 1,
+          borderColor: EX.color.line08,
+          borderRadius: EX.radius.chip,
+          padding: 14,
+          marginTop: 4,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 12.5,
+            fontWeight: '600',
+            color: EX.color.inkMuted,
+            marginBottom: 4,
+          }}
+        >
+          {READING_CONCLUSION_EYEBROW}
+        </Text>
+        <Text
+          textBreakStrategy="simple"
+          style={{
+            fontSize: 15,
+            fontWeight: '600',
+            lineHeight: 23,
+            color: EX.color.ink,
+          }}
+        >
+          {narrative.conclusion}
+        </Text>
+      </View>
+    </Card>
+  );
+}
+
+/**
+ * "What would change this": one card, one row per step. Each row has the 26px
+ * NumberedRow disc on the left and the step on the right, top-aligned so a long
+ * step hangs cleanly under its first line. The caller omits the section when
+ * the list is empty (no empty heading).
+ */
+export function NextStepsCard({ steps }: { steps: string[] }) {
+  return (
+    <Card style={{ gap: 12 }}>
+      {steps.map((s, i) => (
+        <View
+          key={`s${i}`}
+          style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 11 }}
+        >
+          <View
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 13,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: EX.color.cream,
+              borderWidth: 1,
+              borderColor: EX.color.line08,
+            }}
+          >
+            <Text
+              style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}
+            >
+              {i + 1}
+            </Text>
+          </View>
+          <Text
+            textBreakStrategy="simple"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 14,
+              lineHeight: 21,
+              color: EX.color.ink2,
+              // Optically centre the first line on the 26px disc.
+              paddingTop: 2,
+            }}
+          >
+            {s}
+          </Text>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+/**
+ * The locked working (no `ai.review_working` in the plan). STATIC on purpose:
+ * no chevron, shadow, press state, button, price or link (purchase is japa#385).
+ * One accessibility element reads title + body. `onLayout` lets the screen
+ * measure when it first comes into view (analytics).
+ */
+export function LockedPanel({
+  onLayout,
+}: {
+  onLayout?: (e: LayoutChangeEvent) => void;
+}) {
+  return (
+    <View
+      onLayout={onLayout}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`${LOCKED_WORKING_TITLE}. ${LOCKED_WORKING_BODY}`}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 13,
+        backgroundColor: EX.color.cream,
+        borderWidth: 1,
+        borderColor: EX.color.line08,
+        borderRadius: EX.radius.card,
+        padding: 16,
+      }}
+    >
+      {/* White chip: the panel itself is cream. */}
+      <View style={[ICON_CHIP, { backgroundColor: EX.color.cardWhite }]}>
+        <Ic.lock size={18} color={EX.color.primary} strokeWidth={1.8} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }}>
+          {LOCKED_WORKING_TITLE}
+        </Text>
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.ink2,
+            marginTop: 4,
+          }}
+        >
+          {LOCKED_WORKING_BODY}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Disclosure row over the rule-by-rule working (the plan includes it). Follows
+ * the `OfficialRequirement` disclosure in DocumentChecklist.tsx: a coral `chevR`
+ * that turns 90° when open and no animation (reduced motion). The open/closed
+ * state is owned by the screen, so it resets on each visit.
+ */
+export function WorkingToggle({
+  open,
+  onToggle,
+}: {
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const title = open ? WORKING_HIDE : WORKING_SHOW;
+  return (
+    <PressableStatic
+      onPress={onToggle}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      accessibilityLabel={title}
+      accessibilityHint={WORKING_HINT}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 13,
+        minHeight: 48,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        backgroundColor: EX.color.cardWhite,
+        borderWidth: 1,
+        borderColor: EX.color.line08,
+        borderRadius: EX.radius.cardSm,
+        opacity: pressed ? 0.85 : 1,
+      })}
+    >
+      <View style={[ICON_CHIP, { backgroundColor: EX.color.cream }]}>
+        <Ic.layers size={18} color={EX.color.primary} strokeWidth={1.8} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }}>
+          {title}
+        </Text>
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.inkMuted,
+            marginTop: 2,
+          }}
+        >
+          {WORKING_SUBLINE}
+        </Text>
+      </View>
+      <View style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
+        <Ic.chevR size={16} color={EX.color.primary} strokeWidth={2} />
+      </View>
+    </PressableStatic>
   );
 }
 

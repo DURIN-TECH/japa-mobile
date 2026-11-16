@@ -63,6 +63,9 @@ const notInDocs = (id = 'nd1') =>
 const fullData = (o: Partial<FullAssessmentData> = {}): FullAssessmentData => ({
   readiness: 'weak',
   hasBlockingRule: false,
+  blockingRule: null,
+  narrative: null,
+  topIssues: [],
   refusalGrounds: [],
   credibilityFlags: [],
   strengths: [],
@@ -288,7 +291,7 @@ describe('server payload through pickFull', () => {
   ]);
 
   it('carries notAssessed, documentId and layerKey through the whitelist', () => {
-    const items = pickFull(newShape).insufficientInformation;
+    const items = pickFull(newShape, true).insufficientInformation ?? [];
     expect(items.map((i) => i.notAssessed)).toEqual([
       'no_trigger',
       'not_in_documents',
@@ -303,7 +306,7 @@ describe('server payload through pickFull', () => {
   });
 
   it('lists only the actionable items and keeps the internal fields out', () => {
-    const d = pickFull(newShape);
+    const d = pickFull(newShape, true);
     const { shown, anyHidden } = couldntTell(d.insufficientInformation);
     expect(shown.map((i) => i.criterionId)).toEqual([
       'crit_x_unanswered',
@@ -319,9 +322,9 @@ describe('server payload through pickFull', () => {
 
   it('renders no staff text, ends with the closing line, warns about no key', () => {
     const err = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const t = texts(render(pickFull(newShape).insufficientInformation)).join(
-      '\n',
-    );
+    const t = texts(
+      render(pickFull(newShape, true).insufficientInformation),
+    ).join('\n');
     expect(t).toContain('Bank statement');
     expect(t).toContain('Funds available for the visit');
     expect(t).not.toMatch(/Private foster care|exclusion direction|fee paid/);
@@ -344,6 +347,7 @@ describe('server payload through pickFull', () => {
           notAssessed: 'not_in_documents',
         },
       ]),
+      true,
     );
     expect(texts(render(d.insufficientInformation))).toEqual([
       'What we couldn’t tell',
@@ -359,6 +363,7 @@ describe('server payload through pickFull', () => {
         { criterionId: 'crit_old', title: 'Old item', reason: 'Old reason.' },
         { criterionId: 'crit_old', title: 'Old item', reason: 'Old reason.' },
       ]),
+      true,
     );
     const t = texts(render(d.insufficientInformation));
     expect(t.filter((x) => x === 'Old item')).toHaveLength(2);
