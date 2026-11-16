@@ -213,7 +213,7 @@ Flows may assert these are present. Reviewers check every flow against this
 list; this grep must print nothing:
 
 ```bash
-grep -rnE -A1 'tapOn' .maestro | grep -E 'reviewCta|review\\.start|Review my application|checkout|Pay |Subscribe|Upgrade'
+grep -rnE -A1 --include='*.yaml' 'tapOn' .maestro | grep -E 'reviewCta|review\\.start|Review my application|checkout|Pay |Subscribe|Upgrade'
 ```
 
 ## Safety model
