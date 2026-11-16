@@ -27,6 +27,12 @@ export type DevConfigSources = {
   emulatorHost: string;
   emulatorProjectId: string;
   feedbackEnabled: boolean;
+  // Self-service-only flag (japa#375): the effective value, where it comes
+  // from (the build, or the dev-only override), and the build's own value.
+  // Optional so older callers / fixtures still type-check.
+  selfServiceOnly?: boolean;
+  selfServiceOnlySource?: 'build' | 'override';
+  selfServiceOnlyBuild?: boolean;
   appVersion?: string;
   buildNumber?: string;
   bundleId?: string;
@@ -89,6 +95,18 @@ export function buildDevConfigSections(
           : 'off',
       },
       { label: 'Feedback button', value: s.feedbackEnabled ? 'on' : 'off' },
+      // japa#375: e.g. "on · override (build: off)" or "off · build".
+      {
+        label: 'Self-service only',
+        value:
+          s.selfServiceOnly === undefined
+            ? NA
+            : `${s.selfServiceOnly ? 'on' : 'off'} · ${
+                s.selfServiceOnlySource === 'override'
+                  ? `override (build: ${s.selfServiceOnlyBuild ? 'on' : 'off'})`
+                  : 'build'
+              }`,
+      },
     ],
   };
 

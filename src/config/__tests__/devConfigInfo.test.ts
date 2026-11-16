@@ -127,3 +127,30 @@ describe('devConfigToText', () => {
     expect(text).not.toMatch(/eyJ|Bearer/);
   });
 });
+
+// japa#375: the self-service-only flag's effective value and its source.
+describe('self-service-only row', () => {
+  const value = (over: Partial<DevConfigSources>) =>
+    row(buildDevConfigSections({ ...base, ...over }, NOW), 'Self-service only')
+      ?.value;
+
+  it('shows the build value', () => {
+    expect(
+      value({ selfServiceOnly: false, selfServiceOnlySource: 'build' }),
+    ).toBe('off · build');
+  });
+
+  it('shows an override and the build value it replaces', () => {
+    expect(
+      value({
+        selfServiceOnly: true,
+        selfServiceOnlySource: 'override',
+        selfServiceOnlyBuild: false,
+      }),
+    ).toBe('on · override (build: off)');
+  });
+
+  it('is "unavailable" when not collected', () => {
+    expect(value({})).toBe('unavailable');
+  });
+});

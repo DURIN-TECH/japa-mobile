@@ -7,9 +7,10 @@
 // (native Firebase project ≠ configured project, expired token) are tinted.
 //
 // Opened from the Expo dev menu ("App configuration", src/utils/dev-menu.ts);
-// there is no in-app entry point. Non-production only: in a production build
-// the screen renders nothing and sends the user back (the dev menu itself
-// only exists in __DEV__ builds).
+// there is no in-app entry point. Development builds only (`__DEV__`): in any
+// release build — TestFlight (`tester`, APP_ENV=staging) included — a link
+// to /dev-config renders nothing and sends the user back. It used to gate on
+// IS_PROD, which let a TestFlight build open it (fixed in japa#375 review).
 // "Share" hands the whole block to the OS share sheet (Copy is one of its
 // options), so it can be pasted into a bug report — no native clipboard
 // module needed.
@@ -28,7 +29,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
-import { IS_PROD } from '@/config/env';
+import { isDevBuild } from '@/config/isDevBuild';
 import {
   buildDevConfigSections,
   devConfigToText,
@@ -49,15 +50,19 @@ export default function DevConfigScreen() {
   }, []);
 
   useEffect(() => {
-    // Production guard: a deep link to /dev-config in prod goes straight back.
-    if (IS_PROD) {
-      router.back();
+    // Release-build guard: a deep link to /dev-config outside a development
+    // build goes straight back — or, on a cold start through the link with
+    // nothing to go back to, to Home (otherwise the user would be left on
+    // this empty screen).
+    if (!isDevBuild()) {
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)/home');
       return;
     }
     load();
   }, [load, router]);
 
-  if (IS_PROD) return null;
+  if (!isDevBuild()) return null;
 
   const share = () => {
     if (!sections) return;
