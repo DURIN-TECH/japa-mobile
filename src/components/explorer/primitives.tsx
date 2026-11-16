@@ -291,8 +291,9 @@ export function ScreenHeader({
 //   loading    — small white spinner instead of the icon
 //   dimmed     — icon at 60% opacity (the heart's "list failed" state)
 //   disabled   — no press (and no press feedback)
-//   accessibilityLabel / accessibilityState — always role "button"
-// Press feedback: the circle drops to 0.7 opacity while pressed. Built on
+//   accessibilityLabel / accessibilityState
+// With an onPress it has role "button" and press feedback (the circle drops
+// to 0.7 opacity while pressed); without one it is decorative, as before. Built on
 // PressableStatic, because a function-style `style` on a plain Pressable
 // renders unstyled in this build.
 export function GlassButton({
@@ -316,17 +317,23 @@ export function GlassButton({
   accessibilityLabel?: string;
   accessibilityState?: AccessibilityState;
 }) {
+  const interactive = !!onPress;
   return (
     <PressableStatic
       onPress={onPress}
       disabled={disabled}
       hitSlop={6}
-      accessibilityRole="button"
+      // Only a button with a handler is announced as one and fades on
+      // press; a decorative GlassButton (no onPress, e.g. the agency
+      // screen's arrow) stays exactly as before.
+      accessibilityRole={interactive ? 'button' : undefined}
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled, ...accessibilityState }}
+      accessibilityState={
+        interactive ? { disabled, ...accessibilityState } : accessibilityState
+      }
       style={({ pressed }) => [
         style,
-        { opacity: pressed && !disabled ? 0.7 : 1 },
+        { opacity: pressed && interactive && !disabled ? 0.7 : 1 },
       ]}
     >
       <BlurView
