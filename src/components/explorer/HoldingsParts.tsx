@@ -21,6 +21,7 @@ import {
   TextInput,
   View,
   Pressable,
+  type PressableProps,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -59,17 +60,21 @@ export function TextLink({
   disabled,
   icon: IconCmp,
   size = 15,
+  hitSlop,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
   icon?: React.ElementType;
   size?: number;
+  /** Extra tap area beyond the text (japa#347: Explore's "Clear filters"). */
+  hitSlop?: PressableProps['hitSlop'];
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      hitSlop={hitSlop}
       accessibilityRole="button"
       accessibilityLabel={label}
       style={{

@@ -565,7 +565,8 @@ export function Scrim({
   diagonal = false,
   style,
 }: {
-  variant?: keyof typeof EXScrim;
+  // `sheet` is a flat backdrop colour, not a gradient (japa#347).
+  variant?: Exclude<keyof typeof EXScrim, 'sheet'>;
   diagonal?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {

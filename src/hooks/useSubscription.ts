@@ -28,6 +28,13 @@ export interface PlanDTO {
   features: FeatureKey[];
   seatPriceKobo?: number;
   isActive?: boolean;
+  /**
+   * Pairs a monthly plan with its yearly variant (seeded e.g. both
+   * "Client Standard" and "Client Standard (Yearly)" carry
+   * `client_standard`). Absent on the free plan. Used to rank a yearly
+   * subscriber by their monthly plan for the upgrade banner (japa#346).
+   */
+  billingGroup?: string;
 }
 
 /** The current user's subscription + resolved entitlements. */

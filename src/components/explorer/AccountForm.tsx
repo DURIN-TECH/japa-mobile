@@ -202,7 +202,15 @@ export function CoralSubmit({
 }
 
 // ── InlineError — small danger text shown above the CTA (null when no error) ──
-export function InlineError({ message }: { message?: string | null }) {
+// `selectable` (japa#346) lets the user long-press → Copy the message text,
+// e.g. an address shown because a link couldn't be opened. No visual change.
+export function InlineError({
+  message,
+  selectable = false,
+}: {
+  message?: string | null;
+  selectable?: boolean;
+}) {
   if (!message) return null;
   return (
     <View
@@ -218,6 +226,7 @@ export function InlineError({ message }: { message?: string | null }) {
     >
       <Ic.x size={16} color={EX.color.danger} strokeWidth={2.4} />
       <Text
+        selectable={selectable}
         style={{
           flex: 1,
           fontSize: 13,

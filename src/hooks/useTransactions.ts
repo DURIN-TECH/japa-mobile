@@ -92,10 +92,14 @@ export interface ApiTransaction {
 /**
  * Fetch the current user's transaction history. Returns a bare array (never
  * undefined) so callers can safely check `.length` for the empty state.
+ *
+ * `opts.enabled: false` skips the call (Profile in a self-service-only build,
+ * where the Payments row it feeds is hidden — japa#346). Default true.
  */
-export function useTransactions() {
+export function useTransactions(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['transactions'],
+    enabled: opts.enabled ?? true,
     queryFn: () =>
       apiService
         .get<ApiTransaction[]>('/transactions')

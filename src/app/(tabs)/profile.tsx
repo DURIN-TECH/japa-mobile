@@ -2,6 +2,8 @@
 // Profile tab (prototype profile.jsx ProfileView).
 // Tonal purple header + floating glass stats + premium upsell + two menu groups
 // + sign out. Ported 1:1 from source (paddings, radii, colors preserved).
+// japa#346: every row value and the upgrade banner come from the user's real
+// data (or "–" / hidden while unknown) — no typed-in counts, amounts or plan.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
@@ -25,6 +27,18 @@ import { useConsultations } from '@/hooks/useConsultations';
 import { useConversations } from '@/hooks/useMessaging';
 import { useIdentityVerification } from '@/hooks/useVerification';
 import { useMe } from '@/hooks/useMe';
+// japa#346: real values for the documents / payments / subscription rows and
+// the upgrade banner.
+import { useMyDocumentsCount } from '@/hooks/useDocuments';
+import { useTransactions } from '@/hooks/useTransactions';
+import { useCurrentPlan } from '@/hooks/useCurrentPlan';
+import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
+import { upgradeBanner } from '@/components/explorer/planLogic';
+import {
+  fileCountLabel,
+  paidLabel,
+  planNameLabel,
+} from '@/components/explorer/profileLogic';
 // Self-service-only launch flag (japa#334).
 import { isSelfServiceOnly } from '@/config/env';
 import {
@@ -87,8 +101,17 @@ function ProfileRow({
         {label}
       </Text>
       {value ? (
+        // One line, tail ellipsis, at most 55% of the row (japa#346): a long
+        // plan name like "Client Standard (Yearly)" never wraps the label.
         <Text
-          style={{ fontSize: 13.5, color: EX.color.muted, fontWeight: '500' }}
+          numberOfLines={1}
+          style={{
+            fontSize: 13.5,
+            color: EX.color.muted,
+            fontWeight: '500',
+            flexShrink: 1,
+            maxWidth: '55%',
+          }}
         >
           {value}
         </Text>
@@ -132,12 +155,17 @@ export default function ProfileScreen() {
   const fullName = profileName(me);
   const location = profileCity(me);
 
-  // Floating stats ───────────────────────────────────────────────────────────
-  // Active = number of applications; Saved = 0 until real saving ships (#146,
-  // keeps the three-stat layout); Agents = distinct agents the user has
-  // consultations with. Unknown (query pending/failed) renders "–".
-  const activeCount = applications != null ? String(applications.length) : '–';
+  // ── Saved destinations: ONE source (japa#346) ────────────────────────────
+  // Both the "Saved" stat and the "Saved destinations" row read `savedCount`
+  // and nothing else, so #146 points both at the live saved list by changing
+  // this one line. Until then "0" is true: there is no way to save yet.
   const savedCount = '0';
+
+  // Floating stats ───────────────────────────────────────────────────────────
+  // Active = number of applications; Saved = `savedCount` above; Agents =
+  // distinct agents the user has consultations with. Unknown (query
+  // pending/failed) renders "–".
+  const activeCount = applications != null ? String(applications.length) : '–';
   const agentsCount =
     consultations != null
       ? String(new Set(consultations.map((c) => c.agentId)).size)
@@ -172,6 +200,38 @@ export default function ProfileScreen() {
       : idStatus === 'pending' || idStatus === 'under_review'
         ? 'In review'
         : 'Not started';
+
+  // ── "My documents" value (japa#346) ─────────────────────────────────────
+  // Uploaded files across the user's applications, the same files the
+  // Documents screen lists under "All". "–" while loading, and whenever the
+  // count could be short (a request failed, or more applications than the
+  // fan-out fetches): an undercount must never read as a real number.
+  const documentsQ = useMyDocumentsCount();
+  const documentsValue = fileCountLabel(documentsQ.data);
+
+  // ── "Payments" value (japa#346) ──────────────────────────────────────────
+  // Completed payments ("N paid"), no money amount (see profileLogic.ts).
+  // Skipped in a self-service-only build, where the row is hidden.
+  const transactionsQ = useTransactions({ enabled: !selfServiceOnly });
+  const paymentsValue = paidLabel(transactionsQ.data);
+
+  // ── Fresh counts on return (japa#346 review) ─────────────────────────────
+  // The tab stays mounted, so without this "N files" / "N paid" would keep
+  // the value from first load after an upload or payment elsewhere, and a
+  // "–" from a passing network failure would never recover. Refetch both on
+  // every re-focus (not the first, which already fetched).
+  useRefetchOnFocus(documentsQ.refetch);
+  useRefetchOnFocus(transactionsQ.refetch, !selfServiceOnly);
+
+  // ── Subscription row + upgrade banner (japa#346) ─────────────────────────
+  // Same hook as Settings, so both screens name the same plan. The banner
+  // shows only once both queries answered and a higher monthly plan exists;
+  // `upgradeBanner` returns null otherwise (loading, error, top plan).
+  const currentPlan = useCurrentPlan();
+  const subscriptionValue = planNameLabel(currentPlan.plan?.name);
+  const banner = upgradeBanner(currentPlan.plan, currentPlan.plans, {
+    selfServiceOnly,
+  });
 
   // ── Real sign-out: clear Firebase auth, then return to the auth entry ───────
   const onSignOut = async () => {
@@ -325,73 +385,89 @@ export default function ProfileScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 22, paddingTop: 22 }}>
-        {/* Premium upsell */}
-        <Pressable onPress={() => router.push('/subscription')}>
-          <LinearGradient
-            colors={[EX.color.primary, EX.color.primaryDark]}
-            start={{ x: 0.1, y: 0 }}
-            end={{ x: 0.9, y: 1 }}
-            style={{
-              borderRadius: 22,
-              padding: 18,
-              marginBottom: 16,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              overflow: 'hidden',
-              shadowColor: EX.color.primary,
-              shadowOpacity: 0.45,
-              shadowRadius: 16,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 6,
-            }}
+        {/* Premium upsell — real target plan (japa#346). Left out entirely
+            (with its bottom margin) while hidden, so the first menu card
+            sits at the container's 22pt top padding with no gap. */}
+        {banner ? (
+          <Pressable
+            onPress={() => router.push('/subscription')}
+            accessibilityRole="button"
+            accessibilityLabel={
+              banner.benefits
+                ? `${banner.title}, ${banner.benefits}`
+                : banner.title
+            }
+            accessibilityHint="Opens plans"
           >
-            <View
+            <LinearGradient
+              colors={[EX.color.primary, EX.color.primaryDark]}
+              start={{ x: 0.1, y: 0 }}
+              end={{ x: 0.9, y: 1 }}
               style={{
-                position: 'absolute',
-                top: -30,
-                right: -20,
-                width: 120,
-                height: 120,
-                borderRadius: 60,
-                backgroundColor: 'rgba(255,255,255,0.12)',
-              }}
-            />
-            <View
-              style={{
-                width: 46,
-                height: 46,
-                borderRadius: 13,
-                backgroundColor: 'rgba(255,255,255,0.18)',
+                borderRadius: 22,
+                padding: 18,
+                marginBottom: 16,
+                flexDirection: 'row',
                 alignItems: 'center',
-                justifyContent: 'center',
+                gap: 14,
+                overflow: 'hidden',
+                shadowColor: EX.color.primary,
+                shadowOpacity: 0.45,
+                shadowRadius: 16,
+                shadowOffset: { width: 0, height: 12 },
+                elevation: 6,
               }}
             >
-              <Ic.crown size={23} color="#fff" strokeWidth={1.8} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text
-                style={{ fontSize: 15.5, fontWeight: '700', color: '#fff' }}
-              >
-                Upgrade to Seli Plus
-              </Text>
-              <Text
+              <View
                 style={{
-                  fontSize: 12.5,
-                  color: 'rgba(255,255,255,0.85)',
-                  marginTop: 1,
+                  position: 'absolute',
+                  top: -30,
+                  right: -20,
+                  width: 120,
+                  height: 120,
+                  borderRadius: 60,
+                  backgroundColor: 'rgba(255,255,255,0.12)',
+                }}
+              />
+              <View
+                style={{
+                  width: 46,
+                  height: 46,
+                  borderRadius: 13,
+                  backgroundColor: 'rgba(255,255,255,0.18)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
-                {/* Self-service-only build (japa#334): no agent chat on
-                    offer, so the line names what Plus unlocks there. */}
-                {selfServiceOnly
-                  ? 'Full AI review, uploads & priority support'
-                  : 'Agent chat, uploads & priority support'}
-              </Text>
-            </View>
-            <Ic.chevR size={20} color="#fff" strokeWidth={1.8} />
-          </LinearGradient>
-        </Pressable>
+                <Ic.crown size={23} color="#fff" strokeWidth={1.8} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  numberOfLines={2}
+                  style={{ fontSize: 15.5, fontWeight: '700', color: '#fff' }}
+                >
+                  {banner.title}
+                </Text>
+                {/* What the target plan adds over the current one. In a
+                  self-service-only build agent features are filtered out
+                  (planLogic.ts). Nothing to list → no second line at all. */}
+                {banner.benefits ? (
+                  <Text
+                    numberOfLines={2}
+                    style={{
+                      fontSize: 12.5,
+                      color: 'rgba(255,255,255,0.85)',
+                      marginTop: 1,
+                    }}
+                  >
+                    {banner.benefits}
+                  </Text>
+                ) : null}
+              </View>
+              <Ic.chevR size={20} color="#fff" strokeWidth={1.8} />
+            </LinearGradient>
+          </Pressable>
+        ) : null}
 
         {/* Menu group 1 */}
         <View
@@ -433,7 +509,7 @@ export default function ProfileScreen() {
             icon={Ic.docs}
             label="My documents"
             testID="profile.row.documents"
-            value="7 files"
+            value={documentsValue}
             // First row of the card when the two above are hidden: no
             // divider line along the card's top edge.
             divider={!selfServiceOnly}
@@ -456,7 +532,7 @@ export default function ProfileScreen() {
                 icon={Ic.cards}
                 label="Payments"
                 testID="profile.row.payments"
-                value="₦110,000"
+                value={paymentsValue}
                 divider
                 onPress={() => router.push('/payments')}
               />
@@ -466,7 +542,8 @@ export default function ProfileScreen() {
             icon={Ic.heart}
             label="Saved destinations"
             testID="profile.row.saved"
-            value="7"
+            // Same single source as the "Saved" stat (see `savedCount`).
+            value={savedCount}
             divider
             onPress={() => router.push('/saved')}
           />
@@ -498,7 +575,7 @@ export default function ProfileScreen() {
             icon={Ic.crown}
             label="Subscription"
             testID="profile.row.subscription"
-            value="Free"
+            value={subscriptionValue}
             divider
             onPress={() => router.push('/subscription')}
           />
