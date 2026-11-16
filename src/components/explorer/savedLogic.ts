@@ -11,12 +11,12 @@
 //   • the Profile count label
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { UNKNOWN_VALUE } from './profileLogic';
 import type { VisaType } from '@/types/visas.type';
 import type {
   SavedDestinationItem,
   SavedDestinationVisa,
 } from '@/types/savedDestinations.type';
-import { UNKNOWN_VALUE } from './profileLogic';
 
 // ── Identity ─────────────────────────────────────────────────────────────────
 

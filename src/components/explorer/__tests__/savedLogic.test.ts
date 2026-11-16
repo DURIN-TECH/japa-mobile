@@ -77,7 +77,10 @@ describe('normaliseSavedList', () => {
     const raw = item('GB', 'a');
     delete raw.visa.processingTime;
     const [clean] = normaliseSavedList([raw]);
-    const d = visaTypeToDest(savedVisaAsVisaType(clean.visa), clean.countryName);
+    const d = visaTypeToDest(
+      savedVisaAsVisaType(clean.visa),
+      clean.countryName,
+    );
     expect(d.processing).toBe('');
     expect(d.flag).toBe('gb');
     expect(d.country).toBe('United Kingdom');

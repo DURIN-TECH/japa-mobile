@@ -113,7 +113,9 @@ export function useSaveDestination(countryCode: string, visaId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationKey: writeKey(countryCode, visaId),
-    mutationFn: async (_input: SaveDestinationInput) => {
+    // The PUT has no body; the input only feeds the optimistic tile below.
+    mutationFn: async (input: SaveDestinationInput) => {
+      void input;
       const res = await tracked(() =>
         apiService.put<SavedDestinationItem>(itemPath(countryCode, visaId)),
       );
@@ -127,7 +129,8 @@ export function useSaveDestination(countryCode: string, visaId: string) {
       );
       // Already saved (e.g. saved on another device): nothing to undo later.
       const wasSaved =
-        !!list && list.some((i) => itemKey(i) === savedKey(countryCode, visaId));
+        !!list &&
+        list.some((i) => itemKey(i) === savedKey(countryCode, visaId));
       if (list && !wasSaved) {
         qc.setQueryData<SavedDestinationItem[]>(
           SAVED_DESTINATIONS_KEY,
