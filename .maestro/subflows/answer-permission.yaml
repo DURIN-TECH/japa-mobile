@@ -8,4 +8,7 @@ appId: ${APP_ID}
     when:
       visible: "Allow"
     commands:
-      - tapOn: "Allow"
+      # Optional: the alert can go away between the check and the tap.
+      - tapOn:
+          text: "Allow"
+          optional: true

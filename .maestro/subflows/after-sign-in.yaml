@@ -18,7 +18,9 @@ appId: ${APP_ID}
     when:
       visible: "Not Now"
     commands:
-      - tapOn: "Not Now"
+      - tapOn:
+          text: "Not Now"
+          optional: true
 - runFlow: answer-permission.yaml
 - extendedWaitUntil:
     visible:
