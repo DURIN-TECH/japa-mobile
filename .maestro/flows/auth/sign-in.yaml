@@ -15,8 +15,14 @@ tags:
 - tapOn:
     id: "login\\.email"
 - inputText: ${E2E_EMAIL}
+# Let the email keyboard's suggestion bar settle, then focus the password
+# field, re-tapping if the first tap changed nothing (a run once typed the
+# password into nowhere and signed in with an empty one).
+- waitForAnimationToEnd:
+    timeout: 3000
 - tapOn:
     id: "login\\.password"
+    retryTapIfNoChange: true
 - inputText: ${PASSWORD}
 - tapOn:
     id: "login\\.submit"
