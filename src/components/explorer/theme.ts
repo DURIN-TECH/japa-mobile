@@ -169,6 +169,18 @@ export const EXShadow: Record<string, ViewStyle> = {
     android: { elevation: 6 },
     default: {},
   })!,
+  // `shadow-sheet` (tokens.css: 0 -8px 30px rgba(23,19,38,0.28)): the upward
+  // shadow of a sheet rising over the screen (japa#347 filter sheet).
+  sheet: Platform.select({
+    ios: {
+      shadowColor: '#171326',
+      shadowOpacity: 0.28,
+      shadowRadius: 15,
+      shadowOffset: { width: 0, height: -8 },
+    },
+    android: { elevation: 12 },
+    default: {},
+  })!,
   darkNudge: Platform.select({
     ios: {
       shadowColor: '#171326',
@@ -209,6 +221,9 @@ export const EXScrim = {
     ] as const,
     locations: [0, 0.58, 1] as const,
   },
+  // Flat backdrop behind a bottom sheet (japa#347): the value the duplicate-
+  // application sheet already used, now one token for every sheet.
+  sheet: 'rgba(12,10,8,0.45)',
 };
 
 // ── Type presets (helpers) ───────────────────────────────────────────────────

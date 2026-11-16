@@ -15,8 +15,9 @@ import { VisaType, VisaCategory, VisaRequirement } from '@/types/visas.type';
 // Per-country art (city, hero photo, tone) lives in the reusable assets
 // module `@/assets/countries` (japa#145); this adapter only looks it up.
 
-// Backend visa category → the Explorer's short display label.
-const CATEGORY_LABEL: Record<VisaCategory, string> = {
+// Backend visa category → the Explorer's short display label. Exported for the
+// Explore filters (japa#347), which turn chosen labels back into categories.
+export const CATEGORY_LABEL: Record<VisaCategory, string> = {
   work: 'Work',
   student: 'Study',
   tourist: 'Tourist',
@@ -211,34 +212,31 @@ export function isNearEnd(m: ScrollMetrics & { threshold?: number }): boolean {
 
 /**
  * What asked the screen to consider loading the next page:
- *   • 'effect'      — paging state / chip / search changed (a React effect);
  *   • 'scroll'      — the user scrolled (fresh offset + sizes in the event);
  *   • 'contentSize' — the content was re-laid out (fresh content height);
  *   • 'layout'      — the viewport itself was laid out.
+ * (japa#347 removed the old 'effect' trigger: it only ever loaded for a
+ * category chip, and a filtered grid now fetches its complete list itself.)
  */
-export type LoadTrigger = 'effect' | 'scroll' | 'contentSize' | 'layout';
+export type LoadTrigger = 'scroll' | 'contentSize' | 'layout';
 
 /**
- * Should Explore fetch the next page right now? (japa#341)
+ * Should Explore fetch the next page of the UNFILTERED grid right now?
+ * (japa#341; the screen never asks while filters are on, japa#347.)
  *
  *   • never while searching (search has its own endpoints), when nothing is
  *     left (`hasNextPage` false, i.e. loaded >= total or an empty page), while
  *     any fetch is in flight (a later page or a pull-to-refresh), or after the
  *     next page failed: then the footer's "Try again" is the only way to
  *     retry, so a failure never loops;
- *   • with a category chip selected: on ANY trigger, until `total` is
- *     reached. The server has no category order, so the only way to know we
- *     have EVERY visa of that category is to load every page; and a short
- *     filtered list may not scroll at all, so the effect (which runs again
- *     each time a page lands) keeps it going without the user scrolling;
- *   • with "All": only from a 'scroll' or 'contentSize' event, and only near
- *     the end of MEASURED content. Never from the 'effect' or 'layout'
- *     triggers. Those run with the content height from the PREVIOUS content
- *     (the first-load spinner, the search results, or 0 on a mount with a
- *     cached first page), which would read as "near the end" and load page
- *     two with no scrolling. A content-size event always carries the height
- *     of the content now on screen, so a grid that really is too short to
- *     scroll still loads on.
+ *   • otherwise only from a 'scroll' or 'contentSize' event, and only near
+ *     the end of MEASURED content. Never from a 'layout' event, which can
+ *     run with the content height from the PREVIOUS content (the first-load
+ *     spinner, the search results, or 0 on a mount with a cached first
+ *     page) and would read as "near the end", loading page two with no
+ *     scrolling. A content-size event always carries the height of the
+ *     content now on screen, so a grid that really is too short to scroll
+ *     still loads on.
  */
 export function shouldLoadNextPage(s: {
   trigger: LoadTrigger;
@@ -246,12 +244,10 @@ export function shouldLoadNextPage(s: {
   hasNextPage: boolean;
   isFetching: boolean;
   nextPageFailed: boolean;
-  category: string;
   metrics: ScrollMetrics;
 }): boolean {
   if (s.searchMode || !s.hasNextPage) return false;
   if (s.isFetching || s.nextPageFailed) return false;
-  if (s.category !== 'All') return true;
   if (s.trigger !== 'scroll' && s.trigger !== 'contentSize') return false;
   return isNearEnd(s.metrics);
 }
