@@ -43,15 +43,19 @@ function CardButton({
   onPress,
   variant,
   arrow,
+  testID,
 }: {
   label: string;
   onPress: () => void;
   variant: 'coral' | 'outline';
   arrow?: boolean;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   const coral = variant === 'coral';
   return (
     <PressableStatic
+      testID={testID}
       onPress={onPress}
       accessibilityRole="button"
       style={({ pressed }) => ({
@@ -169,7 +173,11 @@ export function IntakeStep({
   return (
     <>
       <SectionTitle>{`Step ${stepNumber} · ${meta.title ?? 'Your details'}`}</SectionTitle>
-      <View style={cardStyle}>
+      {/* e2e ids (Maestro, japa#361): the card is `intakeStep`; its buttons
+          tell the state apart — `intakeStep.answer` (not started),
+          `intakeStep.continue` (partly answered), `intakeStep.edit` (saved).
+          No visual effect. */}
+      <View testID="intakeStep" style={cardStyle}>
         {/* Header: status circle · title · counter / saved line */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           {complete || (!editable && started) ? (
@@ -243,6 +251,7 @@ export function IntakeStep({
             </Text>
             <CardButton
               label="Answer questions"
+              testID="intakeStep.answer"
               variant="coral"
               arrow
               onPress={onOpen}
@@ -304,6 +313,7 @@ export function IntakeStep({
             </View>
             <CardButton
               label="Continue"
+              testID="intakeStep.continue"
               variant="coral"
               arrow
               onPress={onOpen}
@@ -367,6 +377,7 @@ export function IntakeStep({
               <View style={{ marginTop: 12 }}>
                 <CardButton
                   label="Edit answers"
+                  testID="intakeStep.edit"
                   variant="outline"
                   onPress={onOpen}
                 />

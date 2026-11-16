@@ -285,13 +285,16 @@ export function GlassButton({
   icon: IconCmp,
   onPress,
   style,
+  testID,
 }: {
   icon: React.ElementType;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
-    <Pressable onPress={onPress} hitSlop={6} style={style}>
+    <Pressable testID={testID} onPress={onPress} hitSlop={6} style={style}>
       <BlurView
         intensity={30}
         tint="dark"

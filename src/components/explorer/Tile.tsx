@@ -53,14 +53,18 @@ export function Tile({
   d,
   big = false,
   onPress,
+  testID,
 }: {
   d: Dest;
   big?: boolean;
   onPress: () => void;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   const [failed, setFailed] = useState(false);
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       style={{
         width: '100%',

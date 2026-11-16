@@ -29,6 +29,8 @@ import { Ic } from '@/components/explorer/icons';
 // to /(auth)/welcome. This mirrors how register.tsx already logs users in.
 import { useAuthStore } from '@/stores/auth.store';
 
+// e2e ids (Maestro, japa#361): `login.email`, `login.password`,
+// `login.submit`, `login.error`. No visual effect.
 export default function AuthLogin() {
   const router = useRouter();
   // Store action performs the Firebase sign-in AND sets user/isAuthenticated
@@ -77,6 +79,7 @@ export default function AuthLogin() {
         <Field
           icon={Ic.user}
           label="Email"
+          testID="login.email"
           value={email}
           onChangeText={setEmail}
           placeholder="you@email.com"
@@ -88,6 +91,7 @@ export default function AuthLogin() {
         <Field
           icon={Ic.shield}
           label="Password"
+          testID="login.password"
           value={pw}
           onChangeText={setPw}
           placeholder="Your password"
@@ -122,6 +126,7 @@ export default function AuthLogin() {
         {/* Inline error (small pink/danger text) shown above the CTA. */}
         {error ? (
           <Text
+            testID="login.error"
             style={{
               color: EX.color.danger,
               fontSize: 13,
@@ -138,6 +143,7 @@ export default function AuthLogin() {
             keeps its coral styling; the ActivityIndicator sits centered on top. */}
         <View>
           <CoralButton
+            testID="login.submit"
             label={submitting ? '' : 'Log in'}
             disabled={submitting}
             withArrow={!submitting}

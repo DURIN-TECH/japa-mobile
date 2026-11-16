@@ -93,6 +93,9 @@ export function DuplicateApplicationSheet({
           }}
         />
         <View
+          // e2e (Maestro, japa#361): the sheet and its two actions. No
+          // visual effect.
+          testID="duplicateSheet"
           style={{
             backgroundColor: EX.color.bg,
             borderTopLeftRadius: 28,
@@ -140,6 +143,7 @@ export function DuplicateApplicationSheet({
 
           {/* Primary: the safe default is to continue what they have. */}
           <PressableStatic
+            testID="duplicateSheet.continue"
             onPress={onContinue}
             accessibilityRole="button"
             style={{
@@ -156,6 +160,7 @@ export function DuplicateApplicationSheet({
             </Text>
           </PressableStatic>
           <PressableStatic
+            testID="duplicateSheet.startNew"
             onPress={onStartNew}
             accessibilityRole="button"
             style={{

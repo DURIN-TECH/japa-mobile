@@ -40,15 +40,19 @@ function ProfileRow({
   value,
   divider = false,
   onPress,
+  testID,
 }: {
   icon: React.ElementType;
   label: string;
   value?: string;
   divider?: boolean;
   onPress?: () => void;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       style={{
         flexDirection: 'row',
@@ -179,7 +183,11 @@ export default function ProfileScreen() {
   };
 
   return (
+    // e2e ids (Maestro, japa#361): `screen.profile`, the stats
+    // `profile.stat.active|saved|agents` and the rows `profile.row.<name>`.
+    // No visual effect.
     <ScrollView
+      testID="screen.profile"
       style={{ flex: 1, backgroundColor: EX.color.bg }}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingBottom: EX.space.tabClear }}
@@ -283,6 +291,7 @@ export default function ProfileScreen() {
                 <View style={{ width: 1, backgroundColor: EX.color.line10 }} />
               ) : null}
               <View
+                testID={`profile.stat.${l.toLowerCase()}`}
                 style={{
                   flex: 1,
                   alignItems: 'center',
@@ -406,12 +415,14 @@ export default function ProfileScreen() {
               <ProfileRow
                 icon={Ic.cal}
                 label="My consultations"
+                testID="profile.row.consultations"
                 value={consultsValue}
                 onPress={() => router.push('/consultations')}
               />
               <ProfileRow
                 icon={Ic.msg}
                 label="Messages"
+                testID="profile.row.messages"
                 value={messagesValue}
                 divider
                 onPress={() => router.push('/messages')}
@@ -421,6 +432,7 @@ export default function ProfileScreen() {
           <ProfileRow
             icon={Ic.docs}
             label="My documents"
+            testID="profile.row.documents"
             value="7 files"
             // First row of the card when the two above are hidden: no
             // divider line along the card's top edge.
@@ -435,6 +447,7 @@ export default function ProfileScreen() {
               <ProfileRow
                 icon={Ic.shield}
                 label="Verify identity"
+                testID="profile.row.verifyIdentity"
                 value={identityValue}
                 divider
                 onPress={() => router.push('/verify-identity')}
@@ -442,6 +455,7 @@ export default function ProfileScreen() {
               <ProfileRow
                 icon={Ic.cards}
                 label="Payments"
+                testID="profile.row.payments"
                 value="₦110,000"
                 divider
                 onPress={() => router.push('/payments')}
@@ -451,6 +465,7 @@ export default function ProfileScreen() {
           <ProfileRow
             icon={Ic.heart}
             label="Saved destinations"
+            testID="profile.row.saved"
             value="7"
             divider
             onPress={() => router.push('/saved')}
@@ -476,11 +491,13 @@ export default function ProfileScreen() {
           <ProfileRow
             icon={Ic.sliders}
             label="Settings"
+            testID="profile.row.settings"
             onPress={() => router.push('/settings')}
           />
           <ProfileRow
             icon={Ic.crown}
             label="Subscription"
+            testID="profile.row.subscription"
             value="Free"
             divider
             onPress={() => router.push('/subscription')}
@@ -488,6 +505,7 @@ export default function ProfileScreen() {
           <ProfileRow
             icon={Ic.bell}
             label="Notifications"
+            testID="profile.row.notifications"
             divider
             onPress={() => router.push('/notifications')}
           />
@@ -507,6 +525,7 @@ export default function ProfileScreen() {
 
         {/* Sign out — real Firebase logout, then back to the auth entry */}
         <Pressable
+          testID="profile.signOut"
           onPress={onSignOut}
           style={{
             marginTop: 14,

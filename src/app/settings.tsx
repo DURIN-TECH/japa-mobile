@@ -66,6 +66,7 @@ function SettingsRow({
   divider = false,
   danger = false,
   onPress,
+  testID,
 }: {
   icon: React.ElementType;
   label: string;
@@ -74,6 +75,8 @@ function SettingsRow({
   divider?: boolean;
   danger?: boolean;
   onPress?: () => void;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   // Coral-danger tint reuses the same colour profile.tsx uses for "Sign out".
   const labelColor = danger ? EX.color.danger : EX.color.ink;
@@ -81,6 +84,7 @@ function SettingsRow({
 
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       style={{
         flexDirection: 'row',
@@ -132,9 +136,17 @@ function SettingsRow({
 }
 
 // ── Group label (muted 12.5/700 uppercase, letter-spaced) ─────────────────────
-function GroupLabel({ children }: { children: string }) {
+function GroupLabel({
+  children,
+  testID,
+}: {
+  children: string;
+  /** e2e id (Maestro, japa#361), e.g. `settings.group.privacy`. */
+  testID?: string;
+}) {
   return (
     <Text
+      testID={testID}
       style={{
         fontSize: 12.5,
         fontWeight: '700',
@@ -333,6 +345,8 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView
+        // e2e (Maestro, japa#361): `screen.settings`. No visual effect.
+        testID="screen.settings"
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
@@ -413,9 +427,12 @@ export default function SettingsScreen() {
         {selfServiceOnly ? null : (
           <>
             <View style={{ height: 22 }} />
-            <GroupLabel>{AI_COPY.settingsGroup}</GroupLabel>
+            <GroupLabel testID="settings.group.privacy">
+              {AI_COPY.settingsGroup}
+            </GroupLabel>
             <Card>
               <SettingsRow
+                testID="settings.row.aiMessageAccess"
                 icon={Ic.spark}
                 label={AI_COPY.settingsRow}
                 value={aiAccessValue}

@@ -1020,7 +1020,14 @@ export default function SelfServiceView() {
       : '';
 
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+      // e2e ids (Maestro, japa#361): `screen.selfService` (the hub with an
+      // application loaded), `selfService.scroll`, `selfService.reviewCta`
+      // (the sticky review button — flows assert on it and NEVER tap it: it
+      // can start an AI review). No visual effect.
+      <View
+        testID="screen.selfService"
+        style={{ flex: 1, backgroundColor: EX.color.bg }}
+      >
         <SelfServiceHero
           scrollY={scrollY}
           img={art.img}
@@ -1045,6 +1052,7 @@ export default function SelfServiceView() {
 
         {/* Scrolling content sheet */}
         <Animated.ScrollView
+          testID="selfService.scroll"
           onScroll={onScroll}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
@@ -1598,6 +1606,7 @@ export default function SelfServiceView() {
               </View>
             ) : null}
             <PressableStatic
+              testID="selfService.reviewCta"
               onPress={onReviewCta}
               disabled={reviewCta.disabled || isStarting}
               accessibilityRole="button"

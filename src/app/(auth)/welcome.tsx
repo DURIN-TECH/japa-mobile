@@ -241,6 +241,7 @@ export default function AuthWelcome() {
         <View style={{ marginTop: 24, gap: 11 }}>
           {/* Coral primary — Get started → register. */}
           <Pressable
+            testID="welcome.getStarted"
             onPress={() => router.push('/(auth)/register')}
             style={[
               {
@@ -263,6 +264,7 @@ export default function AuthWelcome() {
 
           {/* Glass secondary — I already have an account → login. */}
           <Pressable
+            testID="welcome.login"
             onPress={() => router.push('/(auth)/login')}
             style={{
               height: 55,
