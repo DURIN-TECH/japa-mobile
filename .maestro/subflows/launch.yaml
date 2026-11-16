@@ -1,0 +1,48 @@
+# Subflow: (re)launch the dev client on THIS run's Metro (japa#361).
+#
+# Every suite flow starts here, so it begins from a fresh JS state whatever
+# the previous flow left behind. Notifications are pre-allowed so the system
+# permission alert (asked after sign-in) does not cover the screen
+# (sign-in.yaml also answers it if it shows anyway).
+#
+# Env (from the runner): APP_ID, DEV_CLIENT_URL (the dev client's
+# exp+...://expo-development-client/?url=<this run's Metro> link).
+# Ends on the welcome screen (signed out) or Home (signed in).
+#
+# Known dev-client flake (QA of japa#375, ~1 in 8 relaunches): "Failed to
+# load app" without a crash; a second load works. The LOAD step (not the
+# flow) is retried once here, and the retry leaves a screenshot named
+# `load-retry` that the runner counts and reports in its summary.
+#
+# Never relies on a cold start THROUGH an app link (not routed by the dev
+# client on iOS, japa#375/#371): app links are only opened once the app is
+# up (warm).
+appId: ${APP_ID}
+---
+- launchApp:
+    appId: ${APP_ID}
+    stopApp: true
+    permissions:
+      notifications: allow
+- openLink: ${DEV_CLIENT_URL}
+- extendedWaitUntil:
+    visible:
+      id: "welcome\\.login|screen\\.home"
+    timeout: 90000
+    # (passes as soon as either screen is up; a load failure falls through
+    # to the retry below and the final wait)
+    optional: true
+- runFlow:
+    when:
+      notVisible:
+        id: "welcome\\.login|screen\\.home"
+    commands:
+      - takeScreenshot: load-retry
+      - launchApp:
+          appId: ${APP_ID}
+          stopApp: true
+      - openLink: ${DEV_CLIENT_URL}
+- extendedWaitUntil:
+    visible:
+      id: "welcome\\.login|screen\\.home"
+    timeout: 90000

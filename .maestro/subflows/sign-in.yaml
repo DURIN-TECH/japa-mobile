@@ -1,0 +1,25 @@
+# Subflow: relaunch, sign out whoever is signed in, sign in as EMAIL
+# (japa#361). Ends on Home.
+#
+# Env: EMAIL (an emulator-only seed / fixture account, given by the flow
+# from the runner's E2E_EMAIL / FLAG_EMAIL), PASSWORD (the seed password,
+# from the runner). No real account is ever used.
+appId: ${APP_ID}
+---
+- runFlow: launch.yaml
+- runFlow: sign-out.yaml
+- tapOn:
+    id: "welcome\\.login"
+- tapOn:
+    id: "login\\.email"
+- inputText: ${EMAIL}
+- tapOn:
+    id: "login\\.password"
+- inputText: ${PASSWORD}
+- tapOn:
+    id: "login\\.submit"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.home"
+    timeout: 45000
+- runFlow: answer-permission.yaml

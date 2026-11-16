@@ -1,0 +1,29 @@
+# Sign-in (japa#361): welcome → Log in → email + password → Home.
+# Account: the emulator-only e2e fixture client (E2E_EMAIL, from the runner).
+appId: ${APP_ID}
+tags:
+  - auth
+  - flag-any
+---
+- runFlow: ../../subflows/launch.yaml
+- runFlow: ../../subflows/sign-out.yaml
+- assertVisible:
+    id: "welcome\\.login"
+- tapOn:
+    id: "welcome\\.login"
+- assertVisible: "Welcome back"
+- tapOn:
+    id: "login\\.email"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: "login\\.password"
+- inputText: ${PASSWORD}
+- tapOn:
+    id: "login\\.submit"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.home"
+    timeout: 45000
+- runFlow: ../../subflows/answer-permission.yaml
+- assertVisible:
+    id: "tab\\.home"

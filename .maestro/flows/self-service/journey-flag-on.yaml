@@ -1,0 +1,15 @@
+# Self-service journey with the self-service-only flag ON (japa#361).
+# Sets the flag itself (order-independent), then the shared journey
+# (subflows/self-service-journey.yaml: explore → hub → intake → documents →
+# review screen; never starts an AI review or a payment).
+appId: ${APP_ID}
+tags:
+  - self-service
+  - flag-on
+---
+- runFlow:
+    file: ../../subflows/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL}
+- runFlow: ../../subflows/flag-on.yaml
+- runFlow: ../../subflows/self-service-journey.yaml

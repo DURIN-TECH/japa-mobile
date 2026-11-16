@@ -1,0 +1,25 @@
+# Subflow: open the Ireland Short Stay 'C' destination (the e2e fixture's
+# visa, IE / short-stay-c) from the Explore tab, via the search box
+# (japa#361). Works from any screen of a signed-in app. Ends on its
+# destination screen.
+appId: ${APP_ID}
+---
+- openLink: "durintech://explore"
+- extendedWaitUntil:
+    visible:
+      id: "explore\\.search"
+    timeout: 20000
+- tapOn:
+    id: "explore\\.search"
+- eraseText: 40
+- inputText: "Ireland"
+- extendedWaitUntil:
+    visible:
+      id: "explore\\.dest\\.ie\\.short-stay-c"
+    timeout: 30000
+- tapOn:
+    id: "explore\\.dest\\.ie\\.short-stay-c"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.destination"
+    timeout: 30000

@@ -1,0 +1,113 @@
+# Self-service-only flag OFF (japa#361; flag japa#334, dev link japa#375).
+#
+# Signed in as the seeded client John Doe (FLAG_EMAIL, application
+# seed-app-001). Sets the flag itself at the start (order-independent), then
+# checks the agent entry points are back:
+#   - 5 tabs including Agents
+#   - Home: Messages button and "Find an agent"
+#   - Destination: "Work with an agent"
+#   - seed-app-001: message button and the Payment requests section
+#   - Profile: My consultations, Messages, Verify identity, Payments rows and
+#     the Agents stat; Settings: the Privacy group
+#   - durintech://messages opens Messages
+# Nothing here taps a review, checkout, payment or agent action.
+appId: ${APP_ID}
+tags:
+  - flag
+  - flag-off
+---
+- runFlow:
+    file: ../../subflows/sign-in.yaml
+    env:
+      EMAIL: ${FLAG_EMAIL}
+- runFlow: ../../subflows/flag-off.yaml
+
+# ── Tab bar: 5 tabs ──────────────────────────────────────────────────────────
+- assertVisible:
+    id: "tab\\.home"
+- assertVisible:
+    id: "tab\\.explore"
+- assertVisible:
+    id: "tab\\.tracker"
+- assertVisible:
+    id: "tab\\.agents"
+- assertVisible:
+    id: "tab\\.profile"
+
+# ── Home: Messages button and "Find an agent" ────────────────────────────────
+- assertVisible:
+    id: "home\\.messages"
+- scrollUntilVisible:
+    element:
+      id: "home\\.quick\\.findAgent"
+    direction: DOWN
+
+# ── durintech://messages opens Messages ──────────────────────────────────────
+- openLink: "durintech://messages"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.messages"
+    timeout: 20000
+
+# ── seed-app-001: message button and Payment requests ────────────────────────
+- openLink: "durintech://application/${FLAG_APP_ID}"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.application"
+    timeout: 30000
+- assertVisible:
+    id: "application\\.message"
+- scrollUntilVisible:
+    element:
+      id: "application\\.paymentRequests"
+    direction: DOWN
+    timeout: 30000
+
+# ── Destination: "Work with an agent" ────────────────────────────────────────
+- runFlow:
+    file: ../../subflows/open-destination.yaml
+- scrollUntilVisible:
+    element:
+      id: "destination\\.path\\.agent"
+    direction: DOWN
+- assertVisible:
+    id: "destination\\.path\\.self"
+
+# ── Profile: the four rows and the Agents stat; Settings: Privacy ────────────
+- openLink: "durintech://profile"
+- extendedWaitUntil:
+    visible:
+      id: "profile\\.stat\\.active"
+    timeout: 15000
+- assertVisible:
+    id: "profile\\.stat\\.agents"
+- scrollUntilVisible:
+    element:
+      id: "profile\\.row\\.consultations"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "profile\\.row\\.messages"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "profile\\.row\\.verifyIdentity"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "profile\\.row\\.payments"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "profile\\.row\\.settings"
+    direction: DOWN
+- tapOn:
+    id: "profile\\.row\\.settings"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.settings"
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: "settings\\.group\\.privacy"
+    direction: DOWN

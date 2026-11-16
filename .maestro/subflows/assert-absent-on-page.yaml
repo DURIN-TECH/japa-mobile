@@ -1,0 +1,17 @@
+# Subflow: ABSENT (an id regex) is nowhere on the current page (japa#361).
+#
+# assertNotVisible alone only checks what is on screen, so a hidden section
+# lower down would pass by accident. This checks, scrolls, checks again,
+# down the whole page (8 scrolls covers the longest screen it is used on).
+#
+# Env: ABSENT, e.g. "application\\.paymentRequests|application\\.message"
+appId: ${APP_ID}
+---
+- repeat:
+    times: 8
+    commands:
+      - assertNotVisible:
+          id: ${ABSENT}
+      - scroll
+- assertNotVisible:
+    id: ${ABSENT}

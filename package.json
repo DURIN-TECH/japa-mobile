@@ -29,6 +29,8 @@
     "start:android": "expo start --android",
     "test": "jest --watchAll",
     "lint": "eslint . --ignore-pattern .gitignore --fix",
+    "e2e": "node scripts/e2e/run.mjs",
+    "test:e2e-runner": "node --test scripts/e2e/__tests__/*.test.mjs",
     "prepare": "[[ -f .git/hooks/pre-commit ]] && pre-commit install || true"
   },
   "jest": {
