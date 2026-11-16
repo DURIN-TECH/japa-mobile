@@ -48,6 +48,12 @@ development build (`npm run build:dev`) or a local prebuild
 `__tests__/` folders next to the code (mappers, assets,
 query helpers).
 
+**End-to-end: `npm run e2e`** (Maestro, japa#361) runs the
+flows in `.maestro/` on the runner's own simulator against
+the local emulators; `-- --tags <t>` / `-- --flow <file>`
+for a targeted run. Read [`.maestro/README.md`](.maestro/README.md)
+before adding a flow or `testID`.
+
 ## Environment Configuration
 
 The app targets a different Firebase project and backend per
