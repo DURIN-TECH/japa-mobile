@@ -33,6 +33,10 @@ import { useMyDocumentsCount } from '@/hooks/useDocuments';
 import { useTransactions } from '@/hooks/useTransactions';
 import { useCurrentPlan } from '@/hooks/useCurrentPlan';
 import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
+// japa#146: the live saved list behind the Saved stat and row.
+import { useSavedDestinations } from '@/hooks/useSavedDestinations';
+import { savedCountLabel } from '@/components/explorer/savedLogic';
+import { queryState } from '@/components/explorer/states';
 import { upgradeBanner } from '@/components/explorer/planLogic';
 import {
   fileCountLabel,
@@ -151,11 +155,17 @@ export default function ProfileScreen() {
   const fullName = profileName(me);
   const location = profileCity(me);
 
-  // ── Saved destinations: ONE source (japa#346) ────────────────────────────
+  // ── Saved destinations: ONE source (japa#346, live since japa#146) ───────
   // Both the "Saved" stat and the "Saved destinations" row read `savedCount`
-  // and nothing else, so #146 points both at the live saved list by changing
-  // this one line. Until then "0" is true: there is no way to save yet.
-  const savedCount = '0';
+  // and nothing else: the number of items in the live saved list (the same
+  // query key as the Saved screen and the destination heart, so the three
+  // agree). "–" while the first load runs or after it failed (#145 rule); a
+  // failed background refetch keeps the cached number. Refetched on every
+  // re-focus (below), like the other counts.
+  const savedQ = useSavedDestinations();
+  const savedCount = savedCountLabel(
+    queryState(savedQ) === 'ready' ? savedQ.data : undefined,
+  );
 
   // Floating stats ───────────────────────────────────────────────────────────
   // Active = number of applications; Saved = `savedCount` above; Agents =
@@ -218,6 +228,9 @@ export default function ProfileScreen() {
   // every re-focus (not the first, which already fetched).
   useRefetchOnFocus(documentsQ.refetch);
   useRefetchOnFocus(transactionsQ.refetch, !selfServiceOnly);
+  // japa#146: the saved list too. Writes already edit the shared cache, so
+  // this only catches saves made on another device (or a passing "–").
+  useRefetchOnFocus(savedQ.refetch);
 
   // ── Subscription row + upgrade banner (japa#346) ─────────────────────────
   // Same hook as Settings, so both screens name the same plan. The banner
