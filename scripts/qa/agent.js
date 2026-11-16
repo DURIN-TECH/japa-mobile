@@ -153,6 +153,21 @@
     return null;
   }
 
+  /**
+   * Is `f` the same component instance as any fiber in `list`? React keeps
+   * two fibers per instance (current + alternate) and `.return` pointers can
+   * lead to either, so identity alone over-counts (QA saw "match 1 of 2" on
+   * a single password field after it re-rendered).
+   */
+  function inList(list, f) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] === f || list[i] === f.alternate || list[i].alternate === f) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function isDisabled(props) {
     return !!(
       props &&
@@ -390,7 +405,7 @@
     var found = [];
     matched.forEach(function (m) {
       var owner = ancestorWith(m.fiber, 'onPress');
-      if (!owner || seenOwners.indexOf(owner) !== -1) return;
+      if (!owner || inList(seenOwners, owner)) return;
       seenOwners.push(owner);
       found.push(m);
     });
@@ -477,7 +492,7 @@
           // first, so skip any fiber nested inside a field we already have.
           var up = f.return;
           while (up) {
-            if (hits.indexOf(up) !== -1) return;
+            if (inList(hits, up)) return;
             up = up.return;
           }
           hits.push(f);
@@ -553,6 +568,85 @@
   qa.navObj = navObj;
   /** The raw walker, for one-off `eval` probes. */
   qa.walk = walk;
+
+  // ---------------------------------------------------------------------------
+  // Async results, modules, dev menu
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Promise settling for `walk.mjs eval`. RN's Promise polyfill isn't a
+   * native promise, so CDP's awaitPromise does nothing with it; instead the
+   * CLI wraps the expression in settle(), then polls settled(id).
+   */
+  var pending = globalThis.__qaPending || (globalThis.__qaPending = {});
+  qa.settle = function (id, v) {
+    if (!v || typeof v.then !== 'function') return { state: 'value', value: v };
+    pending[id] = { done: false };
+    v.then(
+      function (r) {
+        pending[id] = { done: true, value: r };
+      },
+      function (e) {
+        pending[id] = { done: true, error: String((e && (e.stack || e.message)) || e) };
+      },
+    );
+    return { state: 'pending', id: id };
+  };
+  qa.settled = function (id) {
+    var p = pending[id];
+    if (!p) return { done: true, error: 'unknown pending id ' + id };
+    if (p.done) delete pending[id];
+    return p;
+  };
+
+  /** Metro's module table as [id, verboseName, initialized] (dev bundles only). */
+  function moduleTable() {
+    var r = globalThis.__r;
+    if (!r || typeof r.getModules !== 'function') return [];
+    var ms = r.getModules();
+    var out = [];
+    var add = function (m, id) {
+      if (m) out.push({ id: Number(id), name: m.verboseName || '', initialized: !!m.isInitialized });
+    };
+    if (ms && typeof ms.forEach === 'function') ms.forEach(add);
+    else if (ms) Object.keys(ms).forEach(function (k) { add(ms[k], k); });
+    return out;
+  }
+
+  /** Bundled modules whose path matches `pattern` (a regex string). */
+  qa.mods = function (pattern) {
+    var re = new RegExp(pattern);
+    return moduleTable().filter(function (m) {
+      return re.test(m.name);
+    });
+  };
+
+  /**
+   * Exports of the bundled module matching `pattern`, e.g.
+   *   __qa.mod('stores/auth.store').useAuthStore.getState().isAuthenticated
+   * Prefers an already-initialised module, so it doesn't run a module's top
+   * level for the first time as a side effect. Use inside an expression;
+   * whole module objects are usually too big to print.
+   */
+  qa.mod = function (pattern) {
+    var hits = qa.mods(pattern);
+    if (!hits.length) throw new Error('no bundled module matches ' + pattern);
+    var pick = hits.filter(function (m) { return m.initialized; })[0] || hits[0];
+    return globalThis.__r(pick.id);
+  };
+
+  /** A native Expo module, e.g. __qa.native('ExpoDevMenu'). */
+  qa.native = function (name) {
+    var m = globalThis.expo && globalThis.expo.modules && globalThis.expo.modules[name];
+    if (!m) throw new Error('no native Expo module ' + name);
+    return m;
+  };
+
+  /** Close the Expo dev menu if it opened over the app. */
+  qa.closeDevMenu = function () {
+    qa.native('ExpoDevMenu').closeMenu();
+    return 'closed';
+  };
 
   globalThis.__qa = qa;
 })();

@@ -365,14 +365,43 @@ const commands = {
   },
 
   /**
-   * Run arbitrary JS in the app, with __qa available. The value of the last
-   * expression is printed. Top-level const/let persist between calls and
-   * clash on the next one: wrap multi-line code in an IIFE.
+   * Run arbitrary JS in the app, with __qa available, and print its value.
+   *
+   * A single EXPRESSION is wrapped in __qa.settle() so a promise (including
+   * RN's polyfilled ones, which CDP's awaitPromise ignores) is awaited: we
+   * poll __qa.settled(id) until it resolves or --timeout passes.
+   * STATEMENTS can't be wrapped; they run as-is and the value of the last
+   * expression statement is printed, unawaited. Top-level
+   * const/let persist between calls and clash on the next one: wrap
+   * multi-line code in an IIFE (which is an expression, so it is awaited).
    */
-  async eval(s, args, o) {
+  async eval(s, args, o, timeoutMs) {
     const code = o.file ? fs.readFileSync(o.file, 'utf8') : args.join(' ');
     if (!code.trim()) throw new QaError('usage: eval <js>  |  eval --file <script.js>');
-    return s.run(code);
+    const expr = code.trim().replace(/;+\s*$/, '');
+    const id = `p${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+    // Decide expression vs statements by PARSING locally (new Function
+    // compiles but never runs it), so the app's code never runs twice.
+    let isExpression = true;
+    try {
+      new Function(`return (${expr}\n);`);
+    } catch {
+      isExpression = false;
+    }
+    if (!isExpression) return s.run(code); // statements: run as-is, not awaited
+    // The newline before ")" keeps a trailing // comment from eating it.
+    const first = await s.run(`__qa.settle(${JSON.stringify(id)}, (${expr}\n))`);
+    if (first.state === 'value') return first.value;
+    const until = Date.now() + timeoutMs;
+    while (Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 200));
+      const r = await s.evaluate(`globalThis.__qa.settled(${JSON.stringify(id)})`);
+      if (r.done) {
+        if (r.error !== undefined) throw new QaError(`promise rejected in the app: ${String(r.error).slice(0, 800)}`);
+        return r.value;
+      }
+    }
+    throw new QaError(`the promise did not settle within ${timeoutMs} ms (raise --timeout)`);
   },
 
   /** Screenshot + dump, saved as <out>/<name>.png and <out>/<name>.txt. */

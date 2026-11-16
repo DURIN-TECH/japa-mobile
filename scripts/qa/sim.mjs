@@ -8,17 +8,19 @@
  *   node scripts/qa/sim.mjs list
  *   node scripts/qa/sim.mjs create <suffix> [--from <udid|name>] [--bundle-id <id>]
  *   node scripts/qa/sim.mjs create <suffix> --app <path/to/App.app> [--device-type "iPhone 17"]
- *   node scripts/qa/sim.mjs boot <device>
- *   node scripts/qa/sim.mjs info <device>
- *   node scripts/qa/sim.mjs approve-schemes <device>
- *   node scripts/qa/sim.mjs open-dev-client <device> --port <metro-port>
- *   node scripts/qa/sim.mjs open <device> <url>
- *   node scripts/qa/sim.mjs screenshot <device> <path.png>
- *   node scripts/qa/sim.mjs terminate <device>
- *   node scripts/qa/sim.mjs teardown <device>
+ *   node scripts/qa/sim.mjs boot [device]
+ *   node scripts/qa/sim.mjs info [device]
+ *   node scripts/qa/sim.mjs approve-schemes [device]
+ *   node scripts/qa/sim.mjs open-dev-client [device] --port <metro-port> [--no-terminate]
+ *   node scripts/qa/sim.mjs cold-link [device] <url> --port <metro-port> [--link-delay <ms>]
+ *   node scripts/qa/sim.mjs open [device] <url>
+ *   node scripts/qa/sim.mjs screenshot [device] <path.png>
+ *   node scripts/qa/sim.mjs terminate [device]
+ *   node scripts/qa/sim.mjs teardown [device]
  *
- * <device> is a UDID or the full device name; QA_UDID in the environment
- * is used when it is left out.
+ * [device] is a UDID or the full device name. Leave it out to use QA_UDID
+ * from the environment (the README's recipe exports it). --port defaults to
+ * QA_METRO_PORT.
  *
  * SAFETY: every command that changes a device requires BOTH a name starting
  * with "Seli QA " (the prefix `create` gives) AND an ownership marker that
@@ -284,7 +286,25 @@ function skipDevMenuOnboarding(d, bundleId) {
     '-bool',
     'YES',
   ]);
-  console.log(`dev-menu welcome sheet turned off for ${bundleId}`);
+  // And stop the dev menu itself opening on launch (seen on a fresh
+  // `create --app` device, covering half of every screenshot).
+  simctl(['spawn', d.udid, 'defaults', 'write', bundleId, 'EXDevMenuShowsAtLaunch', '-bool', 'NO']);
+  console.log(`dev-menu welcome sheet and show-at-launch turned off for ${bundleId}`);
+}
+
+/** The dev-client deep link that loads the bundle from 127.0.0.1:<port>. */
+function devClientUrl(app, port) {
+  return `${app.devClientScheme}://expo-development-client/?url=${encodeURIComponent(`http://127.0.0.1:${port}`)}`;
+}
+
+/**
+ * Kill the app and give the old (or crashed) process a moment to go away;
+ * opening straight after a debugger crash showed "Failed to load app".
+ * NOT for loading a bundle under a launcher that holds a pending link.
+ */
+function relaunchPrep(d, app) {
+  simctl(['terminate', d.udid, app.bundleId], { quiet: true }); // fine if not running
+  pause(1500);
 }
 
 /** Synchronous pause (the CLI is sequential; no need for async here). */
@@ -447,18 +467,41 @@ const commands = {
   'open-dev-client'(args, opts) {
     const d = ownedDevice(args[0]);
     requireBooted(d);
-    if (!opts.port) throw new QaError('--port <metro-port> is required');
+    if (!opts.port) throw new QaError('--port <metro-port> (or QA_METRO_PORT) is required');
     const port = checkPort(opts.port);
     const app = requireDevClient(d, opts['bundle-id']);
-    simctl(['terminate', d.udid, app.bundleId], { quiet: true }); // fine if not running
-    // Give the old process (or a crashed one) a moment to go away; opening
-    // straight after a debugger crash showed "Failed to load app" in QA.
-    pause(1500);
-    const metro = encodeURIComponent(`http://127.0.0.1:${port}`);
-    const url = `${app.devClientScheme}://expo-development-client/?url=${metro}`;
+    if (!opts['no-terminate']) relaunchPrep(d, app);
+    const url = devClientUrl(app, port);
     simctl(['openurl', d.udid, url]);
     console.log(`opened ${url}`);
     console.log('Now confirm the bundle request ("iOS Bundled ...") appears in YOUR Metro log.');
+    console.log('About 1 launch in 8 shows "Failed to load app" with no crash: just run this again.');
+  },
+
+  /**
+   * Cold start with a deep link that the app actually routes. Through the
+   * dev client, expo-router takes its initial URL from expo-linking's
+   * getLinkingURL(), which holds the dev-client URL; a link opened BEFORE
+   * the bundle loads is lost (the app lands on Home). What works: kill the
+   * app, launch the dev client on your Metro, and send the link while the
+   * bundle is loading (--link-delay, default 2000 ms).
+   */
+  'cold-link'(args, opts) {
+    const link = args[1];
+    if (!link || !link.includes('://')) throw new QaError('usage: cold-link [device] <url> --port <metro-port>');
+    const d = ownedDevice(args[0]);
+    requireBooted(d);
+    if (!opts.port) throw new QaError('--port <metro-port> (or QA_METRO_PORT) is required');
+    const port = checkPort(opts.port);
+    const delay = Number(opts['link-delay'] ?? 2000);
+    if (!Number.isFinite(delay) || delay < 0) throw new QaError(`invalid --link-delay: ${opts['link-delay']}`);
+    const app = requireDevClient(d, opts['bundle-id']);
+    relaunchPrep(d, app);
+    simctl(['openurl', d.udid, devClientUrl(app, port)]);
+    pause(delay);
+    simctl(['openurl', d.udid, link]);
+    console.log(`cold start on :${port}, then ${link} after ${delay} ms`);
+    console.log('Check where it landed with `walk.mjs route`. If it shows Home, raise --link-delay a little.');
   },
 
   /** Open a deep link, e.g. durintech://messages. */
@@ -525,6 +568,8 @@ function main() {
       'device-type': { type: 'string' },
       'bundle-id': { type: 'string' },
       port: { type: 'string', short: 'p', default: process.env.QA_METRO_PORT },
+      'no-terminate': { type: 'boolean' },
+      'link-delay': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -534,11 +579,12 @@ function main() {
     const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
     const usage = src.split('\n').filter((l) => l.startsWith(' *   node')).join('\n');
     console.log(`usage:\n${usage.replace(/^ \* {3}/gm, '  ')}`);
+    console.log('\n  [device]: a UDID or full name; defaults to $QA_UDID. --port defaults to $QA_METRO_PORT.');
     process.exit(cmd && !commands[cmd] ? 1 : 0);
   }
   // Commands that take a device fall back to QA_UDID when the device
   // argument is left out (i.e. fewer positionals than the command takes).
-  const arity = { open: 2, screenshot: 2, list: 0, create: 0 }[cmd] ?? 1;
+  const arity = { open: 2, 'cold-link': 2, screenshot: 2, list: 0, create: 0 }[cmd] ?? 1;
   if (arity === 2 && rest.length === 1) {
     // One argument: only treat it as the SECOND one (QA_UDID supplying the
     // device) when it clearly is a path or URL. Otherwise `screenshot
@@ -548,7 +594,7 @@ function main() {
       throw new QaError(
         cmd === 'screenshot'
           ? 'usage: screenshot [<device>] <path.png>  (an explicit .png path is required)'
-          : 'usage: open [<device>] <url>',
+          : `usage: ${cmd} [<device>] <url>`,
       );
     }
     rest.unshift(process.env.QA_UDID);

@@ -22,8 +22,8 @@ Both CLIs need only Node 24 (built-in `fetch` and `WebSocket`) and Xcode's
 these files is imported by the app, so Metro never bundles them. Jest doesn't
 run them and ESLint ignores `scripts/qa/`.
 
-Run `node scripts/qa/walk.mjs --help` or `node scripts/qa/sim.mjs` for the
-full option list.
+Run `node "$QA/walk.mjs" --help` or `node "$QA/sim.mjs"` for the full
+option list (`$QA` is set in step 1 of the recipe).
 
 ## Ground rules
 
@@ -54,33 +54,59 @@ full option list.
 ## Recipe
 
 The example is a feature flag walked twice: once with the flag on, once with
-it off. Run everything from the issue's `seli-mobile` worktree.
+it off.
+
+Two folders are involved, and they can differ:
+
+- **Metro** runs from the issue's `seli-mobile` worktree, because that is
+  the code under test.
+- **The scripts** run from wherever `scripts/qa/` lives. Until this tool is
+  merged to `dev`, that is the #342 worktree
+  (`.worktrees/seli-mobile-342-qa-driver/scripts/qa`). After that, any
+  checkout of `dev` has it.
+
+Point `QA` at the scripts folder and every command below works from any
+directory.
 
 ### 1. Simulator
 
 ```bash
+export QA=/absolute/path/to/seli-mobile/scripts/qa   # see above
 # Pick a free port >= 8084. Another QA walk may already hold 8084, so check.
 export QA_METRO_PORT=8084
 lsof -nP -iTCP:$QA_METRO_PORT -sTCP:LISTEN   # must print nothing; else pick another
 export SCRATCH=/path/to/your/scratch         # evidence goes here
 
-node scripts/qa/sim.mjs list           # QA devices + shut-down clone sources
-node scripts/qa/sim.mjs create 342     # clones a SHUT-DOWN device that has the dev client
+node "$QA/sim.mjs" list           # QA devices + shut-down clone sources
+node "$QA/sim.mjs" create 342     # clones a SHUT-DOWN device that has the dev client
                                        # (or: --from <udid|name>; or a blank device: --app path/to/Seli.app)
 export QA_UDID=<udid printed above>     # both CLIs read it from here on
 
-node scripts/qa/sim.mjs boot             # simctl boot only: no Simulator window
-node scripts/qa/sim.mjs approve-schemes  # no "Open in Seli?" alert on openurl,
-                                         # and no dev-menu welcome sheet
+node "$QA/sim.mjs" boot             # simctl boot only, no Simulator window
+                                         # (create --app already booted it; harmless)
+node "$QA/sim.mjs" approve-schemes  # no "Open in Seli?" alert on openurl,
+                                         # and no dev menu over the app
 ```
 
-`approve-schemes` (and `create --app`) also sets the user default that turns
-off Expo's dev-menu welcome sheet. Without it, the sheet covers the bottom of
-every screen on a fresh device and needs a tap to dismiss:
+Once `QA_UDID` is exported, you can leave `[device]` out of every `sim.mjs`
+command, as the recipe does. `--port` defaults to `QA_METRO_PORT`.
+
+`approve-schemes` (and `create --app`) also sets two user defaults:
+
+- `EXDevMenuIsOnboardingFinished`: stops the dev menu's welcome sheet.
+- `EXDevMenuShowsAtLaunch`: stops the dev menu opening by itself on launch.
+
+Without them, the menu covers the bottom half of every screenshot on a fresh
+device, tab bar included. The manual equivalent is:
 
 ```bash
 xcrun simctl spawn $QA_UDID defaults write com.durintech.japamobile EXDevMenuIsOnboardingFinished -bool YES
+xcrun simctl spawn $QA_UDID defaults write com.durintech.japamobile EXDevMenuShowsAtLaunch -bool NO
 ```
+
+If the menu still shows, close it with `W eval '__qa.closeDevMenu()'` (`W`
+is defined in step 3). That calls
+`globalThis.expo.modules.ExpoDevMenu.closeMenu()`.
 
 A blank device (`create --app`) also shows iOS's "Seli would like to send
 you notifications" prompt after sign-in. It can't be dismissed headlessly
@@ -98,16 +124,21 @@ client is the app with an `exp+…` scheme, matched to this repo's
 
 ### 2. Metro, flag on
 
+Run this from the **issue's** worktree:
+
 ```bash
-CI=1 EXPO_PUBLIC_SELF_SERVICE_ONLY=true \
+CI=1 DEBUG=Metro:InspectorProxy EXPO_PUBLIC_SELF_SERVICE_ONLY=true \
   npx expo start --port $QA_METRO_PORT 2>&1 | tee $SCRATCH/metro-on.log
 ```
 
 Run it in the background and note its PID so you can stop exactly this
-process later. `CI=1` turns off watch mode and interactive prompts.
+process later.
+
+- `CI=1` turns off watch mode and interactive prompts.
+- `DEBUG=Metro:InspectorProxy` makes Metro log which device connected.
 
 ```bash
-node scripts/qa/sim.mjs open-dev-client --port $QA_METRO_PORT
+node "$QA/sim.mjs" open-dev-client --port $QA_METRO_PORT
 ```
 
 Then check `$SCRATCH/metro-on.log` for both:
@@ -117,21 +148,27 @@ Metro:InspectorProxy Got new device connection: name='Seli QA 342', app=com.duri
 iOS Bundled 1251ms index.ts (4096 modules)
 ```
 
-The device connection line only shows when Metro's debug logging is on
-(`DEBUG=Metro:InspectorProxy`). The `iOS Bundled` line always shows. If it
-doesn't appear in **your** log, the app is on someone else's server: stop
-and relaunch.
+If these lines don't appear in **your** log, the app is on someone else's
+server: stop and relaunch.
 
-If the first bundle request on a freshly `--clear`ed Metro times out ("There
-was a problem loading the project"), wait for the bundle to finish building
-and run `open-dev-client` again.
+**"There was a problem loading the project / Failed to load app from
+http://…"**: run `open-dev-client` again.
+
+- It happens about 1 launch in 8, even with a cached bundle and no crash.
+- It also happens when the first bundle request on a freshly `--clear`ed
+  Metro times out. Wait for the bundle to finish building, then retry.
+
+`open-dev-client` kills the app before opening it, so it also works as a
+relaunch. To load the bundle without killing what is running, pass
+`--no-terminate`. Use it, for example, under a dev-client launcher that is
+already showing.
 
 ### 3. Walk
 
 ```bash
 # Works in bash and zsh (a plain W="node ..." variable does not split in zsh).
 # walk.mjs reads QA_METRO_PORT and QA_UDID from the environment.
-W() { node scripts/qa/walk.mjs "$@"; }
+W() { node "$QA/walk.mjs" "$@"; }
 
 W dump                          # route, stack, rendered text, a11y labels, input placeholders
 W press "I already have an account"
@@ -187,6 +224,7 @@ Other commands:
 - `inputs`: every text field and its current value.
 - `targets`: the inspector pages attached to your Metro.
 - `eval '<js>'` or `eval --file x.js`: anything else, with `__qa` available.
+  See [eval: reaching into the app](#eval-reaching-into-the-app).
 
 `press` won't press a disabled control, because a real tap would do nothing
 (`--force` overrides this).
@@ -195,6 +233,9 @@ Other commands:
   `match 1 of N` only includes things that can be pressed: one per button,
   with text that has no `onPress` (such as a subtitle) left out.
 - A miss lists the near matches on screen.
+- `fill` counts one match per field. A wrapper component (such as the
+  login screen's `Field`) and the `TextInput` inside it count once, even
+  after a re-render.
 - Right after a navigation, the screen that is still animating in can be
   counted twice for a moment. If a count looks too high, run the command
   again after a second.
@@ -202,22 +243,33 @@ Other commands:
 **Look at every screenshot.** A dump can read fine while the screen is
 blank, covered or crashed.
 
-Deep links and cold starts:
+Deep links:
 
 ```bash
-node scripts/qa/sim.mjs open durintech://messages        # warm deep link
-
-# Cold start through a link:
-node scripts/qa/sim.mjs terminate                        # 1. kill the app
-node scripts/qa/sim.mjs open durintech://messages        # 2. the dev client's launcher opens
-node scripts/qa/sim.mjs open-dev-client --port $QA_METRO_PORT     # 3. load the bundle
+node "$QA/sim.mjs" open durintech://messages        # warm: the app is running
+node "$QA/sim.mjs" cold-link durintech://messages   # cold start through a link
+W route                                                  # where did it land?
 ```
 
-The bundle doesn't load by itself on a cold start through a link. After
-step 2 the dev client's launcher stays up ("No development servers found").
-Step 3 loads your bundle, and the launcher hands the pending link to the app
-as its initial URL. On #334, the app's `Linking.getInitialURL()` returned
-`durintech://messages`.
+**Cold start through a link.** With the dev client you can't do it the way a
+release build would, by opening the link while the app is closed:
+
+- That only starts the dev client's launcher, and the link never reaches the
+  app's router.
+- expo-router takes the initial URL from expo-linking's `getLinkingURL()`.
+  Through the dev client, that holds the `exp+…expo-development-client` URL,
+  so the app lands on Home.
+- React Native's `Linking.getInitialURL()` can still return the link. That
+  is why the earlier #334 check looked fine: it read the wrong API.
+
+What works is `cold-link`:
+
+1. It kills the app and launches the dev client on your Metro.
+2. About 2 s later, while the bundle is still loading, it sends the link.
+3. The router gets the link and handles it as the initial URL.
+
+If `route` shows Home, raise `--link-delay` (in ms) a little. Say in the
+verdict that the cold start was done this way.
 
 ### 4. Metro, flag off
 
@@ -227,7 +279,7 @@ cached bundle would keep the old value.
 
 ```bash
 CI=1 npx expo start --port $QA_METRO_PORT --clear 2>&1 | tee $SCRATCH/metro-off.log
-node scripts/qa/sim.mjs open-dev-client --port $QA_METRO_PORT
+node "$QA/sim.mjs" open-dev-client --port $QA_METRO_PORT
 ```
 
 Check for the `iOS Bundled` line again, then repeat the walk.
@@ -236,7 +288,7 @@ Check for the `iOS Bundled` line again, then repeat the walk.
 
 ```bash
 kill <your Metro PID>; lsof -nP -iTCP:$QA_METRO_PORT -sTCP:LISTEN   # port free again
-node scripts/qa/sim.mjs teardown                           # shutdown + delete the clone
+node "$QA/sim.mjs" teardown                           # shutdown + delete the clone
 ```
 
 Say in the verdict that the clone was deleted and that the source device and
@@ -277,6 +329,44 @@ W eval '(function () {
   verdict.** It shows how the UI renders that data, not that the backend
   ever produces it.
 
+## eval: reaching into the app
+
+`W eval '<js>'` runs code in the app, with `__qa` available, and prints the
+value.
+
+- **Promises are awaited.** That includes React Native's polyfilled ones,
+  which the debugger's own `awaitPromise` ignores. The driver polls for the
+  result for up to `--timeout` ms (default 20000) and reports a rejection as
+  an error.
+- **Only an expression is awaited.** Statements (`var x = …; x`) run as
+  they are, and the last value is printed without awaiting it. For async
+  work, use an async IIFE: `W eval '(async () => { … return v; })()'`.
+- Top-level `const`/`let` persist between calls and clash on the next one.
+  Use an IIFE, or `var`.
+
+Bundled modules (dev bundles only):
+
+```bash
+W eval '__qa.mods("auth.store")'    # [{id, name, initialized}]; name is the file path
+W eval '__qa.mod("stores/auth.store").useAuthStore.getState().isAuthenticated'
+```
+
+- `__qa.mods(regex)` lists the bundled modules whose path matches. It reads
+  Metro's `__r.getModules()` and matches each module's `verboseName`.
+- `__qa.mod(regex)` returns a matching module's exports through `__r(id)`.
+  It prefers a module that has already run, so it doesn't run a module's top
+  level for the first time.
+- Keep the result small: a whole module object is usually too big to print.
+
+Native Expo modules:
+
+- `__qa.native("ExpoDevMenu")` is `globalThis.expo.modules.ExpoDevMenu`.
+- `__qa.closeDevMenu()` closes the dev menu.
+- To fire a dev-menu item the app registered, emit
+  `registeredCallbackFired` with the item's name on `DeviceEventEmitter`,
+  for example `__qa.mod("RCTDeviceEventEmitter").default.emit("registeredCallbackFired", "<item name>")`.
+  Check the module's exports with `__qa.mods` first.
+
 ## Gotchas
 
 - **The debugger `Origin` header must be exactly `http://127.0.0.1:<port>`.**
@@ -291,9 +381,8 @@ W eval '(function () {
     reports "the debugger connection closed before the app answered". The
     next command says no app is attached.
   - The debugger connection caused it, not the app.
-  - Relaunch in two steps: `sim.mjs terminate`, then `sim.mjs
-    open-dev-client --port $QA_METRO_PORT`. Running `open-dev-client` alone straight
-    after a crash can fail with "Failed to load app from http://…".
+  - Relaunch with `sim.mjs open-dev-client`, which kills the app first. If
+    it shows "Failed to load app from http://…", run it again.
   - Sign in again if needed, redo the step, and mention the crash in the
     verdict's notes.
 - **Virtualised lists only mount the rows on screen.** A row further down a
@@ -309,8 +398,6 @@ W eval '(function () {
 - **Metro lists devices by name, not UDID.** The `QA_UDID` check compares
   the simulator's name, so keep the `create` suffix unique (the issue
   number). If two attached devices share a name, the walk is refused.
-- **`eval` scope.** Top-level `const`/`let` persist between calls and clash on
-  the next one. Wrap multi-line code in an IIFE, as in the examples.
 - **Handlers, not touches.** `press` calls the nearest `onPress` with a fake
   event object. A handler that reads touch coordinates from the event won't
   get real ones.
