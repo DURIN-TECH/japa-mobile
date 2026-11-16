@@ -252,17 +252,19 @@ export function useVisasForCountries(countryCodes: string[]) {
 // ── Explore filters: the complete candidate list (japa#347) ─────────────────
 
 /**
- * EVERY visible visa of one category: `GET /visas?category=…` page by page
- * (60 at a time, the #341 cost cap) until the server's `total`, in one query.
- * A category is a fraction of the whole list, so this is usually one or two
+ * EVERY visible visa of one category (`GET /visas?category=…`), or of the
+ * whole list when `category` is undefined (`GET /visas`), page by page (60 at
+ * a time, the #341 cost cap) until the server's `total`, in one query. A
+ * category is a fraction of the whole list, so that is usually one or two
  * requests. The stop rule is the same tested `nextVisaOffset` as the grid.
  */
-async function fetchWholeCategory(category: VisaCategory): Promise<VisaType[]> {
+async function fetchWholeList(category?: VisaCategory): Promise<VisaType[]> {
   const pages: GetAllVisasResponse[] = [];
   let offset: number | undefined = 0;
+  const filter = category ? `category=${encodeURIComponent(category)}&` : '';
   while (offset !== undefined) {
     const response = await apiService.get<GetAllVisasResponse>(
-      `/visas?category=${encodeURIComponent(category)}&limit=${EXPLORE_PAGE_SIZE}&offset=${offset}`,
+      `/visas?${filter}limit=${EXPLORE_PAGE_SIZE}&offset=${offset}`,
     );
     pages.push({
       visaTypes: response.data?.visaTypes ?? [],
@@ -294,7 +296,10 @@ function combineFilteredVisas(results: UseQueryResult<VisaType[]>[]) {
 export type FilteredVisasPlan =
   | { kind: 'none' }
   | { kind: 'countries'; codes: string[] }
-  | { kind: 'categories'; categories: VisaCategory[] };
+  | { kind: 'categories'; categories: VisaCategory[] }
+  // Every visible visa (`GET /visas`, all pages): for "Other", see
+  // `filterFetchPlan` in exploreFilters.ts.
+  | { kind: 'all' };
 
 /**
  * The full set of visas a filtered Explore grid narrows from, so it shows
@@ -329,10 +334,18 @@ export function useFilteredExploreVisas(plan: FilteredVisasPlan) {
       : plan.kind === 'categories'
         ? plan.categories.map((category) => ({
             queryKey: ['visaTypes', 'exploreCategory', category],
-            queryFn: () => fetchWholeCategory(category),
+            queryFn: () => fetchWholeList(category),
             staleTime: 1000 * 60 * 5,
           }))
-        : [];
+        : plan.kind === 'all'
+          ? [
+              {
+                queryKey: ['visaTypes', 'exploreAll'],
+                queryFn: () => fetchWholeList(),
+                staleTime: 1000 * 60 * 5,
+              },
+            ]
+          : [];
   return useQueries({
     queries,
     // Module-level (stable) so TanStack re-runs it only when a result

@@ -131,14 +131,12 @@ export function chipCategories(seen: string[], chosen: string[]): string[] {
   return [ALL_CHIP, ...out.filter((c) => c !== ALL_CHIP)];
 }
 
-/** The sheet's "Visa type" options: the chip list without "All". */
-export function sheetCategories(seen: string[], chosen: string[]): string[] {
-  return chipCategories(seen, chosen).slice(1);
-}
-
 /**
- * Every category label the app knows, in CATEGORY_LABEL order. The sheet
- * falls back to this before any visa has loaded, so it is never empty.
+ * Every category label a visa can have, in CATEGORY_LABEL order: the
+ * sheet's "Visa type" options. Fixed, never derived from the browse pages
+ * loaded so far (review of japa#347), so a category whose visas all sit past
+ * page one can still be chosen. Every label maps to a fetch that returns
+ * all of its visas (see `filterFetchPlan`), so none of them is a dead end.
  */
 export const ALL_CATEGORY_LABELS: string[] = Object.values(CATEGORY_LABEL);
 
@@ -164,14 +162,25 @@ export function labelToCategory(label: string): VisaCategory | null {
  *     read each, where `GET /visas` reads every country per request.
  *   • only categories chosen → `GET /visas?category=…` per category, every
  *     page of 60 until `total`.
+ *   • "Other" among the categories (and no country) → 'all': every page of
+ *     `GET /visas`. The grid labels a visa "Other" when its category is
+ *     `other` OR missing / unknown (`visaTypeToDest`), but the server's
+ *     `category=other` returns only the first kind. Fetching the whole list
+ *     and matching the label on the client returns exactly what the grid
+ *     calls "Other" (review of japa#347). It costs what scrolling the whole
+ *     unfiltered grid costs (total / 60 requests).
  *   • nothing chosen → 'none': the plain paged grid, exactly as after #341.
  */
 export type FilterFetchPlan = FilteredVisasPlan;
+
+/** The catch-all label: category `other`, missing or unknown. */
+export const OTHER_LABEL = CATEGORY_LABEL.other;
 
 export function filterFetchPlan(f: ExploreFilters): FilterFetchPlan {
   if (f.countries.length) {
     return { kind: 'countries', codes: [...f.countries].sort() };
   }
+  if (f.categories.includes(OTHER_LABEL)) return { kind: 'all' };
   if (f.categories.length) {
     const categories = f.categories
       .map(labelToCategory)
@@ -309,4 +318,28 @@ export function summaryLine(
     where = ` in ${joinAnd(f.countries.map((c) => nameOf(c) ?? c))}`;
   }
   return `Showing ${cats}${where}`;
+}
+
+// ── Header controls for the current query ────────────────────────────────────
+
+/**
+ * Which search-header controls show (review of japa#347). The "x" takes the
+ * filter button's spot as soon as ANY text is typed, while search mode only
+ * starts at two characters, so the "Filters" chip follows the "x", not
+ * search mode: the sheet is reachable whenever the button is not. The
+ * category chip row shows only while the field is empty.
+ */
+export function headerControls(query: string): {
+  clearButton: boolean;
+  filterButton: boolean;
+  filtersChip: boolean;
+  categoryChips: boolean;
+} {
+  const typing = query.length > 0;
+  return {
+    clearButton: typing,
+    filterButton: !typing,
+    filtersChip: typing,
+    categoryChips: !typing,
+  };
 }

@@ -134,6 +134,26 @@ describe('useFilteredExploreVisas', () => {
     expect(h.current.data?.some((v) => v.id === 'w65')).toBe(true);
   });
 
+  it('all ("Other"): every page of the unfiltered list', async () => {
+    api.get.mockImplementation(async (...args: unknown[]) => {
+      const url = args[0] as string;
+      const offset = Number(/[?&]offset=(\d+)/.exec(url)?.[1] ?? 0);
+      const all = Array.from({ length: 61 }, (_, i) => ({
+        id: `v${i}`,
+        countryCode: 'GB',
+      }));
+      return {
+        success: true,
+        data: { visaTypes: all.slice(offset, offset + 60), total: 61 },
+      };
+    });
+    const h = mount(() => useFilteredExploreVisas({ kind: 'all' }), qc);
+    await flush();
+    expect(api.get).toHaveBeenCalledWith('/visas?limit=60&offset=0');
+    expect(api.get).toHaveBeenCalledWith('/visas?limit=60&offset=60');
+    expect(h.current.data).toHaveLength(61);
+  });
+
   it('a failed country is an error with no data, never a shorter grid', async () => {
     api.get.mockImplementation(async (...args: unknown[]) => {
       const url = args[0] as string;

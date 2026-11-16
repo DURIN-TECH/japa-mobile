@@ -25,7 +25,9 @@ import {
   orderSheetCountries,
   resultsLine,
   searchSheetCountries,
-  sheetCategories,
+  ALL_CATEGORY_LABELS,
+  OTHER_LABEL,
+  headerControls,
   summaryLine,
   tapCategoryChip,
   toggleCategory,
@@ -186,7 +188,6 @@ describe('chips and sheet share one category state', () => {
       ALL_CHIP,
       'Work',
     ]);
-    expect(sheetCategories(['Work'], ['Family'])).toEqual(['Work', 'Family']);
   });
 
   it('countries toggle in their own group, stored uppercase', () => {
@@ -217,10 +218,76 @@ describe('what a filtered grid fetches (every match, not loaded pages)', () => {
     });
   });
 
+  it('"Other" fetches the whole list, so missing / unknown categories match', () => {
+    expect(OTHER_LABEL).toBe('Other');
+    expect(filterFetchPlan(f(['Work', 'Other']))).toEqual({ kind: 'all' });
+    // With a country chosen, the country list already holds them all.
+    expect(filterFetchPlan(f(['Other'], ['CA']))).toEqual({
+      kind: 'countries',
+      codes: ['CA'],
+    });
+    // The grid's own label for a missing / unknown category is "Other", and
+    // the client match keeps it.
+    const odd = visaTypeToDest({
+      id: 'x',
+      countryCode: 'CA',
+      category: 'unknown-kind',
+      name: 'x',
+      description: '',
+    } as unknown as VisaType);
+    const none = visaTypeToDest({
+      id: 'y',
+      countryCode: 'CA',
+      name: 'y',
+      description: '',
+    } as unknown as VisaType);
+    expect(ids(applyFilters([odd, none], f(['Other'])))).toEqual(['x', 'y']);
+  });
+
   it('maps labels back to backend categories', () => {
     expect(labelToCategory('Study')).toBe('student');
     expect(labelToCategory('Tourist')).toBe('tourist');
     expect(labelToCategory('Nope')).toBeNull();
+  });
+});
+
+describe('sheet "Visa type" options', () => {
+  it('are every category, whatever the browse pages hold', () => {
+    expect(ALL_CATEGORY_LABELS).toEqual([
+      'Work',
+      'Study',
+      'Tourist',
+      'Business',
+      'Family',
+      'Investor',
+      'Transit',
+      'Other',
+    ]);
+  });
+});
+
+describe('header controls follow the "x", not search mode', () => {
+  it('empty field: filter button + category chips', () => {
+    expect(headerControls('')).toEqual({
+      clearButton: false,
+      filterButton: true,
+      filtersChip: false,
+      categoryChips: true,
+    });
+  });
+
+  it('one character (not yet search mode): "x" AND the Filters chip', () => {
+    const c = headerControls('c');
+    expect(c.clearButton).toBe(true);
+    expect(c.filterButton).toBe(false);
+    expect(c.filtersChip).toBe(true);
+    expect(c.categoryChips).toBe(false);
+  });
+
+  it('search mode: same as typing', () => {
+    expect(headerControls('can')).toEqual(headerControls('c'));
+    // Spaces still show the "x", so the chip shows too.
+    expect(headerControls(' ').filtersChip).toBe(true);
   });
 });
 

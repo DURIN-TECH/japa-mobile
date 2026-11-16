@@ -17,13 +17,7 @@
 // filter on, everything below behaves exactly as after #341.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -68,9 +62,9 @@ import {
   filterChipLabel,
   filterCount,
   filterFetchPlan,
+  headerControls,
   isChipSelected,
   resultsLine,
-  sheetCategories,
   summaryLine,
   tapCategoryChip,
   type ExploreFilters,
@@ -194,6 +188,9 @@ export default function ExploreScreen() {
     return applyFilters(all, filters);
   }, [query, searchQ.data, countryVisas.visas, countries, filters]);
   const searchMode = searchResults !== null;
+  // Which header controls show for this query (japa#347, pure + tested):
+  // the "x" and the "Filters" chip go together, so filters stay reachable.
+  const controls = headerControls(query);
 
   // Category chips derive from ALL loaded pages, so a category first seen on a
   // later page gets its chip once that page arrives (japa#341). A chosen
@@ -206,12 +203,10 @@ export default function ExploreScreen() {
     () => chipCategories(seenCats, filters.categories),
     [seenCats, filters.categories],
   );
-  // The sheet's "Visa type" options: the same list without "All". Before any
-  // visa has loaded, every known category, so the group is never empty.
-  const sheetCats = useMemo(() => {
-    const list = sheetCategories(seenCats, filters.categories);
-    return list.length ? list : ALL_CATEGORY_LABELS;
-  }, [seenCats, filters.categories]);
+  // The sheet's "Visa type" options: EVERY category a visa can have, never
+  // just the ones on the browse pages loaded so far (review of japa#347), so
+  // a category whose visas all sit past page one can still be chosen.
+  const sheetCats = ALL_CATEGORY_LABELS;
 
   const list = filtersOn ? filteredDests : source;
   const featured = list.find((d) => d.featured) ?? list[0];
@@ -222,13 +217,12 @@ export default function ExploreScreen() {
   // and content height live in a ref, and `maybeLoadMore(trigger)` asks the
   // pure `shouldLoadNextPage` rule whether to fetch. Who may trigger what
   // (review of japa#341, rules + tests in liveExplore):
-  //   • "All": only scroll and content-size events, near the end of measured
-  //     content. Never the effect or a layout event, which can still hold the
+  //   • no filters: only scroll and content-size events, near the end of
+  //     measured content. Never a layout event, which can still hold the
   //     content height of the previous content (first-load spinner, search
   //     results, 0 on a cached mount) and would load page two unscrolled.
   //   • filters on (japa#347): never. The filtered grid has its own complete
-  //     list, so the paged one stays as it is (the old "category chip" case
-  //     of `shouldLoadNextPage` is no longer reached from here).
+  //     list, so the paged one stays as it is.
   // Every load goes through `loadNextPage()`, which checks the LIVE fetch
   // status and never cancels a request in flight, so several triggers from
   // one render ask for a page once.
@@ -259,8 +253,6 @@ export default function ExploreScreen() {
         // it as in flight too.
         isFetching: isFetching || isRefreshing,
         nextPageFailed: isFetchNextPageError,
-        // Unfiltered here (see above), i.e. the "All" rule.
-        category: 'All',
         metrics: metrics.current,
       });
       if (go) loadNextPage();
@@ -277,11 +269,6 @@ export default function ExploreScreen() {
       loadNextPage,
     ],
   );
-  // Kept from #341: under the "All" rule the 'effect' trigger never loads,
-  // so this is inert today; left so the paging contract stays in one place.
-  useEffect(() => {
-    maybeLoadMore('effect');
-  }, [maybeLoadMore]);
 
   // ── Filter actions (japa#347) ─────────────────────────────────────────────
   const scrollRef = useRef<ScrollView>(null);
@@ -312,6 +299,16 @@ export default function ExploreScreen() {
         animated: true,
       });
     }, 50);
+  };
+  /** Pull-to-refresh on a filtered grid: spinner for exactly this pull. */
+  const [pullingFiltered, setPullingFiltered] = useState(false);
+  const pullFiltered = async () => {
+    setPullingFiltered(true);
+    try {
+      await filteredQ.refetch();
+    } finally {
+      setPullingFiltered(false);
+    }
   };
   /** "Clear filters" (summary link and empty states): both groups. */
   const clearAll = () => setFilters(clearFilters());
@@ -360,17 +357,19 @@ export default function ExploreScreen() {
             // `isRefreshing` = our page-one refresh with pages cached;
             // `isRefetching` covers a pull with nothing cached yet.
             // japa#347: with filters on (browse), the pull refetches the
-            // filtered list and the filters stay applied.
+            // filtered list and the filters stay applied. The spinner then
+            // follows OUR pull only (`pullingFiltered`), never a background
+            // refetch of the filtered set (stale data, app focus, …).
             refreshing={
               filtersOn && !searchMode
-                ? filteredQ.isRefetching
+                ? pullingFiltered
                 : isRefreshing ||
                   (visaQuery.isRefetching && !isFetchingNextPage)
             }
             // japa#341: start over from page one and drop the later pages.
             onRefresh={() =>
               filtersOn && !searchMode
-                ? filteredQ.refetch()
+                ? pullFiltered()
                 : visaQuery.refreshFromFirstPage()
             }
             tintColor={EX.color.primary}
@@ -491,7 +490,7 @@ export default function ExploreScreen() {
               {/* japa#347: both controls share one 44×44 spot. Text typed →
                   the "x" (one tap clears; keyboard may stay open). Empty →
                   the filter button, with a coral dot when filters are on. */}
-              {query.length ? (
+              {controls.clearButton ? (
                 <PressableStatic
                   onPress={() => setQuery('')}
                   accessibilityRole="button"
@@ -545,10 +544,11 @@ export default function ExploreScreen() {
             </View>
           </View>
 
-          {/* Search mode (japa#347): the chip row is hidden, so one
-              "Filters" chip keeps the sheet reachable. Selected look (and
-              "Filters · N") while filters are on. */}
-          {searchMode ? (
+          {/* While the "x" shows (any text typed, even one character, so
+              before search mode starts at two): the chip row is hidden and
+              one "Filters" chip keeps the sheet reachable (japa#347).
+              Selected look (and "Filters · N") while filters are on. */}
+          {controls.filtersChip ? (
             <View
               style={{
                 flexDirection: 'row',
@@ -571,7 +571,7 @@ export default function ExploreScreen() {
 
           {/* Category chips — hidden while searching, and on first-run empty /
               loading / error, where they would mean nothing (spec 1.2). */}
-          {!searchMode && state === 'ready' && !firstRunEmpty ? (
+          {controls.categoryChips && state === 'ready' && !firstRunEmpty ? (
             <ScrollView
               ref={chipRowRef}
               horizontal
@@ -684,6 +684,10 @@ export default function ExploreScreen() {
                     alignItems: 'center',
                     gap: 12,
                     marginBottom: 12,
+                    // Room on the right for the link's 8 pt hit slop (touches
+                    // outside a parent's bounds are never delivered).
+                    marginRight: -8,
+                    paddingRight: 8,
                   }}
                 >
                   <Text
@@ -702,6 +706,8 @@ export default function ExploreScreen() {
                     label={FILTER_COPY.clearFilters}
                     onPress={clearAll}
                     size={13.5}
+                    // 8 pt either side: the link is short text (spec table).
+                    hitSlop={{ left: 8, right: 8 }}
                   />
                 </View>
               ) : null}
