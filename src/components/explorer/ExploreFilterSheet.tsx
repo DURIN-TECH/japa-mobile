@@ -287,15 +287,20 @@ export function ExploreFilterSheet({
     backdrop.value = withTiming(1, { duration: CLOSE_MS, easing: CURVE });
   };
   /** Follow the finger downward only (no upward stretch). */
+  // How far the card is dragged down right now (0 = resting open). Every
+  // gesture end reads this, so the card can never be left part-way down.
+  const dragY = useRef(0);
   const follow = (dy: number) => {
     if (closing.current) return;
     const y = Math.max(0, dy);
+    dragY.current = y;
     translateY.value = y;
     // Under reduced motion the card still follows the finger (drag works),
     // only the open / close animations are fades.
     backdrop.value = 1 - Math.min(1, y / cardH);
   };
   const release = (dy: number, vy: number) => {
+    dragY.current = 0;
     // A close already started (e.g. a backdrop tap mid-drag): let it finish.
     if (closing.current) return;
     if (dy > cardH * CLOSE_DISTANCE || vy > CLOSE_VELOCITY) {
@@ -312,12 +317,24 @@ export function ExploreFilterSheet({
     }
   };
 
+  /**
+   * The ONE way a drag ends (end, cancel or failure: RNGH's onFinalize):
+   * the card closes or settles back from wherever it is, never stays
+   * part-way down (review of japa#347). Nothing to do when it never moved.
+   * `useVelocity` is false when the finger was scrolling the list at the
+   * end, so a scroll fling cannot close the sheet.
+   */
+  const finishDrag = (vy: number, useVelocity: boolean) => {
+    if (dragY.current <= 0) return;
+    release(dragY.current, useVelocity ? vy : 0);
+  };
+
   // Grab bar + title row: a plain downward pan.
   const headerPan = Gesture.Pan()
     .runOnJS(true)
     .activeOffsetY(6)
     .onUpdate((e) => follow(e.translationY))
-    .onEnd((e) => release(e.translationY, e.velocityY));
+    .onFinalize((e) => finishDrag(e.velocityY, true));
 
   // Body: only drags the card while the list is scrolled to the top. The
   // distance the finger travelled while the list was still scrolling is
@@ -336,15 +353,16 @@ export function ExploreFilterSheet({
     })
     .onUpdate((e) => {
       if (scrollY.current > 0) {
+        // The list is scrolling again: stop following. If the card had
+        // moved, onFinalize still settles it back (or closes it).
         bodyBase.current = null;
         return;
       }
       if (bodyBase.current === null) bodyBase.current = e.translationY;
       follow(e.translationY - bodyBase.current);
     })
-    .onEnd((e) => {
-      if (bodyBase.current === null) return;
-      release(e.translationY - bodyBase.current, e.velocityY);
+    .onFinalize((e) => {
+      finishDrag(e.velocityY, bodyBase.current !== null);
       bodyBase.current = null;
     });
 
