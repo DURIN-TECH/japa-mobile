@@ -239,9 +239,59 @@ export function thenYouApplyBody(hasLink: boolean | undefined): string {
 export const isFixedRuleFinding = (f: CitedFinding) =>
   f.isMandatoryBar === true || f.kind === 'mandatory_bar';
 
-/** Full tier: a fixed rule blocks the application, so the review stops early. */
+/**
+ * Full tier: a fixed rule blocks the application, so the review stops early.
+ *
+ * japa#384: decided from `hasBlockingRule` / `blockingRule` first. Without the
+ * working entitlement the finding arrays are absent, so a check on
+ * `refusalGrounds` alone would miss the bar. A mandatory-bar entry in
+ * `refusalGrounds` (present only with the working) still counts, as before.
+ */
 export const fullTierBlocked = (d: FullAssessmentData) =>
-  d.hasBlockingRule || d.refusalGrounds.some(isFixedRuleFinding);
+  d.hasBlockingRule ||
+  d.blockingRule !== null ||
+  (d.refusalGrounds ?? []).some(isFixedRuleFinding);
+
+/**
+ * The blocking card's body on the full tier (japa#384). With the bar's rule
+ * text: its title, then the fixed-rule sentence. Without it (`blockingRule`
+ * null but a bar flagged): the free card's generic body, and no quote.
+ */
+export function fullBlockingBody(title: string | null | undefined): string {
+  return title
+    ? `${title}. This is a fixed rule, checked from the details on your profile. It isn’t a judgement about you.`
+    : FREE_BLOCKING_BODY;
+}
+
+/** Generic blocking body (free tier, or a full bar without its rule text). */
+export const FREE_BLOCKING_BODY =
+  'One of the fixed rules for this visa applies to your details. It’s checked from the details on your profile and isn’t a judgement about you.';
+
+// ── The reading (japa#384) ───────────────────────────────────────────────────
+// Every string the app writes itself around the server's reading. None says
+// refusal, verdict, approved, likelihood or a score (checked in a test).
+export const READING_TITLE = 'Our reading of your application';
+export const READING_CAPTION =
+  'Written from your answers, your statement and the documents you uploaded.';
+export const READING_CONCLUSION_EYEBROW = 'Where this leaves you';
+export const READING_STEPS_TITLE = 'What would change this';
+/** Shown when the full tier has no reading (failed, skipped, bulk or older). */
+export const READING_MISSING_NOTE =
+  'We couldn’t write up the full reading this time.';
+export const START_WITH_THESE_TITLE = 'Start with these';
+export const NOTHING_STOOD_OUT =
+  'Nothing stood out as a priority in what you’ve given us.';
+
+// The rule-by-rule working: locked (no `ai.review_working`) or collapsed.
+export const LOCKED_WORKING_TITLE = 'See how each rule was applied';
+export const LOCKED_WORKING_BODY =
+  'Shows each rule we checked, its published wording and how it applies to you. It’s an extra that isn’t in your current plan.';
+export const WORKING_SECTION_TITLE = 'How each rule was applied';
+export const WORKING_SHOW = 'Show each rule';
+export const WORKING_HIDE = 'Hide each rule';
+export const WORKING_SUBLINE =
+  'The rules we checked, their published wording and how each applies to you.';
+export const WORKING_HINT = 'Shows each rule we checked';
 
 /**
  * Whether the review screen shows the "Then you apply" section (japa#312).
@@ -305,7 +355,8 @@ export function couldntTell(items: InsufficientItem[] | null | undefined): {
  */
 export function nextSteps(d: FullAssessmentData): string[] {
   const steps: string[] = [];
-  const g = d.refusalGrounds.length;
+  // japa#384: the arrays are absent without the working; count them as empty.
+  const g = (d.refusalGrounds ?? []).length;
   if (g > 0)
     steps.push(
       g === 1
@@ -316,7 +367,7 @@ export function nextSteps(d: FullAssessmentData): string[] {
   // for the staff-only items "What we couldn’t tell" leaves out.
   if (couldntTell(d.insufficientInformation).shown.length > 0)
     steps.push('Add what we couldn’t check.');
-  const q = d.credibilityFlags.length;
+  const q = (d.credibilityFlags ?? []).length;
   if (q > 0)
     steps.push(
       q === 1

@@ -58,6 +58,7 @@ const meta = (
   startedAt: null,
   finishedAt: null,
   error: null,
+  working: true,
 });
 
 const finding = (o: Partial<CitedFinding> = {}): CitedFinding => ({
@@ -74,6 +75,9 @@ const finding = (o: Partial<CitedFinding> = {}): CitedFinding => ({
 const fullData = (o: Partial<FullAssessmentData> = {}): FullAssessmentData => ({
   readiness: 'strong',
   hasBlockingRule: false,
+  blockingRule: null,
+  narrative: null,
+  topIssues: [],
   refusalGrounds: [],
   credibilityFlags: [],
   strengths: [],

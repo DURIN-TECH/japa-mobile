@@ -50,6 +50,7 @@ import {
   Crown,
   CircleAlert,
   PenLine,
+  Lock,
 } from 'lucide-react-native';
 
 // Design-name → lucide component. Stroke width 1.8 matches the prototype default.
@@ -98,6 +99,8 @@ export const Ic = {
   crown: Crown,
   // Blocking-rule / failed-review chip (issue #43).
   alert: CircleAlert,
+  // japa#384: the review's locked "See how each rule was applied" panel.
+  lock: Lock,
 } as const;
 
 export type IcName = keyof typeof Ic;

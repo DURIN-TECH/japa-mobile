@@ -20,6 +20,11 @@
 // `pickFull`). Fields such as a numeric score, an internal call, usage or cost
 // are never copied, so they can never reach a component even if a payload
 // carries them.
+//
+// WORKING RULE (japa#384): the rule-by-rule findings (the "working") are copied
+// only when the server says `meta.working === true`. Anything else, including a
+// missing flag or a truthy non-boolean, counts as false, and the arrays stay
+// absent from the view even if the payload carries them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from 'react';
@@ -33,7 +38,9 @@ import {
 } from '@/components/explorer/review/reviewCopy';
 import type {
   AssessmentMeta,
+  AssessmentNarrative,
   AssessmentResult,
+  BlockingRule,
   AssessmentView,
   CitedFinding,
   FreeAssessmentData,
@@ -196,35 +203,95 @@ const band = (v: unknown) =>
     ? (v as FreeAssessmentData['readiness'])
     : null;
 
+/** Up to three issue titles (criterion id + title only, nothing else). */
+const pickTopIssues = (v: unknown) =>
+  arr(v)
+    .slice(0, 3)
+    .map((i) => {
+      const o = (i ?? {}) as Record<string, unknown>;
+      return { criterionId: str(o.criterionId), title: str(o.title) };
+    });
+
 /** Free `data`: band, up to three titles, one boolean. Nothing else. */
 export function pickFree(raw: unknown): FreeAssessmentData {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     readiness: band(r.readiness),
-    topIssues: arr(r.topIssues)
-      .slice(0, 3)
-      .map((i) => {
-        const o = (i ?? {}) as Record<string, unknown>;
-        return { criterionId: str(o.criterionId), title: str(o.title) };
-      }),
+    topIssues: pickTopIssues(r.topIssues),
     hasBlockingRule: r.hasBlockingRule === true,
   };
 }
 
 /**
- * Full `data`, whitelisted. ROUTING RULE: a finding from a `judgement` criterion
- * never renders as "Rules not met yet", whichever array it arrives in. So any
+ * japa#384: the reading, whitelisted to its three fields. Empty strings are
+ * dropped. The backend nulls the whole narrative when its conclusion or every
+ * paragraph is dropped, and the app follows the same rule, so a half reading
+ * (paragraphs with no conclusion, or a conclusion alone) is never drawn: it
+ * becomes null and the screen shows its fallback. Text is kept whole, never
+ * truncated (the server caps the lengths).
+ */
+export function pickNarrative(raw: unknown): AssessmentNarrative | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const paragraphs = arr(r.paragraphs).map(str).filter(Boolean);
+  const conclusion = str(r.conclusion);
+  if (paragraphs.length === 0 || !conclusion) return null;
+  return {
+    paragraphs,
+    conclusion,
+    nextSteps: arr(r.nextSteps).map(str).filter(Boolean),
+  };
+}
+
+/**
+ * japa#384: the blocking (mandatory-bar) rule, whitelisted to its five fields.
+ * Null unless it is an object with a title (a bar with no title has nothing to
+ * say; the screen then uses the generic blocking body, no quote).
+ */
+export function pickBlockingRule(raw: unknown): BlockingRule | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (!str(r.title)) return null;
+  return {
+    criterionId: str(r.criterionId),
+    title: str(r.title),
+    ruleRef: typeof r.ruleRef === 'string' && r.ruleRef ? r.ruleRef : null,
+    sourceQuote: str(r.sourceQuote),
+    sourceUrl: str(r.sourceUrl),
+  };
+}
+
+/**
+ * Full `data`, whitelisted.
+ *
+ * `working` is the server's `meta.working`. Only when it is exactly `true` are
+ * the rule-by-rule finding arrays copied; otherwise they are left out of the
+ * result altogether (not empty arrays, absent), even when the payload carries
+ * them. The band, the blocking flag + rule, the reading, the top issues and the
+ * country note are copied on every full response.
+ *
+ * ROUTING RULE (working only): a finding from a `judgement` criterion never
+ * renders as "Rules not met yet", whichever array it arrives in. So any
  * judgement entry found in `refusalGrounds` is moved to the officer-questions
  * list here, once, and screens can trust the two arrays.
  */
-export function pickFull(raw: unknown): FullAssessmentData {
+export function pickFull(raw: unknown, working = false): FullAssessmentData {
   const r = (raw ?? {}) as Record<string, unknown>;
+  const base: FullAssessmentData = {
+    readiness: band(r.readiness),
+    hasBlockingRule: r.hasBlockingRule === true,
+    blockingRule: pickBlockingRule(r.blockingRule),
+    narrative: pickNarrative(r.narrative),
+    topIssues: pickTopIssues(r.topIssues),
+    countryContext: pickCountryContext(r.countryContext),
+  };
+  // Exactly `true` only: a string "true", 1 or a missing flag stay locked.
+  if (working !== true) return base;
   const grounds = arr(r.refusalGrounds).map(pickCited);
   const flags = arr(r.credibilityFlags).map(pickCited);
   const isJudgement = (f: CitedFinding) => f.kind === 'judgement';
   return {
-    readiness: band(r.readiness),
-    hasBlockingRule: r.hasBlockingRule === true,
+    ...base,
     refusalGrounds: grounds.filter((f) => !isJudgement(f)),
     credibilityFlags: [...grounds.filter(isJudgement), ...flags],
     strengths: arr(r.strengths).map(pickPlain),
@@ -232,7 +299,6 @@ export function pickFull(raw: unknown): FullAssessmentData {
     insufficientInformation: arr(r.insufficientInformation).map(
       pickInsufficient,
     ),
-    countryContext: pickCountryContext(r.countryContext),
   };
 }
 
@@ -241,13 +307,18 @@ export function toView(envelope: {
   meta: AssessmentMeta;
   data: unknown;
 }): AssessmentView {
-  const meta = envelope.meta;
+  // japa#384: normalise the working flag once, here. Anything other than
+  // exactly `true` on the wire is false, so every screen reads a real boolean.
+  const meta: AssessmentMeta = {
+    ...envelope.meta,
+    working: (envelope.meta as { working?: unknown }).working === true,
+  };
   // The server decides the tier. Anything that is not exactly "full" is free.
   if (meta.tier === 'full') {
     return {
       tier: 'full',
       meta,
-      data: envelope.data ? pickFull(envelope.data) : null,
+      data: envelope.data ? pickFull(envelope.data, meta.working) : null,
     };
   }
   return {
