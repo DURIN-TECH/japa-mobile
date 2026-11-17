@@ -9,14 +9,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useRef, useState } from 'react';
-import {
-  NativeSyntheticEvent,
-  Pressable,
-  Text,
-  TextInput,
-  TextInputKeyPressEventData,
-  View,
-} from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
+// RN 0.88 strict TypeScript API (Expo SDK 58, japa#399): refs use the
+// instance type, and the key-press event is the ready-made
+// `TextInputKeyPressEvent` (it replaces
+// `NativeSyntheticEvent<TextInputKeyPressEventData>`).
+import type { TextInputInstance, TextInputKeyPressEvent } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { AuthShell, CoralButton, PINK } from '@/components/explorer/AuthShell';
@@ -26,7 +24,12 @@ export default function AuthOtp() {
   const router = useRouter();
   const [code, setCode] = useState(['', '', '', '']);
   // Refs to each box so a filled digit can auto-focus the next one.
-  const refs = useRef<Array<TextInput | null>>([null, null, null, null]);
+  const refs = useRef<Array<TextInputInstance | null>>([
+    null,
+    null,
+    null,
+    null,
+  ]);
 
   const full = code.every(Boolean);
 
@@ -43,10 +46,7 @@ export default function AuthOtp() {
   };
 
   // Backspace on an empty box steps focus back (UX nicety beyond the source).
-  const onKeyPress = (
-    i: number,
-    e: NativeSyntheticEvent<TextInputKeyPressEventData>,
-  ) => {
+  const onKeyPress = (i: number, e: TextInputKeyPressEvent) => {
     if (e.nativeEvent.key === 'Backspace' && !code[i] && i > 0) {
       refs.current[i - 1]?.focus();
     }

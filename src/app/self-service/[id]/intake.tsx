@@ -28,8 +28,11 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+// RN 0.88 strict TypeScript API (Expo SDK 58, japa#399): `ScrollView` is a
+// component value, not a class, so refs are typed with its instance type.
+import type { ScrollViewInstance } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePreventRemove, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import {
@@ -78,7 +81,6 @@ function stable(v: unknown): string {
 
 export default function IntakeScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -104,7 +106,10 @@ export default function IntakeScreen() {
   const [failed, setFailed] = useState(false); // last save failed -> "Try again"
   const [notEditable, setNotEditable] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
-  const allowLeave = useRef(false);
+  // Set once a save succeeded or the user chose "Discard changes": from then
+  // on leaving is allowed. State (not a ref) because `usePreventRemove`
+  // reads it as a render value (Expo Router 58, japa#399).
+  const [allowLeave, setAllowLeave] = useState(false);
 
   // Seed from the server exactly once, when the questions first arrive.
   useEffect(() => {
@@ -119,7 +124,7 @@ export default function IntakeScreen() {
   const saving = save.isPending;
 
   // ── Scrolling to a question (resume + error) ───────────────────────────────
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const listY = useRef(0);
   const ys = useRef<Record<string, number>>({});
   const scrollToQuestion = useCallback((qid: string) => {
@@ -141,6 +146,39 @@ export default function IntakeScreen() {
     const first = openRequired(data.questions, data.answers)[0];
     if (first) setTimeout(() => scrollToQuestion(first.id), 450);
   }, [ready, data, scrollToQuestion]);
+
+  // ── Leaving with unsaved changes (back button and gesture) ─────────────────
+  // Expo Router 58 (SDK 58, japa#399) removed the `beforeRemove` event;
+  // `usePreventRemove` replaces it. While `preventLeave` is true, Back (header,
+  // Android back, iOS swipe) is blocked and the callback asks what to do.
+  // `repeat()` lifts the block and replays the exact action the user started;
+  // `allowLeave` is flipped in the same handler so the hook's flag and the
+  // prevention state stay in sync.
+  const preventLeave = dirty && !notEditable && !allowLeave;
+  const disablePrevention = usePreventRemove(preventLeave, ({ repeat }) => {
+    Alert.alert(
+      'Save your changes?',
+      'You have answers that aren’t saved yet.',
+      [
+        {
+          text: 'Save',
+          onPress: async () => {
+            // Same save; leave only on success (doSave lifts the block).
+            if (await doSave('none')) repeat();
+          },
+        },
+        {
+          text: 'Discard changes',
+          style: 'destructive',
+          onPress: () => {
+            setAllowLeave(true);
+            repeat();
+          },
+        },
+        { text: 'Keep editing', style: 'cancel' },
+      ],
+    );
+  });
 
   // ── Saving ────────────────────────────────────────────────────────────────
   /** Returns true on success. `leave: 'back'` pops the screen afterwards. */
@@ -170,7 +208,10 @@ export default function IntakeScreen() {
         await save.mutateAsync(payloadAnswers(data.questions, answers));
         setFailed(false);
         setSavedOnce(true);
-        allowLeave.current = true;
+        // Saved: leaving no longer loses anything. Lift the block now (not
+        // on the next render) so the `router.back()` below is not stopped.
+        setAllowLeave(true);
+        disablePrevention();
         Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
         ).catch(() => {});
@@ -208,39 +249,8 @@ export default function IntakeScreen() {
         return false;
       }
     },
-    [data, answers, save, router, scrollToQuestion],
+    [data, answers, save, router, scrollToQuestion, disablePrevention],
   );
-
-  // ── Leaving with unsaved changes (back button and gesture) ─────────────────
-  useEffect(() => {
-    const unsub = navigation.addListener('beforeRemove', (e) => {
-      if (allowLeave.current || !dirty || notEditable) return;
-      e.preventDefault();
-      Alert.alert(
-        'Save your changes?',
-        'You have answers that aren’t saved yet.',
-        [
-          {
-            text: 'Save',
-            onPress: async () => {
-              // Same save; leave only on success.
-              if (await doSave('none')) navigation.dispatch(e.data.action);
-            },
-          },
-          {
-            text: 'Discard changes',
-            style: 'destructive',
-            onPress: () => {
-              allowLeave.current = true;
-              navigation.dispatch(e.data.action);
-            },
-          },
-          { text: 'Keep editing', style: 'cancel' },
-        ],
-      );
-    });
-    return unsub;
-  }, [navigation, dirty, notEditable, doSave]);
 
   // ── Change handler: clears the field's error when its answer changes ───────
   const onChange = (qid: string, value: IntakeAnswer | undefined) => {

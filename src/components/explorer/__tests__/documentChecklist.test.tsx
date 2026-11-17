@@ -93,7 +93,8 @@ describe('DocumentChecklist cards', () => {
   it('Official requirement is collapsed, opens on press, and links out', async () => {
     const open = jest
       .spyOn(Linking, 'openURL')
-      .mockImplementation(() => Promise.resolve(true));
+      // RN 0.88 types `Linking.openURL` as Promise<void> (Expo SDK 58).
+      .mockImplementation(() => Promise.resolve());
     const { r } = await render([item()]);
     expect(texts(r)).not.toContain('Six months of statements');
     const btn = r.root.findByProps({

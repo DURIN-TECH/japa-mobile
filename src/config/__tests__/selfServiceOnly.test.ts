@@ -1,3 +1,8 @@
+/// <reference types="node" />
+// These tests read repo files with `fs` / `path` (Node, under Jest). Jest 29
+// pulled the Node types in by accident through `@jest/globals`; Jest 30
+// (Expo SDK 58, japa#399) does not, so this file asks for them itself. Kept
+// per-file so app code does not see Node globals.
 // ─────────────────────────────────────────────────────────────────────────────
 // Self-service-only build flag (japa#334): the parser, the copy of its rule in
 // app.config.ts, and which EAS profiles turn it on.

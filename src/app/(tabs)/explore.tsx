@@ -28,6 +28,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+// RN 0.88 strict TypeScript API (Expo SDK 58, japa#399): `ScrollView` is a
+// component value, not a class, so refs are typed with its instance type.
+import type { ScrollViewInstance } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -271,8 +274,8 @@ export default function ExploreScreen() {
   );
 
   // ── Filter actions (japa#347) ─────────────────────────────────────────────
-  const scrollRef = useRef<ScrollView>(null);
-  const chipRowRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const chipRowRef = useRef<ScrollViewInstance>(null);
   // x of each chip in the chip row, from onLayout, to scroll the first chosen
   // chip into view after the sheet applies.
   const chipX = useRef<Record<string, number>>({});
