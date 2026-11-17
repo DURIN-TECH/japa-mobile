@@ -36,8 +36,17 @@ Messaging), Expo Router 58, Jest 30.
   13 through Swift Package Manager only, and that needs dynamic
   linkage (`pod install` rejects static). The minimum iOS is
   16.4 (`plugins/withPodsDeploymentTarget.js`).
+- **Android builds with Kotlin 2.4** (`expo-build-properties`
+  `android.kotlinVersion`): Firebase BoM 35's `firebase-auth`
+  ships Kotlin 2.4 metadata that the SDK 58 default (2.2)
+  cannot read.
 - **Android release builds run R8** (SDK 58 default); add keep
   rules through `expo-build-properties`, never in `android/`.
+- **Push permission** goes through
+  `services/notificationPermission.ts` (react-native-permissions,
+  iOS `Notifications` handler only). RNFB's messaging
+  `requestPermission` / `hasPermission` are deprecated; don't
+  call them.
 
 **Styling is inline styles built from design tokens**, not
 utility classes — see [Design System](#design-system).
