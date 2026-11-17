@@ -12,7 +12,7 @@
 #      link, with the "Review my application" button present
 #
 # NO-AI / NO-PAYMENT RULE: this flow never taps the hub's sticky review
-# button (`selfService.reviewCta`) nor "Review my application"
+# button (`selfService.reviewCta`, hidden until something is uploaded, japa#309) nor "Review my application"
 # (`review.start`); it only asserts they are there. The review screen is
 # reached by its deep link instead.
 #
@@ -114,8 +114,10 @@ appId: ${APP_ID}
     direction: DOWN
     timeout: 30000
 - assertVisible: "Proof of accommodation"
-# The sticky review button is there; it is NOT tapped (it starts an AI review).
-- assertVisible:
+# Nothing is uploaded yet, so the hub does NOT offer the review (japa#309: it
+# says what the review still needs instead). Never tap the review button in a
+# flow: it starts an AI review.
+- assertNotVisible:
     id: "selfService\\.reviewCta"
 
 # ── 4. Review screen by link: "See how ready you are" (nothing tapped) ───────
