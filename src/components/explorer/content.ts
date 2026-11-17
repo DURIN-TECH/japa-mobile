@@ -392,6 +392,9 @@ export const PAY_STATUS: Record<
   paid: { label: 'Paid', fg: '#1E8E55', bg: '#D6F2E2' },
   pending: { label: 'Pending', fg: '#B26A14', bg: '#FCEAC8' },
   refunded: { label: 'Refunded', fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' },
+  // japa#353: status-error-fg / status-error-bg, the same pair as the
+  // document "Rejected" pill.
+  failed: { label: 'Failed', fg: '#C0453C', bg: '#FBE3E1' },
 };
 
 // ── Consultation topics offered when booking ─────────────────────────────────

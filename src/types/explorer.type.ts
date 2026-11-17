@@ -284,6 +284,7 @@ export type Payment = {
   /** The dollar price of the row (from `priceUsdCents`), when the backend sent one. */
   usd: Money | null;
   date: string;
-  status: 'paid' | 'pending' | 'refunded';
+  // japa#353: `failed` = a charge that did not go through (red pill).
+  status: 'paid' | 'pending' | 'refunded' | 'failed';
   method: string;
 };
