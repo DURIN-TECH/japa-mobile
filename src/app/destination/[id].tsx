@@ -47,6 +47,12 @@ import { Ic } from '@/components/explorer/icons';
 // Self-service-only launch flag (japa#334).
 import { isSelfServiceOnly } from '@/config/env';
 import { NeedAVisaCard } from '@/components/explorer/NeedAVisaCard';
+// japa#146: the save heart and its floating failure message.
+import {
+  FloatingSaveError,
+  SavedHeartProvider,
+  useSavedHeart,
+} from '@/components/explorer/SavedHeart';
 import {
   Flag,
   GlassButton,
@@ -283,6 +289,17 @@ export default function DestinationDetail() {
     liveQ.data?.visaType.sharedRoute,
   );
 
+  // ── Save / remove heart (japa#146) ────────────────────────────────────────
+  // Shares the saved list's one query key with the Saved screen and Profile.
+  // The loaded visa draws the optimistic tile; the hook decides the heart's
+  // state, runs the write, reverts on failure and owns the floating message.
+  const heart = useSavedHeart({
+    countryCode: code ?? d?.flag ?? '',
+    visaId: d?.id ?? id ?? '',
+    visa: liveQ.data?.visaType,
+    countryName: d?.country,
+  });
+
   // ── First load, nothing cached: coral spinner ────────────────────────────
   if (liveQ.isLoading) {
     return (
@@ -409,9 +426,20 @@ export default function DestinationDetail() {
           paddingHorizontal: 18,
         }}
       >
-        <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
-        <GlassButton icon={Ic.heart} />
+        <GlassButton
+          icon={Ic.chevL}
+          onPress={() => router.back()}
+          accessibilityLabel="Back"
+        />
+        {/* japa#146: real save toggle (states in SavedHeart.tsx). */}
+        <SavedHeartProvider pop={heart.pop}>
+          <GlassButton {...heart.buttonProps} />
+        </SavedHeartProvider>
       </View>
+
+      {/* japa#146: a failed save / remove, floating right under the heart's
+          row (same layer), whatever the sheet's scroll position. */}
+      <FloatingSaveError error={heart.error} top={insets.top + 6 + 42 + 10} />
 
       {/* Scrolling content sheet */}
       <Animated.ScrollView
