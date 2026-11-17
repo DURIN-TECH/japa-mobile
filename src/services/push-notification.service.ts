@@ -7,7 +7,7 @@
  * Uses the modular Firebase API consistent with auth and analytics services.
  *
  * Flow:
- * 1. On login → requestPermission() + registerToken()
+ * 1. On login → requestPushPermission() + registerToken()
  * 2. On token refresh → re-register with backend
  * 3. On foreground notification → refresh the inbox + bell, show in-app alert
  * 4. On notification tap (background) → deep-link to relevant screen
@@ -26,7 +26,8 @@ import { getApp } from '@react-native-firebase/app';
 import {
   getMessaging,
   getToken,
-  requestPermission,
+  registerDeviceForRemoteMessages,
+  isDeviceRegisteredForRemoteMessages,
   onMessage,
   onNotificationOpenedApp,
   getInitialNotification,
@@ -34,6 +35,9 @@ import {
   deleteToken,
 } from '@react-native-firebase/messaging';
 import { apiService } from './api.service';
+// Push permission (japa#399): RNFB 25+ deprecated messaging's
+// requestPermission; the replacement lives in its own module.
+import { requestPushPermission } from './notificationPermission';
 import {
   isSelfServiceHiddenNotification,
   routeForNotification,
@@ -141,18 +145,26 @@ class PushNotificationService {
     const gen = this.generation;
     const stale = () => gen !== this.generation;
     try {
-      // Request permission — returns authorization status.
-      // RNFB 25+ marks `requestPermission` deprecated (upstream points at
-      // react-native-permissions / expo-notifications). It still works the
-      // same on RNFB 27 (japa#399), and swapping it would change the prompt
-      // flow and add a native dependency, so it stays until RNFB removes it.
-      const authStatus = await requestPermission(this.messaging);
+      // Request permission (iOS system prompt; Android unchanged, no
+      // prompt). Replaces RNFB's deprecated `requestPermission` (japa#399)
+      // with the same outcome: authorized or provisional → continue.
+      const permitted = await requestPushPermission();
       if (stale()) return; // signed out meanwhile: do nothing
-      // authStatus: -1 = not determined, 0 = denied, 1 = authorized, 2 = provisional
-      if (authStatus < 1) {
+      if (!permitted) {
         if (__DEV__) console.warn('Push notification permission denied');
         this.initPromise = null; // allow a later retry
         return;
+      }
+
+      // iOS: RNFB's requestPermission registered with APNs after a grant.
+      // Do it here so getToken() has an APNs token (no-op when RNFB's
+      // auto-registration already did it; Android is always registered).
+      if (
+        Platform.OS === 'ios' &&
+        !isDeviceRegisteredForRemoteMessages(this.messaging)
+      ) {
+        await registerDeviceForRemoteMessages(this.messaging);
+        if (stale()) return;
       }
 
       // Get and register the FCM token

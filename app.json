@@ -61,6 +61,12 @@
       ],
       "expo-image",
       "expo-web-browser",
+      [
+        "react-native-permissions",
+        {
+          "iosPermissions": ["Notifications"]
+        }
+      ],
       "./plugins/withPodsDeploymentTarget",
       "./plugins/withAndroidPushSetup"
     ],

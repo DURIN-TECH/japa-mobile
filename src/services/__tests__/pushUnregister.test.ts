@@ -31,11 +31,14 @@ jest.mock('@react-native-firebase/messaging', () => ({
   getMessaging: () => ({}),
   getToken: (...a: unknown[]) => mockGetToken(...(a as [])),
   deleteToken: (...a: unknown[]) => mockDeleteToken(...(a as [])),
-  requestPermission: jest.fn(),
   onMessage: jest.fn(),
   onNotificationOpenedApp: jest.fn(),
   getInitialNotification: jest.fn(),
   onTokenRefresh: jest.fn(),
+}));
+// Push permission module (japa#399); not exercised by these tests.
+jest.mock('../notificationPermission', () => ({
+  requestPushPermission: jest.fn(),
 }));
 jest.mock('@/services/api.service', () => ({
   apiService: {
