@@ -35,6 +35,41 @@ export type AssessmentStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 /** Why a stored review no longer matches the current state (server-computed). */
 export type StaleReason = 'inputs_changed' | 'rules_updated';
 
+// ── Failed-job codes (mirror of the backend's ASSESSMENT_ERROR_CODES) ─────────
+// `meta.error.code` stays typed as `string` because a newer backend may send a
+// code this build does not know; the copy helpers fall back to the generic
+// "Try again" wording for those. This list is what the app knows by name.
+//
+// japa#310: the codes the applicant sees differently from the generic failure:
+//   daily_cap_exceeded  the PLATFORM-WIDE daily limit is used up: a real pause,
+//                       "try again tomorrow" is true
+//   too_many_documents  this application has more documents than one review can
+//                       read; the same inputs fail the same way, so a retry
+//                       cannot succeed
+//   review_too_large    this application is too large for one review for another
+//                       reason (the rules, the text, or files together over
+//                       60 MB); a retry cannot succeed
+//   cost_cap_exceeded   only on failures stored before japa#310; a retry now
+//                       goes through the new checks and can succeed
+export const ASSESSMENT_ERROR_CODES = [
+  'inputs_changed',
+  'rubric_changed',
+  'timed_out',
+  'cost_cap_exceeded',
+  'daily_cap_exceeded',
+  'too_many_documents',
+  'review_too_large',
+  'settings_unavailable',
+  'disabled',
+  'provider_error',
+  'provider_refused',
+  'provider_stopped',
+  'invalid_model_output',
+  'internal_error',
+  'application_closed',
+] as const;
+export type AssessmentErrorCode = (typeof ASSESSMENT_ERROR_CODES)[number];
+
 /** Rubric criterion kind (copied from the rubric by the backend). */
 export type CriterionKind =
   | 'objective'
@@ -66,6 +101,14 @@ export interface AssessmentMeta {
   error: { code: string; message: string } | null;
   /** japa#237: the rulebook layers (omitted for a single-layer route). */
   stackLayers?: StackLayer[];
+  /**
+   * japa#384: true exactly when `data` carries the rule-by-rule findings (the
+   * "working": `refusalGrounds`, `credibilityFlags`, `strengths`,
+   * `statementFindings`, `insufficientInformation`). The SERVER decides it from
+   * the `ai.review_working` entitlement. `toView` normalises it: anything other
+   * than exactly `true` from the wire becomes `false`, so screens can trust it.
+   */
+  working: boolean;
 }
 
 /** One of the (up to three) issues on the free tier: title only. */
@@ -119,12 +162,36 @@ export interface StatementFinding extends PlainFinding {
   nodePath?: number[];
 }
 
+/**
+ * Why the engine did not assess a rule (mirror of the backend's
+ * `InsufficientItem.notAssessed`, japa#308). Absent on an item the applicant
+ * can help with (an unreadable document, a judgement call that could not be
+ * completed) and on results stored before the field existed.
+ *   unanswered        the rule's trigger question isn't answered yet
+ *   missing_fact      a fact the rule needs is missing
+ *   no_trigger        the guidance names no answer the rule depends on (staff only)
+ *   not_in_documents  no document in the rulebook would show it (staff only)
+ */
+export type NotAssessedReason =
+  | 'unanswered'
+  | 'no_trigger'
+  | 'missing_fact'
+  | 'not_in_documents';
+
 /** Something the engine could not decide. */
 export interface InsufficientItem {
   criterionId: string;
   title: string;
+  /** For `no_trigger` / `not_in_documents` items this is staff text: never shown. */
   reason: string;
   layerKey?: string;
+  notAssessed?: NotAssessedReason;
+  /**
+   * Set only on an item about an UPLOAD that could not be read, not a rule:
+   * `criterionId` is then `document:<documentId>` and it has no `notAssessed`
+   * (the applicant can act on it). Carried, not rendered yet.
+   */
+  documentId?: string;
 }
 
 /**
@@ -152,17 +219,58 @@ export interface CountryContext {
 }
 
 /**
+ * japa#384: the caseworker-style reading of the applicant's own application,
+ * written by the server and checked there in code (banned wording, injection,
+ * every figure and quotation grounded in what was sent). Mirrors the backend's
+ * `AssessmentNarrative` exactly. The app renders it as received and never
+ * truncates it.
+ *   paragraphs  1 to 6 short paragraphs, in order
+ *   conclusion  the readiness conclusion, set apart under the paragraphs
+ *   nextSteps   0 to 5 things that would change the reading
+ */
+export interface AssessmentNarrative {
+  paragraphs: string[];
+  conclusion: string;
+  nextSteps: string[];
+}
+
+/**
+ * japa#384: the fixed (mandatory-bar) rule that stops the review. Sent on the
+ * full tier WHATEVER the working entitlement (blocking rules are never
+ * paywalled); copied by the server from the rubric, never model text. Mirrors
+ * the backend's `BlockingRule` exactly. The free tier never carries it.
+ */
+export interface BlockingRule {
+  criterionId: string;
+  title: string;
+  ruleRef: string | null;
+  sourceQuote: string;
+  sourceUrl: string;
+}
+
+/**
  * The full `data` object, trimmed to the fields mobile uses. Everything the
  * backend sends beyond these is ignored on purpose.
+ *
+ * japa#384: the finding arrays (the "working") are OPTIONAL. `pickFull` copies
+ * them only when `meta.working === true`; otherwise they are absent from the
+ * view even if a payload carries them, so nothing behind the working
+ * entitlement can be drawn from data the plan doesn't include.
  */
 export interface FullAssessmentData {
   readiness: ReadinessBand | null;
   hasBlockingRule: boolean;
-  refusalGrounds: CitedFinding[];
-  credibilityFlags: CitedFinding[];
-  strengths: PlainFinding[];
-  statementFindings: StatementFinding[];
-  insufficientInformation: InsufficientItem[];
+  /** japa#384: the bar's rule text; null when no fixed rule blocks. */
+  blockingRule: BlockingRule | null;
+  /** japa#384: the reading; null when it failed, was skipped or is older. */
+  narrative: AssessmentNarrative | null;
+  /** japa#384: up to three issue titles (the fallback "Start with these"). */
+  topIssues: TopIssue[];
+  refusalGrounds?: CitedFinding[];
+  credibilityFlags?: CitedFinding[];
+  strengths?: PlainFinding[];
+  statementFindings?: StatementFinding[];
+  insufficientInformation?: InsufficientItem[];
   /** Published figures note (#116). Absent unless the server sent one. */
   countryContext?: CountryContext;
 }

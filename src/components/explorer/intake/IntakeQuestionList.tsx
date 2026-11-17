@@ -75,6 +75,7 @@ function OptionCard({
   multi,
   disabled,
   onPress,
+  testID,
 }: {
   label: string;
   description?: string;
@@ -82,9 +83,12 @@ function OptionCard({
   multi: boolean;
   disabled?: boolean;
   onPress: () => void;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
     <PressableStatic
+      testID={testID}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole={multi ? 'checkbox' : 'radio'}
@@ -146,11 +150,14 @@ function YesNo({
   disabled,
   label,
   onChange,
+  testIDPrefix,
 }: {
   value: boolean | undefined;
   disabled?: boolean;
   label: string;
   onChange: (v: boolean) => void;
+  /** e2e (japa#361): tiles get `<prefix>.yes` / `<prefix>.no`. */
+  testIDPrefix?: string;
 }) {
   return (
     <View
@@ -163,6 +170,9 @@ function YesNo({
         return (
           <PressableStatic
             key={String(opt)}
+            testID={
+              testIDPrefix ? `${testIDPrefix}.${opt ? 'yes' : 'no'}` : undefined
+            }
             onPress={() => onChange(opt)}
             disabled={disabled}
             accessibilityRole="radio"
@@ -447,6 +457,8 @@ function TextControl({
       }}
     >
       <TextInput
+        // e2e (Maestro, japa#361), e.g. `intake.q.e2e-accommodation.text`.
+        testID={`intake.q.${q.id}.text`}
         value={value}
         onChangeText={onChange}
         editable={!disabled}
@@ -648,6 +660,8 @@ function Control({
             return (
               <OptionCard
                 key={o.value}
+                // e2e (japa#361), e.g. `intake.q.e2e-visit-purpose.option.tourism`.
+                testID={`intake.q.${q.id}.option.${o.value}`}
                 label={o.label}
                 description={o.description}
                 selected={selected}
@@ -676,6 +690,7 @@ function Control({
             return (
               <OptionCard
                 key={o.value}
+                testID={`intake.q.${q.id}.option.${o.value}`}
                 label={o.label}
                 description={o.description}
                 selected={selected}
@@ -699,6 +714,7 @@ function Control({
         <YesNo
           value={typeof value === 'boolean' ? value : undefined}
           label={q.label}
+          testIDPrefix={`intake.q.${q.id}`}
           disabled={disabled}
           onChange={onChange}
         />

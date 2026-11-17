@@ -1,0 +1,23 @@
+# Subflow: switch the self-service-only flag ON (japa#361, link from #375).
+#
+# Needs a signed-in app (tabs on screen). The development link stores the
+# override and reloads the app when the effective value changes; it lands on
+# Home. We wait for the REAL end state, not a fixed time: the Agents tab gone
+# (it disappears with the reload) and Home back on screen.
+appId: ${APP_ID}
+---
+- openLink: "durintech://dev/self-service-only?value=on"
+- extendedWaitUntil:
+    notVisible:
+      id: "tab\\.agents"
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.home"
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: "tab\\.home"
+    timeout: 30000
+- assertNotVisible:
+    id: "tab\\.agents"

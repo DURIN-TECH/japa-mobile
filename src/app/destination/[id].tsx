@@ -107,6 +107,7 @@ function PathCard({
   dark = false,
   onPress,
   disabled = false,
+  testID,
 }: {
   icon: React.ElementType;
   title: string;
@@ -117,9 +118,12 @@ function PathCard({
   onPress?: () => void;
   /** japa#174: dimmed like the sticky CTA when the visa can't be started. */
   disabled?: boolean;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       disabled={disabled}
       style={{
@@ -334,7 +338,13 @@ export default function DestinationDetail() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    // e2e (japa#361): `screen.destination`, the path cards
+    // (`destination.path.agent` / `destination.path.self`) and the Top agents
+    // strip (`destination.topAgents`). No visual effect.
+    <View
+      testID="screen.destination"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       {/* HERO — fixed behind, parallaxes as the sheet scrolls over it */}
       <Animated.View
         style={[
@@ -548,6 +558,7 @@ export default function DestinationDetail() {
             {selfServiceOnly ? null : (
               <PathCard
                 dark
+                testID="destination.path.agent"
                 icon={Ic.users}
                 title="Work with an agent"
                 // japa#145: no invented expert count; open the top agent when
@@ -562,6 +573,7 @@ export default function DestinationDetail() {
               />
             )}
             <PathCard
+              testID="destination.path.self"
               icon={Ic.docs}
               title="Self-service"
               sub="Step-by-step DIY application"
@@ -806,6 +818,7 @@ export default function DestinationDetail() {
                 Top agents for {d.country}
               </Text>
               <ScrollView
+                testID="destination.topAgents"
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={{ marginHorizontal: -20 }}

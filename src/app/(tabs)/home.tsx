@@ -63,14 +63,18 @@ function QuickAction({
   label,
   tone,
   onPress,
+  testID,
 }: {
   icon: React.ElementType;
   label: string;
   tone: { bg: string; fg: string };
   onPress: () => void;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       style={{
         flex: 1,
@@ -282,6 +286,7 @@ function HeaderButton({
   showDot = true,
   badgeCount,
   accessibilityLabel,
+  testID,
 }: {
   icon: React.ElementType;
   onPress: () => void;
@@ -289,9 +294,12 @@ function HeaderButton({
   /** When set, a number badge replaces the dot (#269). */
   badgeCount?: number;
   accessibilityLabel?: string;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
@@ -394,6 +402,8 @@ export default function HomeScreen() {
 
   return (
     <ScrollView
+      // e2e (japa#361): the Home screen's identity for flows ("ends on Home").
+      testID="screen.home"
       style={{ flex: 1, backgroundColor: EX.color.bg }}
       showsVerticalScrollIndicator={false}
       // tab-clear keeps the last section clear of the tab bar now that the
@@ -435,12 +445,14 @@ export default function HomeScreen() {
           {selfServiceOnly ? null : (
             <HeaderButton
               icon={Ic.msg}
+              testID="home.messages"
               onPress={() => router.push('/messages')}
               accessibilityLabel="Messages"
             />
           )}
           <HeaderButton
             icon={Ic.bell}
+            testID="home.notifications"
             onPress={() => router.push('/notifications')}
             showDot={false}
             badgeCount={unreadCount}
@@ -720,12 +732,14 @@ export default function HomeScreen() {
         <QuickAction
           icon={Ic.globe}
           label="Explore visas"
+          testID="home.quick.explore"
           tone={{ bg: EX.color.primaryTint10, fg: EX.color.primary }}
           onPress={() => router.push('/(tabs)/explore')}
         />
         <QuickAction
           icon={Ic.shield}
           label="Check eligibility"
+          testID="home.quick.eligibility"
           tone={{ bg: EX.color.tealTint14, fg: EX.color.success }}
           onPress={checkEligibility}
         />
@@ -736,6 +750,7 @@ export default function HomeScreen() {
           <QuickAction
             icon={Ic.users}
             label="Find an agent"
+            testID="home.quick.findAgent"
             tone={{ bg: EX.color.purpleTint, fg: EX.color.purple }}
             onPress={() => router.push('/(tabs)/agents')}
           />

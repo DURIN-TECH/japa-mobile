@@ -306,6 +306,7 @@ export function GlassButton({
   disabled = false,
   accessibilityLabel,
   accessibilityState,
+  testID,
 }: {
   icon: React.ElementType;
   onPress?: () => void;
@@ -316,10 +317,17 @@ export function GlassButton({
   disabled?: boolean;
   accessibilityLabel?: string;
   accessibilityState?: AccessibilityState;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   const interactive = !!onPress;
   return (
+    // Merge of dev (japa#361) into #146: dev's plain <Pressable> only added
+    // a testID; #146 replaced it with PressableStatic + a11y/disabled props.
+    // Keep #146's element and carry dev's testID across so Maestro flows
+    // can still find the heart.
     <PressableStatic
+      testID={testID}
       onPress={onPress}
       disabled={disabled}
       hitSlop={6}
@@ -617,7 +625,8 @@ export function Scrim({
   diagonal = false,
   style,
 }: {
-  variant?: keyof typeof EXScrim;
+  // `sheet` is a flat backdrop colour, not a gradient (japa#347).
+  variant?: Exclude<keyof typeof EXScrim, 'sheet'>;
   diagonal?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {

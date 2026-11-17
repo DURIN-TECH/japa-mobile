@@ -20,16 +20,27 @@
 // `pickFull`). Fields such as a numeric score, an internal call, usage or cost
 // are never copied, so they can never reach a component even if a payload
 // carries them.
+//
+// WORKING RULE (japa#384): the rule-by-rule findings (the "working") are copied
+// only when the server says `meta.working === true`. Anything else, including a
+// missing flag or a truthy non-boolean, counts as false, and the arrays stay
+// absent from the view even if the payload carries them.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiService, type ApiError } from '@/services/api.service';
 import { analyticsService } from '@/services/analytics.service';
+import {
+  parseReviewGaps,
+  type ReviewGaps,
+} from '@/components/explorer/review/reviewCopy';
 import type {
   AssessmentMeta,
+  AssessmentNarrative,
   AssessmentResult,
+  BlockingRule,
   AssessmentView,
   CitedFinding,
   FreeAssessmentData,
@@ -65,10 +76,18 @@ export const isForbidden = (e: unknown) => asApiError(e)?.status === 403;
 /** The route has no approved rubric. */
 export const isNoRubric = (e: unknown) =>
   asApiError(e)?.code === 'NO_APPROVED_RUBRIC';
+/** 422 NOT_ENOUGH_TO_REVIEW (japa#309): nothing yet for the review to read. */
+export const isNotEnoughToReview = (e: unknown) => {
+  const err = asApiError(e);
+  return err?.status === 422 && err.code === 'NOT_ENOUGH_TO_REVIEW';
+};
 
 // ── Whitelist builders ────────────────────────────────────────────────────────
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+/** A non-empty string, or undefined (optional fields stay absent). */
+const optStr = (v: unknown): string | undefined =>
+  typeof v === 'string' && v ? v : undefined;
 
 const STAGES: string[] = [
   'validity',
@@ -94,6 +113,8 @@ function pickCited(raw: unknown): CitedFinding {
     sourceQuote: str(r.sourceQuote),
     detail: str(r.detail),
     whatWouldHelp: str(r.whatWouldHelp),
+    // japa#308: was dropped, so the layer pill (japa#237) never showed.
+    layerKey: optStr(r.layerKey),
   };
 }
 
@@ -125,15 +146,28 @@ function pickStatementFinding(raw: unknown): StatementFinding {
     detail: str(r.detail) || str(r.comment),
     stage: stageOf(r.stage),
     nodePath: validPath,
+    // japa#308: was dropped, so the layer pill (japa#237) never showed.
+    layerKey: optStr(r.layerKey),
   };
 }
 
+/**
+ * A "could not tell" item (japa#308). `notAssessed` MUST be carried: it is what
+ * `couldntTell` (reviewCopy.ts) uses to keep staff-only items (`no_trigger`,
+ * `not_in_documents`) and their staff wording off the screen. Any string is
+ * kept as sent, so a marker this build doesn't know is still seen as a marker
+ * and hidden. `documentId` is set only on an unread-upload item
+ * (`criterionId` "document:<id>"); nothing renders it yet.
+ */
 function pickInsufficient(raw: unknown): InsufficientItem {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     criterionId: str(r.criterionId),
     title: str(r.title),
     reason: str(r.reason),
+    layerKey: optStr(r.layerKey),
+    notAssessed: optStr(r.notAssessed) as InsufficientItem['notAssessed'],
+    documentId: optStr(r.documentId),
   };
 }
 
@@ -169,35 +203,95 @@ const band = (v: unknown) =>
     ? (v as FreeAssessmentData['readiness'])
     : null;
 
+/** Up to three issue titles (criterion id + title only, nothing else). */
+const pickTopIssues = (v: unknown) =>
+  arr(v)
+    .slice(0, 3)
+    .map((i) => {
+      const o = (i ?? {}) as Record<string, unknown>;
+      return { criterionId: str(o.criterionId), title: str(o.title) };
+    });
+
 /** Free `data`: band, up to three titles, one boolean. Nothing else. */
 export function pickFree(raw: unknown): FreeAssessmentData {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     readiness: band(r.readiness),
-    topIssues: arr(r.topIssues)
-      .slice(0, 3)
-      .map((i) => {
-        const o = (i ?? {}) as Record<string, unknown>;
-        return { criterionId: str(o.criterionId), title: str(o.title) };
-      }),
+    topIssues: pickTopIssues(r.topIssues),
     hasBlockingRule: r.hasBlockingRule === true,
   };
 }
 
 /**
- * Full `data`, whitelisted. ROUTING RULE: a finding from a `judgement` criterion
- * never renders as "Rules not met yet", whichever array it arrives in. So any
+ * japa#384: the reading, whitelisted to its three fields. Empty strings are
+ * dropped. The backend nulls the whole narrative when its conclusion or every
+ * paragraph is dropped, and the app follows the same rule, so a half reading
+ * (paragraphs with no conclusion, or a conclusion alone) is never drawn: it
+ * becomes null and the screen shows its fallback. Text is kept whole, never
+ * truncated (the server caps the lengths).
+ */
+export function pickNarrative(raw: unknown): AssessmentNarrative | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const paragraphs = arr(r.paragraphs).map(str).filter(Boolean);
+  const conclusion = str(r.conclusion);
+  if (paragraphs.length === 0 || !conclusion) return null;
+  return {
+    paragraphs,
+    conclusion,
+    nextSteps: arr(r.nextSteps).map(str).filter(Boolean),
+  };
+}
+
+/**
+ * japa#384: the blocking (mandatory-bar) rule, whitelisted to its five fields.
+ * Null unless it is an object with a title (a bar with no title has nothing to
+ * say; the screen then uses the generic blocking body, no quote).
+ */
+export function pickBlockingRule(raw: unknown): BlockingRule | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  if (!str(r.title)) return null;
+  return {
+    criterionId: str(r.criterionId),
+    title: str(r.title),
+    ruleRef: typeof r.ruleRef === 'string' && r.ruleRef ? r.ruleRef : null,
+    sourceQuote: str(r.sourceQuote),
+    sourceUrl: str(r.sourceUrl),
+  };
+}
+
+/**
+ * Full `data`, whitelisted.
+ *
+ * `working` is the server's `meta.working`. Only when it is exactly `true` are
+ * the rule-by-rule finding arrays copied; otherwise they are left out of the
+ * result altogether (not empty arrays, absent), even when the payload carries
+ * them. The band, the blocking flag + rule, the reading, the top issues and the
+ * country note are copied on every full response.
+ *
+ * ROUTING RULE (working only): a finding from a `judgement` criterion never
+ * renders as "Rules not met yet", whichever array it arrives in. So any
  * judgement entry found in `refusalGrounds` is moved to the officer-questions
  * list here, once, and screens can trust the two arrays.
  */
-export function pickFull(raw: unknown): FullAssessmentData {
+export function pickFull(raw: unknown, working = false): FullAssessmentData {
   const r = (raw ?? {}) as Record<string, unknown>;
+  const base: FullAssessmentData = {
+    readiness: band(r.readiness),
+    hasBlockingRule: r.hasBlockingRule === true,
+    blockingRule: pickBlockingRule(r.blockingRule),
+    narrative: pickNarrative(r.narrative),
+    topIssues: pickTopIssues(r.topIssues),
+    countryContext: pickCountryContext(r.countryContext),
+  };
+  // Exactly `true` only: a string "true", 1 or a missing flag stay locked.
+  if (working !== true) return base;
   const grounds = arr(r.refusalGrounds).map(pickCited);
   const flags = arr(r.credibilityFlags).map(pickCited);
   const isJudgement = (f: CitedFinding) => f.kind === 'judgement';
   return {
-    readiness: band(r.readiness),
-    hasBlockingRule: r.hasBlockingRule === true,
+    ...base,
     refusalGrounds: grounds.filter((f) => !isJudgement(f)),
     credibilityFlags: [...grounds.filter(isJudgement), ...flags],
     strengths: arr(r.strengths).map(pickPlain),
@@ -205,7 +299,6 @@ export function pickFull(raw: unknown): FullAssessmentData {
     insufficientInformation: arr(r.insufficientInformation).map(
       pickInsufficient,
     ),
-    countryContext: pickCountryContext(r.countryContext),
   };
 }
 
@@ -214,13 +307,18 @@ export function toView(envelope: {
   meta: AssessmentMeta;
   data: unknown;
 }): AssessmentView {
-  const meta = envelope.meta;
+  // japa#384: normalise the working flag once, here. Anything other than
+  // exactly `true` on the wire is false, so every screen reads a real boolean.
+  const meta: AssessmentMeta = {
+    ...envelope.meta,
+    working: (envelope.meta as { working?: unknown }).working === true,
+  };
   // The server decides the tier. Anything that is not exactly "full" is free.
   if (meta.tier === 'full') {
     return {
       tier: 'full',
       meta,
-      data: envelope.data ? pickFull(envelope.data) : null,
+      data: envelope.data ? pickFull(envelope.data, meta.working) : null,
     };
   }
   return {
@@ -340,6 +438,7 @@ export type StartOutcome =
   | 'started' // a job is queued/running, or a stored result came back
   | 'upgrade' // 402: a free caller re-running changed inputs
   | 'no_rubric' // 404: nothing to review against
+  | 'not_enough' // 422: intake or documents still needed (see `notEnough`)
   | 'offline' // no response
   | 'error'; // anything else
 
@@ -351,6 +450,10 @@ export type StartOutcome =
  */
 export function useStartReview(applicationId: string) {
   const run = useRunAssessment(applicationId);
+  // japa#309: what the last refused start said was still needed, read from the
+  // 422 body. Null when the body had nothing usable (the caller then uses its
+  // own view) and reset on every new start.
+  const [notEnough, setNotEnough] = useState<ReviewGaps | null>(null);
 
   const start = async (
     source: 'cta' | 'rerun' | 'retry' = 'cta',
@@ -358,16 +461,23 @@ export function useStartReview(applicationId: string) {
     // Guard: ignore a second tap while one is in flight.
     if (run.isPending) return 'started';
     analyticsService.trackReviewEvent('review_run_started', { source });
+    setNotEnough(null);
     try {
       await run.mutateAsync();
       return 'started';
     } catch (e) {
       if (isUpgradeRequired(e)) return 'upgrade'; // not an error: show upgrade path
       if (isNoRubric(e)) return 'no_rubric';
+      // Checked before the generic error: a refusal for missing content is not
+      // a failure, and it is never the upgrade screen.
+      if (isNotEnoughToReview(e)) {
+        setNotEnough(parseReviewGaps(asApiError(e)?.body));
+        return 'not_enough';
+      }
       if (isOffline(e)) return 'offline';
       return 'error';
     }
   };
 
-  return { start, isStarting: run.isPending };
+  return { start, isStarting: run.isPending, notEnough };
 }

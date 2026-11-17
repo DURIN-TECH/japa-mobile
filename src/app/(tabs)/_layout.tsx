@@ -94,6 +94,12 @@ function GlassTabBar({ state, navigation }: TabBarProps) {
           return (
             <Pressable
               key={route.key}
+              // e2e (Maestro, japa#361): `tab.home`, `tab.agents`, … and the
+              // tab's selected state for assistive tech / flow assertions.
+              // No visual effect.
+              testID={`tab.${meta.name}`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: focused }}
               onPress={onPress}
               style={{
                 flex: 1,

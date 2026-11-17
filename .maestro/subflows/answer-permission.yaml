@@ -1,0 +1,14 @@
+# Subflow: answer iOS's notification-permission alert if it is showing
+# (japa#361). launch.yaml pre-allows notifications, but QA of japa#375 saw
+# the alert on a fresh device anyway; it cannot be dismissed headlessly
+# except by a tap, and it would cover every later step.
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      # Optional: the alert can go away between the check and the tap.
+      - tapOn:
+          text: "Allow"
+          optional: true

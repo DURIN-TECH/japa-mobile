@@ -593,7 +593,13 @@ export default function AppDetail() {
   const showStickyCta = actionable || !selfServiceOnly;
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    // e2e ids (Maestro, japa#361): `screen.application`, `application.scroll`,
+    // the header message button `application.message` and the Payment
+    // requests section `application.paymentRequests`. No visual effect.
+    <View
+      testID="screen.application"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       {/* HERO (240) — fixed behind, parallaxes up at py * -0.3 as the sheet rises */}
       <Animated.View
         style={[
@@ -690,12 +696,17 @@ export default function AppDetail() {
         <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
         {/* Message the agent: hidden in a self-service-only build (japa#334). */}
         {selfServiceOnly ? null : (
-          <GlassButton icon={Ic.msg} onPress={openConvo} />
+          <GlassButton
+            testID="application.message"
+            icon={Ic.msg}
+            onPress={openConvo}
+          />
         )}
       </View>
 
       {/* Scrolling content sheet */}
       <Animated.ScrollView
+        testID="application.scroll"
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
@@ -861,6 +872,7 @@ export default function AppDetail() {
           {!selfServiceOnly && payReqs.length > 0 ? (
             <>
               <Text
+                testID="application.paymentRequests"
                 style={{
                   fontSize: 18,
                   fontWeight: '700',

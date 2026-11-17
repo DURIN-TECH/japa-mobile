@@ -7,17 +7,20 @@
 // of stopping at the first 60, so every visible visa can be reached by
 // scrolling. A coral spinner / InlineError + "Try again" sit below the tiles
 // while a later page loads or after it fails.
+//
+// japa#347: filters. The sliders button opens `ExploreFilterSheet` (visa type
+// + country, multi-select). ONE `filters` state (see exploreFilters.ts) drives
+// the category chips, the sheet, the coral dot, the "Filters · N" chip in
+// search mode and the summary line. A filtered browse grid does not filter
+// the loaded pages (that would hide matches on later pages): it fetches the
+// complete candidate list (`useFilteredExploreVisas`) and narrows it. With no
+// filter on, everything below behaves exactly as after #341.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -31,9 +34,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import type { Dest } from '@/types/explorer.type';
 import {
+  dedupeVisaPages,
   destKey,
   type LoadTrigger,
   mapVisaPagesToDests,
+  mapVisasToDests,
   type ScrollMetrics,
   shouldLoadNextPage,
   visaTypeToDest,
@@ -41,9 +46,35 @@ import {
 import {
   useCountriesWithVisas,
   useExploreVisaPages,
+  useFilteredExploreVisas,
   useVisaSearch,
   useVisasForCountries,
 } from '@/hooks/useVisaTypes';
+// japa#347: filter state rules + the sheet.
+import {
+  ALL_CATEGORY_LABELS,
+  EMPTY_FILTERS,
+  FILTER_COPY,
+  applyFilters,
+  chipCategories,
+  clearFilters,
+  filterA11yLabel,
+  filterChipLabel,
+  filterCount,
+  filterFetchPlan,
+  headerControls,
+  isChipSelected,
+  resultsLine,
+  summaryLine,
+  tapCategoryChip,
+  type ExploreFilters,
+} from '@/components/explorer/exploreFilters';
+import {
+  ExploreFilterChip,
+  ExploreFilterSheet,
+} from '@/components/explorer/ExploreFilterSheet';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
+import { TextLink } from '@/components/explorer/HoldingsParts';
 import { matchCountries, mergeSearchVisas } from '@/utils/countrySearch';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait } from '@/components/explorer/primitives';
@@ -63,7 +94,14 @@ import { profileName, profileSeed } from '@/components/explorer/liveProfile';
 export default function ExploreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [cat, setCat] = useState('All');
+
+  // ── Filters (japa#347) ────────────────────────────────────────────────────
+  // In memory only: reset on app restart. Replaces the old single `cat`
+  // state; chip "All" is selected exactly when `filters.categories` is empty.
+  const [filters, setFilters] = useState<ExploreFilters>(EMPTY_FILTERS);
+  const nFilters = filterCount(filters);
+  const filtersOn = nFilters > 0;
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   // ── Live data (GET /visas + /countries) ─────────────────────────────────
   // japa#145: no sample destinations. The grid shows the backend's visas, or a
@@ -81,8 +119,37 @@ export default function ExploreScreen() {
   // 'loading' (first load, nothing cached) | 'error' (failed, nothing cached)
   // | 'ready'. A background refetch with cached rows stays silent.
   const state = queryState(visaQuery);
-  // First-run empty: the source has no destinations at all.
-  const firstRunEmpty = state === 'ready' && source.length === 0;
+  // First-run empty: the source has no destinations at all. Only without
+  // filters: a filtered grid has its own "no match" state.
+  const firstRunEmpty = !filtersOn && state === 'ready' && source.length === 0;
+
+  // ── Filtered browse list (japa#347) ───────────────────────────────────────
+  // The complete candidates for the chosen countries / categories (see
+  // `filterFetchPlan`), narrowed by the exact OR / AND rule. No request at
+  // all while no filter is on.
+  const fetchPlan = useMemo(() => filterFetchPlan(filters), [filters]);
+  const filteredQ = useFilteredExploreVisas(fetchPlan);
+  const filteredDests = useMemo(
+    () =>
+      applyFilters(
+        // De-duplicated by country code + visa id, lead tile featured.
+        mapVisasToDests(
+          dedupeVisaPages([filteredQ.data ?? []]),
+          countries ?? [],
+        ),
+        filters,
+      ),
+    [filteredQ.data, countries, filters],
+  );
+  // The state the browse body renders: the filtered query's while filters
+  // are on, the paged list's otherwise.
+  const browseState = filtersOn ? queryState(filteredQ) : state;
+  // Code → country name, for the summary line.
+  const countryName = useCallback(
+    (code: string) =>
+      countries?.find((c) => c.code.toUpperCase() === code.toUpperCase())?.name,
+    [countries],
+  );
 
   // ── Signed-in user (GET /users/me) for the greeting + portrait ────────────
   const { data: me } = useMe();
@@ -106,26 +173,42 @@ export default function ExploreScreen() {
   const searchResults = useMemo(() => {
     const q = query.trim();
     if (q.length < 2) return null;
-    // Name matches + matched countries' visas, each visa listed once.
-    return mergeSearchVisas(searchQ.data ?? [], countryVisas.visas).map((v) =>
-      visaTypeToDest(
-        v,
-        countries?.find(
-          (c) => c.code.toLowerCase() === (v.countryCode ?? '').toLowerCase(),
-        )?.name,
-      ),
+    // Name matches + matched countries' visas, each visa listed once, then
+    // narrowed by the filters (japa#347), so the results line counts only
+    // what matches.
+    const all = mergeSearchVisas(searchQ.data ?? [], countryVisas.visas).map(
+      (v) =>
+        visaTypeToDest(
+          v,
+          countries?.find(
+            (c) => c.code.toLowerCase() === (v.countryCode ?? '').toLowerCase(),
+          )?.name,
+        ),
     );
-  }, [query, searchQ.data, countryVisas.visas, countries]);
+    return applyFilters(all, filters);
+  }, [query, searchQ.data, countryVisas.visas, countries, filters]);
   const searchMode = searchResults !== null;
+  // Which header controls show for this query (japa#347, pure + tested):
+  // the "x" and the "Filters" chip go together, so filters stay reachable.
+  const controls = headerControls(query);
 
   // Category chips derive from ALL loaded pages, so a category first seen on a
-  // later page gets its chip once that page arrives (japa#341).
-  const cats = useMemo(
-    () => ['All', ...Array.from(new Set(source.map((d) => d.cat)))],
+  // later page gets its chip once that page arrives (japa#341). A chosen
+  // category not seen yet keeps its chip (japa#347), so it never disappears.
+  const seenCats = useMemo(
+    () => Array.from(new Set(source.map((d) => d.cat))),
     [source],
   );
+  const cats = useMemo(
+    () => chipCategories(seenCats, filters.categories),
+    [seenCats, filters.categories],
+  );
+  // The sheet's "Visa type" options: EVERY category a visa can have, never
+  // just the ones on the browse pages loaded so far (review of japa#347), so
+  // a category whose visas all sit past page one can still be chosen.
+  const sheetCats = ALL_CATEGORY_LABELS;
 
-  const list = source.filter((d) => cat === 'All' || d.cat === cat);
+  const list = filtersOn ? filteredDests : source;
   const featured = list.find((d) => d.featured) ?? list[0];
   const rest = list.filter((d) => d !== featured);
   // ── Paging: load the next page near the end (japa#341) ──────────────────
@@ -134,13 +217,12 @@ export default function ExploreScreen() {
   // and content height live in a ref, and `maybeLoadMore(trigger)` asks the
   // pure `shouldLoadNextPage` rule whether to fetch. Who may trigger what
   // (review of japa#341, rules + tests in liveExplore):
-  //   • "All": only scroll and content-size events, near the end of measured
-  //     content. Never the effect or a layout event, which can still hold the
+  //   • no filters: only scroll and content-size events, near the end of
+  //     measured content. Never a layout event, which can still hold the
   //     content height of the previous content (first-load spinner, search
   //     results, 0 on a cached mount) and would load page two unscrolled.
-  //   • a category chip: any trigger. The effect re-runs each time a page
-  //     lands (paging state changes), so a short filtered list keeps loading
-  //     without the user scrolling, until `total`.
+  //   • filters on (japa#347): never. The filtered grid has its own complete
+  //     list, so the paged one stays as it is.
   // Every load goes through `loadNextPage()`, which checks the LIVE fetch
   // status and never cancels a request in flight, so several triggers from
   // one render ask for a page once.
@@ -161,6 +243,8 @@ export default function ExploreScreen() {
     (trigger: LoadTrigger) => {
       // Wait for the first page (and its first-load states) before paging.
       if (state !== 'ready' || firstRunEmpty) return;
+      // A filtered grid is complete already: no paging behind it.
+      if (filtersOn) return;
       const go = shouldLoadNextPage({
         trigger,
         searchMode,
@@ -169,7 +253,6 @@ export default function ExploreScreen() {
         // it as in flight too.
         isFetching: isFetching || isRefreshing,
         nextPageFailed: isFetchNextPageError,
-        category: cat,
         metrics: metrics.current,
       });
       if (go) loadNextPage();
@@ -177,22 +260,64 @@ export default function ExploreScreen() {
     [
       state,
       firstRunEmpty,
+      filtersOn,
       searchMode,
       hasNextPage,
       isFetching,
       isRefreshing,
       isFetchNextPageError,
-      cat,
       loadNextPage,
     ],
   );
-  // Category case only (see above): "All" ignores the 'effect' trigger.
-  useEffect(() => {
-    maybeLoadMore('effect');
-  }, [maybeLoadMore]);
+
+  // ── Filter actions (japa#347) ─────────────────────────────────────────────
+  const scrollRef = useRef<ScrollView>(null);
+  const chipRowRef = useRef<ScrollView>(null);
+  // x of each chip in the chip row, from onLayout, to scroll the first chosen
+  // chip into view after the sheet applies.
+  const chipX = useRef<Record<string, number>>({});
+
+  /** Filter button / "Filters" chip: dismiss the keyboard, open the sheet. */
+  const openSheet = () => {
+    Keyboard.dismiss();
+    setSheetOpen(true);
+  };
+  /** "Show visas": apply the draft, scroll Explore to the top. */
+  const applySheet = (draft: ExploreFilters) => {
+    setFilters(draft);
+    setSheetOpen(false);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+    // After the chip row re-renders with the new choice: bring the first
+    // chosen chip (in row order) into view.
+    setTimeout(() => {
+      const first = chipCategories(seenCats, draft.categories)
+        .slice(1)
+        .find((c) => draft.categories.includes(c));
+      const x = first ? chipX.current[first] : 0;
+      chipRowRef.current?.scrollTo({
+        x: Math.max(0, (x ?? 0) - 20),
+        animated: true,
+      });
+    }, 50);
+  };
+  /** Pull-to-refresh on a filtered grid: spinner for exactly this pull. */
+  const [pullingFiltered, setPullingFiltered] = useState(false);
+  const pullFiltered = async () => {
+    setPullingFiltered(true);
+    try {
+      await filteredQ.refetch();
+    } finally {
+      setPullingFiltered(false);
+    }
+  };
+  /** "Clear filters" (summary link and empty states): both groups. */
+  const clearAll = () => setFilters(clearFilters());
 
   // Pass the country code so the detail screen can fetch the visa by
   // (countryCode, visaId).
+  // e2e id of a destination tile (Maestro, japa#361): country code + visa id,
+  // e.g. `explore.dest.ie.short-stay-c` (visa ids repeat across countries).
+  const tileId = (dd: Dest) => `explore.dest.${dd.flag}.${dd.id}`;
   const open = (dd: Dest) =>
     router.push({
       pathname: '/destination/[id]',
@@ -200,10 +325,18 @@ export default function ExploreScreen() {
     });
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    <View
+      testID="screen.explore"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       <ScrollView
+        testID="explore.scroll"
+        ref={scrollRef}
         stickyHeaderIndices={[0]}
         showsVerticalScrollIndicator={false}
+        // japa#347: the first tap on the "x", a chip or a tile acts even with
+        // the keyboard open (otherwise it only dismisses the keyboard).
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: EX.space.tabClear }}
         scrollEventThrottle={100}
         onScroll={(e) => {
@@ -230,11 +363,22 @@ export default function ExploreScreen() {
             // page also counts as "refetching" in TanStack Query.
             // `isRefreshing` = our page-one refresh with pages cached;
             // `isRefetching` covers a pull with nothing cached yet.
+            // japa#347: with filters on (browse), the pull refetches the
+            // filtered list and the filters stay applied. The spinner then
+            // follows OUR pull only (`pullingFiltered`), never a background
+            // refetch of the filtered set (stale data, app focus, …).
             refreshing={
-              isRefreshing || (visaQuery.isRefetching && !isFetchingNextPage)
+              filtersOn && !searchMode
+                ? pullingFiltered
+                : isRefreshing ||
+                  (visaQuery.isRefetching && !isFetchingNextPage)
             }
             // japa#341: start over from page one and drop the later pages.
-            onRefresh={() => visaQuery.refreshFromFirstPage()}
+            onRefresh={() =>
+              filtersOn && !searchMode
+                ? pullFiltered()
+                : visaQuery.refreshFromFirstPage()
+            }
             tintColor={EX.color.primary}
           />
         }
@@ -328,12 +472,16 @@ export default function ExploreScreen() {
                 borderWidth: 1,
                 borderColor: EX.color.line10,
                 borderRadius: 999,
-                paddingHorizontal: 16,
-                paddingVertical: 4,
+                // Right padding 0 (japa#347): the 44×44 button box sits on
+                // the pill's right edge, keeping the pill about 46 tall.
+                paddingLeft: 16,
+                paddingRight: 0,
+                paddingVertical: 0,
               }}
             >
               <Ic.search size={18} color={EX.color.muted} strokeWidth={1.8} />
               <TextInput
+                testID="explore.search"
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search countries or visas"
@@ -347,55 +495,124 @@ export default function ExploreScreen() {
                   paddingVertical: 10,
                 }}
               />
-              {query.length ? (
-                <Pressable onPress={() => setQuery('')} hitSlop={8}>
+              {/* japa#347: both controls share one 44×44 spot. Text typed →
+                  the "x" (one tap clears; keyboard may stay open). Empty →
+                  the filter button, with a coral dot when filters are on. */}
+              {controls.clearButton ? (
+                <PressableStatic
+                  onPress={() => setQuery('')}
+                  accessibilityRole="button"
+                  accessibilityLabel={FILTER_COPY.clearSearch}
+                  style={({ pressed }) => ({
+                    width: 44,
+                    height: 44,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: pressed ? 0.6 : 1,
+                  })}
+                >
                   <Ic.x size={18} color={EX.color.muted} strokeWidth={1.8} />
-                </Pressable>
+                </PressableStatic>
               ) : (
-                <Ic.sliders size={18} color={EX.color.ink} strokeWidth={1.8} />
+                <PressableStatic
+                  onPress={openSheet}
+                  accessibilityRole="button"
+                  accessibilityLabel={filterA11yLabel(nFilters)}
+                  style={({ pressed }) => ({
+                    width: 44,
+                    height: 44,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: pressed ? 0.6 : 1,
+                  })}
+                >
+                  <Ic.sliders
+                    size={18}
+                    color={EX.color.ink}
+                    strokeWidth={1.8}
+                  />
+                  {filtersOn ? (
+                    // Same dot as the bell's unread dot in this header.
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 9,
+                        right: 9,
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: EX.color.primary,
+                        borderWidth: 2,
+                        borderColor: EX.color.cardWhite,
+                      }}
+                    />
+                  ) : null}
+                </PressableStatic>
               )}
             </View>
           </View>
 
-          {/* Category chips — hidden while searching, and on first-run empty /
-              loading / error, where they would mean nothing (spec 1.2). */}
-          {!searchMode && state === 'ready' && !firstRunEmpty ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{
-                gap: 8,
+          {/* While the "x" shows (any text typed, even one character, so
+              before search mode starts at two): the chip row is hidden and
+              one "Filters" chip keeps the sheet reachable (japa#347).
+              Selected look (and "Filters · N") while filters are on. */}
+          {controls.filtersChip ? (
+            <View
+              style={{
+                flexDirection: 'row',
                 paddingHorizontal: 20,
+                // Room for the chip's 6 pt top hit slop (see the chip row).
+                marginTop: -6,
+                paddingTop: 6,
                 paddingBottom: 14,
               }}
             >
-              {cats.map((c) => {
-                const on = cat === c;
-                return (
-                  <Pressable
-                    key={c}
-                    onPress={() => setCat(c)}
-                    style={{
-                      borderWidth: 1,
-                      borderColor: on ? EX.color.ink : EX.color.line12,
-                      backgroundColor: on ? EX.color.ink : '#fff',
-                      borderRadius: 999,
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontWeight: '600',
-                        color: on ? EX.color.bg : EX.color.ink2,
-                      }}
-                    >
-                      {c}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              <ExploreFilterChip
+                label={filterChipLabel(nFilters)}
+                selected={filtersOn}
+                icon={Ic.sliders}
+                accessibilityLabel={filterA11yLabel(nFilters)}
+                onPress={openSheet}
+              />
+            </View>
+          ) : null}
+
+          {/* Category chips — hidden while searching, and on first-run empty /
+              loading / error, where they would mean nothing (spec 1.2). */}
+          {controls.categoryChips && state === 'ready' && !firstRunEmpty ? (
+            <ScrollView
+              ref={chipRowRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              // 6 pt of room above the chips (pulled back up by the negative
+              // margin) so their 6 pt top hit slop stays inside the row:
+              // touches outside a parent's bounds are never delivered.
+              style={{ marginTop: -6 }}
+              contentContainerStyle={{
+                gap: 8,
+                paddingHorizontal: 20,
+                paddingTop: 6,
+                paddingBottom: 14,
+              }}
+            >
+              {/* japa#347: chips share `filters.categories` with the sheet.
+                  "All" clears; any other chip adds or removes itself, and
+                  every chosen chip is drawn selected at once. */}
+              {cats.map((c) => (
+                <View
+                  key={c}
+                  onLayout={(e) => {
+                    chipX.current[c] = e.nativeEvent.layout.x;
+                  }}
+                >
+                  <ExploreFilterChip
+                    label={c}
+                    selected={isChipSelected(filters, c)}
+                    onPress={() => setFilters((f) => tapCategoryChip(f, c))}
+                  />
+                </View>
+              ))}
             </ScrollView>
           ) : null}
         </BlurView>
@@ -405,16 +622,17 @@ export default function ExploreScreen() {
           {searchMode ? (
             searchResults!.length ? (
               <>
+                {/* Counts the FILTERED results (japa#347). ink-muted, not
+                    muted: muted text fails contrast on bg. */}
                 <Text
                   style={{
                     fontSize: 12.5,
-                    color: EX.color.muted,
+                    color: EX.color.inkMuted,
                     fontWeight: '600',
                     marginBottom: 12,
                   }}
                 >
-                  {searchResults!.length} result
-                  {searchResults!.length === 1 ? '' : 's'} for “{query.trim()}”
+                  {resultsLine(searchResults!.length, query.trim())}
                 </Text>
                 <View
                   style={{
@@ -426,94 +644,189 @@ export default function ExploreScreen() {
                 >
                   {searchResults!.map((d) => (
                     <View key={d.id} style={{ width: '48.4%' }}>
-                      <Tile d={d} onPress={() => open(d)} />
+                      <Tile d={d} testID={tileId(d)} onPress={() => open(d)} />
                     </View>
                   ))}
                 </View>
               </>
-            ) : (
+            ) : searchQ.isFetching || countryVisas.isFetching ? (
               <View style={{ paddingTop: 50, alignItems: 'center' }}>
-                {searchQ.isFetching || countryVisas.isFetching ? (
-                  <ActivityIndicator color={EX.color.primary} />
-                ) : (
-                  <>
-                    <Ic.search
-                      size={34}
-                      color={EX.color.muted}
-                      strokeWidth={1.5}
-                      style={{ opacity: 0.5, marginBottom: 10 }}
-                    />
-                    <Text style={{ color: EX.color.muted, fontSize: 14 }}>
-                      No visas match “{query.trim()}”
-                    </Text>
-                  </>
-                )}
+                <ActivityIndicator color={EX.color.primary} />
+              </View>
+            ) : filtersOn ? (
+              // Search + filters, nothing left: say the filters did it, and
+              // offer to clear them (the query is kept).
+              <StateEmpty
+                icon={Ic.sliders}
+                title={FILTER_COPY.emptySearchTitle(query.trim())}
+                body={FILTER_COPY.emptySearchBody}
+                action={{
+                  label: FILTER_COPY.clearFilters,
+                  onPress: clearAll,
+                  variant: 'outline',
+                }}
+              />
+            ) : (
+              // No filters: today's no-match line, unchanged.
+              <View style={{ paddingTop: 50, alignItems: 'center' }}>
+                <Ic.search
+                  size={34}
+                  color={EX.color.muted}
+                  strokeWidth={1.5}
+                  style={{ opacity: 0.5, marginBottom: 10 }}
+                />
+                <Text style={{ color: EX.color.muted, fontSize: 14 }}>
+                  No visas match “{query.trim()}”
+                </Text>
               </View>
             )
-          ) : state === 'loading' ? (
-            // First load, nothing cached: the coral spinner.
-            <StateLoading />
-          ) : state === 'error' ? (
-            // Load failed, nothing cached: InlineError + Outline "Try again".
-            <StateError
-              section
-              message={loadErrorCopy('destinations')}
-              onRetry={() => visaQuery.refetch()}
-              retrying={visaQuery.isRefetching}
-            />
-          ) : firstRunEmpty ? (
-            <StateEmpty
-              icon={Ic.globe}
-              title="No destinations yet"
-              body="We’re adding new visas all the time. Check back soon."
-            />
           ) : (
             <>
-              {featured ? (
-                <View style={{ marginBottom: 14 }}>
-                  <Tile d={featured} big onPress={() => open(featured)} />
+              {/* ── Summary line (japa#347): browse with filters on ─────────
+                  "Showing Work visas in Canada" + "Clear filters", so a
+                  filtered grid never looks like the full list. */}
+              {filtersOn ? (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    marginBottom: 12,
+                    // Room on the right for the link's 8 pt hit slop (touches
+                    // outside a parent's bounds are never delivered).
+                    marginRight: -8,
+                    paddingRight: 8,
+                  }}
+                >
+                  <Text
+                    numberOfLines={2}
+                    style={{
+                      flex: 1,
+                      fontSize: 12.5,
+                      fontWeight: '600',
+                      lineHeight: 18,
+                      color: EX.color.inkMuted,
+                    }}
+                  >
+                    {summaryLine(filters, countryName)}
+                  </Text>
+                  <TextLink
+                    label={FILTER_COPY.clearFilters}
+                    onPress={clearAll}
+                    size={13.5}
+                    // 8 pt either side: the link is short text (spec table).
+                    hitSlop={{ left: 8, right: 8 }}
+                  />
                 </View>
               ) : null}
 
-              {/* 2-column grid */}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  flexWrap: 'wrap',
-                  justifyContent: 'space-between',
-                  rowGap: 13,
-                }}
-              >
-                {rest.map((d) => (
-                  // Keyed by country code + visa id: visa ids are only
-                  // unique within a country (japa#341).
-                  <View key={destKey(d)} style={{ width: '48.4%' }}>
-                    <Tile d={d} onPress={() => open(d)} />
-                  </View>
-                ))}
-              </View>
-
-              {/* ── Paging footer (japa#341) ─────────────────────────────
-                  Loading a later page: the coral spinner under the last
-                  tile. That page failed: InlineError + "Try again", which
-                  retries that page only (`loadNextPage` resumes from the
-                  same offset). Loaded tiles stay above in both cases. When
-                  everything is loaded, nothing shows. */}
-              {isFetchingNextPage ? (
-                <StateLoading section />
-              ) : isFetchNextPageError && hasNextPage ? (
+              {browseState === 'loading' ? (
+                // First load, nothing cached: the coral spinner.
+                <StateLoading />
+              ) : browseState === 'error' ? (
+                // Load failed, nothing cached: InlineError + Outline "Try
+                // again" (the filtered list's own refetch when filtered).
                 <StateError
                   section
-                  style={{ marginTop: 16 }}
                   message={loadErrorCopy('destinations')}
-                  // Same guarded call: retries that offset once.
-                  onRetry={loadNextPage}
+                  onRetry={() =>
+                    filtersOn ? filteredQ.refetch() : visaQuery.refetch()
+                  }
+                  retrying={
+                    filtersOn ? filteredQ.isRefetching : visaQuery.isRefetching
+                  }
                 />
-              ) : null}
+              ) : firstRunEmpty ? (
+                <StateEmpty
+                  icon={Ic.globe}
+                  title="No destinations yet"
+                  body="We’re adding new visas all the time. Check back soon."
+                />
+              ) : filtersOn && list.length === 0 ? (
+                // Filtered, no match: icon + one line + "Clear filters".
+                // Outline: the summary above already has the coral link.
+                <StateEmpty
+                  icon={Ic.sliders}
+                  title={FILTER_COPY.emptyBrowseTitle}
+                  body={FILTER_COPY.emptyBrowseBody}
+                  action={{
+                    label: FILTER_COPY.clearFilters,
+                    onPress: clearAll,
+                    variant: 'outline',
+                  }}
+                />
+              ) : (
+                <>
+                  {featured ? (
+                    <View style={{ marginBottom: 14 }}>
+                      <Tile
+                        d={featured}
+                        big
+                        testID={tileId(featured)}
+                        onPress={() => open(featured)}
+                      />
+                    </View>
+                  ) : null}
+
+                  {/* 2-column grid */}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      flexWrap: 'wrap',
+                      justifyContent: 'space-between',
+                      rowGap: 13,
+                    }}
+                  >
+                    {rest.map((d) => (
+                      // Keyed by country code + visa id: visa ids are only
+                      // unique within a country (japa#341).
+                      <View key={destKey(d)} style={{ width: '48.4%' }}>
+                        <Tile
+                          d={d}
+                          testID={tileId(d)}
+                          onPress={() => open(d)}
+                        />
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* ── Paging footer (japa#341) ─────────────────────────
+                      Loading a later page: the coral spinner under the last
+                      tile. That page failed: InlineError + "Try again",
+                      which retries that page only (`loadNextPage` resumes
+                      from the same offset). Loaded tiles stay above in both
+                      cases. When everything is loaded, nothing shows. A
+                      filtered grid is complete, so it has no footer. */}
+                  {filtersOn ? null : isFetchingNextPage ? (
+                    <StateLoading section />
+                  ) : isFetchNextPageError && hasNextPage ? (
+                    <StateError
+                      section
+                      style={{ marginTop: 16 }}
+                      message={loadErrorCopy('destinations')}
+                      // Same guarded call: retries that offset once.
+                      onRetry={loadNextPage}
+                    />
+                  ) : null}
+                </>
+              )}
             </>
           )}
         </View>
       </ScrollView>
+
+      {/* ── Filter sheet (japa#347) ─────────────────────────────────────────
+          Mounted only while open, so each opening starts from a fresh draft
+          (a copy of `filters`). "Show visas" applies it; any other close
+          throws it away. */}
+      {sheetOpen ? (
+        <ExploreFilterSheet
+          filters={filters}
+          categories={sheetCats}
+          onApply={applySheet}
+          onDismiss={() => setSheetOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }

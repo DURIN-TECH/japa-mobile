@@ -4,7 +4,10 @@
 // A transaction history for the applicant. Structure:
 //   • standard 40px back header at insets.top + 10
 //   • a coral-gradient "Total paid" hero card — the summed amount of every `paid`
-//     transaction rendered big in the display font, with a transaction count
+//     transaction rendered big in the display font, with a transaction count.
+//     Failed charges are listed (red "Failed" pill) but never summed; a user
+//     whose only rows are failed sees the zero total, not the empty state
+//     (japa#353)
 //   • a list of white rows (radius 18): cream card-icon chip + title/sub on the
 //     left, and a right column with the amount, a status Pill and the date.
 //
@@ -51,12 +54,16 @@ import { Ic } from '@/components/explorer/icons';
 import { Pill } from '@/components/explorer/primitives';
 // Live data: GET /transactions → mapped onto the `Payment` row contract.
 import { useTransactions } from '@/hooks/useTransactions';
-import { mapTransaction } from '@/components/explorer/liveTransactions';
+import {
+  mapTransaction,
+  totalsPaid,
+} from '@/components/explorer/liveTransactions';
 
 // ── PaymentRow — one transaction ─────────────────────────────────────────────
 // 40px cream chip (coral card icon) + title/sub on the left; on the right a
 // stacked amount (15/700), a small status Pill, and the date (11.5 muted).
-// Refunded amounts read muted with a strikethrough-feel.
+// Refunded amounts read muted with a strikethrough-feel. A failed charge keeps
+// the normal ink amount; only its red "Failed" pill marks it (japa#353).
 // `parts` overrides the price (payment requests); otherwise the row's charged
 // amount + dollar price (exact once paid / refunded, "about" while pending).
 function PaymentRow({
@@ -221,20 +228,10 @@ export default function PaymentsView() {
     !loading && !txError && !prError && rows.length === 0 && !requests.length;
 
   // ── Total paid — one sum PER CURRENCY of every `paid` transaction ────────
-  // Minor units of different currencies are never added together; the hero
-  // shows one line per currency (in first-seen order).
-  const totalsPaid: Money[] = React.useMemo(() => {
-    const byCurrency = new Map<string, number>();
-    for (const p of rows) {
-      if (p.status !== 'paid') continue;
-      const c = p.amount.currency;
-      byCurrency.set(c, (byCurrency.get(c) ?? 0) + p.amount.amountMinor);
-    }
-    return [...byCurrency].map(([currency, amountMinor]) => ({
-      amountMinor,
-      currency,
-    }));
-  }, [rows]);
+  // Pure helper (`totalsPaid` in liveTransactions.ts, unit-tested): failed,
+  // pending and refunded rows never count (japa#353). The hero shows one
+  // line per currency (in first-seen order).
+  const totals: Money[] = React.useMemo(() => totalsPaid(rows), [rows]);
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -350,14 +347,14 @@ export default function PaymentsView() {
                   </Text>
                   {/* One total per currency; nothing paid yet → zero in
                       the first row's currency. */}
-                  {(totalsPaid.length
-                    ? totalsPaid
+                  {(totals.length
+                    ? totals
                     : [{ amountMinor: 0, currency: rows[0].amount.currency }]
                   ).map((t) => (
                     <Text
                       key={t.currency}
                       style={[
-                        displayText(totalsPaid.length > 1 ? 24 : 30, 'bold'),
+                        displayText(totals.length > 1 ? 24 : 30, 'bold'),
                         { color: '#fff', marginTop: 6 },
                       ]}
                     >
