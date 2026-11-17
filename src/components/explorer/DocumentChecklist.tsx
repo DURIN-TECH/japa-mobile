@@ -399,6 +399,9 @@ function ItemRow({
 
   return (
     <View
+      // e2e (Maestro, japa#361): one row per checklist item, e.g.
+      // `checklist.item.ev-e2e-passport`. No visual effect.
+      testID={`checklist.item.${item.checklistItemId}`}
       style={{
         borderTopWidth: first ? 0 : 1,
         borderTopColor: EX.color.line06,
@@ -706,7 +709,11 @@ function Empty({
   onAction?: () => void;
 }) {
   return (
-    <View style={{ alignItems: 'center', paddingVertical: 22, gap: 8 }}>
+    <View
+      // e2e (Maestro, japa#361): the list's empty state. No visual effect.
+      testID="checklist.empty"
+      style={{ alignItems: 'center', paddingVertical: 22, gap: 8 }}
+    >
       <Ic.docs size={22} color={EX.color.muted} strokeWidth={1.8} />
       <Text
         style={{

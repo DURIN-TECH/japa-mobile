@@ -305,7 +305,13 @@ export default function ReviewScreen() {
   // ── No review yet (deep link) ────────────────────────────────────────────────
   if (result?.kind === 'empty') {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+      // e2e (Maestro, japa#361): `review.empty` and its start button
+      // `review.start`. Flows assert on the button and NEVER tap it: it starts
+      // an AI review. No visual effect.
+      <View
+        testID="review.empty"
+        style={{ flex: 1, backgroundColor: EX.color.bg }}
+      >
         {header}
         <View style={pad}>
           <ReviewEmpty
@@ -321,6 +327,7 @@ export default function ReviewScreen() {
             </View>
           ) : null}
           <SolidButton
+            testID="review.start"
             label={isStarting ? 'Starting…' : 'Review my application'}
             loading={isStarting}
             onPress={() => run('cta')}

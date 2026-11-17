@@ -664,6 +664,7 @@ export function SolidButton({
   disabled = false,
   icon,
   style,
+  testID,
 }: {
   label: string;
   onPress: () => void;
@@ -672,11 +673,14 @@ export function SolidButton({
   disabled?: boolean;
   icon?: React.ElementType;
   style?: StyleProp<ViewStyle>;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   const Icon = icon;
   const off = disabled || loading;
   return (
     <PressableStatic
+      testID={testID}
       onPress={onPress}
       disabled={off}
       accessibilityRole="button"

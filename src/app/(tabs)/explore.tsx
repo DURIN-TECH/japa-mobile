@@ -315,6 +315,9 @@ export default function ExploreScreen() {
 
   // Pass the country code so the detail screen can fetch the visa by
   // (countryCode, visaId).
+  // e2e id of a destination tile (Maestro, japa#361): country code + visa id,
+  // e.g. `explore.dest.ie.short-stay-c` (visa ids repeat across countries).
+  const tileId = (dd: Dest) => `explore.dest.${dd.flag}.${dd.id}`;
   const open = (dd: Dest) =>
     router.push({
       pathname: '/destination/[id]',
@@ -322,8 +325,12 @@ export default function ExploreScreen() {
     });
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    <View
+      testID="screen.explore"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       <ScrollView
+        testID="explore.scroll"
         ref={scrollRef}
         stickyHeaderIndices={[0]}
         showsVerticalScrollIndicator={false}
@@ -474,6 +481,7 @@ export default function ExploreScreen() {
             >
               <Ic.search size={18} color={EX.color.muted} strokeWidth={1.8} />
               <TextInput
+                testID="explore.search"
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search countries or visas"
@@ -636,7 +644,7 @@ export default function ExploreScreen() {
                 >
                   {searchResults!.map((d) => (
                     <View key={d.id} style={{ width: '48.4%' }}>
-                      <Tile d={d} onPress={() => open(d)} />
+                      <Tile d={d} testID={tileId(d)} onPress={() => open(d)} />
                     </View>
                   ))}
                 </View>
@@ -751,7 +759,12 @@ export default function ExploreScreen() {
                 <>
                   {featured ? (
                     <View style={{ marginBottom: 14 }}>
-                      <Tile d={featured} big onPress={() => open(featured)} />
+                      <Tile
+                        d={featured}
+                        big
+                        testID={tileId(featured)}
+                        onPress={() => open(featured)}
+                      />
                     </View>
                   ) : null}
 
@@ -768,7 +781,11 @@ export default function ExploreScreen() {
                       // Keyed by country code + visa id: visa ids are only
                       // unique within a country (japa#341).
                       <View key={destKey(d)} style={{ width: '48.4%' }}>
-                        <Tile d={d} onPress={() => open(d)} />
+                        <Tile
+                          d={d}
+                          testID={tileId(d)}
+                          onPress={() => open(d)}
+                        />
                       </View>
                     ))}
                   </View>

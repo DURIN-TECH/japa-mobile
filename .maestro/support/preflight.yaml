@@ -1,0 +1,23 @@
+# Runner-only gate (japa#361), not a suite flow: before any flow runs, sign
+# in as the e2e fixture client and read the dev-only App configuration
+# screen of the RUNNING bundle. Its API server must be this run's local
+# Functions emulator and the signed-in user the emulator-only fixture user;
+# otherwise the runner stops and nothing else runs. (That the bundle came
+# from this run's Metro is checked by the runner in the Metro log; the
+# screen's "JS bundle from" row reads "unavailable" in the dev client.)
+appId: ${APP_ID}
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL}
+- openLink: "durintech://dev-config"
+- extendedWaitUntil:
+    visible: "API server"
+    timeout: 20000
+- assertVisible: ${API_URL}
+# Signed in as the emulator-only fixture user (exists only in the local
+# Auth emulator, written by `seed:e2e`).
+- scrollUntilVisible:
+    element: "seed-user-e2e-client-001"
+    direction: DOWN

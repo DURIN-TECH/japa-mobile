@@ -81,7 +81,11 @@ export default function ConversationsView() {
   const state = queryState(convosQ);
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    // e2e (Maestro, japa#361): the screen's identity. No visual effect.
+    <View
+      testID="screen.messages"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       {/* ── Back header ───────────────────────────────────────────────────── */}
       <View
         style={{

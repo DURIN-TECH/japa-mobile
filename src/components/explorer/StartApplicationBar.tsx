@@ -89,6 +89,7 @@ export function StartApplicationBar({
         <View>
           <UpgradePrompt message={START_COPY.upgrade} />
           <PressableStatic
+            testID="startBar.dismissUpgrade"
             onPress={onDismissUpgrade}
             accessibilityRole="button"
             style={{
@@ -149,6 +150,8 @@ export function StartApplicationBar({
               </Text>
             </View>
             <PressableStatic
+              // e2e (Maestro, japa#361). No visual effect.
+              testID="startBar.start"
               onPress={onStart}
               disabled={disabled}
               accessibilityRole="button"

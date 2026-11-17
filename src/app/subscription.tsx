@@ -464,7 +464,11 @@ export default function SubscriptionView() {
   }, [busy, verifyReference, verifyRetryRef]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    // e2e (Maestro, japa#361): the screen's identity. No visual effect.
+    <View
+      testID="screen.subscription"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{

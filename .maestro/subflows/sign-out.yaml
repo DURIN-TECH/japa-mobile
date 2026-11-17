@@ -1,0 +1,23 @@
+# Subflow: sign out if someone is signed in (japa#361).
+#
+# Run right after launch.yaml, which ends on Home (signed in) or the welcome
+# screen (signed out). Ends on the welcome screen either way.
+appId: ${APP_ID}
+---
+- runFlow:
+    when:
+      visible:
+        id: "screen\\.home"
+    commands:
+      - tapOn:
+          id: "tab\\.profile"
+      - scrollUntilVisible:
+          element:
+            id: "profile\\.signOut"
+          direction: DOWN
+      - tapOn:
+          id: "profile\\.signOut"
+- extendedWaitUntil:
+    visible:
+      id: "welcome\\.login"
+    timeout: 20000
