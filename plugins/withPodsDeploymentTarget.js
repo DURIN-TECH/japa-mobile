@@ -17,9 +17,11 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { withPodfile } = require('expo/config-plugins');
 
-// The app's own minimum (expo SDK 56 default). Kept as a constant so the
-// Podfile step and this comment can't drift apart.
-const MIN_TARGET = '15.1';
+// The app's own minimum: the Expo SDK 58 template's default
+// (`platform :ios, ... || '16.4'` in the generated Podfile; japa#399 moved
+// it up from SDK 56's 15.1). Kept as a constant so the Podfile step and
+// this comment can't drift apart.
+const MIN_TARGET = '16.4';
 
 // Marker so running prebuild twice never inserts the block twice.
 const MARKER = '# seli: withPodsDeploymentTarget';

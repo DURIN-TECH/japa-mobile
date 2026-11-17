@@ -16,10 +16,28 @@ message their agent, pay, and track progress.
 > the `japa-platform` prod Firebase project) intentionally
 > stay `japa` — don't "fix" them.
 
-**Tech Stack:** React Native 0.85 + Expo 56, React 19,
+**Tech Stack:** React Native 0.88 + Expo 58, React 19.3,
 TypeScript 6, Zustand 5, TanStack Query 5, Firebase via
-`@react-native-firebase` 24 (Auth, Analytics, Crashlytics,
-Messaging), Expo Router.
+`@react-native-firebase` 27 (Auth, Analytics, Crashlytics,
+Messaging), Expo Router 58, Jest 30.
+
+- **iOS uses the UIScene lifecycle** (the SDK 58 default,
+  japa#399). iOS 27 kills apps that have not adopted it right
+  after the splash. Prebuild generates `SceneDelegate.swift`
+  (`ExpoAppSceneDelegate`) and a `UIApplicationSceneManifest`;
+  the scene delegate owns the window, and URLs reach the
+  `ExpoAppDelegate` overrides through it. Don't create a
+  `UIWindow` in `AppDelegate`, call `RCTLinkingManager` by hand,
+  or read `UIScreen.main` / `keyWindow`. The RNFB auth
+  reCAPTCHA URL guard lives in `SceneDelegate`
+  (`scene(_:openURLContexts:)`, written by its plugin).
+- **iOS frameworks are dynamic** (`expo-build-properties`
+  `useFrameworks: "dynamic"`). RNFB 27 pulls Firebase Apple SDK
+  13 through Swift Package Manager only, and that needs dynamic
+  linkage (`pod install` rejects static). The minimum iOS is
+  16.4 (`plugins/withPodsDeploymentTarget.js`).
+- **Android release builds run R8** (SDK 58 default); add keep
+  rules through `expo-build-properties`, never in `android/`.
 
 **Styling is inline styles built from design tokens**, not
 utility classes — see [Design System](#design-system).
