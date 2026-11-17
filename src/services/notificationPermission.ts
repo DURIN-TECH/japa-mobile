@@ -10,9 +10,9 @@
 // Behaviour is kept exactly as it was with RNFB's `requestPermission`:
 //   - iOS: the system prompt for alert + badge + sound (no provisional
 //     request). "Allow" (or an earlier provisional grant, reported as
-//     `limited`) counts as permitted; "Don't Allow" / blocked does not. The
-//     APNs registration RNFB's call used to trigger is done explicitly after a
-//     grant (`registerDeviceForRemoteMessages`).
+//     `limited`) counts as permitted; "Don't Allow" / blocked does not. APNs
+//     registration needs no extra call: RNFB auto-registers at launch, and
+//     the push service calls getToken() straight after (as on dev).
 //   - Android: RNFB's `requestPermission` never prompted and always resolved
 //     "authorized", so this does the same. Asking for Android 13's
 //     POST_NOTIFICATIONS at runtime would be a new prompt users never saw

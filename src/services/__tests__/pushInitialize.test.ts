@@ -18,6 +18,11 @@ const mockInitial = jest.fn<(...a: unknown[]) => Promise<unknown>>(
 const mockPermission = jest.fn<(...a: unknown[]) => Promise<boolean>>(
   async () => true,
 );
+// getToken right after the grant (japa#399 QA round 1: no explicit APNs
+// registration call in between; RNFB auto-registers).
+const mockGetToken = jest.fn<(...a: unknown[]) => Promise<string>>(
+  async () => 'tok',
+);
 
 jest.mock('expo-router', () => ({
   router: { push: (...a: unknown[]) => mockPush(...a) },
@@ -25,10 +30,8 @@ jest.mock('expo-router', () => ({
 jest.mock('@react-native-firebase/app', () => ({ getApp: () => ({}) }));
 jest.mock('@react-native-firebase/messaging', () => ({
   getMessaging: () => ({}),
-  getToken: async () => 'tok',
+  getToken: (...a: unknown[]) => mockGetToken(...a),
   deleteToken: async () => {},
-  registerDeviceForRemoteMessages: async () => {},
-  isDeviceRegisteredForRemoteMessages: () => true,
   onMessage: (...a: unknown[]) => mockOnMessage(...a),
   onNotificationOpenedApp: (...a: unknown[]) => mockOnOpened(...a),
   getInitialNotification: (...a: unknown[]) => mockInitial(...a),
@@ -74,6 +77,13 @@ beforeEach(() => {
 });
 
 describe('initialize', () => {
+  it('after a grant goes straight to getToken and attaches listeners', async () => {
+    await svc.initialize();
+    expect(mockPermission).toHaveBeenCalledTimes(1);
+    expect(mockGetToken).toHaveBeenCalledTimes(1);
+    expect(mockOnMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('two sequential calls give one listener of each kind', async () => {
     await svc.initialize();
     await svc.initialize();

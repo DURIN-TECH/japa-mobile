@@ -26,8 +26,6 @@ import { getApp } from '@react-native-firebase/app';
 import {
   getMessaging,
   getToken,
-  registerDeviceForRemoteMessages,
-  isDeviceRegisteredForRemoteMessages,
   onMessage,
   onNotificationOpenedApp,
   getInitialNotification,
@@ -156,16 +154,11 @@ class PushNotificationService {
         return;
       }
 
-      // iOS: RNFB's requestPermission registered with APNs after a grant.
-      // Do it here so getToken() has an APNs token (no-op when RNFB's
-      // auto-registration already did it; Android is always registered).
-      if (
-        Platform.OS === 'ios' &&
-        !isDeviceRegisteredForRemoteMessages(this.messaging)
-      ) {
-        await registerDeviceForRemoteMessages(this.messaging);
-        if (stale()) return;
-      }
+      // No explicit `registerDeviceForRemoteMessages()` (japa#399 QA round
+      // 1): RNFB auto-registers with APNs at launch, so getToken() below
+      // already has the APNs token. Calling it again timed out
+      // (`messaging/registration-timeout`) on the arm64 simulator under RNFB
+      // 27, aborting init, and logged "is not required" every launch.
 
       // Get and register the FCM token
       await this.registerToken();
