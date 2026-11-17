@@ -62,6 +62,11 @@ import {
   useStartRefusalAnalysis,
   useStoredAnalysisId,
 } from '@/hooks/useRefusalLetter';
+// japa#310: the size and type the backend (and the model) can take.
+import {
+  pickedContentType,
+  pickedFileProblem,
+} from '@/components/explorer/uploadLimits';
 import type {
   RefusalChecklistItemView,
   RefusalData,
@@ -636,7 +641,19 @@ export default function RefusalLetterScreen() {
       });
       if (res.canceled) return;
       const f = res.assets[0];
-      const contentType = f.mimeType ?? 'application/octet-stream';
+      const contentType = pickedContentType(f);
+      // japa#310: same size and type check as the self-service upload (wrong
+      // type, HEIC/HEIF, over 7 MB for an image / 10 MB otherwise): nothing is
+      // uploaded and the line shows in this screen's InlineError.
+      const problem = pickedFileProblem({
+        size: f.size,
+        contentType,
+        name: f.name,
+      });
+      if (problem) {
+        setError(new Error(problem));
+        return;
+      }
 
       setUploading(true);
       const up = await getUploadUrl.mutateAsync({

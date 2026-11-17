@@ -7,7 +7,7 @@
 //   StatementCard   Step "Your statement": not started / saved / couldn't load /
 //                   read-only after submission
 //   ReviewCard      Step "Your review": never run / running / ready / out of date
-//                   / failed / no rubric / offline
+//                   / failed / no rubric / offline / still needs content (#309)
 //
 // Copy is route-neutral and never predicts a decision (see reviewCopy.ts).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,6 +17,7 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { EX, EXShadow } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { InfoNote, InlineError } from '@/components/explorer/AccountForm';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import {
   OutlineButton,
   ReadinessMeter,
@@ -24,13 +25,19 @@ import {
 } from '@/components/explorer/review/ReviewParts';
 import {
   bandLabel,
+  CONTACT_SUPPORT_LABEL,
   failedCardCopy,
   fmtDate,
   fmtTime,
   NO_REVIEW_BODY,
+  NEEDS_CONTENT_BODY,
   NO_REVIEW_TITLE,
+  reviewGapLines,
   savedLabel,
   staleCopy,
+  type ReviewContent,
+  type ReviewGap,
+  type ReviewGaps,
 } from '@/components/explorer/review/reviewCopy';
 import { isInFlight } from '@/hooks/useCaseOfficer';
 import { wordCount, type Statement } from '@/hooks/useStatement';
@@ -205,6 +212,8 @@ export function StatementCard({
 /** The single state the review card and the CTA are both drawn from. */
 export type ReviewState =
   | 'none' // never run
+  | 'checking' // never run; intake or documents still loading (japa#309)
+  | 'needs_content' // never run; not enough to review yet (japa#309)
   | 'no_rubric'
   | 'running'
   | 'failed'
@@ -213,13 +222,32 @@ export type ReviewState =
   | 'stale_free'
   | 'load_error'; // couldn't load and nothing cached
 
+/**
+ * `content` (japa#309) only refines "never run": every other state (running,
+ * failed, ready, out of date, offline, no rubric) is unchanged. Omitted, it
+ * counts as enough, as before.
+ *
+ * `submitted` is required with it on purpose: a submitted or closed
+ * application (`SUBMITTED_STATUSES`) is view only, so the applicant can no
+ * longer add what is missing. Its card stays exactly as before this issue
+ * ("See how ready you are", no action), whatever the content check says.
+ */
 export function deriveReviewState(
   result: AssessmentResult | undefined,
   isError: boolean,
+  content?: { check: ReviewContent; submitted: boolean },
 ): ReviewState {
-  if (!result) return isError ? 'load_error' : 'none';
+  const check: ReviewContent =
+    content && !content.submitted ? content.check : { status: 'enough' };
+  const never = (): ReviewState =>
+    check.status === 'loading'
+      ? 'checking'
+      : check.status === 'missing'
+        ? 'needs_content'
+        : 'none';
+  if (!result) return isError ? 'load_error' : never();
   if (result.kind === 'empty')
-    return result.reason === 'no_rubric' ? 'no_rubric' : 'none';
+    return result.reason === 'no_rubric' ? 'no_rubric' : never();
   const { meta, tier } = result.view;
   if (isInFlight(meta)) return 'running';
   if (meta.status === 'failed') return 'failed';
@@ -232,14 +260,21 @@ export function deriveReviewState(
 export interface ReviewCta {
   label: string;
   /** What a tap does. */
-  action: 'run' | 'open' | 'upgrade' | 'retry';
+  /** `contact` (japa#310): open support, for a failure a retry cannot fix. */
+  action: 'run' | 'open' | 'upgrade' | 'retry' | 'contact';
   disabled?: boolean;
   withArrow?: boolean;
 }
 
+/**
+ * `canRetry` (japa#310) only matters for `failed`: false when the failure is
+ * one a retry cannot fix (see `failedCanRetry` in reviewCopy.ts), and the bar
+ * then offers "Contact support" instead of "Try again". Omitted, it is true.
+ */
 export function deriveReviewCta(
   state: ReviewState,
   submitted: boolean,
+  canRetry = true,
 ): ReviewCta | null {
   // After submission: view only. A review that was never run has no CTA.
   if (submitted) {
@@ -251,12 +286,19 @@ export function deriveReviewCta(
     case 'none':
     case 'load_error':
       return { label: 'Review my application', action: 'run', withArrow: true };
+    // japa#309: not offered until the inputs are known, and not at all while
+    // something is still needed (the card lists what, and each line opens it).
+    case 'checking':
+      return { label: 'Review my application', action: 'run', disabled: true };
+    case 'needs_content':
     case 'no_rubric':
       return null;
     case 'running':
       return { label: 'Reviewing…', action: 'open', disabled: true };
     case 'failed':
-      return { label: 'Try again', action: 'retry' };
+      return canRetry
+        ? { label: 'Try again', action: 'retry' }
+        : { label: CONTACT_SUPPORT_LABEL, action: 'contact' };
     case 'ready':
       return { label: 'See my review', action: 'open', withArrow: true };
     case 'stale_full':
@@ -277,6 +319,9 @@ export function ReviewCard({
   offlineCached,
   onSeeLast,
   onRetryLoad,
+  gaps,
+  intakeStep = 0,
+  onOpenGap,
 }: {
   state: ReviewState;
   result?: AssessmentResult;
@@ -284,6 +329,12 @@ export function ReviewCard({
   offlineCached: boolean;
   onSeeLast: () => void;
   onRetryLoad: () => void;
+  /** japa#309: what is still needed, for the `needs_content` state. */
+  gaps?: ReviewGaps | null;
+  /** The intake's step number on the screen (0 = no intake step shown). */
+  intakeStep?: number;
+  /** Opens the step a "still needed" line names. */
+  onOpenGap?: (gap: ReviewGap) => void;
 }) {
   const view = result?.kind === 'review' ? result.view : null;
   const meta = view?.meta ?? null;
@@ -309,7 +360,54 @@ export function ReviewCard({
     );
   }
 
-  if (state === 'none') {
+  // japa#309: one line per missing part, each opening its step.
+  if (state === 'needs_content' && gaps) {
+    return (
+      <View style={cardStyle}>
+        <CardHead state="empty" title="See how ready you are" />
+        <Text style={body}>{NEEDS_CONTENT_BODY}</Text>
+        <View style={{ marginTop: 10, gap: 8 }}>
+          {reviewGapLines(gaps, intakeStep).map(({ gap, text }) => (
+            <PressableStatic
+              key={gap}
+              onPress={() => onOpenGap?.(gap)}
+              accessibilityRole="button"
+              accessibilityLabel={text}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                paddingVertical: 11,
+                paddingHorizontal: 12,
+                borderRadius: 13,
+                borderWidth: 1,
+                borderColor: EX.color.line06,
+                opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: 13.5,
+                  lineHeight: 19,
+                  fontWeight: '600',
+                  color: EX.color.ink,
+                }}
+              >
+                {text}
+              </Text>
+              <Ic.chevR size={16} color={EX.color.faint} strokeWidth={1.8} />
+            </PressableStatic>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  // 'checking' looks like 'none'; only the sticky bar differs (disabled).
+  // `needs_content` without gaps cannot happen from the screen; it falls back
+  // here too rather than drawing an empty list.
+  if (state === 'none' || state === 'checking' || state === 'needs_content') {
     return (
       <View style={cardStyle}>
         <CardHead state="empty" title="See how ready you are" />

@@ -42,6 +42,7 @@ import {
 import { UpgradeLink } from '@/components/explorer/UpgradePrompt';
 import { OutlineButton } from '@/components/explorer/review/ReviewParts';
 import { useStartReview } from '@/hooks/useCaseOfficer';
+import { NEEDS_CONTENT_ELSEWHERE } from '@/components/explorer/review/reviewCopy';
 import type { ChatCitation, ChatReplyKind } from '@/types/ai-chat.type';
 
 // Mirrors the backend limit (CHAT_MAX_MESSAGE_CHARS).
@@ -186,6 +187,8 @@ export default function AiChatScreen() {
       setReviewMsg(
         'You’re offline, so we couldn’t start your review. Reconnect and try again.',
       );
+    // japa#309: nothing to review yet; the application screen lists what.
+    else if (out === 'not_enough') setReviewMsg(NEEDS_CONTENT_ELSEWHERE);
     else setReviewMsg('We couldn’t start your review. Try again in a moment.');
   };
 
