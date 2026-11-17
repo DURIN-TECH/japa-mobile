@@ -47,6 +47,9 @@
         {
           "ios": {
             "useFrameworks": "dynamic"
+          },
+          "android": {
+            "kotlinVersion": "2.4.0"
           }
         }
       ],
