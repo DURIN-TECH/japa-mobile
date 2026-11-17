@@ -15,13 +15,18 @@ import {
   updatePassword as fbUpdatePassword,
   deleteUser as fbDeleteUser,
   EmailAuthProvider,
-  FirebaseAuthTypes,
+} from '@react-native-firebase/auth';
+// RNFB 27 (japa#399) dropped the namespaced `FirebaseAuthTypes`; the modular
+// API exports the same shapes as top-level types.
+import type {
+  ConfirmationResult as RNFBConfirmationResult,
+  User as RNFBUser,
 } from '@react-native-firebase/auth';
 // Emulator opt-in flag + resolved Auth-emulator URL (env-driven, platform-aware).
 import { USE_EMULATOR, AUTH_EMULATOR_URL } from '@/config/env';
 
-export type ConfirmationResult = FirebaseAuthTypes.ConfirmationResult;
-export type FirebaseUser = FirebaseAuthTypes.User;
+export type ConfirmationResult = RNFBConfirmationResult;
+export type FirebaseUser = RNFBUser;
 
 class AuthService {
   // ─────────────────────────────────────────────

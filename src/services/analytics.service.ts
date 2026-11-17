@@ -27,6 +27,11 @@ import {
   setUserId,
   setUserProperty,
 } from '@react-native-firebase/analytics';
+// RNFB 26+ (japa#399): `logEvent` returns void (it queues the event
+// synchronously), so it is called without `await`. The `log*` helpers and
+// `setUser*` still return promises and are still awaited. Errors from either
+// are caught by the same try/catch, so nothing a user sees changes.
+
 import { minorUnitFactor } from '@/components/explorer/content';
 import type { Money } from '@/types/money.type';
 
@@ -100,7 +105,7 @@ class AnalyticsService {
     mode: 'self' | 'agent'; // self-service vs agent-assisted
   }) {
     try {
-      await logEvent(this.analytics, 'application_created', params);
+      logEvent(this.analytics, 'application_created', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics app created error:', error);
     }
@@ -111,7 +116,7 @@ class AnalyticsService {
     status: string;
   }) {
     try {
-      await logEvent(this.analytics, 'application_status_change', params);
+      logEvent(this.analytics, 'application_status_change', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics status change error:', error);
     }
@@ -132,7 +137,7 @@ class AnalyticsService {
     charged: Money;
   }) {
     try {
-      await logEvent(this.analytics, 'consultation_booked', {
+      logEvent(this.analytics, 'consultation_booked', {
         agentId: params.agentId,
         type: params.type,
         value: toMajorUnits(params.charged), // Firebase uses `value` for revenue
@@ -152,7 +157,7 @@ class AnalyticsService {
     fileType: string;
   }) {
     try {
-      await logEvent(this.analytics, 'document_uploaded', params);
+      logEvent(this.analytics, 'document_uploaded', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics doc upload error:', error);
     }
@@ -169,7 +174,7 @@ class AnalyticsService {
     score: number; // 0-100 eligibility score
   }) {
     try {
-      await logEvent(this.analytics, 'eligibility_check', params);
+      logEvent(this.analytics, 'eligibility_check', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics eligibility error:', error);
     }
@@ -189,7 +194,7 @@ class AnalyticsService {
       | 'need_a_visa_details_opened',
   ) {
     try {
-      await logEvent(this.analytics, name);
+      logEvent(this.analytics, name);
     } catch (error) {
       if (__DEV__) console.warn('Analytics need-a-visa error:', error);
     }
@@ -210,7 +215,7 @@ class AnalyticsService {
       | 'holdings_none_declared',
   ) {
     try {
-      await logEvent(this.analytics, name);
+      logEvent(this.analytics, name);
     } catch (error) {
       if (__DEV__) console.warn('Analytics holdings error:', error);
     }
@@ -229,7 +234,7 @@ class AnalyticsService {
       | 'apply_through_changed',
   ) {
     try {
-      await logEvent(this.analytics, name);
+      logEvent(this.analytics, name);
     } catch (error) {
       if (__DEV__) console.warn('Analytics shared-route error:', error);
     }
@@ -263,7 +268,7 @@ class AnalyticsService {
     } = {},
   ) {
     try {
-      await logEvent(this.analytics, name, params);
+      logEvent(this.analytics, name, params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics review error:', error);
     }
@@ -276,7 +281,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackAgentViewed(agentId: string) {
     try {
-      await logEvent(this.analytics, 'agent_viewed', { agent_id: agentId });
+      logEvent(this.analytics, 'agent_viewed', { agent_id: agentId });
     } catch (error) {
       if (__DEV__) console.warn('Analytics agent view error:', error);
     }
@@ -284,7 +289,7 @@ class AnalyticsService {
 
   async trackVisaViewed(params: { visaTypeId: string; countryCode: string }) {
     try {
-      await logEvent(this.analytics, 'visa_viewed', params);
+      logEvent(this.analytics, 'visa_viewed', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics visa view error:', error);
     }
@@ -297,7 +302,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackOnboardingStep(step: string) {
     try {
-      await logEvent(this.analytics, 'onboarding_step', { step });
+      logEvent(this.analytics, 'onboarding_step', { step });
     } catch (error) {
       if (__DEV__) console.warn('Analytics onboarding error:', error);
     }
@@ -305,7 +310,7 @@ class AnalyticsService {
 
   async trackOnboardingCompleted() {
     try {
-      await logEvent(this.analytics, 'onboarding_completed');
+      logEvent(this.analytics, 'onboarding_completed');
     } catch (error) {
       if (__DEV__) console.warn('Analytics onboarding complete error:', error);
     }
@@ -321,7 +326,7 @@ class AnalyticsService {
       await logSearch(this.analytics, { search_term: query });
       // If a category filter was applied, log a separate detailed event
       if (category) {
-        await logEvent(this.analytics, 'search_with_category', {
+        logEvent(this.analytics, 'search_with_category', {
           search_term: query,
           category,
         });
@@ -344,7 +349,7 @@ class AnalyticsService {
     amount: Money;
   }) {
     try {
-      await logEvent(this.analytics, 'payment_request_approved', {
+      logEvent(this.analytics, 'payment_request_approved', {
         request_id: params.requestId,
         value: toMajorUnits(params.amount),
         currency: params.amount.currency,
@@ -359,7 +364,7 @@ class AnalyticsService {
     amount: Money;
   }) {
     try {
-      await logEvent(this.analytics, 'payment_request_rejected', {
+      logEvent(this.analytics, 'payment_request_rejected', {
         request_id: params.requestId,
         value: toMajorUnits(params.amount),
         currency: params.amount.currency,
@@ -377,7 +382,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackError(errorMessage: string, context?: Record<string, string>) {
     try {
-      await logEvent(this.analytics, 'app_error', {
+      logEvent(this.analytics, 'app_error', {
         error_message: errorMessage.substring(0, 100),
         ...context,
       });

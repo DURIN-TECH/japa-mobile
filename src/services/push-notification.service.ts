@@ -141,7 +141,11 @@ class PushNotificationService {
     const gen = this.generation;
     const stale = () => gen !== this.generation;
     try {
-      // Request permission — returns authorization status
+      // Request permission — returns authorization status.
+      // RNFB 25+ marks `requestPermission` deprecated (upstream points at
+      // react-native-permissions / expo-notifications). It still works the
+      // same on RNFB 27 (japa#399), and swapping it would change the prompt
+      // flow and add a native dependency, so it stays until RNFB removes it.
       const authStatus = await requestPermission(this.messaging);
       if (stale()) return; // signed out meanwhile: do nothing
       // authStatus: -1 = not determined, 0 = denied, 1 = authorized, 2 = provisional
