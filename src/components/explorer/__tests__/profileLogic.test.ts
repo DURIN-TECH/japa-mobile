@@ -44,6 +44,10 @@ describe('paidCount / paidLabel', () => {
     expect(paidCount(rows)).toBe(3);
     expect(paidLabel(rows)).toBe('3 paid');
   });
+  it('a failed charge is never counted (japa#353)', () => {
+    expect(paidCount([tx('failed')])).toBe(0);
+    expect(paidCount([tx('failed'), tx('completed'), tx('failed')])).toBe(1);
+  });
   it('failed and refunded are not counted', () => {
     expect(paidLabel([tx('failed'), tx('refunded')])).toBe('0 paid');
   });

@@ -6,7 +6,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, expect, it } from '@jest/globals';
-import { mapTransaction } from '../liveTransactions';
+import { mapStatus, mapTransaction, totalsPaid } from '../liveTransactions';
+import type { Payment } from '@/types/explorer.type';
 import type { ApiTransaction } from '@/hooks/useTransactions';
 
 /** A consultation fee exactly as the client endpoint returns it. */
@@ -58,5 +59,84 @@ describe('mapTransaction', () => {
       paymentProvider: 'something-new',
     } as unknown as ApiTransaction;
     expect(mapTransaction(odd).method).toBe('—');
+  });
+});
+
+// ── japa#353: failed charges and unknown statuses ───────────────────────────
+describe('mapStatus', () => {
+  it('keeps the existing mappings', () => {
+    expect(mapStatus('completed')).toBe('paid');
+    expect(mapStatus('released')).toBe('paid');
+    expect(mapStatus('pending')).toBe('pending');
+    expect(mapStatus('processing')).toBe('pending');
+    expect(mapStatus('held_in_escrow')).toBe('pending');
+    expect(mapStatus('refunded')).toBe('refunded');
+  });
+
+  it('maps a failed charge to failed, never paid', () => {
+    expect(mapStatus('failed')).toBe('failed');
+    expect(mapTransaction({ ...clientRow, status: 'failed' }).status).toBe(
+      'failed',
+    );
+  });
+
+  it('maps an unknown status to pending, never paid', () => {
+    const odd = 'something_new' as unknown as ApiTransaction['status'];
+    expect(mapStatus(odd)).toBe('pending');
+    expect(mapTransaction({ ...clientRow, status: odd }).status).toBe(
+      'pending',
+    );
+  });
+});
+
+describe('totalsPaid', () => {
+  /** A Payments row with only what the total reads. */
+  const row = (
+    status: Payment['status'],
+    amountMinor: number,
+    currency = 'NGN',
+  ): Pick<Payment, 'status' | 'amount'> => ({
+    status,
+    amount: { amountMinor, currency },
+  });
+
+  it('₦50,000 paid + ₦50,000 failed → Total paid ₦50,000', () => {
+    expect(
+      totalsPaid([row('paid', 5_000_000), row('failed', 5_000_000)]),
+    ).toEqual([{ amountMinor: 5_000_000, currency: 'NGN' }]);
+  });
+
+  it('sums only paid rows (failed, pending, refunded skipped)', () => {
+    expect(
+      totalsPaid([
+        row('paid', 1_000),
+        row('failed', 2_000),
+        row('pending', 4_000),
+        row('refunded', 8_000),
+        row('paid', 500),
+      ]),
+    ).toEqual([{ amountMinor: 1_500, currency: 'NGN' }]);
+  });
+
+  it('keeps one total per currency, in first-seen order', () => {
+    expect(
+      totalsPaid([
+        row('paid', 3_700, 'USD'),
+        row('failed', 9_999, 'USD'),
+        row('paid', 1_000, 'NGN'),
+        row('pending', 2_000, 'NGN'),
+        row('refunded', 4_000, 'USD'),
+        row('paid', 300, 'USD'),
+        row('failed', 7_000, 'GBP'),
+      ]),
+    ).toEqual([
+      { amountMinor: 4_000, currency: 'USD' },
+      { amountMinor: 1_000, currency: 'NGN' },
+    ]);
+  });
+
+  it('only failed rows → no totals (the screen shows the zero total)', () => {
+    expect(totalsPaid([row('failed', 5_000_000)])).toEqual([]);
+    expect(totalsPaid([])).toEqual([]);
   });
 });

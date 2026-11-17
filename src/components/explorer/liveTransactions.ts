@@ -12,10 +12,14 @@
 //     dollar price comes from `priceUsdCents` when the backend sent it.
 //   • date: Firestore Timestamps are serialized inconsistently → normalize via
 //     liveDate.ts `fmtDate` (`toDate`-safe).
-//   • status: collapse the 7 backend statuses into the 3 Payment states.
+//   • status: collapse the 7 backend statuses into the 4 Payment states
+//     (japa#353: `failed` is its own state; an unknown status is `pending`).
+//   • totalsPaid: the "Total paid" hero sum, one Money per currency, of the
+//     `paid` rows only (japa#353: failed charges never count).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Payment } from '@/types/explorer.type';
+import type { Money } from '@/types/money.type';
 import type { ApiTransaction } from '@/hooks/useTransactions';
 import { fmtDate } from '@/components/explorer/liveDate';
 import { usdCents } from '@/components/explorer/content';
@@ -44,8 +48,9 @@ const METHOD_LABEL: Record<ApiTransaction['paymentProvider'], string> = {
   manual: '—',
 };
 
-// Collapse the backend's 7 statuses into the 3 Payment states the pills expect.
-function mapStatus(status: ApiTransaction['status']): Payment['status'] {
+// Collapse the backend's 7 statuses into the 4 Payment states the pills expect.
+// Exported for its unit tests.
+export function mapStatus(status: ApiTransaction['status']): Payment['status'] {
   switch (status) {
     case 'completed':
     case 'released':
@@ -56,9 +61,16 @@ function mapStatus(status: ApiTransaction['status']): Payment['status'] {
       return 'pending';
     case 'refunded':
       return 'refunded';
-    // failed / anything unexpected — default to 'paid' per the agreed mapping.
+    // japa#353: a failed charge is shown as "Failed", never as "Paid".
+    case 'failed':
+      return 'failed';
+    // Anything unexpected → 'pending' (japa#353). An unknown status is most
+    // likely a new in-progress state on the backend; "Pending" claims neither
+    // that money moved (unlike "Paid") nor that it did not (unlike "Failed",
+    // which would alarm a client whose payment may have gone through), and
+    // pending rows are already left out of "Total paid".
     default:
-      return 'paid';
+      return 'pending';
   }
 }
 
@@ -79,4 +91,23 @@ export function mapTransaction(t: ApiTransaction): Payment {
     status: mapStatus(t.status),
     method: METHOD_LABEL[t.paymentProvider] || '—',
   };
+}
+
+// ── Total paid — one sum PER CURRENCY of every `paid` row ───────────────────
+// Minor units of different currencies are never added together: the result is
+// one Money per currency, in first-seen order. Only `paid` rows count; failed,
+// pending and refunded rows are skipped (japa#353).
+export function totalsPaid(
+  rows: Pick<Payment, 'status' | 'amount'>[],
+): Money[] {
+  const byCurrency = new Map<string, number>();
+  for (const p of rows) {
+    if (p.status !== 'paid') continue;
+    const c = p.amount.currency;
+    byCurrency.set(c, (byCurrency.get(c) ?? 0) + p.amount.amountMinor);
+  }
+  return [...byCurrency].map(([currency, amountMinor]) => ({
+    amountMinor,
+    currency,
+  }));
 }
