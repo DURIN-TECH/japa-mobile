@@ -30,6 +30,12 @@ export interface Application {
   // Mode
   mode: ApplicationMode;
   agentId?: string;
+  /**
+   * The agency the case belongs to, when there is one (japa#307). The backend
+   * already returns it; a case with an agency is never self-service, even
+   * with `mode: 'self'` (see `isSelfServiceApplication`).
+   */
+  agencyId?: string;
 
   // Status & Progress
   status: ApplicationStatus;

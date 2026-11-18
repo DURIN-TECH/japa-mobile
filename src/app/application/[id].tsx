@@ -59,6 +59,8 @@ import {
   mapApplication,
   mapTimeline,
 } from '@/components/explorer/liveApplications';
+// japa#307: what the sticky button says and where it goes.
+import { stickyAction } from '@/components/explorer/applicationActions';
 import { fmtDate } from '@/components/explorer/liveDate';
 import {
   useApplication,
@@ -576,21 +578,40 @@ export default function AppDetail() {
       },
     });
 
-  // Sticky / nudge action: perform the next step (self-service flow) when
-  // actionable, otherwise open the agent conversation.
+  // ── Sticky button (japa#307) ───────────────────────────────────────────────
+  // The label and target come from the pure `stickyAction` helper, which
+  // reads the raw backend case (it needs `mode` / `agencyId`, which the
+  // mapped `App` doesn't carry). A self-service case always gets a way back
+  // into its steps while it is open; a case without an agent never offers
+  // "Message your agent"; `null` → no sticky button at all.
+  const sticky = stickyAction(liveQ.data);
   const openConvo = () => {
     // Never into messaging in a self-service-only build (japa#334).
     if (selfServiceOnly) return;
     if (convo) router.push(`/messages/${convo.id}`);
   };
   const onNext = () => {
+    if (!sticky) return;
     // self-service/[id] takes the APPLICATION id (japa#145).
-    if (actionable) router.push(`/self-service/${app.id}`);
+    if (sticky.target === 'self-service')
+      router.push(`/self-service/${app.id}`);
     else openConvo();
   };
-  // Sticky CTA: with no next step its only job is "Message your agent", so a
-  // self-service-only build shows no CTA at all then (japa#334).
-  const showStickyCta = actionable || !selfServiceOnly;
+  // ── Sticky CTA visibility: japa#307 + japa#334 combined ───────────────────
+  // Merge of dev into #307. Dev (#334) hid the CTA in a self-service-only
+  // build when there was no next step (`actionable || !selfServiceOnly`),
+  // because then its only job was "Message your agent". #307 moved the
+  // decision into `stickyAction`, which already returns `null` when there is
+  // nothing to offer. Both rules are kept:
+  //   - no sticky action (closed self-service case, or no agent and not
+  //     self-service) → no CTA (#307);
+  //   - a self-service-only build never shows the messaging CTA, so an
+  //     agent case with nothing outstanding shows no CTA there (#334).
+  // A self-service case's "Continue application" still shows in a
+  // self-service-only build; that is the way back #307 adds (and how #307's
+  // e2e QA ran, with the flag on).
+  const showStickyCta =
+    !!sticky && !(selfServiceOnly && sticky.target === 'agent-conversation');
 
   return (
     // e2e ids (Maestro, japa#361): `screen.application`, `application.scroll`,
@@ -1471,10 +1492,12 @@ export default function AppDetail() {
         </View>
       </Animated.ScrollView>
 
-      {/* ── Sticky coral CTA (bar padding 15/22, glass rgba(251,247,240,0.8)) ── */}
-      {/* Not shown in a self-service-only build when there is no next step
-          (it would only message the agent, japa#334). */}
-      {showStickyCta ? (
+      {/* ── Sticky coral CTA (bar padding 15/22, glass rgba(251,247,240,0.8)) ──
+          japa#307: hidden when `stickyAction` returns null (closed
+          self-service case, or no agent and not self-service).
+          japa#334: also hidden in a self-service-only build when it would
+          only message the agent. See `showStickyCta` above. */}
+      {showStickyCta && sticky ? (
         <BlurView
           intensity={30}
           tint="light"
@@ -1509,7 +1532,9 @@ export default function AppDetail() {
             }}
           >
             <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-              {app.next.cta ?? 'Message your agent'}
+              {/* japa#307: label from `stickyAction` (replaces dev's
+                  `app.next.cta ?? 'Message your agent'`). */}
+              {sticky.label}
             </Text>
             <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
           </Pressable>
