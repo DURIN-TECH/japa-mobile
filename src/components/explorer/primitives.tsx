@@ -9,12 +9,14 @@
 
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   StyleProp,
   Text,
   TextStyle,
   View,
   ViewStyle,
+  type AccessibilityState,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
@@ -29,7 +31,9 @@ import { EX, EXScrim, displayText } from './theme';
 import { STATUS } from './content';
 // Flag art comes from the reusable country assets module (japa#145).
 import { Ic } from './icons';
+import { PressableStatic } from './PressableStatic';
 import { countryFlag } from '@/assets/countries';
+// japa#146: GlassButton's press feedback (function-style style, safely).
 
 // ── Flag — round flag image (flagcdn), matches native app ────────────────────
 export function Flag({
@@ -281,17 +285,65 @@ export function ScreenHeader({
 }
 
 // ── GlassButton — floating blurred circular control over imagery ─────────────
+// japa#146 adds optional props (all off by default, so existing callers look
+// and behave exactly as before):
+//   iconFill   — passed to the icon's `fill` (the saved heart: coral)
+//   loading    — small white spinner instead of the icon
+//   dimmed     — icon at 60% opacity (the heart's "list failed" state)
+//   disabled   — no press (and no press feedback)
+//   accessibilityLabel / accessibilityState
+// With an onPress it has role "button" and press feedback (the circle drops
+// to 0.7 opacity while pressed); without one it is decorative, as before. Built on
+// PressableStatic, because a function-style `style` on a plain Pressable
+// renders unstyled in this build.
 export function GlassButton({
   icon: IconCmp,
   onPress,
   style,
+  iconFill,
+  loading = false,
+  dimmed = false,
+  disabled = false,
+  accessibilityLabel,
+  accessibilityState,
+  testID,
 }: {
   icon: React.ElementType;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
+  iconFill?: string;
+  loading?: boolean;
+  dimmed?: boolean;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityState?: AccessibilityState;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
+  const interactive = !!onPress;
   return (
-    <Pressable onPress={onPress} hitSlop={6} style={style}>
+    // Merge of dev (japa#361) into #146: dev's plain <Pressable> only added
+    // a testID; #146 replaced it with PressableStatic + a11y/disabled props.
+    // Keep #146's element and carry dev's testID across so Maestro flows
+    // can still find the heart.
+    <PressableStatic
+      testID={testID}
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={6}
+      // Only a button with a handler is announced as one and fades on
+      // press; a decorative GlassButton (no onPress, e.g. the agency
+      // screen's arrow) stays exactly as before.
+      accessibilityRole={interactive ? 'button' : undefined}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={
+        interactive ? { disabled, ...accessibilityState } : accessibilityState
+      }
+      style={({ pressed }) => [
+        style,
+        { opacity: pressed && interactive && !disabled ? 0.7 : 1 },
+      ]}
+    >
       <BlurView
         intensity={30}
         tint="dark"
@@ -307,9 +359,20 @@ export function GlassButton({
           backgroundColor: 'rgba(20,16,12,0.26)',
         }}
       >
-        <IconCmp size={21} color="#fff" strokeWidth={1.8} />
+        {loading ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <View style={{ opacity: dimmed ? 0.6 : 1 }}>
+            <IconCmp
+              size={21}
+              color="#fff"
+              strokeWidth={1.8}
+              {...(iconFill ? { fill: iconFill } : null)}
+            />
+          </View>
+        )}
       </BlurView>
-    </Pressable>
+    </PressableStatic>
   );
 }
 
@@ -562,7 +625,8 @@ export function Scrim({
   diagonal = false,
   style,
 }: {
-  variant?: keyof typeof EXScrim;
+  // `sheet` is a flat backdrop colour, not a gradient (japa#347).
+  variant?: Exclude<keyof typeof EXScrim, 'sheet'>;
   diagonal?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {

@@ -31,7 +31,10 @@ import { RETURN_TO_APP } from '@/hooks/paystackCheckout';
  *
  * @param applicationId - Filter to a specific application (optional)
  */
-export function usePaymentRequests(applicationId?: string) {
+export function usePaymentRequests(
+  applicationId?: string,
+  opts: { enabled?: boolean } = {},
+) {
   const queryParams = applicationId
     ? `?role=client&applicationId=${applicationId}`
     : '?role=client';
@@ -44,6 +47,8 @@ export function usePaymentRequests(applicationId?: string) {
       );
       return response.data ?? [];
     },
+    // pay.tsx reads a request's amount only on the payment-request path.
+    enabled: opts.enabled ?? true,
   });
 }
 

@@ -343,6 +343,8 @@ export default function IntakeScreen() {
       {header}
 
       <ScrollView
+        // e2e (japa#361): the intake form, `screen.intake`.
+        testID="screen.intake"
         ref={scrollRef}
         style={{ flex: 1 }}
         keyboardShouldPersistTaps="handled"
@@ -439,6 +441,8 @@ export default function IntakeScreen() {
               </View>
             ) : null}
             <SolidButton
+              // e2e (Maestro, japa#361). No visual effect.
+              testID="intake.save"
               label={ctaLabel}
               onPress={() => doSave('back')}
               loading={saving}

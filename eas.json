@@ -50,7 +50,8 @@
       },
       "env": {
         "APP_ENV": "production",
-        "CI": "true"
+        "CI": "true",
+        "EXPO_PUBLIC_SELF_SERVICE_ONLY": "true"
       }
     },
     "tester": {
@@ -65,7 +66,8 @@
       },
       "env": {
         "APP_ENV": "staging",
-        "CI": "true"
+        "CI": "true",
+        "EXPO_PUBLIC_SELF_SERVICE_ONLY": "true"
       }
     }
   },

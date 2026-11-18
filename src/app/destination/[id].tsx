@@ -17,6 +17,10 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
+import {
+  GOV_FEE_COPY,
+  formatCostUsd,
+} from '@/components/explorer/visaBreakdownLogic';
 import type { Dest, Req } from '@/types/explorer.type';
 import {
   mapRequirements,
@@ -40,7 +44,15 @@ import {
   loadErrorCopy,
 } from '@/components/explorer/states';
 import { Ic } from '@/components/explorer/icons';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import { NeedAVisaCard } from '@/components/explorer/NeedAVisaCard';
+// japa#146: the save heart and its floating failure message.
+import {
+  FloatingSaveError,
+  SavedHeartProvider,
+  useSavedHeart,
+} from '@/components/explorer/SavedHeart';
 import {
   Flag,
   GlassButton,
@@ -95,6 +107,7 @@ function PathCard({
   dark = false,
   onPress,
   disabled = false,
+  testID,
 }: {
   icon: React.ElementType;
   title: string;
@@ -105,9 +118,12 @@ function PathCard({
   onPress?: () => void;
   /** japa#174: dimmed like the sticky CTA when the visa can't be started. */
   disabled?: boolean;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       disabled={disabled}
       style={{
@@ -197,6 +213,9 @@ function PathCard({
 
 export default function DestinationDetail() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides the agent path card and the
+  // "Top agents" strip. Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
   const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
 
@@ -251,7 +270,9 @@ export default function DestinationDetail() {
 
   // Top agents rail (GET /agents/top). japa#145: no demo agents; the rail is
   // hidden when the backend has none (or the call failed).
-  const topAgentsQ = useTopAgents(3);
+  // Self-service-only build (japa#334): no agent rail and no "Work with an
+  // agent" card, so the call is skipped (topAgents stays empty).
+  const topAgentsQ = useTopAgents(3, !selfServiceOnly);
   const topAgents = useMemo(
     () => (topAgentsQ.data ?? []).map(mapAgent),
     [topAgentsQ.data],
@@ -267,6 +288,17 @@ export default function DestinationDetail() {
     code ?? d?.flag ?? '',
     liveQ.data?.visaType.sharedRoute,
   );
+
+  // ── Save / remove heart (japa#146) ────────────────────────────────────────
+  // Shares the saved list's one query key with the Saved screen and Profile.
+  // The loaded visa draws the optimistic tile; the hook decides the heart's
+  // state, runs the write, reverts on failure and owns the floating message.
+  const heart = useSavedHeart({
+    countryCode: code ?? d?.flag ?? '',
+    visaId: d?.id ?? id ?? '',
+    visa: liveQ.data?.visaType,
+    countryName: d?.country,
+  });
 
   // ── First load, nothing cached: coral spinner ────────────────────────────
   if (liveQ.isLoading) {
@@ -306,7 +338,13 @@ export default function DestinationDetail() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    // e2e (japa#361): `screen.destination`, the path cards
+    // (`destination.path.agent` / `destination.path.self`) and the Top agents
+    // strip (`destination.topAgents`). No visual effect.
+    <View
+      testID="screen.destination"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       {/* HERO — fixed behind, parallaxes as the sheet scrolls over it */}
       <Animated.View
         style={[
@@ -388,9 +426,20 @@ export default function DestinationDetail() {
           paddingHorizontal: 18,
         }}
       >
-        <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
-        <GlassButton icon={Ic.heart} />
+        <GlassButton
+          icon={Ic.chevL}
+          onPress={() => router.back()}
+          accessibilityLabel="Back"
+        />
+        {/* japa#146: real save toggle (states in SavedHeart.tsx). */}
+        <SavedHeartProvider pop={heart.pop}>
+          <GlassButton {...heart.buttonProps} />
+        </SavedHeartProvider>
       </View>
+
+      {/* japa#146: a failed save / remove, floating right under the heart's
+          row (same layer), whatever the sheet's scroll position. */}
+      <FloatingSaveError error={heart.error} top={insets.top + 6 + 42 + 10} />
 
       {/* Scrolling content sheet */}
       <Animated.ScrollView
@@ -452,9 +501,10 @@ export default function DestinationDetail() {
             <View
               style={{ width: 1, height: 30, backgroundColor: EX.color.line08 }}
             />
+            {/* Government fee, US dollars only (japa#183). */}
             <StatCell
-              value={`$${d.price.toLocaleString()}`}
-              label="Starting at"
+              value={formatCostUsd(d.price)}
+              label={GOV_FEE_COPY.statLabel}
               accent={EX.color.primary}
             />
             <View
@@ -502,21 +552,28 @@ export default function DestinationDetail() {
             Choose your path
           </Text>
           <View style={{ gap: 10 }}>
+            {/* Hidden in a self-service-only build (japa#334): Self-service
+                is then the one path, and the heading above still reads fine
+                over a single option. */}
+            {selfServiceOnly ? null : (
+              <PathCard
+                dark
+                testID="destination.path.agent"
+                icon={Ic.users}
+                title="Work with an agent"
+                // japa#145: no invented expert count; open the top agent when
+                // there is one, else the Agents tab.
+                sub="Guided by a verified expert"
+                badge="Popular"
+                onPress={() =>
+                  topAgents[0]
+                    ? router.push(`/agent/${topAgents[0].id}`)
+                    : router.push('/(tabs)/agents')
+                }
+              />
+            )}
             <PathCard
-              dark
-              icon={Ic.users}
-              title="Work with an agent"
-              // japa#145: no invented expert count; open the top agent when
-              // there is one, else the Agents tab.
-              sub="Guided by a verified expert"
-              badge="Popular"
-              onPress={() =>
-                topAgents[0]
-                  ? router.push(`/agent/${topAgents[0].id}`)
-                  : router.push('/(tabs)/agents')
-              }
-            />
-            <PathCard
+              testID="destination.path.self"
               icon={Ic.docs}
               title="Self-service"
               sub="Step-by-step DIY application"
@@ -743,8 +800,9 @@ export default function DestinationDetail() {
             <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />
           </Pressable>
 
-          {/* Top agents (hidden when the backend has none, japa#145) */}
-          {topAgents.length ? (
+          {/* Top agents (hidden when the backend has none, japa#145, and in a
+              self-service-only build, japa#334) */}
+          {!selfServiceOnly && topAgents.length ? (
             <>
               <Text
                 style={{
@@ -760,6 +818,7 @@ export default function DestinationDetail() {
                 Top agents for {d.country}
               </Text>
               <ScrollView
+                testID="destination.topAgents"
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={{ marginHorizontal: -20 }}

@@ -59,11 +59,11 @@ import {
   ctaState,
   fromPrice,
   initialSelection,
+  listNote,
   orderedOptions,
   proposedOption,
   questionToAsk,
   sheetState,
-  unknownNote,
 } from '@/components/explorer/sharedRouteLogic';
 import { useApplication } from '@/hooks/useApplications';
 import {
@@ -430,7 +430,6 @@ export default function ApplyThroughSheet() {
     const proposed = state === 'proposal' ? proposedOption(view) : null;
     const asked = state === 'ask' ? questionToAsk(view) : null;
     const done = answeredQuestions(view, answers);
-    const unknown = state === 'list' ? unknownNote(view) : null;
     // In the ask state the list waits for the answer (dimmed, inert).
     const inert = state === 'ask';
 
@@ -544,9 +543,10 @@ export default function ApplyThroughSheet() {
 
         {/* ── Notes for the plain list ──────────────────────────────────────── */}
         {state === 'list' ? (
-          <View style={{ marginTop: 18, gap: 10 }}>
-            {unknown ? <InfoNote>{unknown}</InfoNote> : null}
-            <InfoNote>{SHARED_COPY.noRule}</InfoNote>
+          // One note only, chosen by `listNote` so it is true for the case:
+          // no rule, a rule that could not decide, or a skipped question.
+          <View style={{ marginTop: 18 }}>
+            <InfoNote>{listNote(view)}</InfoNote>
           </View>
         ) : null}
 

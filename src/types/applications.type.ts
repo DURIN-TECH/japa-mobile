@@ -56,9 +56,12 @@ export interface Application {
   documentsVerified: number;
   documentsRejected: number;
 
-  // Financial
+  // Financial (japa#183 / backend #181): integer US CENTS, in `costCurrency`.
+  // A 5,000,000 totalCost is $50,000.00, never ₦ and never $5,000,000.
   totalCost: number;
   amountPaid: number;
+  /** "USD"; absent on older docs, which are treated as USD. */
+  costCurrency?: string;
   paymentStatus: PaymentStatus;
 
   // Denormalized display fields (populated by backend)

@@ -9,8 +9,10 @@
  * - GET /agents/:id      → single agent detail (for agent profile screen)
  * - GET /agents/visa/:id → agents specializing in a specific visa type
  *
- * The backend stores consultation fees in WHOLE NAIRA (e.g. 50000 = ₦50,000;
- * issue #148). No scaling is needed for display.
+ * Consultation fees (japa#183): the backend stores the fee in US dollars and
+ * returns it as `consultationFeeUsd` (Money, cents) next to
+ * `consultationFeeLocal`, the server's figure in the viewer's currency (or
+ * `available: false` when it has no rate). The app never converts.
  * The `formatAgentForDisplay()` helper maps to the display format
  * expected by existing components (AgentCard, ConsultationCard, etc.).
  */
@@ -18,6 +20,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
+import type { LocalPriceQuote, Money } from '@/types/money.type';
 
 /**
  * Agent type matching the backend Agent model.
@@ -43,7 +46,10 @@ export interface ApiAgent {
   totalApplications: number;
   successRate: number; // 0-100 percentage
   responseTime: string; // e.g. '2-4 hours'
-  consultationFee: number; // whole naira (no scaling for display)
+  /** The stored fee in US cents; null = no fee set (books free). */
+  consultationFeeUsd: Money | null;
+  /** The server's local figure for that fee; `available: false` = no rate. */
+  consultationFeeLocal: LocalPriceQuote | null;
   isAvailable: boolean;
   availableSlots?: { dayOfWeek: number; startTime: string; endTime: string }[];
   createdAt: string;
@@ -138,10 +144,13 @@ export function useAgents() {
  * Used on: Home screen agent carousel.
  *
  * @param limit - Max number of agents to return (default 5)
+ * @param enabled - False skips the call (a self-service-only build, japa#334,
+ *   hides every agent rail, so the request would be wasted). Default true.
  */
-export function useTopAgents(limit = 5) {
+export function useTopAgents(limit = 5, enabled = true) {
   return useQuery({
     queryKey: ['agents', 'top', limit],
+    enabled,
     queryFn: async () => {
       const response = await apiService.get<ApiAgent[]>(
         `/agents/top?limit=${limit}`,
@@ -208,10 +217,12 @@ export function formatAgentForDisplay(agent: ApiAgent) {
     initials: getInitials(agent.displayName),
     rating: agent.rating,
     verificationCount: agent.totalReviews, // "verificationCount" = total reviews in legacy UI
-    price: agent.consultationFee, // whole naira, unscaled (#148)
+    // Fee (japa#183): both server objects, unconverted. Format with
+    // `priceParts(consultationFeeLocal, consultationFeeUsd)`.
+    consultationFeeUsd: agent.consultationFeeUsd ?? null,
     description: agent.bio ?? '',
     specializations: agent.specializations,
-    consultationFee: agent.consultationFee, // whole naira, unscaled (#148)
+    consultationFeeLocal: agent.consultationFeeLocal ?? null,
     availability: agent.isAvailable,
     responseTime: agent.responseTime,
     languages: agent.languages,

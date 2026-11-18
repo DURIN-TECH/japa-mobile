@@ -1,0 +1,139 @@
+# Subflow: the self-service journey with the e2e fixture (japa#361).
+#
+# Fixture (seli-backend `npm run seed:e2e`, docs/e2e-emulators.md): visa
+# IE / short-stay-c with an approved rulebook of 3 intake questions and 2
+# checklist items; client E2E_EMAIL on the free plan.
+#
+#   1. Explore → the Ireland Short Stay 'C' tile → "Self-service" path →
+#      the hub of a NEW application
+#   2. intake: answer every question, save → the hub's intake card is answered
+#   3. documents step lists the visa's checklist rows (no upload)
+#   4. the review screen's "See how ready you are" state, opened by its
+#      link, with the "Review my application" button present
+#
+# NO-AI / NO-PAYMENT RULE: this flow never taps the hub's sticky review
+# button (`selfService.reviewCta`, hidden until something is uploaded, japa#309) nor "Review my application"
+# (`review.start`); it only asserts they are there. The review screen is
+# reached by its deep link instead.
+#
+# Order-independent: when the fixture client already has an application for
+# this visa (the other flag state's journey ran first in this run), the
+# "already have one" sheet appears and the flow starts a NEW one.
+appId: ${APP_ID}
+---
+# Needs: signed in as E2E_EMAIL (the calling flow signs in and sets the flag).
+
+# ── 1. Explore → destination → Self-service → new application ────────────────
+- runFlow: open-destination.yaml
+- scrollUntilVisible:
+    element:
+      id: "destination\\.path\\.self"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "destination\\.path\\.self"
+# Either the new application's hub opens, or (when this run already started
+# one for this visa) the "already have one" sheet: start a NEW one there.
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.selfService|duplicateSheet"
+    timeout: 45000
+- runFlow:
+    when:
+      visible:
+        id: "duplicateSheet"
+    commands:
+      - tapOn:
+          id: "duplicateSheet\\.startNew"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.selfService"
+    timeout: 45000
+
+# ── 2. Intake: open, answer all three, save ──────────────────────────────────
+- scrollUntilVisible:
+    element:
+      id: "intakeStep\\.answer"
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: "intakeStep\\.answer"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.intake"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "intake\\.q\\.e2e-visit-purpose\\.option\\.tourism"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "intake\\.q\\.e2e-visit-purpose\\.option\\.tourism"
+- scrollUntilVisible:
+    element:
+      id: "intake\\.q\\.e2e-visited-before\\.no"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "intake\\.q\\.e2e-visited-before\\.no"
+- scrollUntilVisible:
+    element:
+      id: "intake\\.q\\.e2e-accommodation\\.text"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "intake\\.q\\.e2e-accommodation\\.text"
+- inputText: "A hotel in Dublin"
+# Every required question answered → the button reads "Save answers".
+- assertVisible:
+    id: "intake\\.save"
+    text: "Save answers"
+- tapOn:
+    id: "intake\\.save"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.selfService"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "intakeStep\\.edit"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Your answers"
+
+# ── 3. Documents step: the visa's checklist rows ─────────────────────────────
+- scrollUntilVisible:
+    element:
+      id: "checklist\\.item\\..*e2e-passport"
+    direction: DOWN
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "checklist\\.item\\..*e2e-accommodation-proof"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Proof of accommodation"
+# Nothing is uploaded yet, so the hub does NOT offer the review (japa#309: it
+# says what the review still needs instead). Never tap the review button in a
+# flow: it starts an AI review.
+- assertNotVisible:
+    id: "selfService\\.reviewCta"
+
+# ── 4. Review screen by link: "See how ready you are" (nothing tapped) ───────
+# The new application's id, read from the local emulators (localhost only).
+- runScript:
+    file: ../support/scripts/latest-application.js
+    env:
+      EMAIL: ${E2E_EMAIL}
+      COUNTRY: "IE"
+      VISA: "short-stay-c"
+- openLink: "durintech://self-service/${output.applicationId}/review"
+- extendedWaitUntil:
+    visible:
+      id: "review\\.empty"
+    timeout: 30000
+- assertVisible: "See how ready you are"
+- assertVisible:
+    id: "review\\.start"
+    text: "Review my application"

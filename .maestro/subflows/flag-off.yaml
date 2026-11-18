@@ -1,0 +1,15 @@
+# Subflow: switch the self-service-only flag OFF (japa#361, link from #375).
+#
+# Needs a signed-in app. Same rule as flag-on.yaml: wait for the real end
+# state, here the Agents tab back (after the reload) and Home on screen.
+appId: ${APP_ID}
+---
+- openLink: "durintech://dev/self-service-only?value=off"
+- extendedWaitUntil:
+    visible:
+      id: "tab\\.agents"
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.home"
+    timeout: 60000

@@ -1,0 +1,27 @@
+# Subflow: relaunch, sign out whoever is signed in, sign in as EMAIL
+# (japa#361). Ends on Home.
+#
+# Env: EMAIL (an emulator-only seed / fixture account, given by the flow
+# from the runner's E2E_EMAIL / FLAG_EMAIL), PASSWORD (the seed password,
+# from the runner). No real account is ever used.
+appId: ${APP_ID}
+---
+- runFlow: launch.yaml
+- runFlow: sign-out.yaml
+- tapOn:
+    id: "welcome\\.login"
+- tapOn:
+    id: "login\\.email"
+- inputText: ${EMAIL}
+# Let the email keyboard's suggestion bar settle, then focus the password
+# field, re-tapping if the first tap changed nothing (a run once typed the
+# password into nowhere and signed in with an empty one).
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    id: "login\\.password"
+    retryTapIfNoChange: true
+- inputText: ${PASSWORD}
+- tapOn:
+    id: "login\\.submit"
+- runFlow: after-sign-in.yaml

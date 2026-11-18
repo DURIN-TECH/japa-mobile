@@ -261,6 +261,8 @@ describe('liveAgencies.mapAgency', () => {
     slug: 'pathway',
     name: 'Pathway',
     ownerName: 'Owner',
+    consultationFeeUsd: null,
+    consultationFeeLocal: null,
     services: [],
     agentCount: 3,
     totalCases: 0,

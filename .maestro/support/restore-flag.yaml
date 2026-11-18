@@ -1,0 +1,12 @@
+# Runner-only (japa#361), after the suite: put the self-service-only flag
+# back to the build's value (`value=build`; the e2e bundle is built with the
+# flag off), so the device is left as a plain build would be. Flows never
+# rely on this: each flag flow sets the state it needs at its start.
+appId: ${APP_ID}
+---
+- runFlow: ../subflows/launch.yaml
+- openLink: "durintech://dev/self-service-only?value=build"
+- extendedWaitUntil:
+    visible:
+      id: "welcome\\.login|tab\\.agents"
+    timeout: 60000

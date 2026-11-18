@@ -8,8 +8,17 @@
 // The tier comes from the response (`meta.tier`), never from the client:
 //   free  band + up to three issue titles + (maybe) one blocking-rule flag,
 //         then a STATIC upgrade panel. Nothing locked is drawn from data.
-//   full  the cited review: rules not met yet, officer questions, statement
-//         notes, what we couldn't tell, strengths, what to do next.
+//   full  japa#384: "Our reading of your application" (the server's
+//         caseworker-style narrative, its conclusion and "What would change
+//         this"), then the disclaimer and country note, then the rule-by-rule
+//         working: a static LOCKED panel when `meta.working` is false, or the
+//         cited sections (rules not met yet, officer questions, statement notes,
+//         what we couldn't tell, strengths, what to do next) collapsed under
+//         "How each rule was applied" when it is true. With no reading
+//         (`narrative: null`) an InfoNote + "Start with these" stand in.
+//         `meta.working` comes from the server, never from `useFeature`.
+//   Both tiers, unless a fixed rule blocks: "Then you apply" (japa#312), the
+//   closing words that Seli doesn't send the application.
 //
 // Route-neutral: every rule string (titles, references, quotes, links) is
 // rendered from the data as received.
@@ -23,11 +32,15 @@
 //   Slot B  per-item action (#44), the `footer` of each FindingCard
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Linking,
   ScrollView,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Text,
   View,
 } from 'react-native';
@@ -50,13 +63,18 @@ import {
   CountryContextCard,
   CheckRow,
   FindingCard,
+  LockedPanel,
+  NextStepsCard,
   NumberedRow,
   OutlineButton,
+  ReadingCard,
   ReviewEmpty,
   ReviewHero,
   RuleQuote,
   SolidButton,
+  WorkingToggle,
 } from '@/components/explorer/review/ReviewParts';
+import { CouldntTell } from '@/components/explorer/review/CouldntTell';
 import { StickyBar } from '@/components/explorer/StickyBar';
 import { LayerPill } from '@/components/explorer/SharedRouteParts';
 import {
@@ -71,11 +89,30 @@ import {
   BAND_SUMMARY,
   DISCLAIMER,
   failedReasonLine,
+  failedCanRetry,
+  CONTACT_SUPPORT_LABEL,
+  SUPPORT_MAILTO,
+  FREE_BLOCKING_BODY,
+  fullBlockingBody,
+  fullTierBlocked,
+  isFixedRuleFinding,
+  nextSteps,
+  NOTHING_STOOD_OUT,
+  READING_CAPTION,
+  READING_MISSING_NOTE,
+  READING_STEPS_TITLE,
+  READING_TITLE,
+  START_WITH_THESE_TITLE,
+  WORKING_SECTION_TITLE,
   NO_REVIEW_BODY,
   NO_REVIEW_TITLE,
+  showsThenYouApply,
   staleCopy,
+  NEEDS_CONTENT_ELSEWHERE,
 } from '@/components/explorer/review/reviewCopy';
+import { ThenYouApply } from '@/components/explorer/review/ThenYouApply';
 import { useApplication } from '@/hooks/useApplications';
+import { useVisaType } from '@/hooks/useVisaTypes';
 import {
   assessmentKey,
   isForbidden,
@@ -86,45 +123,25 @@ import {
   type StartOutcome,
 } from '@/hooks/useCaseOfficer';
 import { analyticsService } from '@/services/analytics.service';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import type {
   AssessmentView,
-  CitedFinding,
   FullAssessmentData,
 } from '@/types/assessment.type';
 
 /** After this long the waiting line changes to the "still working" copy. */
 const STILL_WORKING_MS = 3 * 60 * 1000;
 
-/** True for the entry a fixed (mandatory-bar) rule produced. */
-const isBar = (f: CitedFinding) =>
-  f.isMandatoryBar === true || f.kind === 'mandatory_bar';
-
-/** "Fix the rule…" etc.: built in the app from which sections are non-empty. */
-function nextSteps(d: FullAssessmentData): string[] {
-  const steps: string[] = [];
-  const g = d.refusalGrounds.length;
-  if (g > 0)
-    steps.push(
-      g === 1
-        ? 'Fix the rule that isn’t met yet.'
-        : `Fix the ${g} rules that aren’t met yet.`,
-    );
-  if (d.insufficientInformation.length > 0)
-    steps.push('Add what we couldn’t check.');
-  const q = d.credibilityFlags.length;
-  if (q > 0)
-    steps.push(
-      q === 1
-        ? 'Get ready for the question an officer may ask.'
-        : `Get ready for the ${q} questions an officer may ask.`,
-    );
-  if (steps.length === 0)
-    steps.push('Keep your documents up to date until you apply.');
-  steps.push('Run the review again to see where you stand.');
-  return steps;
-}
+// The fixed-rule check (`isFixedRuleFinding`, `fullTierBlocked`) and
+// `nextSteps` ("Fix the rule…" etc.) live in reviewCopy.ts since japa#312, so
+// they are unit-tested together with the "Then you apply" rule that depends on
+// the same blocking check.
 
 export default function ReviewScreen() {
+  // Self-service-only build (japa#334): hides the "Find an agent" buttons and
+  // the line pointing at agents. Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
@@ -135,9 +152,21 @@ export default function ReviewScreen() {
   const q = useAssessment(applicationId);
   const { start, isStarting } = useStartReview(applicationId);
   const visaName = appQ.data?.visaTypeName;
+  // japa#312: the visa (same query and cache as the self-service screen), only
+  // to know whether it has an official link for "Then you apply".
+  const vtQ = useVisaType(
+    appQ.data?.countryCode ?? '',
+    appQ.data?.visaTypeId ?? '',
+  );
+  const hasOfficialLink: boolean | undefined = vtQ.data
+    ? !!vtQ.data.visaType?.applicationUrl?.trim()
+    : undefined;
 
   // Inline error for a failed start (offline / generic), shown above the CTA.
   const [startError, setStartError] = useState<string | null>(null);
+  // japa#384: "How each rule was applied" disclosure. Screen state only, so it
+  // is collapsed again on every visit.
+  const [workingOpen, setWorkingOpen] = useState(false);
   // Ticks while waiting so the "still working" copy can switch after 3 minutes.
   const [now, setNow] = useState(Date.now());
 
@@ -186,9 +215,64 @@ export default function ReviewScreen() {
       analyticsService.trackReviewEvent('review_viewed', {
         tier: view.tier,
         band: view.data?.readiness ?? 'none',
+        // japa#384: whether the working was sent, and whether a reading was
+        // drawn (the free tier has neither).
+        working: view.meta.working === true,
+        hasNarrative: view.tier === 'full' && !!view.data?.narrative,
       });
     }
   }, [view]);
+
+  // ── japa#384: "locked panel seen" ───────────────────────────────────────────
+  // Fires `review_working_locked_seen` once per assessment, the first time the
+  // locked panel's top edge comes into the viewport. Measured, not guessed:
+  //   panel top (in scroll content) = pad view's y + the panel wrapper's y
+  //   visible when                   scroll offset + viewport height >= top
+  // Every number lives in a ref (no re-render on scroll); the check runs on
+  // each layout and scroll event. The pad view is a direct child of the
+  // Animated.View that starts the content at y 0, and the panel wrapper is a
+  // direct child of the pad view, so the two offsets add up.
+  const lockedSeenFor = useRef<string | null>(null);
+  const geo = useRef({
+    padY: null as number | null,
+    panelY: null as number | null,
+    scrollY: 0,
+    viewportH: 0,
+  });
+  const lockedAssessmentId =
+    view?.tier === 'full' &&
+    view.meta.status === 'succeeded' &&
+    view.meta.working !== true
+      ? view.meta.assessmentId
+      : null;
+  const checkLockedSeen = useCallback(() => {
+    const g = geo.current;
+    if (!lockedAssessmentId || lockedSeenFor.current === lockedAssessmentId)
+      return;
+    if (g.padY === null || g.panelY === null || g.viewportH === 0) return;
+    if (g.scrollY + g.viewportH >= g.padY + g.panelY) {
+      lockedSeenFor.current = lockedAssessmentId;
+      analyticsService.trackReviewEvent('review_working_locked_seen', {
+        tier: 'full',
+      });
+    }
+  }, [lockedAssessmentId]);
+  const onScrollLayout = (e: LayoutChangeEvent) => {
+    geo.current.viewportH = e.nativeEvent.layout.height;
+    checkLockedSeen();
+  };
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    geo.current.scrollY = e.nativeEvent.contentOffset.y;
+    checkLockedSeen();
+  };
+  const onPadLayout = (e: LayoutChangeEvent) => {
+    geo.current.padY = e.nativeEvent.layout.y;
+    checkLockedSeen();
+  };
+  const onLockedLayout = (e: LayoutChangeEvent) => {
+    geo.current.panelY = e.nativeEvent.layout.y;
+    checkLockedSeen();
+  };
 
   const goBackToApplication = () => router.back();
   const goPlans = (source: 'panel' | 'rerun') => {
@@ -208,6 +292,8 @@ export default function ReviewScreen() {
       );
     else if (out === 'error')
       setStartError('We couldn’t start your review. Try again in a moment.');
+    // japa#309: nothing to review yet; the application screen lists what.
+    else if (out === 'not_enough') setStartError(NEEDS_CONTENT_ELSEWHERE);
     // 'upgrade' is not an error: the refetch shows the free out-of-date state.
   };
 
@@ -300,7 +386,13 @@ export default function ReviewScreen() {
   // ── No review yet (deep link) ────────────────────────────────────────────────
   if (result?.kind === 'empty') {
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+      // e2e (Maestro, japa#361): `review.empty` and its start button
+      // `review.start`. Flows assert on the button and NEVER tap it: it starts
+      // an AI review. No visual effect.
+      <View
+        testID="review.empty"
+        style={{ flex: 1, backgroundColor: EX.color.bg }}
+      >
         {header}
         <View style={pad}>
           <ReviewEmpty
@@ -316,6 +408,7 @@ export default function ReviewScreen() {
             </View>
           ) : null}
           <SolidButton
+            testID="review.start"
             label={isStarting ? 'Starting…' : 'Review my application'}
             loading={isStarting}
             onPress={() => run('cta')}
@@ -410,12 +503,23 @@ export default function ReviewScreen() {
               <InlineError message={startError} />
             </View>
           ) : null}
-          {/* A retry after a failed job is free on both tiers. */}
-          <SolidButton
-            label={isStarting ? 'Starting…' : 'Try again'}
-            loading={isStarting}
-            onPress={() => run('retry')}
-          />
+          {/* A retry after a failed job is free on both tiers. japa#310: when
+              a retry cannot succeed (the application is too big for one
+              review), the button opens support instead of failing again. */}
+          {failedCanRetry(meta) ? (
+            <SolidButton
+              label={isStarting ? 'Starting…' : 'Try again'}
+              loading={isStarting}
+              onPress={() => run('retry')}
+            />
+          ) : (
+            <SolidButton
+              label={CONTACT_SUPPORT_LABEL}
+              onPress={() =>
+                Linking.openURL(SUPPORT_MAILTO).catch(() => undefined)
+              }
+            />
+          )}
         </StickyBar>
       </View>
     );
@@ -429,8 +533,24 @@ export default function ReviewScreen() {
   const free = view.tier === 'free' ? view.data : null;
 
   // Full tier: a fixed rule blocks the application.
-  const barItem = full?.refusalGrounds.find(isBar) ?? null;
-  const fullBlocked = !!full && (barItem !== null || full.hasBlockingRule);
+  // japa#384: "blocked" is decided from `hasBlockingRule` / `blockingRule`
+  // (see `fullTierBlocked`), because without the working the finding arrays
+  // are absent. The rule text comes from `blockingRule`, sent whatever the
+  // working; a mandatory-bar finding is the fallback only when the working
+  // was sent and `blockingRule` was not.
+  const barItem =
+    full?.blockingRule ??
+    full?.refusalGrounds?.find(isFixedRuleFinding) ??
+    null;
+  const fullBlocked = !!full && fullTierBlocked(full);
+  // japa#384: the server's working flag (normalised to a boolean in toView).
+  const working = meta.working === true;
+  // japa#312: closing "Then you apply" words, finished + unblocked only.
+  // The ending depends on whether the visa has an official link (the
+  // "Where you apply" card has no button without one); unknown until loaded.
+  const thenYouApply = showsThenYouApply(view) ? (
+    <ThenYouApply hasLink={hasOfficialLink} />
+  ) : null;
 
   const disclaimer = (
     <Text
@@ -456,7 +576,9 @@ export default function ReviewScreen() {
 
   // Sticky bar: full tier only. Blocking state and the free result have none.
   const showBar = view.tier === 'full' && !fullBlocked;
-  const findAgent = (
+  // "Find an agent" opens the Agents tab, hidden in a self-service-only build
+  // (japa#334): both placements below then render nothing.
+  const findAgent = selfServiceOnly ? null : (
     <SolidButton
       label="Find an agent"
       tone="ink"
@@ -472,6 +594,10 @@ export default function ReviewScreen() {
         contentContainerStyle={{
           paddingBottom: showBar ? EX.space.ctaClear : 48,
         }}
+        // japa#384: viewport + offset for the "locked panel seen" event.
+        onLayout={onScrollLayout}
+        onScroll={onScroll}
+        scrollEventThrottle={100}
       >
         <Animated.View entering={FadeIn.duration(300)}>
           <ReviewHero
@@ -488,13 +614,14 @@ export default function ReviewScreen() {
             onBack={goBackToApplication}
           />
 
-          <View style={pad}>
+          <View style={pad} onLayout={onPadLayout}>
             {/* ── Blocking rule, full tier: stops here ─────────────────────── */}
             {full && fullBlocked ? (
               <View style={{ marginTop: 20 }}>
                 <BlockingRuleCard
                   title="One rule stands in the way"
-                  body={`${barItem?.title ? `${barItem.title}. ` : ''}This is a fixed rule, checked from the details on your profile. It isn’t a judgement about you.`}
+                  // japa#384: with no rule text, the free card's generic body.
+                  body={fullBlockingBody(barItem?.title)}
                 >
                   {barItem ? (
                     <RuleQuote
@@ -527,7 +654,13 @@ export default function ReviewScreen() {
                   {[
                     'Read the rule at its source.',
                     'If your details are wrong, correct them and run the review again.',
-                    'If the rule does apply to you, an agent can talk you through other routes.',
+                    // Points at agents, so it goes with the "Find an agent"
+                    // button in a self-service-only build (japa#334).
+                    ...(selfServiceOnly
+                      ? []
+                      : [
+                          'If the rule does apply to you, an agent can talk you through other routes.',
+                        ]),
                   ].map((s, i) => (
                     <Text
                       key={s}
@@ -569,13 +702,15 @@ export default function ReviewScreen() {
                     {BAND_SUMMARY[band]}
                   </Text>
                 ) : null}
-                {disclaimer}
-                {/* Slot A: country context card (#116). Full tier only (the free payload never carries it); nothing when unavailable. */}
-                <CountryContextCard context={full?.countryContext} />
+                {/* Free tier: disclaimer straight after the summary, as
+                    before japa#384. Slot A (country note) drew nothing here
+                    before either: the free payload never carries one. The
+                    full tier draws both after the reading instead, below. */}
+                {free ? disclaimer : null}
               </>
             )}
 
-            {/* ── FREE tier ──────────────────────────────────────────────────── */}
+            {/* ── FREE tier (unchanged by japa#384, bar the upgrade copy) ──── */}
             {free ? (
               <>
                 {/* A fixed rule blocks the applicant: told plainly, not behind a paywall.
@@ -584,49 +719,119 @@ export default function ReviewScreen() {
                   <View style={{ marginTop: 20 }}>
                     <BlockingRuleCard
                       title="One rule stands in the way"
-                      body="One of the fixed rules for this visa applies to your details. It’s checked from the details on your profile and isn’t a judgement about you."
+                      body={FREE_BLOCKING_BODY}
                     />
                     {findAgent}
                   </View>
                 ) : null}
 
-                <SectionTitle>Start with these</SectionTitle>
+                <SectionTitle>{START_WITH_THESE_TITLE}</SectionTitle>
                 <View style={{ gap: 9 }}>
                   {free.topIssues.length > 0 ? (
                     free.topIssues
                       .slice(0, 3)
                       .map((t, i) => (
                         <NumberedRow
-                          key={t.criterionId || i}
+                          key={`${t.criterionId}:${i}`}
                           n={i + 1}
                           label={t.title}
                         />
                       ))
                   ) : (
-                    <CheckRow label="Nothing stood out as a priority in what you’ve given us." />
+                    <CheckRow label={NOTHING_STOOD_OUT} />
                   )}
                 </View>
+                {/* japa#312: below "Start with these", above the upgrade panel */}
+                {thenYouApply}
                 <View style={{ marginTop: 22 }}>
                   <UpgradePanel onPress={() => goPlans('panel')} />
                 </View>
               </>
             ) : null}
 
-            {/* ── FULL tier sections ─────────────────────────────────────────── */}
+            {/* ── FULL tier, not blocked (japa#384) ──────────────────────────── */}
             {full && !fullBlocked ? (
-              <FullSections
-                d={full}
-                layers={meta.stackLayers}
-                onRuleOpened={() =>
-                  analyticsService.trackReviewEvent(
-                    'review_rule_source_opened',
-                    { tier: 'full' },
-                  )
-                }
-                onEditStatement={() =>
-                  router.push(`/self-service/${applicationId}/statement`)
-                }
-              />
+              <>
+                {full.narrative ? (
+                  <>
+                    {/* The reading: paragraphs in order, then the conclusion. */}
+                    <SectionTitle>{READING_TITLE}</SectionTitle>
+                    <Caption>{READING_CAPTION}</Caption>
+                    <ReadingCard narrative={full.narrative} />
+                    {/* Omitted when the reading has no steps: no empty header. */}
+                    {full.narrative.nextSteps.length > 0 ? (
+                      <>
+                        <SectionTitle>{READING_STEPS_TITLE}</SectionTitle>
+                        <NextStepsCard steps={full.narrative.nextSteps} />
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    {/* No reading (failed, skipped, bulk-written or older):
+                        say so once, then the free tier's priority list. */}
+                    <View style={{ marginTop: 20 }}>
+                      <InfoNote icon={Ic.edit}>{READING_MISSING_NOTE}</InfoNote>
+                    </View>
+                    <SectionTitle>{START_WITH_THESE_TITLE}</SectionTitle>
+                    <View style={{ gap: 9 }}>
+                      {full.topIssues.length > 0 ? (
+                        full.topIssues
+                          .slice(0, 3)
+                          .map((t, i) => (
+                            <NumberedRow
+                              key={`${t.criterionId}:${i}`}
+                              n={i + 1}
+                              label={t.title}
+                            />
+                          ))
+                      ) : (
+                        <CheckRow label={NOTHING_STOOD_OUT} />
+                      )}
+                    </View>
+                  </>
+                )}
+                {disclaimer}
+                {/* Slot A: country context card (#116); nothing when unavailable. */}
+                <CountryContextCard context={full.countryContext} />
+
+                {working ? (
+                  <>
+                    {/* The plan includes the working: collapsed by default,
+                        one tap shows today's sections whole and unchanged. */}
+                    <SectionTitle>{WORKING_SECTION_TITLE}</SectionTitle>
+                    <WorkingToggle
+                      open={workingOpen}
+                      onToggle={() => setWorkingOpen((o) => !o)}
+                    />
+                    {workingOpen ? (
+                      <FullSections
+                        d={full}
+                        layers={meta.stackLayers}
+                        onRuleOpened={() =>
+                          analyticsService.trackReviewEvent(
+                            'review_rule_source_opened',
+                            { tier: 'full' },
+                          )
+                        }
+                        onEditStatement={() =>
+                          router.push(
+                            `/self-service/${applicationId}/statement`,
+                          )
+                        }
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  // Static locked panel. The wrapper is a direct child of the
+                  // pad view, so its layout y feeds the "seen" measurement.
+                  <View style={{ marginTop: 22 }} onLayout={onLockedLayout}>
+                    <LockedPanel />
+                  </View>
+                )}
+                {/* japa#312: "Then you apply" closes the full tier. */}
+                {thenYouApply}
+              </>
             ) : null}
           </View>
         </Animated.View>
@@ -661,7 +866,7 @@ export default function ReviewScreen() {
 // Full-tier sections. Empty sections are omitted, except "Rules not met yet".
 // ─────────────────────────────────────────────────────────────────────────────
 function FullSections({
-  d,
+  d: data,
   layers,
   onRuleOpened,
   onEditStatement,
@@ -672,6 +877,17 @@ function FullSections({
   onRuleOpened: () => void;
   onEditStatement: () => void;
 }) {
+  // japa#384: the arrays are optional on the type (absent without the
+  // working). This is only drawn with the working, when pickFull has filled
+  // them, but read them as empty lists rather than trust that.
+  const d = {
+    ...data,
+    refusalGrounds: data.refusalGrounds ?? [],
+    credibilityFlags: data.credibilityFlags ?? [],
+    statementFindings: data.statementFindings ?? [],
+    insufficientInformation: data.insufficientInformation ?? [],
+    strengths: data.strengths ?? [],
+  };
   return (
     <>
       {/* Rules not met yet (refusalGrounds; judgement entries are already routed out) */}
@@ -683,9 +899,10 @@ function FullSections({
         {d.refusalGrounds.length === 0 ? (
           <CheckRow label="No rule-based issues in what you’ve given us." />
         ) : (
-          d.refusalGrounds.map((g) => (
+          d.refusalGrounds.map((g, i) => (
+            // japa#308: criterionId alone isn't promised unique; add the index.
             <FindingCard
-              key={g.criterionId}
+              key={`${g.criterionId}:${i}`}
               kind="rule"
               layer={<LayerPill label={layerLabel(layers, g.layerKey)} />}
               title={g.title}
@@ -712,9 +929,10 @@ function FullSections({
             to understand better, and you can prepare for them.
           </Caption>
           <View style={{ gap: 10 }}>
-            {d.credibilityFlags.map((f) => (
+            {d.credibilityFlags.map((f, i) => (
+              // japa#308: criterionId alone isn't promised unique; add the index.
               <FindingCard
-                key={f.criterionId}
+                key={`${f.criterionId}:${i}`}
                 kind="question"
                 layer={<LayerPill label={layerLabel(layers, f.layerKey)} />}
                 title={f.title}
@@ -752,35 +970,17 @@ function FullSections({
         </>
       ) : null}
 
-      {/* What we couldn't tell */}
-      {d.insufficientInformation.length > 0 ? (
-        <>
-          <SectionTitle>What we couldn’t tell</SectionTitle>
-          <Caption>
-            We didn’t have enough to check these. Add what’s missing and the
-            next review will cover them.
-          </Caption>
-          <View style={{ gap: 10 }}>
-            {d.insufficientInformation.map((i) => (
-              <FindingCard
-                key={i.criterionId}
-                kind="unknown"
-                layer={<LayerPill label={layerLabel(layers, i.layerKey)} />}
-                title={i.title}
-                body={i.reason}
-              />
-            ))}
-          </View>
-        </>
-      ) : null}
+      {/* What we couldn't tell: only what the applicant can act on (japa#308) */}
+      <CouldntTell items={d.insufficientInformation} layers={layers} />
 
       {/* What you've got */}
       {d.strengths.length > 0 ? (
         <>
           <SectionTitle>What you’ve got</SectionTitle>
           <View style={{ gap: 9 }}>
-            {d.strengths.map((s) => (
-              <CheckRow key={s.criterionId} label={s.title} />
+            {/* japa#308: criterionId alone isn't promised unique; add the index. */}
+            {d.strengths.map((s, i) => (
+              <CheckRow key={`${s.criterionId}:${i}`} label={s.title} />
             ))}
           </View>
         </>

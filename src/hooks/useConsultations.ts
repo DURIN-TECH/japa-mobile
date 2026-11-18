@@ -8,8 +8,26 @@
  * Backend endpoints used:
  * - GET /consultations           → list user's consultations (paginated)
  * - GET /consultations/:id       → single consultation detail
- * - POST /consultations          → create/book a new consultation
+ * - POST /consultations          → create/book a new consultation; the server
+ *                                   prices it and LOCKS the quote (japa#183).
+ *                                   Hands back the client's unpaid booking of
+ *                                   the same slot instead of a duplicate
+ *                                   (200, `resumed: true`, japa#288)
+ * - POST /consultations/:id/checkout → resume paying a pending booking
+ * - POST /consultations/public/verify → confirm a Paystack charge by reference
  * - PUT /consultations/:id/status → update status (cancel, complete, etc.)
+ *
+ * MONEY (japa#183): the app never sends a fee, amount, currency or rate. The
+ * server reads the agent's dollar fee, quotes it in the client's currency,
+ * stores the snapshot (`priceUsdCents`, `chargedCurrency`,
+ * `chargedAmountMinor`) and locks it for 30 minutes
+ * (`quoteLockedAt` → `quoteExpiresAt`). The app shows those stored values.
+ *
+ * RATE (japa#332): a client is never sent the raw exchange rate (`fxRate`)
+ * or Seli's markup. Every response carries `effectiveRate` instead: local
+ * units per 1 USD, amount charged ÷ dollar price, markup included. That is
+ * the rate behind "$6.00 at ₦1,353.97 per $1". It is absent on a free
+ * booking and on a legacy one with no complete charge.
  *
  * The backend Consultation type has more fields than the mobile app's
  * original `Consultation` type. We map the API response to a richer
@@ -18,7 +36,17 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { retryUnlessNotFound } from './queryErrors';
+import { RETURN_TO_APP } from '@/hooks/paystackCheckout';
 import { apiService } from '@/services/api.service';
+
+/**
+ * A backend timestamp as the API serialises it: an ISO string or a Firestore
+ * Timestamp `{ _seconds, _nanoseconds }`. Read with `toDate` (liveDate.ts).
+ */
+export type ApiTimestamp =
+  | string
+  | { _seconds: number; _nanoseconds?: number }
+  | null;
 
 /**
  * Consultation type matching the backend model.
@@ -27,7 +55,7 @@ import { apiService } from '@/services/api.service';
  * - `status` uses backend values (scheduled, confirmed, completed, cancelled, etc.)
  *   instead of the old simplified 'upcoming' | 'completed' | 'cancelled'
  * - `date` is a string (ISO) instead of a JS Date object
- * - Includes payment fields (fee, paymentStatus)
+ * - Includes payment fields (the locked charge snapshot, paymentStatus)
  * - Includes scheduling details (scheduledDate, scheduledTime, durationMinutes, timezone)
  */
 export interface ApiConsultation {
@@ -63,7 +91,24 @@ export interface ApiConsultation {
   scheduledTime: string;
   durationMinutes: number;
   timezone?: string;
-  fee: number; // whole naira (#148)
+  // ── Charge snapshot (japa#183 / backend #180) ─────────────────────────────
+  /** The agent's fee in US cents at booking time; 0 = a free booking. */
+  priceUsdCents: number;
+  /** The currency the client is (to be) charged in, e.g. "NGN". Paid only. */
+  chargedCurrency?: string;
+  /** The locked amount, in minor units of `chargedCurrency`. Paid only. */
+  chargedAmountMinor?: number;
+  /**
+   * Local units per 1 USD the client effectively pays, markup included
+   * (japa#332; display: "at ₦1,353.97 per $1"). Absent on a free or legacy
+   * booking. Replaces the raw `fxRate`, which clients are no longer sent.
+   */
+  effectiveRate?: number;
+  /** When the quote was locked (server clock). */
+  quoteLockedAt?: ApiTimestamp;
+  /** After this the quote may not be charged; a retry re-prices it. */
+  quoteExpiresAt?: ApiTimestamp;
+  /** 'pending' until Paystack confirms, then 'paid'. */
   paymentStatus?: string;
   notes?: string;
   summary?: string;
@@ -83,8 +128,78 @@ export interface CreateConsultationInput {
   scheduledTime: string; // HH:mm
   durationMinutes: number;
   timezone: string;
-  fee: number; // whole naira (#148) — comes from the agent's consultationFee; sent as-is
   applicationId?: string; // optional link to an existing application
+  // NO fee / amount / currency (japa#183): the server prices the booking.
+  // `returnTo: 'app'` is NOT part of this input: `useCreateConsultation`
+  // adds it to every request itself, so no caller can forget it.
+}
+
+/**
+ * What POST /consultations returns: the booking (with its locked snapshot)
+ * plus the checkout to open. A free booking (`requiresPayment: false`) is
+ * already scheduled and paid, `priceUsdCents: 0`, with no Paystack.
+ *
+ * japa#288: when the client already has an UNPAID pending booking with this
+ * agent at this date and time, the server creates nothing and answers 200
+ * with THAT booking in this same shape plus `resumed: true` (matched on
+ * agent + date + time only, so its `type` / `durationMinutes` may differ
+ * from the input). A resumed booking with `requiresPayment: false` was paid
+ * meanwhile; it is not a free booking.
+ */
+export type CreateConsultationResult = ApiConsultation & {
+  /** True when an earlier pending booking was handed back (HTTP 200). */
+  resumed?: boolean;
+} & (
+    | { requiresPayment: false }
+    | {
+        requiresPayment: true;
+        /** Paystack hosted checkout (https). */
+        authorizationUrl: string;
+        /** Same URL, older name. */
+        checkoutUrl?: string;
+        /** Paystack reference: what verify is called with. */
+        reference: string;
+      }
+  );
+
+/**
+ * The payer-safe booking summary the checkout / verify routes return
+ * (backend `bookingSummary`). Carries the snapshot when the booking was
+ * priced by the server.
+ */
+export interface BookingSummary {
+  id: string;
+  agentName: string;
+  type: ApiConsultation['type'];
+  scheduledDate: ApiTimestamp;
+  scheduledTime: string;
+  timezone?: string;
+  status: ApiConsultation['status'];
+  paymentStatus?: string;
+  priceUsdCents?: number;
+  chargedCurrency?: string;
+  chargedAmountMinor?: number;
+  /** Local units per 1 USD effectively paid (japa#332); see ApiConsultation. */
+  effectiveRate?: number;
+  quoteExpiresAt?: ApiTimestamp;
+}
+
+/** POST /consultations/:id/checkout (200). */
+export type ConsultationCheckoutResult =
+  | { requiresPayment: false; consultation: BookingSummary }
+  | {
+      requiresPayment: true;
+      authorizationUrl: string;
+      reference: string;
+      consultation: BookingSummary;
+    };
+
+/** POST /consultations/public/verify (200): the booking is paid. */
+export interface VerifyConsultationResult {
+  verified: true;
+  consultation: BookingSummary;
+  /** An extra payment landed on a paid booking and is held for a refund. */
+  refundPending?: boolean;
 }
 
 // ─────────────────────────────────────────────
@@ -100,7 +215,12 @@ export interface CreateConsultationInput {
  *
  * @param status - Optional filter (e.g. 'scheduled', 'completed')
  */
-export function useConsultations(status?: string) {
+export function useConsultations(
+  status?: string,
+  // False skips the call: a self-service-only build (japa#334) hides
+  // consultations, so the Profile counts opt out. Default true.
+  opts: { enabled?: boolean } = {},
+) {
   // Must pass role=client so the backend queries by userId (client)
   // instead of the default role=agent which queries by agentId
   const params = new URLSearchParams({ role: 'client' });
@@ -108,6 +228,7 @@ export function useConsultations(status?: string) {
 
   return useQuery({
     queryKey: ['consultations', status],
+    enabled: opts.enabled ?? true,
     queryFn: async () => {
       const response = await apiService.get<ApiConsultation[]>(
         `/consultations?${params.toString()}`,
@@ -153,15 +274,74 @@ export function useCreateConsultation() {
 
   return useMutation({
     mutationFn: async (input: CreateConsultationInput) => {
-      const response = await apiService.post<ApiConsultation>(
+      // `returnTo: 'app'` (backend #285): Paystack returns through the
+      // backend's app return page, which redirects to the app's deep link,
+      // so the in-app auth browser closes by itself after paying.
+      const response = await apiService.post<CreateConsultationResult>(
         '/consultations',
-        input,
+        { ...input, returnTo: RETURN_TO_APP },
       );
       return response.data!;
     },
     // After creating, refetch the consultations list so it includes the new one
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['consultations'] });
+    },
+  });
+}
+
+/**
+ * Resume paying a pending booking: POST /consultations/:id/checkout (only the
+ * booking's own client may call it). Inside the 30-minute lock it hands back
+ * the SAME checkout; after it, a FRESH quote and a new checkout (so the
+ * screen must show the new `chargedAmountMinor` before opening it). 409s
+ * (PAYMENT_IN_PROGRESS, BOOKING_NOT_PAYABLE, CHECKOUT_OPENING) and 503
+ * PRICING_UNAVAILABLE reject as `ApiError`; see `classifyConsultationPayError`.
+ *
+ * Sends `{ returnTo: 'app' }` (backend #285) so a NEW checkout returns to the
+ * app. Inside the lock the backend hands back the booking's existing
+ * checkout unchanged, so one first opened on the web still returns to the
+ * web confirm page: the auth browser then does not close by itself, the
+ * user closes it, and `runPaystackCheckout` verifies all the same.
+ */
+export function useConsultationCheckout() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (consultationId: string) => {
+      const response = await apiService.post<ConsultationCheckoutResult>(
+        `/consultations/${consultationId}/checkout`,
+        { returnTo: RETURN_TO_APP },
+      );
+      return response.data!;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['consultations'] });
+    },
+  });
+}
+
+/**
+ * Confirm a consultation's Paystack charge: POST /consultations/public/verify
+ * `{ reference }` (public despite the name; the reference is the one OUR
+ * backend returned, never one read from the return deep link). 200 =
+ * `{ verified: true }`; 400 "not completed" and the 409s reject as
+ * `ApiError` (see `classifyConsultationPayError`).
+ */
+export function useVerifyConsultation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (reference: string) => {
+      const response = await apiService.post<VerifyConsultationResult>(
+        '/consultations/public/verify',
+        { reference },
+      );
+      return response.data!;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['consultations'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
     },
   });
 }

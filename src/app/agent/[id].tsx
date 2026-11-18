@@ -24,7 +24,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import { NAIRA } from '@/components/explorer/content';
+import {
+  localUnavailableNote,
+  priceParts,
+} from '@/components/explorer/content';
+import { PriceBlock } from '@/components/explorer/PriceBlock';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { mapAgency } from '@/components/explorer/liveAgencies';
 import { usePublicAgency } from '@/hooks/useAgencies';
@@ -651,28 +655,24 @@ export default function AgentDetail() {
             <Ic.msg size={21} color={EX.color.ink} strokeWidth={1.8} />
           </Pressable>
 
-          {/* Consultation fee (natural width) */}
+          {/* Consultation fee (natural width), japa#183: the server's local
+              figure on top, "about $" under it. No rate → the dollar price
+              with "Naira price unavailable"; Book stays enabled because the
+              server prices the booking itself. No fee / $0 → "Free". */}
           <View>
             <Text
               style={{
-                fontSize: 11.5,
-                color: EX.color.muted,
-                fontWeight: '500',
+                fontSize: 12.5,
+                color: EX.color.inkMuted,
+                fontWeight: '600',
               }}
             >
               Consultation
             </Text>
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: '700',
-                color: EX.color.ink,
-                letterSpacing: -0.2,
-                lineHeight: 20,
-              }}
-            >
-              {NAIRA(a.fee)}
-            </Text>
+            <PriceBlock
+              parts={priceParts(a.feeLocal, a.feeUsd, { freeWhenNoUsd: true })}
+              unavailableNote={localUnavailableNote(a.feeLocal?.currency)}
+            />
           </View>
 
           {/* Book (coral, flex 1, with arrow) */}

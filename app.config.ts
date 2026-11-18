@@ -43,6 +43,15 @@ const USE_EMULATOR = process.env.EXPO_PUBLIC_USE_EMULATOR === 'true';
 const EMULATOR_PROJECT_ID =
   process.env.EXPO_PUBLIC_EMULATOR_PROJECT_ID || 'japa-platform';
 
+// Emulator ports (japa#361). Unset, the app keeps the firebase.json defaults
+// (Auth 9099, Functions 5001) — src/config/env.ts applies those defaults, so
+// existing set-ups are unchanged. The Maestro e2e runner sets them to the ports
+// in seli-backend's firebase.e2e.json, so its emulators never collide with a
+// developer's. Passed through as raw strings: env.ts validates them (the config
+// loader cannot import local TS files, so the rule lives in one place there).
+const EMULATOR_AUTH_PORT = process.env.EXPO_PUBLIC_EMULATOR_AUTH_PORT;
+const EMULATOR_FUNCTIONS_PORT = process.env.EXPO_PUBLIC_EMULATOR_FUNCTIONS_PORT;
+
 // Native Firebase config files live under firebase/<env>/ so dev/prod never clobber
 // each other. Expo prebuild copies the selected file into the native project.
 const googleServicesDir = IS_PROD ? './firebase/prod' : './firebase/dev';
@@ -92,11 +101,25 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     apiUrl: API_URL,
     useEmulator: USE_EMULATOR,
     emulatorProjectId: EMULATOR_PROJECT_ID,
+    // Emulator ports (japa#361); undefined → env.ts defaults 9099 / 5001.
+    emulatorAuthPort: EMULATOR_AUTH_PORT,
+    emulatorFunctionsPort: EMULATOR_FUNCTIONS_PORT,
     // Feedback button build flag (EXPO_PUBLIC_FEEDBACK_ENABLED=false removes it).
     // Same rule as isFeedbackEnabledFlag in src/config/feedback.ts (the config
     // loader cannot import local TS files, so it is repeated here).
     feedbackEnabled:
       process.env.EXPO_PUBLIC_FEEDBACK_ENABLED?.trim().toLowerCase() !==
       'false',
+    // Temporary launch flag — remove when agent features are released (DURIN-TECH/japa#336).
+    // Self-service-only launch flag (japa#334). EXPO_PUBLIC_SELF_SERVICE_ONLY=true
+    // hides agents, agencies, booking, agent messaging and agent payments.
+    // OFF unless the value is exactly "true" (case and spaces ignored): the same
+    // rule as isSelfServiceOnlyFlag in src/config/selfServiceOnly.ts, repeated
+    // here because the config loader cannot import local TS files. Baked in at
+    // build time, so an `eas update` for a flag-on channel must also run with
+    // EXPO_PUBLIC_SELF_SERVICE_ONLY=true or the update carries the flag off.
+    selfServiceOnly:
+      process.env.EXPO_PUBLIC_SELF_SERVICE_ONLY?.trim().toLowerCase() ===
+      'true',
   },
 });

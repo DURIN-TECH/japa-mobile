@@ -27,6 +27,16 @@ import {
   setUserId,
   setUserProperty,
 } from '@react-native-firebase/analytics';
+import { minorUnitFactor } from '@/components/explorer/content';
+import type { Money } from '@/types/money.type';
+
+/**
+ * Minor units → major units in the money's OWN currency (japa#183): kobo /
+ * 100, cents / 100, a zero-decimal currency / 1. For analytics `value` only.
+ */
+export function toMajorUnits(m: Money): number {
+  return m.amountMinor / minorUnitFactor(m.currency);
+}
 
 class AnalyticsService {
   // ─────────────────────────────────────────────
@@ -110,18 +120,23 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   // CONSULTATION EVENTS
   // Track when users book consultations with agents.
-  // Includes fee as `value` for revenue tracking in Firebase.
+  // japa#183: `value` is the amount actually charged, in MAJOR units of its
+  // own `currency` (minor units ÷ the currency's factor), with that real
+  // currency, never a hard-coded 'NGN'. A free booking sends value 0, USD.
+  // Called by pay.tsx once the backend confirms the booking (paid or free).
   // ─────────────────────────────────────────────
   async trackConsultationBooked(params: {
     agentId: string;
     type: string; // e.g. 'initial', 'document_review', 'interview_prep'
-    fee: number; // consultation fee in base currency units
+    /** The charged amount (minor units + currency) from the booking. */
+    charged: Money;
   }) {
     try {
       await logEvent(this.analytics, 'consultation_booked', {
-        ...params,
-        value: params.fee, // Firebase uses `value` for revenue
-        currency: 'NGN', // Nigerian Naira — primary currency
+        agentId: params.agentId,
+        type: params.type,
+        value: toMajorUnits(params.charged), // Firebase uses `value` for revenue
+        currency: params.charged.currency,
       });
     } catch (error) {
       if (__DEV__) console.warn('Analytics consultation error:', error);
@@ -225,14 +240,27 @@ class AnalyticsService {
   // The application review: started, viewed, upgrade prompt tapped, rule source
   // opened. `tier` is the tier the SERVER answered with; `band` is the readiness
   // band word. Never send a number or any finding text.
+  //
+  // japa#384: `review_viewed` also carries `working` (the server's
+  // `meta.working`: the rule-by-rule working was in the response) and
+  // `hasNarrative` (a reading was drawn). `review_working_locked_seen` fires
+  // once per review when the locked "See how each rule was applied" panel first
+  // comes on screen: the demand signal for the working (priced in japa#385).
   // ─────────────────────────────────────────────
   async trackReviewEvent(
     name:
       | 'review_run_started'
       | 'review_viewed'
       | 'review_upgrade_prompt_tapped'
-      | 'review_rule_source_opened',
-    params: { tier?: string; band?: string; source?: string } = {},
+      | 'review_rule_source_opened'
+      | 'review_working_locked_seen',
+    params: {
+      tier?: string;
+      band?: string;
+      source?: string;
+      working?: boolean;
+      hasNarrative?: boolean;
+    } = {},
   ) {
     try {
       await logEvent(this.analytics, name, params);
@@ -308,15 +336,18 @@ class AnalyticsService {
   // Track when clients approve or reject payment requests.
   // Amount is tracked as `value` for revenue analysis.
   // ─────────────────────────────────────────────
+  // japa#183: both take the request's real money (minor units + currency;
+  // a #181 request is US cents) and report `value` in major units.
+  // Called by application/[id].tsx after a successful approve / reject.
   async trackPaymentRequestApproved(params: {
     requestId: string;
-    amount: number; // In kobo/cents
+    amount: Money;
   }) {
     try {
       await logEvent(this.analytics, 'payment_request_approved', {
         request_id: params.requestId,
-        value: params.amount,
-        currency: 'NGN',
+        value: toMajorUnits(params.amount),
+        currency: params.amount.currency,
       });
     } catch (error) {
       if (__DEV__) console.warn('Analytics payment approved error:', error);
@@ -325,13 +356,13 @@ class AnalyticsService {
 
   async trackPaymentRequestRejected(params: {
     requestId: string;
-    amount: number; // In kobo/cents
+    amount: Money;
   }) {
     try {
       await logEvent(this.analytics, 'payment_request_rejected', {
         request_id: params.requestId,
-        value: params.amount,
-        currency: 'NGN',
+        value: toMajorUnits(params.amount),
+        currency: params.amount.currency,
       });
     } catch (error) {
       if (__DEV__) console.warn('Analytics payment rejected error:', error);

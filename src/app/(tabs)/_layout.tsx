@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Destination Explorer — 5-tab shell (Home / Explore / Tracker / Agents / Profile)
+// (4 tabs, no Agents, in a self-service-only build: japa#334)
 //
 // Custom glass bottom tab bar matching the prototype's shell.jsx TabBar: warm
 // translucent blur, coral active state with a tinted icon fill, safe-area aware.
@@ -12,6 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { EX } from '@/components/explorer/theme';
 import { Ic, IcName } from '@/components/explorer/icons';
+// Self-service-only launch flag (japa#334): drops the Agents tab.
+import { isSelfServiceOnly } from '@/config/env';
 
 // Minimal shape of the props Expo Router hands a custom `tabBar` renderer.
 type TabBarProps = {
@@ -35,8 +38,21 @@ const TAB_META: { name: string; label: string; icon: IcName }[] = [
   { name: 'profile', label: 'Profile', icon: 'user' },
 ];
 
+// ── Self-service-only build (japa#334) ─────────────────────────────────────
+// The Agents tab is a hidden feature, so the bar shows four tabs (Home,
+// Explore, Tracker, Profile). Its route still exists (no code is deleted);
+// the root guard in src/app/_layout.tsx redirects `/agents` to Home. With the
+// flag off all five tabs show, as before.
+export function visibleTabs(selfServiceOnly: boolean) {
+  return selfServiceOnly
+    ? TAB_META.filter((m) => m.name !== 'agents')
+    : TAB_META;
+}
+
 function GlassTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
+  // Tabs the bar may draw; routes not listed render no button.
+  const tabs = visibleTabs(isSelfServiceOnly());
   return (
     <BlurView
       intensity={40}
@@ -61,7 +77,7 @@ function GlassTabBar({ state, navigation }: TabBarProps) {
         }}
       >
         {state.routes.map((route, index) => {
-          const meta = TAB_META.find((m) => m.name === route.name);
+          const meta = tabs.find((m) => m.name === route.name);
           if (!meta) return null;
           const focused = state.index === index;
           const IconCmp = Ic[meta.icon];
@@ -78,6 +94,12 @@ function GlassTabBar({ state, navigation }: TabBarProps) {
           return (
             <Pressable
               key={route.key}
+              // e2e (Maestro, japa#361): `tab.home`, `tab.agents`, … and the
+              // tab's selected state for assistive tech / flow assertions.
+              // No visual effect.
+              testID={`tab.${meta.name}`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: focused }}
               onPress={onPress}
               style={{
                 flex: 1,

@@ -25,6 +25,12 @@ export interface ApiError {
   status: number;
   /** The error body's `data`, when the backend sends one (#253: the existing application on a 409). */
   data?: unknown;
+  /**
+   * The whole error body, for errors that carry extra fields next to `error`
+   * (japa#309: 422 NOT_ENOUGH_TO_REVIEW sends `missing` and
+   * `openRequiredCount` at the top level).
+   */
+  body?: unknown;
 }
 
 // Create axios instance
@@ -116,6 +122,7 @@ api.interceptors.response.use(
         message: error.response.data?.message || 'An error occurred',
         status: error.response.status,
         data: error.response.data?.data,
+        body: error.response.data,
       };
       return Promise.reject(apiError);
     } else if (error.request) {

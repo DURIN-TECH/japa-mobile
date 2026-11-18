@@ -40,6 +40,9 @@ export const SHARED_COPY = {
   pickACountry: 'Pick a country',
   noRule:
     'We don’t have a rule that tells you which one. Pick the country you’ll use. You can change it until you pay.',
+  // Shown on the plain list when a rule exists but did not decide (for example
+  // the person skipped the question): it must not claim there is no rule.
+  pickYourself: 'Pick the country you’ll use. You can change it until you pay.',
   chooseCountry: 'Choose a country',
   notAvailableTitle: 'We can’t offer this route yet',
   notAvailableFallback: 'Check back soon, or look at another visa.',
@@ -212,11 +215,27 @@ export function choiceNote(
   return `The rule points to ${view.proposal.countryName}. You chose ${chosen.countryName}. We’ll keep a note that this was your choice.`;
 }
 
-/** Note for an "unknown" rule result: "We can't tell ... {why}" (why omitted when empty). */
-export function unknownNote(view: ApplyThroughView): string | null {
-  if (view.result?.status !== 'unknown') return null;
-  const why = (view.result.why ?? '').trim();
-  return `We can’t tell from your answers which country the rule points to.${why ? ` ${why}` : ''}`;
+/**
+ * The ONE note above the plain country list. Exactly one is shown, and it
+ * must be true for the case at hand:
+ *  - the rulebook has no "which country" rule (backend reason
+ *    NO_COMPETENCE_RULE, or no rule result at all): the short "no rule" note.
+ *    The backend's own sentence says the same thing at more length, so it is
+ *    not shown as well (owner review, 2026-11-15).
+ *  - a rule exists but could not decide (NO_STEP_APPLIES, NOT_A_MEMBER, or
+ *    any future reason): the backend's own words, which say why.
+ *  - a rule exists and the person skipped its question: a neutral line that
+ *    makes no claim about the rule.
+ */
+export function listNote(view: ApplyThroughView): string {
+  const result = view.result;
+  if (!view.competence || !result) return SHARED_COPY.noRule;
+  if (result.status === 'unknown') {
+    if (result.reason === 'NO_COMPETENCE_RULE') return SHARED_COPY.noRule;
+    const why = (result.why ?? '').trim();
+    return why || SHARED_COPY.pickYourself;
+  }
+  return SHARED_COPY.pickYourself;
 }
 
 /** "From $120" (USD, as the visa screen shows), or null without a price. */

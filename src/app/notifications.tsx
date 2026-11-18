@@ -12,10 +12,20 @@
 // and an InlineError shows at the top. Loading → coral spinner; failed load →
 // InlineError + "Try again"; none → "You’re all caught up" (no "Mark all
 // read").
+//
+// #269: the list is re-read on every focus and when the polled bell count
+// changes (useInboxNotifications), and the list has pull-to-refresh.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
@@ -33,12 +43,17 @@ import { IconChip } from '@/components/explorer/primitives';
 // ── Live data (backend) ───────────────────────────────────────────────────────
 import {
   useDeleteNotification,
-  useNotifications,
+  useInboxNotifications,
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
 } from '@/hooks/useNotifications';
 import { mapNotif } from '@/components/explorer/liveNotifications';
-import { routeForNotification } from '@/services/notification-router';
+import {
+  isSelfServiceHiddenNotification,
+  routeForNotification,
+} from '@/services/notification-router';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -47,13 +62,37 @@ type IconType = React.ComponentType<{
   strokeWidth?: number;
 }>;
 
-// Kind → icon + tinted IconChip colors.
+// Kind → icon + tinted IconChip colors (design spec #269; all EX tokens).
 const KIND: Record<Notif['kind'], { icon: IconType; fg: string; bg: string }> =
   {
-    status: { icon: Ic.gauge, fg: '#2F62A0', bg: '#DCEBF7' }, // blue
-    message: { icon: Ic.msg, fg: EX.color.primary, bg: EX.color.primaryTint10 }, // coral — source rgba(244,81,108,0.1)
-    action: { icon: Ic.upload, fg: EX.color.amber, bg: '#FCEAC8' }, // amber — source #FCEAC8
-    consult: { icon: Ic.cal, fg: EX.color.success, bg: '#D6F2E2' }, // green
+    status: {
+      icon: Ic.gauge,
+      fg: EX.status.review.fg,
+      bg: EX.status.review.bg,
+    },
+    message: { icon: Ic.msg, fg: EX.color.primary, bg: EX.color.primaryTint10 },
+    action: {
+      icon: Ic.upload,
+      fg: EX.status.documents.fg,
+      bg: EX.status.documents.bg,
+    },
+    consult: {
+      icon: Ic.cal,
+      fg: EX.status.approved.fg,
+      bg: EX.status.approved.bg,
+    },
+    verified: {
+      icon: Ic.check2,
+      fg: EX.status.submitted.fg,
+      bg: EX.status.submitted.bg,
+    },
+    payment: { icon: Ic.cards, fg: EX.color.primary, bg: EX.color.cream },
+    alert: {
+      icon: Ic.alert,
+      fg: EX.status.documents.fg,
+      bg: EX.status.documents.bg,
+    },
+    news: { icon: Ic.globe, fg: EX.color.ink2, bg: EX.color.cream },
   };
 
 export default function NotificationsView() {
@@ -61,12 +100,33 @@ export default function NotificationsView() {
   const insets = useSafeAreaInsets();
 
   // ── Live notifications → Notif[] ──────────────────────────────────────────
-  const notifsQ = useNotifications();
+  // Re-read on every focus and when the polled bell count changes (#269), so
+  // the list never lags behind the badge.
+  const notifsQ = useInboxNotifications();
+  // Pull-to-refresh spinner only for the user's own pull (focus / count reads
+  // run quietly in the background).
+  const [pulling, setPulling] = useState(false);
+  const pullToRefresh = () => {
+    setPulling(true);
+    notifsQ.refetch().finally(() => setPulling(false));
+  };
   const state = queryState(notifsQ);
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
   const del = useDeleteNotification();
-  const raw = useMemo(() => notifsQ.data ?? [], [notifsQ.data]);
+  // ── Self-service-only build (japa#334) ───────────────────────────────────
+  // Notices about hidden features (messages, consultations, agent payments,
+  // identity checks, agent document requests) are left out of the list, so
+  // they can be neither seen nor tapped. With the flag off the list is the
+  // backend's, unfiltered, as before. (The bell's unread count may still
+  // include them: accepted for the launch, see japa#334.)
+  const selfServiceOnly = isSelfServiceOnly();
+  const raw = useMemo(() => {
+    const all = notifsQ.data ?? [];
+    return selfServiceOnly
+      ? all.filter((r) => !isSelfServiceHiddenNotification(r))
+      : all;
+  }, [notifsQ.data, selfServiceOnly]);
   const items = useMemo(() => raw.map(mapNotif), [raw]);
 
   // In-flight writes only (never a persisted local state): ids being marked
@@ -109,7 +169,9 @@ export default function NotificationsView() {
   // the raw backend record. Inbox mode: null when there is nothing to open.
   const routeFor = (id: string) => {
     const r = raw.find((x) => x.id === id);
-    return r ? routeForNotification(r, 'inbox') : null;
+    // The flag also goes to the router, so even a row that slipped through
+    // the filter can never open a hidden screen (japa#334).
+    return r ? routeForNotification(r, 'inbox', { selfServiceOnly }) : null;
   };
 
   // Mark read on the backend (if unread), then route.
@@ -150,7 +212,11 @@ export default function NotificationsView() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    // e2e (Maestro, japa#361): the screen's identity. No visual effect.
+    <View
+      testID="screen.notifications"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       {/* ── Back header + Mark all read ───────────────────────────────────── */}
       <View
         style={{
@@ -201,6 +267,14 @@ export default function NotificationsView() {
       {/* ── Notification list ─────────────────────────────────────────────── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={pulling}
+            onRefresh={pullToRefresh}
+            tintColor={EX.color.primary}
+            colors={[EX.color.primary]}
+          />
+        }
         contentContainerStyle={{
           // Source list: padding '6px 16px 40px', column gap 4.
           paddingHorizontal: 16,
@@ -228,7 +302,12 @@ export default function NotificationsView() {
           <StateEmpty
             icon={Ic.bell}
             title="You’re all caught up"
-            body="Updates on your applications, documents and consultations land here."
+            // Self-service-only build (japa#334): no consultations to mention.
+            body={
+              selfServiceOnly
+                ? 'Updates on your applications, documents and reviews land here.'
+                : 'Updates on your applications, documents and consultations land here.'
+            }
           />
         ) : null}
         {visible.map((n) => {

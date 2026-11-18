@@ -48,6 +48,12 @@ development build (`npm run build:dev`) or a local prebuild
 `__tests__/` folders next to the code (mappers, assets,
 query helpers).
 
+**End-to-end: `npm run e2e`** (Maestro, japa#361) runs the
+flows in `.maestro/` on the runner's own simulator against
+the local emulators; `-- --tags <t>` / `-- --flow <file>`
+for a targeted run. Read [`.maestro/README.md`](.maestro/README.md)
+before adding a flow or `testID`.
+
 ## Environment Configuration
 
 The app targets a different Firebase project and backend per
@@ -79,6 +85,71 @@ EXPO_TOKEN=                     # EAS builds/submits (CI)
 # EXPO_PUBLIC_USE_EMULATOR=true # opt into the LOCAL emulator suite
 # EXPO_PUBLIC_EMULATOR_PROJECT_ID=japa-platform # emulator's project id (default)
 ```
+
+### Self-service-only launch flag (`EXPO_PUBLIC_SELF_SERVICE_ONLY`)
+
+Temporary launch flag — remove when agent features are
+released (DURIN-TECH/japa#336).
+
+- `EXPO_PUBLIC_SELF_SERVICE_ONLY=true` makes a build show
+  only the self-service journey. Agents, agencies,
+  consultation booking, agent messaging, agent payment
+  requests and identity verification lose every entry point.
+  Their routes redirect to Home (`config/selfServiceRoutes.ts`,
+  guard in `app/_layout.tsx`), and their notifications neither
+  route, list nor pop up. Off unless the value is exactly
+  `true`; with it off the app is unchanged.
+- Set by the `production` and `tester` EAS profiles
+  (`eas.json`). `development`, `ios-simulator` and `preview`
+  leave it off, and so does a plain local `expo start`.
+- Baked in at build time: `app.config.ts` resolves it into
+  `extra.selfServiceOnly`, and runtime code reads it only via
+  `isSelfServiceOnly()` from `@/config/env`. An update
+  therefore carries whatever the shell had when it was built.
+  A hand-run `eas update` to the `tester` or `production`
+  channel must set the same env as the build, or it ships
+  the flag off (and the wrong backend):
+
+  ```bash
+  APP_ENV=staging EXPO_PUBLIC_SELF_SERVICE_ONLY=true \
+    eas update --channel tester
+  APP_ENV=production EXPO_PUBLIC_SELF_SERVICE_ONLY=true \
+    eas update --channel production
+  ```
+
+- To try it locally:
+  `EXPO_PUBLIC_SELF_SERVICE_ONLY=true npx expo start --clear`.
+- **Development-only override (japa#375)**, no rebuild needed.
+  In a `__DEV__` build, either:
+  - Expo dev menu → "Self-service only: toggle on/off" flips
+    it, and "Self-service only: use the build's value" clears
+    the override (labels are state-free; read the state on the
+    App configuration screen); or
+  - open `durintech://dev/self-service-only?value=on|off|build`
+    (e.g. `xcrun simctl openurl booted '<link>'`; the Maestro
+    flows, japa#361, use this). Lands on Home; an unknown value
+    changes nothing.
+
+  The choice is stored on the device (AsyncStorage key
+  `dev.selfServiceOnlyOverride`), loaded before the first screen
+  renders (a read stuck for 1.5 s counts as no override), and a
+  change reloads the app. Same result warm or cold; no reload
+  when the value already applies. Each opened link is applied
+  exactly once: the native side remembers the last link across
+  a JS reload, so the handler calls `clearInitialURL()` and drops
+  a re-delivered initial link, or a reload would undo a later
+  menu change. The App
+  configuration dev screen shows the effective value and its
+  source ("on · override (build: off)"). `isSelfServiceOnly()`
+  stays the only read point (`config/selfServiceOverride.ts`,
+  `selfServiceOverrideStore.ts`, link hook in
+  `app/+native-intent.tsx`).
+- **Production / TestFlight builds ignore both**: with `__DEV__`
+  false the override is never read, the link is not recognised
+  (it is an unknown route, like any other) and the menu entry
+  does not exist; unit-tested in
+  `config/__tests__/selfServiceOverride.test.ts`. Remove the
+  override with the flag (japa#336).
 
 The emulator API URL uses the **emulator's** project id
 (`japa-platform`, the backend's `singleProjectMode` id), not

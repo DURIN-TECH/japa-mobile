@@ -24,6 +24,10 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
+import {
+  GOV_FEE_COPY,
+  formatCostUsd,
+} from '@/components/explorer/visaBreakdownLogic';
 import { STATUS } from '@/components/explorer/content';
 import type { App, Dest } from '@/types/explorer.type';
 // ── Live adapters + React Query hooks (japa#145: live only) ──────────
@@ -31,10 +35,13 @@ import { mapApplication } from '@/components/explorer/liveApplications';
 import { mapVisasToDests } from '@/components/explorer/liveExplore';
 import { useApplications } from '@/hooks/useApplications';
 import { useVisaTypes, useCountriesWithVisas } from '@/hooks/useVisaTypes';
+import { UnreadBadge, bellLabel } from '@/components/explorer/UnreadBadge';
 import { useUnreadNotificationCount } from '@/hooks/useNotifications';
 import { useMe } from '@/hooks/useMe';
 import { profileName, profileSeed } from '@/components/explorer/liveProfile';
 import { Ic } from '@/components/explorer/icons';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import {
   Card,
   Flag,
@@ -56,14 +63,18 @@ function QuickAction({
   label,
   tone,
   onPress,
+  testID,
 }: {
   icon: React.ElementType;
   label: string;
   tone: { bg: string; fg: string };
   onPress: () => void;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       style={{
         flex: 1,
@@ -218,8 +229,9 @@ function RecoCard({ d, onPress }: { d: Dest; onPress: () => void }) {
             paddingVertical: 4,
           }}
         >
+          {/* Government fee chip (japa#183): dollars only. */}
           <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}>
-            ${d.price.toLocaleString()}
+            {`${GOV_FEE_COPY.chipPrefix} ${formatCostUsd(d.price)}`}
           </Text>
         </BlurView>
       </View>
@@ -264,21 +276,33 @@ function RecoCard({ d, onPress }: { d: Dest; onPress: () => void }) {
   );
 }
 
-// Small circular header button (message / bell) with unread dot.
-// `showDot` gates the coral unread indicator: the message button keeps it always
-// on (default true); the bell passes the live unread-notification count.
+// Small circular header button (message / bell).
+// The message button keeps the coral dot (`showDot`, default true). The bell
+// passes `badgeCount` (the live unread-notification count, #269): a number
+// badge replaces the dot, and its `accessibilityLabel` carries the count.
 function HeaderButton({
   icon: IconCmp,
   onPress,
   showDot = true,
+  badgeCount,
+  accessibilityLabel,
+  testID,
 }: {
   icon: React.ElementType;
   onPress: () => void;
   showDot?: boolean;
+  /** When set, a number badge replaces the dot (#269). */
+  badgeCount?: number;
+  accessibilityLabel?: string;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       style={{
         width: 42,
         height: 42,
@@ -291,7 +315,8 @@ function HeaderButton({
       }}
     >
       <IconCmp size={19} color={EX.color.ink} strokeWidth={1.8} />
-      {showDot ? (
+      <UnreadBadge count={badgeCount} />
+      {showDot && badgeCount === undefined ? (
         <View
           style={{
             position: 'absolute',
@@ -312,6 +337,9 @@ function HeaderButton({
 
 export default function HomeScreen() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides the Messages button and the
+  // "Find an agent" quick action. Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
 
   // ── Applications (GET /applications) — japa#145: no demo APPS ──────────────
@@ -353,7 +381,9 @@ export default function HomeScreen() {
 
   // ── Unread notification count — gates the coral dot on the bell ────────────
   const unread = useUnreadNotificationCount();
-  const hasUnread = (unread.data ?? 0) > 0;
+  // Badge only when the poll succeeded and the count is above 0 (a failed poll
+  // hides it rather than showing an old number).
+  const unreadCount = unread.isSuccess ? (unread.data ?? 0) : 0;
 
   // "Check eligibility" needs a real visa: with an application it opens that
   // application's visa; with none it goes to the Explore tab to pick one
@@ -372,6 +402,8 @@ export default function HomeScreen() {
 
   return (
     <ScrollView
+      // e2e (japa#361): the Home screen's identity for flows ("ends on Home").
+      testID="screen.home"
       style={{ flex: 1, backgroundColor: EX.color.bg }}
       showsVerticalScrollIndicator={false}
       // tab-clear keeps the last section clear of the tab bar now that the
@@ -408,14 +440,23 @@ export default function HomeScreen() {
           ) : null}
         </View>
         <View style={{ flexDirection: 'row', gap: 9 }}>
-          <HeaderButton
-            icon={Ic.msg}
-            onPress={() => router.push('/messages')}
-          />
+          {/* Messages (chat with agents) is hidden in a self-service-only
+              build (japa#334); the bell and portrait stay. */}
+          {selfServiceOnly ? null : (
+            <HeaderButton
+              icon={Ic.msg}
+              testID="home.messages"
+              onPress={() => router.push('/messages')}
+              accessibilityLabel="Messages"
+            />
+          )}
           <HeaderButton
             icon={Ic.bell}
+            testID="home.notifications"
             onPress={() => router.push('/notifications')}
-            showDot={hasUnread}
+            showDot={false}
+            badgeCount={unreadCount}
+            accessibilityLabel={bellLabel(unreadCount)}
           />
           {/* Portrait initials come from the real name once it has loaded. */}
           {myName ? (
@@ -691,21 +732,29 @@ export default function HomeScreen() {
         <QuickAction
           icon={Ic.globe}
           label="Explore visas"
+          testID="home.quick.explore"
           tone={{ bg: EX.color.primaryTint10, fg: EX.color.primary }}
           onPress={() => router.push('/(tabs)/explore')}
         />
         <QuickAction
           icon={Ic.shield}
           label="Check eligibility"
+          testID="home.quick.eligibility"
           tone={{ bg: EX.color.tealTint14, fg: EX.color.success }}
           onPress={checkEligibility}
         />
-        <QuickAction
-          icon={Ic.users}
-          label="Find an agent"
-          tone={{ bg: EX.color.purpleTint, fg: EX.color.purple }}
-          onPress={() => router.push('/(tabs)/agents')}
-        />
+        {/* "Find an agent" goes to the Agents tab, hidden in a
+            self-service-only build (japa#334); the other two tiles share
+            the row (each is flex: 1). */}
+        {selfServiceOnly ? null : (
+          <QuickAction
+            icon={Ic.users}
+            label="Find an agent"
+            testID="home.quick.findAgent"
+            tone={{ bg: EX.color.purpleTint, fg: EX.color.purple }}
+            onPress={() => router.push('/(tabs)/agents')}
+          />
+        )}
       </View>
 
       {/* ── Active applications / its loading · error · first-run states ──────
