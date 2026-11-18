@@ -18,8 +18,12 @@ import {
 
 const mockGetToken = jest.fn(async () => 'tok-A');
 const mockDeleteToken = jest.fn(async () => {});
-const mockApiDelete = jest.fn(async () => ({ success: true }));
-const mockApiPost = jest.fn(async () => ({ success: true }));
+// Typed with a rest parameter: Jest 30's `toHaveBeenCalledWith` checks the
+// expected arguments against the mock's own parameter list (Expo SDK 58,
+// japa#399), and these stand in for `apiService.delete/post(url, body)`.
+type ApiCall = (...args: unknown[]) => Promise<{ success: boolean }>;
+const mockApiDelete = jest.fn<ApiCall>(async () => ({ success: true }));
+const mockApiPost = jest.fn<ApiCall>(async () => ({ success: true }));
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('@react-native-firebase/app', () => ({ getApp: () => ({}) }));
@@ -27,11 +31,14 @@ jest.mock('@react-native-firebase/messaging', () => ({
   getMessaging: () => ({}),
   getToken: (...a: unknown[]) => mockGetToken(...(a as [])),
   deleteToken: (...a: unknown[]) => mockDeleteToken(...(a as [])),
-  requestPermission: jest.fn(),
   onMessage: jest.fn(),
   onNotificationOpenedApp: jest.fn(),
   getInitialNotification: jest.fn(),
   onTokenRefresh: jest.fn(),
+}));
+// Push permission module (japa#399); not exercised by these tests.
+jest.mock('../notificationPermission', () => ({
+  requestPushPermission: jest.fn(),
 }));
 jest.mock('@/services/api.service', () => ({
   apiService: {

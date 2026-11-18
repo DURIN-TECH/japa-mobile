@@ -7,7 +7,7 @@
  * Uses the modular Firebase API consistent with auth and analytics services.
  *
  * Flow:
- * 1. On login → requestPermission() + registerToken()
+ * 1. On login → requestPushPermission() + registerToken()
  * 2. On token refresh → re-register with backend
  * 3. On foreground notification → refresh the inbox + bell, show in-app alert
  * 4. On notification tap (background) → deep-link to relevant screen
@@ -26,7 +26,6 @@ import { getApp } from '@react-native-firebase/app';
 import {
   getMessaging,
   getToken,
-  requestPermission,
   onMessage,
   onNotificationOpenedApp,
   getInitialNotification,
@@ -34,6 +33,9 @@ import {
   deleteToken,
 } from '@react-native-firebase/messaging';
 import { apiService } from './api.service';
+// Push permission (japa#399): RNFB 25+ deprecated messaging's
+// requestPermission; the replacement lives in its own module.
+import { requestPushPermission } from './notificationPermission';
 import {
   isSelfServiceHiddenNotification,
   routeForNotification,
@@ -141,15 +143,22 @@ class PushNotificationService {
     const gen = this.generation;
     const stale = () => gen !== this.generation;
     try {
-      // Request permission — returns authorization status
-      const authStatus = await requestPermission(this.messaging);
+      // Request permission (iOS system prompt; Android unchanged, no
+      // prompt). Replaces RNFB's deprecated `requestPermission` (japa#399)
+      // with the same outcome: authorized or provisional → continue.
+      const permitted = await requestPushPermission();
       if (stale()) return; // signed out meanwhile: do nothing
-      // authStatus: -1 = not determined, 0 = denied, 1 = authorized, 2 = provisional
-      if (authStatus < 1) {
+      if (!permitted) {
         if (__DEV__) console.warn('Push notification permission denied');
         this.initPromise = null; // allow a later retry
         return;
       }
+
+      // No explicit `registerDeviceForRemoteMessages()` (japa#399 QA round
+      // 1): RNFB auto-registers with APNs at launch, so getToken() below
+      // already has the APNs token. Calling it again timed out
+      // (`messaging/registration-timeout`) on the arm64 simulator under RNFB
+      // 27, aborting init, and logged "is not required" every launch.
 
       // Get and register the FCM token
       await this.registerToken();

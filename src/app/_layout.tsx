@@ -9,6 +9,7 @@ import {
   useNavigationContainerRef,
   useRouter,
   useSegments,
+  type NavigationAction,
 } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -49,7 +50,10 @@ SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
   // `/` resolves to the index redirect, which sends users into the app shell.
-  initialRouteName: 'index',
+  // Expo Router 58 (SDK 58, japa#399) renamed `initialRouteName` to `anchor`
+  // (the old key still works but logs a deprecation warning at launch). Same
+  // meaning: `index` sits below a deep-linked screen in the root stack.
+  anchor: 'index',
 };
 
 // Hook to handle auth-based navigation.
@@ -139,7 +143,20 @@ function useProtectedRoute(flagReady: boolean) {
         : null;
       const next = selfServiceRedirectState(current);
       if (next) {
-        navigationRef.resetRoot(next as never);
+        // Expo Router 58 (SDK 58, japa#399) removed `resetRoot` from the
+        // container ref. The replacement is a RESET action with the COMPLETE
+        // state: `selfServiceRedirectState` spreads the current state at each
+        // level, so `key`, `routeNames`, `routeKeySeq` and `stale: false`
+        // are carried over and the existing route keys (mounted screens)
+        // stay. The action is built as a plain `{ type: 'RESET' }` object
+        // (what `CommonActions.reset` returns) so nothing is imported from
+        // `expo-router/react-navigation`. `dispatch` runs after the current
+        // commit, which is fine: this effect only reacts to the segments.
+        const reset: NavigationAction = {
+          type: 'RESET',
+          payload: next,
+        };
+        navigationRef.dispatch(reset);
       } else {
         router.replace(SELF_SERVICE_REDIRECT);
       }

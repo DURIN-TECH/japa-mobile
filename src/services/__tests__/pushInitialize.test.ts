@@ -13,8 +13,15 @@ const mockOnRefresh = jest.fn<(...a: unknown[]) => () => void>(() => jest.fn());
 const mockInitial = jest.fn<(...a: unknown[]) => Promise<unknown>>(
   async () => null,
 );
-const mockPermission = jest.fn<(...a: unknown[]) => Promise<number>>(
-  async () => 1,
+// Push permission (japa#399): `requestPushPermission` replaces RNFB's
+// deprecated requestPermission; true = may notify.
+const mockPermission = jest.fn<(...a: unknown[]) => Promise<boolean>>(
+  async () => true,
+);
+// getToken right after the grant (japa#399 QA round 1: no explicit APNs
+// registration call in between; RNFB auto-registers).
+const mockGetToken = jest.fn<(...a: unknown[]) => Promise<string>>(
+  async () => 'tok',
 );
 
 jest.mock('expo-router', () => ({
@@ -23,13 +30,15 @@ jest.mock('expo-router', () => ({
 jest.mock('@react-native-firebase/app', () => ({ getApp: () => ({}) }));
 jest.mock('@react-native-firebase/messaging', () => ({
   getMessaging: () => ({}),
-  getToken: async () => 'tok',
+  getToken: (...a: unknown[]) => mockGetToken(...a),
   deleteToken: async () => {},
-  requestPermission: (...a: unknown[]) => mockPermission(...a),
   onMessage: (...a: unknown[]) => mockOnMessage(...a),
   onNotificationOpenedApp: (...a: unknown[]) => mockOnOpened(...a),
   getInitialNotification: (...a: unknown[]) => mockInitial(...a),
   onTokenRefresh: (...a: unknown[]) => mockOnRefresh(...a),
+}));
+jest.mock('../notificationPermission', () => ({
+  requestPushPermission: (...a: unknown[]) => mockPermission(...a),
 }));
 jest.mock('@/services/api.service', () => ({
   apiService: {
@@ -58,7 +67,7 @@ beforeEach(() => {
   mockAlert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.spyOn(console, 'warn').mockImplementation(() => {});
-  mockPermission.mockResolvedValue(1);
+  mockPermission.mockResolvedValue(true);
   mockInitial.mockResolvedValue(null);
   // Fresh singleton (and fresh once-per-launch cold-start flag) per test.
   jest.isolateModules(() => {
@@ -68,6 +77,13 @@ beforeEach(() => {
 });
 
 describe('initialize', () => {
+  it('after a grant goes straight to getToken and attaches listeners', async () => {
+    await svc.initialize();
+    expect(mockPermission).toHaveBeenCalledTimes(1);
+    expect(mockGetToken).toHaveBeenCalledTimes(1);
+    expect(mockOnMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('two sequential calls give one listener of each kind', async () => {
     await svc.initialize();
     await svc.initialize();
@@ -92,15 +108,15 @@ describe('initialize', () => {
 
   it('a stale init (sign-out then quick sign-in) attaches no second listener set', async () => {
     // First init stalls on the permission prompt; sign out, sign in again.
-    let release!: (v: number) => void;
+    let release!: (v: boolean) => void;
     mockPermission.mockImplementationOnce(
-      () => new Promise<number>((r) => (release = r)),
+      () => new Promise<boolean>((r) => (release = r)),
     );
     const first = svc.initialize();
     await svc.unregisterToken({ notifyBackend: false });
     const second = svc.initialize();
     await second;
-    release(1); // the stale init now resumes
+    release(true); // the stale init now resumes
     await first;
     expect(mockOnMessage).toHaveBeenCalledTimes(1);
     expect(mockOnOpened).toHaveBeenCalledTimes(1);
@@ -108,7 +124,7 @@ describe('initialize', () => {
   });
 
   it('a denied permission can be retried later', async () => {
-    mockPermission.mockResolvedValueOnce(0);
+    mockPermission.mockResolvedValueOnce(false);
     await svc.initialize();
     expect(mockOnMessage).not.toHaveBeenCalled();
     await svc.initialize();

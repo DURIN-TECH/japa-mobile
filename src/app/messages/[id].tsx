@@ -25,6 +25,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+// RN 0.88 strict TypeScript API (Expo SDK 58, japa#399): `ScrollView` is a
+// component value, not a class, so refs are typed with its instance type.
+import type { ScrollViewInstance } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { format } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -196,7 +199,7 @@ export default function ChatView() {
   const keyRef = useRef(0);
 
   const [draft, setDraft] = useState('');
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const sendMessage = useSendMessage();
 
   // ── Files shared in this thread ───────────────────────────────────────────

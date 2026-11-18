@@ -97,6 +97,11 @@ export const SELF_SERVICE_REDIRECT = '/(tabs)/home' as const;
 // React Navigation keeps the existing screens mounted. Result: one `(tabs)`
 // entry, on Home, nothing above it, Back has nowhere in-app to go.
 //
+// Expo Router 58 (SDK 58, japa#399): the guard applies the result as a
+// RESET action (`resetRoot` was removed). RESET needs a COMPLETE state
+// (`key`, `routeNames`, `routeKeySeq`, `stale: false` at every level); the
+// helper keeps them because it spreads the existing state at each level.
+//
 // When there is no tab shell below (a cold start straight into a hidden
 // link), this returns null and the guard falls back to `replace`, which
 // already ends on Home with one shell.

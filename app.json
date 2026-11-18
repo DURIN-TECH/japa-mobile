@@ -46,13 +46,10 @@
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "static",
-            "forceStaticLinking": [
-              "RNFBApp",
-              "RNFBAuth",
-              "RNFBCrashlytics",
-              "RNFBMessaging"
-            ]
+            "useFrameworks": "dynamic"
+          },
+          "android": {
+            "kotlinVersion": "2.4.0"
           }
         }
       ],
@@ -67,6 +64,12 @@
       ],
       "expo-image",
       "expo-web-browser",
+      [
+        "react-native-permissions",
+        {
+          "iosPermissions": ["Notifications"]
+        }
+      ],
       "./plugins/withPodsDeploymentTarget",
       "./plugins/withAndroidPushSetup"
     ],

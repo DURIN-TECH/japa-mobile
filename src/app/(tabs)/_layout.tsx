@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { Tabs } from 'expo-router';
+import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { Pressable, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,18 +17,11 @@ import { Ic, IcName } from '@/components/explorer/icons';
 // Self-service-only launch flag (japa#334): drops the Agents tab.
 import { isSelfServiceOnly } from '@/config/env';
 
-// Minimal shape of the props Expo Router hands a custom `tabBar` renderer.
-type TabBarProps = {
-  state: { index: number; routes: { key: string; name: string }[] };
-  navigation: {
-    emit: (e: {
-      type: 'tabPress';
-      target: string;
-      canPreventDefault: boolean;
-    }) => { defaultPrevented: boolean };
-    navigate: (name: string) => void;
-  };
-};
+// Props Expo Router hands a custom `tabBar` renderer. Expo Router 58 (SDK 58,
+// japa#399) no longer passes `navigation`: the bar gets `emitter` (fires
+// `tabPress`) and `navigateToTab(routeKey)`. Typed with the library's own
+// type, with no cast, so tsc catches the next change to this contract.
+type TabBarProps = BottomTabBarProps;
 
 // Tab order + icons mirror the prototype exactly.
 const TAB_META: { name: string; label: string; icon: IcName }[] = [
@@ -49,7 +43,7 @@ export function visibleTabs(selfServiceOnly: boolean) {
     : TAB_META;
 }
 
-function GlassTabBar({ state, navigation }: TabBarProps) {
+export function GlassTabBar({ state, emitter, navigateToTab }: TabBarProps) {
   const insets = useSafeAreaInsets();
   // Tabs the bar may draw; routes not listed render no button.
   const tabs = visibleTabs(isSelfServiceOnly());
@@ -83,13 +77,14 @@ function GlassTabBar({ state, navigation }: TabBarProps) {
           const IconCmp = Ic[meta.icon];
           const onPress = () => {
             Haptics.selectionAsync().catch(() => {});
-            const event = navigation.emit({
+            // Same contract as the stock bar: tabPress can be prevented by a
+            // listener; otherwise switch to the tab by its route key.
+            const event = emitter.emit({
               type: 'tabPress',
               target: route.key,
               canPreventDefault: true,
             });
-            if (!focused && !event.defaultPrevented)
-              navigation.navigate(route.name);
+            if (!focused && !event.defaultPrevented) navigateToTab(route.key);
           };
           return (
             <Pressable
@@ -136,7 +131,7 @@ export default function ExplorerTabsLayout() {
   return (
     <Tabs
       screenOptions={{ headerShown: false }}
-      tabBar={(props) => <GlassTabBar {...(props as unknown as TabBarProps)} />}
+      tabBar={(props) => <GlassTabBar {...props} />}
     >
       {TAB_META.map((m) => (
         <Tabs.Screen key={m.name} name={m.name} />

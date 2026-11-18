@@ -28,6 +28,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+// RN 0.88 strict TypeScript API (Expo SDK 58, japa#399): `ScrollView` is a
+// component value, not a class, so refs are typed with its instance type.
+import type { ScrollViewInstance } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
@@ -127,7 +130,7 @@ export default function AiChatScreen() {
   const [error, setError] = useState<{ upgrade: boolean; text: string } | null>(
     null,
   );
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const bubbles: Bubble[] = useMemo(
     () =>

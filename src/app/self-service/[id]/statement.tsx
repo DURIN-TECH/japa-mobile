@@ -16,7 +16,7 @@
 // leaving with unsaved text (native alert).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -27,7 +27,7 @@ import {
   View,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePreventRemove, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
 import {
@@ -54,7 +54,6 @@ import { isOffline } from '@/hooks/useCaseOfficer';
 
 export default function StatementScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const applicationId = id ?? '';
@@ -67,8 +66,10 @@ export default function StatementScreen() {
   const [draft, setDraft] = useState<string | null>(null);
   const text = draft ?? stmtQ.data?.text ?? '';
   const dirty = draft !== null && draft !== (stmtQ.data?.text ?? '');
-  // The leave-alert must not fire after a successful save pops the screen.
-  const allowLeave = useRef(false);
+  // The leave-alert must not fire after a successful save pops the screen,
+  // or after "Discard changes". State (not a ref) because `usePreventRemove`
+  // reads it as a render value (Expo Router 58, japa#399).
+  const [allowLeave, setAllowLeave] = useState(false);
 
   // Locked once the application is under review or later. Known from the
   // application's status up front, and confirmed by a 409 STATEMENT_LOCKED if
@@ -78,6 +79,35 @@ export default function StatementScreen() {
     isStatementLockedError(save.error);
   const blocked = locked;
 
+  // ── Leaving with unsaved text → native alert ─────────────────────────────────
+  // Expo Router 58 (SDK 58, japa#399) removed the `beforeRemove` event;
+  // `usePreventRemove` replaces it. While `preventLeave` is true, Back (header,
+  // Android back, iOS swipe) is blocked and the callback asks what to do.
+  // `repeat()` lifts the block and replays the exact action the user started.
+  const preventLeave = dirty && !blocked && !allowLeave;
+  const disablePrevention = usePreventRemove(preventLeave, ({ repeat }) => {
+    Alert.alert(
+      'Save your changes?',
+      'Your statement has changes that aren’t saved yet.',
+      [
+        { text: 'Keep editing', style: 'cancel' },
+        {
+          text: 'Discard changes',
+          style: 'destructive',
+          onPress: () => {
+            setAllowLeave(true);
+            repeat();
+          },
+        },
+        {
+          // doSave lifts the block on success, then replays the action.
+          text: 'Save',
+          onPress: () => doSave(repeat),
+        },
+      ],
+    );
+  });
+
   const doSave = useCallback(
     async (then?: () => void) => {
       if (!stmtQ.data) return;
@@ -86,43 +116,18 @@ export default function StatementScreen() {
         Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
         ).catch(() => undefined);
-        allowLeave.current = true;
+        // Saved: lift the block now (not on the next render) so the
+        // navigation below is not stopped by `usePreventRemove`.
+        setAllowLeave(true);
+        disablePrevention();
         if (then) then();
         else router.back();
       } catch {
         // Surfaced through `save.error` (InlineError below); the text is kept.
       }
     },
-    [stmtQ.data, save, text, router],
+    [stmtQ.data, save, text, router, disablePrevention],
   );
-
-  // ── Leaving with unsaved text → native alert ─────────────────────────────────
-  useEffect(() => {
-    const sub = navigation.addListener('beforeRemove', (e) => {
-      if (allowLeave.current || !dirty || blocked) return;
-      e.preventDefault();
-      Alert.alert(
-        'Save your changes?',
-        'Your statement has changes that aren’t saved yet.',
-        [
-          { text: 'Keep editing', style: 'cancel' },
-          {
-            text: 'Discard changes',
-            style: 'destructive',
-            onPress: () => {
-              allowLeave.current = true;
-              navigation.dispatch(e.data.action);
-            },
-          },
-          {
-            text: 'Save',
-            onPress: () => doSave(() => navigation.dispatch(e.data.action)),
-          },
-        ],
-      );
-    });
-    return sub;
-  }, [navigation, dirty, blocked, doSave]);
 
   const backToApplication = () => router.back();
 
