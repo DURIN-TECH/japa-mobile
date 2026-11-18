@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from '@jest/globals';
 import { mapApplication, resolveVisaTitle } from '../liveApplications';
+import { STATUS } from '../content';
 import type { Application } from '@/types/applications.type';
 
 const app = (over: Partial<Application> = {}): Application =>
@@ -55,6 +56,32 @@ describe('mapApplication', () => {
       mapApplication(app({ visaTypeName: undefined }), undefined, 'Fetched')
         .dest?.visa,
     ).toBe('Fetched');
+  });
+});
+
+// japa#259: a withdrawn application reads "Withdrawn" (neutral pill, the same
+// colours as "Draft"), not "Under review".
+describe('withdrawn status label', () => {
+  it('maps backend `withdrawn` to its own bucket', () => {
+    expect(mapApplication(app({ status: 'withdrawn' })).status).toBe(
+      'withdrawn',
+    );
+  });
+  it('the bucket is labelled "Withdrawn"', () => {
+    const bucket = mapApplication(app({ status: 'withdrawn' })).status;
+    expect(STATUS[bucket].label).toBe('Withdrawn');
+  });
+  it('uses the same neutral colours as "Draft"', () => {
+    expect(STATUS.withdrawn.fg).toBe(STATUS.draft.fg);
+    expect(STATUS.withdrawn.bg).toBe(STATUS.draft.bg);
+    expect(STATUS.draft.label).toBe('Draft');
+  });
+  it('leaves the other statuses where they were', () => {
+    expect(mapApplication(app({ status: 'draft' })).status).toBe('draft');
+    expect(mapApplication(app({ status: 'under_review' })).status).toBe(
+      'review',
+    );
+    expect(mapApplication(app({ status: 'approved' })).status).toBe('approved');
   });
 });
 

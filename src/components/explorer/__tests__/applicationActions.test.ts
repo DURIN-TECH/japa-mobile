@@ -3,13 +3,26 @@
 // One block per acceptance-criteria row: self-service open with documents
 // outstanding / none outstanding / no required documents, self-service
 // closed, no-agent non-self-service, and agent-managed (unchanged).
+//
+// japa#259 (withdraw), at the end of the file: the action's visibility rule
+// (self-service + open only), the list filter dropping `withdrawn`, the 409
+// test and the confirmation copy.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, expect, it } from '@jest/globals';
 import {
+  WITHDRAW_CONFIRM_ACTION,
+  WITHDRAW_CONFIRM_CANCEL,
+  WITHDRAW_CONFIRM_MESSAGE,
+  WITHDRAW_CONFIRM_TITLE,
+  WITHDRAW_ERROR_MESSAGE,
+  WITHDRAW_LABEL,
+  canWithdraw,
+  isAlreadyClosedError,
   isClosedStatus,
   isSelfServiceApplication,
   stickyAction,
+  withoutWithdrawn,
   type StickyActionInput,
 } from '../applicationActions';
 import type { ApplicationStatus } from '@/types/applications.type';
@@ -154,5 +167,94 @@ describe('stickyAction — missing data', () => {
   it('no case → no button', () => {
     expect(stickyAction(undefined)).toBeNull();
     expect(stickyAction(null)).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// japa#259: withdraw
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('canWithdraw — the "Withdraw application" action', () => {
+  it.each(OPEN)('self-service, %s (open) → shown', (status) => {
+    expect(canWithdraw(app({ status }))).toBe(true);
+  });
+  it.each(CLOSED)('self-service, %s (closed) → hidden', (status) => {
+    expect(canWithdraw(app({ status }))).toBe(false);
+  });
+  it.each(OPEN)('agent-managed, %s → hidden', (status) => {
+    expect(
+      canWithdraw(
+        app({ mode: 'agent', agentId: 'a1', agencyId: 'ag1', status }),
+      ),
+    ).toBe(false);
+  });
+  it('mode self with an agent or an agency is not self-service → hidden', () => {
+    expect(canWithdraw(app({ agentId: 'a1' }))).toBe(false);
+    expect(canWithdraw(app({ agencyId: 'ag1' }))).toBe(false);
+  });
+  it('mode agent with no agent yet → hidden', () => {
+    expect(canWithdraw(app({ mode: 'agent' }))).toBe(false);
+  });
+  it('no case loaded → hidden', () => {
+    expect(canWithdraw(undefined)).toBe(false);
+    expect(canWithdraw(null)).toBe(false);
+  });
+  it('a withdrawn application has neither the action nor a sticky button', () => {
+    const withdrawn = app({ status: 'withdrawn' });
+    expect(canWithdraw(withdrawn)).toBe(false);
+    expect(stickyAction(withdrawn)).toBeNull();
+  });
+});
+
+describe('withoutWithdrawn — the list filter', () => {
+  const row = (id: string, status: ApplicationStatus) => ({ id, status });
+
+  it('drops withdrawn applications and keeps every other status, in order', () => {
+    const all = [...OPEN, ...CLOSED].map((s) => row(s, s));
+    expect(withoutWithdrawn(all).map((a) => a.id)).toEqual([
+      ...OPEN,
+      'approved',
+      'rejected',
+      'expired',
+    ]);
+  });
+  it('a user whose only application is withdrawn gets an empty list', () => {
+    expect(withoutWithdrawn([row('a', 'withdrawn')])).toEqual([]);
+  });
+  it('an empty list stays empty, and the input is not mutated', () => {
+    expect(withoutWithdrawn([])).toEqual([]);
+    const input = [row('a', 'withdrawn'), row('b', 'draft')];
+    withoutWithdrawn(input);
+    expect(input).toHaveLength(2);
+  });
+});
+
+describe('isAlreadyClosedError — the backend 409 on a closed application', () => {
+  it('is true for a 409', () => {
+    expect(
+      isAlreadyClosedError({ status: 409, code: 'INVALID_STATUS_TRANSITION' }),
+    ).toBe(true);
+  });
+  it('is false for network (status 0), server and other errors', () => {
+    expect(isAlreadyClosedError({ status: 0 })).toBe(false);
+    expect(isAlreadyClosedError({ status: 500 })).toBe(false);
+    expect(isAlreadyClosedError({ status: 403 })).toBe(false);
+    expect(isAlreadyClosedError(new Error('boom'))).toBe(false);
+    expect(isAlreadyClosedError(undefined)).toBe(false);
+  });
+});
+
+describe('withdraw copy (issue #259, verbatim)', () => {
+  it('matches the acceptance criteria', () => {
+    expect(WITHDRAW_LABEL).toBe('Withdraw application');
+    expect(WITHDRAW_CONFIRM_TITLE).toBe('Withdraw this application?');
+    expect(WITHDRAW_CONFIRM_MESSAGE).toBe(
+      'It leaves your journey and stops counting toward your plan. You can’t undo this.',
+    );
+    expect(WITHDRAW_CONFIRM_CANCEL).toBe('Cancel');
+    expect(WITHDRAW_CONFIRM_ACTION).toBe('Withdraw');
+    expect(WITHDRAW_ERROR_MESSAGE).toBe(
+      'We couldn’t withdraw this application. Check your connection and try again.',
+    );
   });
 });

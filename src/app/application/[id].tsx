@@ -13,6 +13,11 @@
 // link row. A 404 shows the not-found EmptyState; other load failures show
 // an InlineError with "Try again".
 //
+// japa#259: a self-service applicant can withdraw their own open application
+// from a "Withdraw application" text action at the very bottom of the sheet
+// (danger colour, native confirmation first). A withdrawn application shows
+// a neutral "Withdrawn" pill, no withdraw action and no sticky button.
+//
 // Every measurement is quoted from AppDetail: HERO 240, scrim to-top
 // (.8 → .2@50% → .36), StatusPill full, country · Ref 13/600, visa 28 Space
 // Grotesk; sheet radius 28 / padding 20-22-130; dark next-step card radius 18;
@@ -60,11 +65,23 @@ import {
   mapTimeline,
 } from '@/components/explorer/liveApplications';
 // japa#307: what the sticky button says and where it goes.
-import { stickyAction } from '@/components/explorer/applicationActions';
+// japa#259: whether "Withdraw application" shows, and its copy.
+import {
+  WITHDRAW_CONFIRM_ACTION,
+  WITHDRAW_CONFIRM_CANCEL,
+  WITHDRAW_CONFIRM_MESSAGE,
+  WITHDRAW_CONFIRM_TITLE,
+  WITHDRAW_ERROR_MESSAGE,
+  WITHDRAW_LABEL,
+  canWithdraw,
+  isAlreadyClosedError,
+  stickyAction,
+} from '@/components/explorer/applicationActions';
 import { fmtDate } from '@/components/explorer/liveDate';
 import {
   useApplication,
   useApplicationTimeline,
+  useWithdrawApplication,
 } from '@/hooks/useApplications';
 import { ThroughRow } from '@/components/explorer/SharedRouteParts';
 import {
@@ -345,6 +362,12 @@ export default function AppDetail() {
   const [reasonSel, setReasonSel] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
 
+  // ── Withdraw (japa#259) ────────────────────────────────────────────────────
+  // The mutation (created here, before any early return) and the failure copy
+  // shown as an InlineError under the action; null = no error.
+  const withdraw = useWithdrawApplication();
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+
   // ── Payment requests (GET /payment-requests?role=client&applicationId=…) ────
   // Mutation hooks are created here (top level, before any early return) so
   // approve/reject fire the real backend calls. None → the block is hidden.
@@ -612,6 +635,49 @@ export default function AppDetail() {
   // e2e QA ran, with the flag on).
   const showStickyCta =
     !!sticky && !(selfServiceOnly && sticky.target === 'agent-conversation');
+
+  // ── Withdraw application (japa#259) ────────────────────────────────────────
+  // Shown only on a self-service application that is still open
+  // (`canWithdraw`, on the raw backend case like the sticky button above).
+  const showWithdraw = canWithdraw(liveQ.data);
+  // The request itself, sent only after the user confirms in the alert.
+  const doWithdraw = () => {
+    // A second request can never start while one is in flight.
+    if (withdraw.isPending) return;
+    setWithdrawError(null);
+    withdraw.mutate(app.id, {
+      // Withdrawn: leave for the journey tab. `replace`, so "back" can't
+      // return to the application the user just took off their journey. The
+      // hook has already removed it from the cached lists.
+      onSuccess: () => router.replace('/(tabs)/tracker'),
+      onError: (error) => {
+        // 409: it was already closed (withdrawn on another device, or decided
+        // meanwhile). That isn't a failure to report: reload the application
+        // so the screen shows its real status (and hides this action). The
+        // hook also marks the lists stale; the timeline is reloaded here.
+        if (isAlreadyClosedError(error)) {
+          liveQ.refetch();
+          tl.refetch();
+          return;
+        }
+        // Network / server failure: nothing changed; say so and let them retry.
+        setWithdrawError(WITHDRAW_ERROR_MESSAGE);
+      },
+    });
+  };
+  // Native confirmation first (as delete-account / sign out do). "Cancel"
+  // just closes it; "Withdraw" (destructive style) sends the request.
+  const confirmWithdraw = () => {
+    if (withdraw.isPending) return;
+    Alert.alert(WITHDRAW_CONFIRM_TITLE, WITHDRAW_CONFIRM_MESSAGE, [
+      { text: WITHDRAW_CONFIRM_CANCEL, style: 'cancel' },
+      {
+        text: WITHDRAW_CONFIRM_ACTION,
+        style: 'destructive',
+        onPress: doWithdraw,
+      },
+    ]);
+  };
 
   return (
     // e2e ids (Maestro, japa#361): `screen.application`, `application.scroll`,
@@ -1489,6 +1555,58 @@ export default function AppDetail() {
               </PressableStatic>
             ) : null}
           </View>
+
+          {/* ── Withdraw application (japa#259) ─────────────────────────────
+              Last thing in the scroll content, above the space the sheet
+              keeps clear for the sticky bar (its paddingBottom). A quiet text
+              action in the destructive colour: it must be findable, never
+              prominent. Self-service + open status only. */}
+          {showWithdraw ? (
+            <View style={{ marginTop: 28, alignItems: 'center' }}>
+              <PressableStatic
+                onPress={confirmWithdraw}
+                // In flight: locked, so a second tap can't send another request.
+                disabled={withdraw.isPending}
+                accessibilityRole="button"
+                accessibilityLabel={WITHDRAW_LABEL}
+                accessibilityState={{
+                  disabled: withdraw.isPending,
+                  busy: withdraw.isPending,
+                }}
+                // The label is ~20pt tall; padding + hitSlop reach 44pt.
+                hitSlop={8}
+                style={({ pressed }) => ({
+                  minHeight: 32,
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                {withdraw.isPending ? (
+                  // Loading = coral spinner (design system).
+                  <ActivityIndicator color={EX.color.primary} />
+                ) : (
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '700',
+                      color: EX.color.danger,
+                    }}
+                  >
+                    {WITHDRAW_LABEL}
+                  </Text>
+                )}
+              </PressableStatic>
+              {/* Network / server failure: the application is unchanged and
+                  the action above can be tapped again. */}
+              {withdrawError ? (
+                <View style={{ alignSelf: 'stretch', marginTop: 10 }}>
+                  <InlineError message={withdrawError} />
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </Animated.ScrollView>
 

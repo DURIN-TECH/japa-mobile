@@ -21,8 +21,9 @@ import {
 
 // Backend ApplicationStatus → one of the Explorer STATUS keys
 // ('documents' | 'review' | 'interview' | 'submitted' | 'approved').
-// ('draft' is its own bucket.) Anything without a natural bucket (pending_payment, rejected,
-// withdrawn, expired) falls back to 'review' so the row still renders a pill.
+// ('draft' and 'withdrawn' are their own buckets.) Anything without a natural
+// bucket (pending_payment, rejected, expired) falls back to 'review' so the row
+// still renders a pill.
 const STATUS_MAP: Record<ApplicationStatus, string> = {
   draft: 'draft', // japa#174: shown as "Draft", not "Under review"
   pending_payment: 'review',
@@ -32,7 +33,7 @@ const STATUS_MAP: Record<ApplicationStatus, string> = {
   interview_scheduled: 'interview', // interview* → interview
   approved: 'approved', // approved / completed → approved
   rejected: 'review',
-  withdrawn: 'review',
+  withdrawn: 'withdrawn', // japa#259: shown as "Withdrawn", not "Under review"
   expired: 'review',
 };
 
