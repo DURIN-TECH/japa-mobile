@@ -24,7 +24,7 @@
 // not lose it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -46,6 +46,10 @@ import {
 } from '@/components/explorer/AccountForm';
 import { UpgradePrompt } from '@/components/explorer/UpgradePrompt';
 import {
+  currentAnalysisId,
+  nextAnalysisIdStep,
+} from '@/components/explorer/refusalAnalysisIdLogic';
+import {
   useGetUploadUrl,
   useCreateDocument,
   uploadToStorage,
@@ -58,6 +62,11 @@ import {
   useStartRefusalAnalysis,
   useStoredAnalysisId,
 } from '@/hooks/useRefusalLetter';
+// japa#310: the size and type the backend (and the model) can take.
+import {
+  pickedContentType,
+  pickedFileProblem,
+} from '@/components/explorer/uploadLimits';
 import type {
   RefusalChecklistItemView,
   RefusalData,
@@ -546,12 +555,56 @@ function Results({
 export default function RefusalLetterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { applicationId } = useLocalSearchParams<{ applicationId?: string }>();
+  const { applicationId, analysisId: paramAnalysisId } = useLocalSearchParams<{
+    applicationId?: string;
+    analysisId?: string;
+  }>();
   const appId = applicationId ?? '';
 
   // The analysis remembered for this application (survives backgrounding / restart).
-  const [analysisId, setAnalysisId, storedReady] = useStoredAnalysisId(appId);
+  const [storedId, setAnalysisId, storedReady] = useStoredAnalysisId(appId);
+  // #269: a push for a finished analysis carries its id, so the result shows on
+  // a phone that never uploaded the letter. The pushed id is adopted as the
+  // saved id (one current id, so "Start over" works as before); if it is
+  // rejected (403/404) the screen falls back to the id saved before it, else
+  // the upload step. Rules: refusalAnalysisIdLogic.ts.
+  const paramId = paramAnalysisId || null;
+  const [paramHandled, setParamHandled] = useState(false);
+  const [pushed, setPushed] = useState<{
+    id: string;
+    previousId: string | null;
+  } | null>(null);
+  const analysisId = currentAnalysisId({
+    paramId,
+    savedId: storedId,
+    paramHandled,
+  });
   const analysisQ = useRefusalAnalysis(analysisId);
+
+  // Adopt the pushed id, or fall back from a rejected one (see the logic file).
+  const idStep = useMemo(
+    () =>
+      nextAnalysisIdStep({
+        paramId,
+        savedId: storedId,
+        storedReady,
+        paramHandled,
+        pushedId: pushed?.id ?? null,
+        previousId: pushed?.previousId ?? null,
+        loadError: analysisQ.error,
+      }),
+    [paramId, storedId, storedReady, paramHandled, pushed, analysisQ.error],
+  );
+  useEffect(() => {
+    if (idStep.kind === 'adopt') {
+      setParamHandled(true);
+      setPushed({ id: idStep.id, previousId: idStep.previousId });
+      if (storedId !== idStep.id) setAnalysisId(idStep.id);
+    } else if (idStep.kind === 'fallback') {
+      setPushed(null);
+      setAnalysisId(idStep.id);
+    }
+  }, [idStep, storedId, setAnalysisId]);
 
   const getUploadUrl = useGetUploadUrl();
   const createDoc = useCreateDocument();
@@ -588,7 +641,19 @@ export default function RefusalLetterScreen() {
       });
       if (res.canceled) return;
       const f = res.assets[0];
-      const contentType = f.mimeType ?? 'application/octet-stream';
+      const contentType = pickedContentType(f);
+      // japa#310: same size and type check as the self-service upload (wrong
+      // type, HEIC/HEIF, over 7 MB for an image / 10 MB otherwise): nothing is
+      // uploaded and the line shows in this screen's InlineError.
+      const problem = pickedFileProblem({
+        size: f.size,
+        contentType,
+        name: f.name,
+      });
+      if (problem) {
+        setError(new Error(problem));
+        return;
+      }
 
       setUploading(true);
       const up = await getUploadUrl.mutateAsync({
@@ -622,6 +687,7 @@ export default function RefusalLetterScreen() {
 
   /** Forget the current analysis and go back to the upload prompt. */
   const reset = useCallback(() => {
+    setPushed(null);
     setAnalysisId(null);
     setDocumentId(null);
     setError(null);
@@ -637,7 +703,10 @@ export default function RefusalLetterScreen() {
 
   // Which single error to show: an upload / start error, else a failed read of
   // the analysis (a dropped connection while polling).
-  const shownError = error ?? (analysisQ.isError ? analysisQ.error : null);
+  // A rejected pushed id is about to fall back, so its error is never shown.
+  const shownError =
+    error ??
+    (analysisQ.isError && idStep.kind !== 'fallback' ? analysisQ.error : null);
   const upgrade = isUpgradeRequired(shownError);
 
   /** Message for a plain error. */

@@ -37,14 +37,41 @@ jest.mock('expo-router', () => ({
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
+// japa#183: /pay reads the request's amount from the list (no fee param).
 jest.mock('@/hooks/usePaymentRequests', () => ({
+  usePaymentRequests: () => ({
+    data: [
+      {
+        id: 'pr1',
+        applicationId: 'app1',
+        amount: 2500,
+        currency: 'USD',
+        priceUsd: { amountMinor: 2500, currency: 'USD' },
+        legacy: false,
+        charge: { amountMinor: 3_384_925, currency: 'NGN' },
+        status: 'approved',
+      },
+    ],
+  }),
   useVerifyPaymentRequest: () => ({
     mutateAsync: mockVerify,
     isPending: false,
   }),
 }));
 jest.mock('@/hooks/useConsultations', () => ({
+  // japa#288: the screen also reads a 409-named booking and labels its type
+  // (booking path only; never used on this payment-request path).
+  useConsultation: () => ({ data: undefined }),
+  getConsultationTypeLabel: (type: string) => type,
   useCreateConsultation: () => ({ mutateAsync: jest.fn() }),
+  useConsultationCheckout: () => ({ mutateAsync: jest.fn() }),
+  useVerifyConsultation: () => ({ mutateAsync: jest.fn() }),
+}));
+jest.mock('@/hooks/useAgents', () => ({
+  useAgent: () => ({ data: undefined }),
+}));
+jest.mock('@/services/analytics.service', () => ({
+  analyticsService: { trackConsultationBooked: jest.fn() },
 }));
 
 import React from 'react';
@@ -71,7 +98,7 @@ function appParams(extra: Record<string, string> = {}) {
     topic: 'Visa processing fee',
     mode: '',
     dur: '',
-    fee: '2500',
+    applicationId: 'app1',
     ...extra,
   };
 }
@@ -167,5 +194,52 @@ describe('pay.tsx return to app', () => {
     mockParams = appParams();
     await render();
     expect(mockOpenAuth).not.toHaveBeenCalled();
+  });
+
+  it('shows the request’s locked local amount with its dollar price (japa#183)', async () => {
+    mockParams = appParams();
+    const tree = await render();
+    expect(text(tree)).toContain('₦33,849');
+    expect(text(tree)).toContain('about $25');
+  });
+
+  it('paid → confirmation carries the charged amount, no fee param', async () => {
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockResolvedValue({
+      status: 'paid',
+      amount: 2500,
+      currency: 'USD',
+      priceUsd: { amountMinor: 2500, currency: 'USD' },
+      charge: { amountMinor: 3_384_925, currency: 'NGN' },
+    });
+    await render();
+    const params = (
+      mockPush.mock.calls[0][0] as { params: Record<string, string> }
+    ).params;
+    expect(params.fee).toBeUndefined();
+    expect(params.paidAmountMinor).toBe('3384925');
+    expect(params.paidCurrency).toBe('NGN');
+    expect(params.priceUsdCents).toBe('2500');
+    // No effectiveRate on this (older) request: '' = dollar price only.
+    expect(params.effectiveRate).toBe('');
+  });
+
+  it('paid → confirmation carries the request’s effectiveRate (japa#332)', async () => {
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockResolvedValue({
+      status: 'paid',
+      amount: 600,
+      currency: 'USD',
+      priceUsd: { amountMinor: 600, currency: 'USD' },
+      charge: { amountMinor: 812_384, currency: 'NGN' },
+      effectiveRate: 1353.973333,
+    });
+    await render();
+    const params = (
+      mockPush.mock.calls[0][0] as { params: Record<string, string> }
+    ).params;
+    expect(params.paidAmountMinor).toBe('812384');
+    expect(params.priceUsdCents).toBe('600');
+    expect(params.effectiveRate).toBe('1353.973333');
   });
 });

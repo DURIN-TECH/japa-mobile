@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Explorer AUTH — Welcome carousel (prototype auth.jsx → AuthWelcome).
 //
-// Full-screen cross-fading photography (the 3 ONBOARD slides) with a slow
+// Full-screen cross-fading photography (the ONBOARD slides; 2 in a
+// self-service-only build, japa#334) with a slow
 // Ken-Burns zoom on the active slide, a top-center brand mark, bottom copy
 // (kicker / title / body), animated progress dots and two CTAs.
 //
@@ -22,7 +23,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
-import { ONBOARD } from '@/components/explorer/content';
+import { onboardSlides } from '@/components/explorer/content';
+// Self-service-only launch flag (japa#334): drops the agent slide.
+import { isSelfServiceOnly } from '@/config/env';
 import { Ic } from '@/components/explorer/icons';
 import { PINK } from '@/components/explorer/AuthShell';
 import { SeliMark } from '@/components/explorer/SeliMark';
@@ -123,23 +126,25 @@ export default function AuthWelcome() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [i, setI] = useState(0);
+  // Slides for this build: all three, or two in a self-service-only build
+  // (japa#334, no agent slide). The photos, pager dots and auto-advance all
+  // read this list, so they stay in step with one fewer slide.
+  const slides = onboardSlides(isSelfServiceOnly());
+  const count = slides.length;
 
   // Auto-advance the carousel every ADVANCE_MS.
   useEffect(() => {
-    const t = setInterval(
-      () => setI((v) => (v + 1) % ONBOARD.length),
-      ADVANCE_MS,
-    );
+    const t = setInterval(() => setI((v) => (v + 1) % count), ADVANCE_MS);
     return () => clearInterval(t);
-  }, []);
+  }, [count]);
 
-  const slide = ONBOARD[i];
+  const slide = slides[i] ?? slides[0];
 
   return (
     // Fallback tone behind the photos (source used ONBOARD[i].tone).
     <View style={{ flex: 1, backgroundColor: slide.tone }}>
       {/* Stacked cross-fading slides. */}
-      {ONBOARD.map((s, idx) => (
+      {slides.map((s, idx) => (
         <Slide key={s.id} img={s.img} active={idx === i} />
       ))}
 
@@ -227,7 +232,7 @@ export default function AuthWelcome() {
             alignItems: 'center',
           }}
         >
-          {ONBOARD.map((_, idx) => (
+          {slides.map((_, idx) => (
             <Dot key={idx} active={idx === i} onPress={() => setI(idx)} />
           ))}
         </View>
@@ -236,6 +241,7 @@ export default function AuthWelcome() {
         <View style={{ marginTop: 24, gap: 11 }}>
           {/* Coral primary — Get started → register. */}
           <Pressable
+            testID="welcome.getStarted"
             onPress={() => router.push('/(auth)/register')}
             style={[
               {
@@ -258,6 +264,7 @@ export default function AuthWelcome() {
 
           {/* Glass secondary — I already have an account → login. */}
           <Pressable
+            testID="welcome.login"
             onPress={() => router.push('/(auth)/login')}
             style={{
               height: 55,

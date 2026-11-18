@@ -172,6 +172,7 @@ export function Field({
   keyboardType,
   autoCapitalize = 'none',
   autoComplete,
+  testID,
 }: {
   icon: IconType;
   label: string;
@@ -183,6 +184,8 @@ export function Field({
   keyboardType?: TextInputProps['keyboardType'];
   autoCapitalize?: TextInputProps['autoCapitalize'];
   autoComplete?: TextInputProps['autoComplete'];
+  /** e2e id of the TextInput itself (Maestro `id:`), japa#361. */
+  testID?: string;
 }) {
   const [focus, setFocus] = useState(false);
   return (
@@ -220,6 +223,7 @@ export function Field({
       >
         <IconCmp size={19} color="rgba(255,255,255,0.6)" strokeWidth={1.8} />
         <TextInput
+          testID={testID}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -313,15 +317,19 @@ export function CoralButton({
   disabled = false,
   withArrow = true,
   style,
+  testID,
 }: {
   label: string;
   onPress?: () => void;
   disabled?: boolean;
   withArrow?: boolean;
   style?: StyleProp<ViewStyle>;
+  /** e2e id (Maestro `id:`), japa#361. No visual effect. */
+  testID?: string;
 }) {
   return (
     <Pressable
+      testID={testID}
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
       style={[

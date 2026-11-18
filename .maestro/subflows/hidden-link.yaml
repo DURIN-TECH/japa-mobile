@@ -1,0 +1,33 @@
+# Subflow: one hidden deep link in a self-service-only build (japa#361).
+#
+# From a non-Home tab (Tracker), open LINK: the route guard must end on Home,
+# and a left-edge swipe-back afterwards must leave Home on screen (nothing
+# hidden behind it). Needs the flag ON and a signed-in app.
+#
+# Env: LINK, e.g. durintech://agents
+appId: ${APP_ID}
+---
+- tapOn:
+    id: "tab\\.tracker"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.tracker"
+    timeout: 15000
+- openLink: ${LINK}
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.home"
+    timeout: 20000
+- assertVisible:
+    id: "tab\\.home"
+# Left-edge swipe-back (the iOS back gesture).
+- swipe:
+    start: "1%, 50%"
+    end: "85%, 50%"
+    duration: 400
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertVisible:
+    id: "screen\\.home"
+- assertVisible:
+    id: "tab\\.home"

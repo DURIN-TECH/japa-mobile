@@ -30,9 +30,14 @@ export interface SubmitIdentityInput {
  * Fetch the current identity-verification status. Returns a safe default
  * (`{ status: 'unverified' }`) if the backend has no record yet.
  */
-export function useIdentityVerification() {
+export function useIdentityVerification(
+  // False skips the call: a self-service-only build (japa#334) hides the
+  // Verify identity row it feeds. Default true.
+  opts: { enabled?: boolean } = {},
+) {
   return useQuery<IdentityVerification>({
     queryKey: VERIFICATION_QUERY_KEY,
+    enabled: opts.enabled ?? true,
     queryFn: async () => {
       const res = await apiService.get<IdentityVerification>(
         '/users/me/verification',

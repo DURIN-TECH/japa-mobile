@@ -14,10 +14,11 @@ import {
   initialSelection,
   layerLabel,
   missingLayerNote,
+  listNote,
+  SHARED_COPY,
   otherCovers,
   sheetState,
   showRoutePill,
-  unknownNote,
   visibleCovers,
 } from '../sharedRouteLogic';
 import type { ApplyThroughView, StackLayer } from '@/types/sharedRoute.type';
@@ -119,15 +120,41 @@ describe('sheet state, proposal and choice note', () => {
     );
     expect(choiceNote(view(), 'BB', 'list')).toBeNull();
   });
-  it('unknown note keeps `why` only when present', () => {
-    const base =
-      'We can’t tell from your answers which country the rule points to.';
-    expect(unknownNote(view())).toBe(base);
+  it('list note: one note, true for the case', () => {
+    const competence = { steps: [] };
+    // No rule block at all, or the backend says there is no rule: the short note.
+    expect(listNote(view({ competence: null }))).toBe(SHARED_COPY.noRule);
     expect(
-      unknownNote(
-        view({ result: { status: 'unknown', reason: 'x', why: 'Because.' } }),
+      listNote(
+        view({
+          competence,
+          result: {
+            status: 'unknown',
+            reason: 'NO_COMPETENCE_RULE',
+            why: 'Long.',
+          },
+        }),
       ),
-    ).toBe(`${base} Because.`);
+    ).toBe(SHARED_COPY.noRule);
+    // A rule exists but could not decide: the backend's own words.
+    expect(
+      listNote(
+        view({
+          competence,
+          result: {
+            status: 'unknown',
+            reason: 'NO_STEP_APPLIES',
+            why: 'Because.',
+          },
+        }),
+      ),
+    ).toBe('Because.');
+    // A rule exists and its question was skipped: no claim about the rule.
+    expect(
+      listNote(
+        view({ competence, result: { status: 'ask', questionId: 'q' } }),
+      ),
+    ).toBe(SHARED_COPY.pickYourself);
   });
   it('cta labels', () => {
     const a = opt('AA', 'Alpha');

@@ -4,7 +4,12 @@ import {
   SpaceGrotesk_600SemiBold,
   SpaceGrotesk_700Bold,
 } from '@expo-google-fonts/space-grotesk';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import {
+  Stack,
+  useNavigationContainerRef,
+  useRouter,
+  useSegments,
+} from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -28,6 +33,16 @@ import { useAuthStore, useAuthHydration } from '@/stores/auth.store';
 import { authService } from '@/services/auth.service';
 import { pushNotificationService } from '@/services/push-notification.service';
 import { registerDevMenu } from '@/utils/dev-menu';
+// Self-service-only launch flag + its hidden-route table (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
+import {
+  isHiddenInSelfServiceOnly,
+  SELF_SERVICE_REDIRECT,
+  selfServiceRedirectState,
+  type NavStateLike,
+} from '@/config/selfServiceRoutes';
+// Dev-only override of that flag (japa#375): loaded before the first screen.
+import { useSelfServiceOverrideLoaded } from '@/config/selfServiceOverrideStore';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -43,11 +58,21 @@ export const unstable_settings = {
 // The guard keeps users on the right side of the auth boundary:
 //   - signed out                       → /(auth)/welcome
 //   - signed in, but on auth / stranded → /(tabs)/home
+//   - signed in, self-service-only build, on a hidden route → /(tabs)/home
+//     (japa#334; the table lives in config/selfServiceRoutes.ts)
 // Onboarding, the tabs, and all detail screens are left alone (those flows drive
 // their own forward navigation).
-function useProtectedRoute() {
+//
+// `flagReady` (japa#375): false until the dev-only self-service-only override
+// has been read from storage (always true outside development). The redirect
+// effect waits for it so the hidden-route check never runs on the baked
+// value in a development build that overrides it.
+function useProtectedRoute(flagReady: boolean) {
   const segments = useSegments();
   const router = useRouter();
+  // Root navigation container: the self-service-only redirect (japa#334)
+  // resets its state instead of pushing a new tab shell.
+  const navigationRef = useNavigationContainerRef();
   const {
     isAuthenticated,
     profile,
@@ -79,7 +104,7 @@ function useProtectedRoute() {
 
   // Handle navigation based on auth state
   useEffect(() => {
-    if (!isInitialized) return;
+    if (!isInitialized || !flagReady) return;
 
     // Top-level segment names the route group: '(auth)' | '(onboard)' | '(tabs)'
     // | a detail screen. undefined = the '/' index redirect; '+not-found' = a
@@ -96,8 +121,38 @@ function useProtectedRoute() {
     } else if (inAuthGroup || stranded) {
       // Signed in but on a login screen or stranded → into the app home.
       router.replace('/(tabs)/home');
+    } else if (isHiddenInSelfServiceOnly(segments, isSelfServiceOnly())) {
+      // ── Self-service-only build (japa#334) ──────────────────────────────
+      // A hidden screen (agents, agencies, booking, messaging, agent
+      // payments: see config/selfServiceRoutes.ts) was opened by a deep
+      // link, a notification or a stray push → Home. Signed-out users never
+      // get here: the branch above already sent them to welcome. With the
+      // flag off this branch never matches.
+      //
+      // Warm app (QA round 1): cut the stack back to the EXISTING tab shell
+      // and switch it to Home, so there is one shell, the hidden screen is
+      // gone and Back does not step into an older shell. Cold start (no
+      // shell under the hidden screen yet): `replace`, which ends on Home
+      // with one shell.
+      const current = navigationRef.isReady()
+        ? (navigationRef.getRootState() as unknown as NavStateLike)
+        : null;
+      const next = selfServiceRedirectState(current);
+      if (next) {
+        navigationRef.resetRoot(next as never);
+      } else {
+        router.replace(SELF_SERVICE_REDIRECT);
+      }
     }
-  }, [isAuthenticated, isInitialized, profile, segments, router]);
+  }, [
+    isAuthenticated,
+    isInitialized,
+    flagReady,
+    profile,
+    segments,
+    router,
+    navigationRef,
+  ]);
 }
 
 function RootLayoutContent() {
@@ -113,21 +168,34 @@ function RootLayoutContent() {
   const authHydrated = useAuthHydration();
   const isDark = useSettingsStore((state) => state.isDark());
   const isInitialized = useAuthStore((state) => state.isInitialized);
+  // japa#375: the dev-only self-service-only override is read from storage
+  // once, before the first screen renders, so the synchronous
+  // `isSelfServiceOnly()` already returns it. Immediately true when
+  // `__DEV__` is false (production never reads the override).
+  const flagReady = useSelfServiceOverrideLoaded();
 
   // Set up auth-based navigation
-  useProtectedRoute();
+  useProtectedRoute(flagReady);
+
+  // Registered once the override is known (japa#375), so a menu tap can never
+  // act on the baked value before the stored override was read.
+  useEffect(() => {
+    if (flagReady) registerDevMenu();
+  }, [flagReady]);
 
   useEffect(() => {
-    registerDevMenu();
-  }, []);
-
-  useEffect(() => {
-    if (loaded && settingsHydrated && authHydrated && isInitialized) {
+    if (
+      loaded &&
+      settingsHydrated &&
+      authHydrated &&
+      isInitialized &&
+      flagReady
+    ) {
       SplashScreen.hideAsync();
     }
-  }, [loaded, settingsHydrated, authHydrated, isInitialized]);
+  }, [loaded, settingsHydrated, authHydrated, isInitialized, flagReady]);
 
-  if (!loaded || !settingsHydrated || !authHydrated) {
+  if (!loaded || !settingsHydrated || !authHydrated || !flagReady) {
     return null;
   }
 

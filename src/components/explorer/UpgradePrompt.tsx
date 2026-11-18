@@ -33,6 +33,10 @@ export function useOpenPlans() {
   return () => router.push(PLANS_ROUTE);
 }
 
+/** japa#384: the upgrade panel's first promise (exported for a test). */
+export const UPGRADE_READING_ROW =
+  'A full reading of your application, in plain English';
+
 /**
  * The locked area on the free tier. STATIC: it states what the full review
  * contains and shows no placeholder rows, blur or counts, so nothing locked is
@@ -41,8 +45,12 @@ export function useOpenPlans() {
  */
 export function UpgradePanel({ onPress }: { onPress?: () => void }) {
   const openPlans = useOpenPlans();
+  // japa#384: the first row used to promise "Each issue explained, with the
+  // published rule it comes from". Full plans no longer include the
+  // rule-by-rule working (it needs `ai.review_working`, priced in japa#385),
+  // so the row promises what a full plan does give: the reading.
   const rows = [
-    'Each issue explained, with the published rule it comes from',
+    UPGRADE_READING_ROW,
     'A check on every document you upload',
     'A new review each time you change something',
   ];

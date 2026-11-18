@@ -27,6 +27,10 @@ export default [
       '*.json',
       '*.md',
       'tailwind.config.js',
+      // Headless QA driver: Node-only tooling run by hand, never bundled.
+      // agent.js is plain ES5-style script evaluated inside Hermes through the
+      // debugger, so the app's TS/React/import-order rules don't apply.
+      'scripts/qa/**',
     ],
   },
   ...compat.extends(

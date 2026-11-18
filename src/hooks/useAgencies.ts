@@ -26,6 +26,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ApiAgent } from './useAgents';
 import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
+import type { LocalPriceQuote, Money } from '@/types/money.type';
 import { normalizeVisaPrices } from '@/components/explorer/liveAgencies';
 
 /**
@@ -36,7 +37,10 @@ import { normalizeVisaPrices } from '@/components/explorer/liveAgencies';
  * Explorer's richer `Agency` shape is synthesised by `mapAgency()` in
  * `src/components/explorer/liveAgencies.ts`.
  *
- * `consultationFee` is in WHOLE NAIRA (no /100; #144/#148).
+ * MONEY (japa#183): prices are stored in US dollars. Each one arrives as a
+ * dollar `Money` (`consultationFeeUsd`, `services[].priceUsd`) next to the
+ * server's local figure (`consultationFeeLocal`, `services[].priceLocal`,
+ * `available: false` when it has no rate). The app never converts.
  * `createdAt` may arrive either as a Firestore Timestamp serialized to
  * `{ _seconds, _nanoseconds }` OR as an ISO string — the mapper handles both.
  */
@@ -50,8 +54,17 @@ export interface ApiAgency {
   address?: string;
   description?: string;
   logoUrl?: string;
-  consultationFee?: number; // whole naira (no /100)
-  services: { id: string; name: string; price: number }[];
+  /** Agency consultation fee in US cents; null = none set. */
+  consultationFeeUsd: Money | null;
+  /** The server's local figure for that fee. */
+  consultationFeeLocal: LocalPriceQuote | null;
+  /** Service prices: dollars + the server's local figure (both nullable). */
+  services: {
+    id: string;
+    name: string;
+    priceUsd: Money | null;
+    priceLocal: LocalPriceQuote | null;
+  }[];
   agentCount: number;
   totalCases: number;
   status: 'approved';
@@ -70,16 +83,18 @@ export interface ApiAgency {
  * functions/src/agency-visa-prices/agency-visa-prices.md, "Public agency
  * page"). Applicant-safe: no owner, review or sponsor-licence fields.
  *
- * MONEY: `price` is the agency's SERVICE price in WHOLE NAIRA (₦12,500 is
- * 12500). Never divide by 100. `null` = "Contact for pricing".
- * `baseCostUsd` is the separate GOVERNMENT fee, in USD.
+ * MONEY (japa#183): `priceUsd` is the agency's SERVICE price in US cents
+ * (null = "Contact for pricing"); `priceLocal` is the server's local figure
+ * for it. `baseCostUsd` is the separate GOVERNMENT fee, a plain number of US
+ * dollars, and is never shown in local currency.
  */
 export interface PublicVisaPrice {
   visaTypeId: string;
   countryCode: string;
   visaName: string;
   category: string;
-  price: number | null;
+  priceUsd: Money | null;
+  priceLocal: LocalPriceQuote | null;
   /** True when this agency created the visa (agency-only or made global). */
   isAgencyVisa: boolean;
   /**

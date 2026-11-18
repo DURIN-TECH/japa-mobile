@@ -17,7 +17,7 @@ import React from 'react';
 import { Modal, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
-import { EX, displayText } from '@/components/explorer/theme';
+import { EX, EXScrim, displayText } from '@/components/explorer/theme';
 import type { DuplicateApplication } from '@/hooks/useStartApplication';
 
 /** Copy lives here (exported) so tests and screens agree. */
@@ -89,10 +89,13 @@ export function DuplicateApplicationSheet({
             right: 0,
             top: 0,
             bottom: 0,
-            backgroundColor: 'rgba(12,10,8,0.45)',
+            backgroundColor: EXScrim.sheet,
           }}
         />
         <View
+          // e2e (Maestro, japa#361): the sheet and its two actions. No
+          // visual effect.
+          testID="duplicateSheet"
           style={{
             backgroundColor: EX.color.bg,
             borderTopLeftRadius: 28,
@@ -140,6 +143,7 @@ export function DuplicateApplicationSheet({
 
           {/* Primary: the safe default is to continue what they have. */}
           <PressableStatic
+            testID="duplicateSheet.continue"
             onPress={onContinue}
             accessibilityRole="button"
             style={{
@@ -156,6 +160,7 @@ export function DuplicateApplicationSheet({
             </Text>
           </PressableStatic>
           <PressableStatic
+            testID="duplicateSheet.startNew"
             onPress={onStartNew}
             accessibilityRole="button"
             style={{

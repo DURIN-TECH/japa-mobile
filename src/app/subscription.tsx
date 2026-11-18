@@ -64,6 +64,8 @@ import {
   type VerifyVerdict,
 } from '@/hooks/paystackCheckout';
 import { mapPlan } from '@/components/explorer/liveSubscription';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 
 // ── FeatureRow — 20px check circle + label for one plan feature ──────────────
 // `dark` switches the palette so features read on the featured dark card.
@@ -334,6 +336,9 @@ function PlanCard({
 
 export default function SubscriptionView() {
   const router = useRouter();
+  // Self-service-only build (japa#334): rewords the header line only; plans,
+  // prices and checkout are unchanged.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
 
   // ── Live plans (GET /plans?audience=client) ────────────────────────────────
@@ -349,8 +354,10 @@ export default function SubscriptionView() {
     const popularId = paid.length
       ? paid[Math.floor((paid.length - 1) / 2)].id
       : undefined;
-    return dtos.map((p) => mapPlan(p, popularId));
-  }, [plansQ.data]);
+    // Self-service-only build (japa#334): agent messaging and consultation
+    // booking are left off the plan cards.
+    return dtos.map((p) => mapPlan(p, popularId, { selfServiceOnly }));
+  }, [plansQ.data, selfServiceOnly]);
   const plansState = queryState(plansQ);
 
   // ── Current plan (GET /subscriptions/me) ────────────────────────────────────
@@ -457,7 +464,11 @@ export default function SubscriptionView() {
   }, [busy, verifyReference, verifyRetryRef]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    // e2e (Maestro, japa#361): the screen's identity. No visual effect.
+    <View
+      testID="screen.subscription"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
@@ -563,7 +574,11 @@ export default function SubscriptionView() {
               maxWidth: 290,
             }}
           >
-            Unlock agent messaging, document uploads and priority support.
+            {/* Self-service-only build (japa#334): no agent messaging on
+                offer, so the line names what Plus unlocks there. */}
+            {selfServiceOnly
+              ? 'Unlock your full AI review, document uploads and priority support.'
+              : 'Unlock agent messaging, document uploads and priority support.'}
           </Text>
         </LinearGradient>
 

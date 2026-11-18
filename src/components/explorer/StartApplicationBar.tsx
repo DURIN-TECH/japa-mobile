@@ -14,6 +14,10 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
+import {
+  GOV_FEE_COPY,
+  formatCostUsd,
+} from '@/components/explorer/visaBreakdownLogic';
 import { Ic } from '@/components/explorer/icons';
 import { InlineError } from '@/components/explorer/AccountForm';
 import { UpgradePrompt } from '@/components/explorer/UpgradePrompt';
@@ -50,7 +54,7 @@ export function StartApplicationBar({
   onStartAnyway,
   onDismissDuplicate,
 }: {
-  /** "Starting at" price (display only; see the naira follow-up). */
+  /** Government fee from, whole US dollars (japa#183: dollars only, labelled). */
   price: number;
   creating: boolean;
   failure: StartFailure | null;
@@ -85,6 +89,7 @@ export function StartApplicationBar({
         <View>
           <UpgradePrompt message={START_COPY.upgrade} />
           <PressableStatic
+            testID="startBar.dismissUpgrade"
             onPress={onDismissUpgrade}
             accessibilityRole="button"
             style={{
@@ -112,15 +117,17 @@ export function StartApplicationBar({
             </View>
           ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {/* Government fee (japa#183): US dollars only, labelled as such;
+                never a naira figure next to it. */}
             <View>
               <Text
                 style={{
-                  fontSize: 11.5,
-                  color: EX.color.muted,
-                  fontWeight: '500',
+                  fontSize: 12.5,
+                  color: EX.color.inkMuted,
+                  fontWeight: '600',
                 }}
               >
-                Starting at
+                {GOV_FEE_COPY.barLabel}
               </Text>
               <Text
                 style={{
@@ -130,10 +137,21 @@ export function StartApplicationBar({
                   letterSpacing: -0.21,
                 }}
               >
-                ${price.toLocaleString()}
+                {formatCostUsd(price)}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  color: EX.color.inkMuted,
+                  fontWeight: '600',
+                }}
+              >
+                {GOV_FEE_COPY.caption}
               </Text>
             </View>
             <PressableStatic
+              // e2e (Maestro, japa#361). No visual effect.
+              testID="startBar.start"
               onPress={onStart}
               disabled={disabled}
               accessibilityRole="button"
