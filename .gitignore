@@ -110,3 +110,11 @@ handoff/
 # Seli brand pack — design source assets, kept out of the repo and the build.
 # The only asset actually used (the mark) is inlined in SeliMark.tsx.
 seli-brand-pack/
+
+# Native Firebase config at the REPO ROOT. The real, tracked copies live under
+# firebase/dev/ and firebase/prod/ and are selected per environment by
+# app.config.ts. A root-level copy is a stale leftover of the old single-project
+# setup — ignored so a re-download can't silently reintroduce dev credentials at
+# the path prod builds used to read.
+/GoogleService-Info.plist
+/google-services.json

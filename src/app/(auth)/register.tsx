@@ -81,7 +81,7 @@ export default function AuthRegister() {
           label="Full name"
           value={name}
           onChangeText={setName}
-          placeholder="Alex Kayode"
+          placeholder="Your full name"
           autoCapitalize="words"
           autoComplete="name"
         />
@@ -221,10 +221,7 @@ export default function AuthRegister() {
           <Text style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)' }}>
             Already have an account?{' '}
           </Text>
-          <Pressable
-            onPress={() => router.push('/(auth)/login')}
-            hitSlop={6}
-          >
+          <Pressable onPress={() => router.push('/(auth)/login')} hitSlop={6}>
             <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>
               Log in
             </Text>

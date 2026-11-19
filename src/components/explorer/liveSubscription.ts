@@ -3,7 +3,7 @@
 //
 // Maps the backend's PlanDTO (GET /plans?audience=client) onto the Explorer's
 // static `Plan` shape so the coral/dark pricing screen can render real plans
-// while keeping the demo `PLANS` as a fallback.
+// (no static fallback plans, japa#145).
 //
 // The authz feature catalog (`FeatureKey`) is machine-readable
 // (e.g. "documents.upload"); this file turns each key into a human sentence for
@@ -11,11 +11,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { FeatureKey } from '@durin-tech/authz';
-import { type Plan } from './data';
+import { type Plan } from '@/types/explorer.type';
 import { PlanDTO } from '@/hooks/useSubscription';
 
 // FeatureKey → human label shown on a plan's check-row. Mirrors the wording of
-// the demo PLAN_FEATURES map so live + demo plans read identically.
+// the static PLAN_FEATURES copy so every plan reads the same way.
 export const FEATURE_LABEL: Record<FeatureKey, string> = {
   'applications.create': 'Create applications',
   'applications.bulk': 'Bulk applications',
@@ -30,6 +30,15 @@ export const FEATURE_LABEL: Record<FeatureKey, string> = {
   'payments.request': 'Payment requests',
 };
 
+// Labels for keys the backend's newer authz catalogue has but this app's
+// pinned @durin-tech/authz (v0.1.x) does not, so they are not `FeatureKey`s
+// here. `ai.case_officer` is the paid AI review the backend seeds on every
+// paid plan (seli-backend seed-plans.ts). Without this entry it fell back to
+// the title-cased "Ai Case Officer" (japa#334 review).
+const EXTRA_FEATURE_LABEL: Record<string, string> = {
+  'ai.case_officer': 'Full AI review',
+};
+
 // Title-case a raw feature key ("documents.upload" → "Documents Upload") as a
 // safe fallback for any key not present in FEATURE_LABEL.
 function titleCase(key: string): string {
@@ -37,18 +46,61 @@ function titleCase(key: string): string {
 }
 
 /**
+ * The human label for one plan feature key: FEATURE_LABEL, then the extra
+ * labels for keys newer than the pinned authz package, then a title-cased
+ * fallback. Shared by the plan cards (`mapPlan`) and the Profile upgrade
+ * banner's benefit line (japa#346), so both always word a feature the same.
+ */
+export function featureLabel(key: string): string {
+  return (
+    FEATURE_LABEL[key as FeatureKey] ??
+    EXTRA_FEATURE_LABEL[key] ??
+    titleCase(key)
+  );
+}
+
+// ── Self-service-only build (japa#334) ─────────────────────────────────────
+// What a plan card may list in a self-service-only build. An ALLOW-list, not
+// a deny-list: every key in the authz catalogue is either here (a feature
+// the self-service journey offers) or left off the card (agent / agency
+// features: Agent messaging, Book consultations, Invite agents, Payment
+// requests, Bulk applications, Analytics dashboard). A key the catalogue
+// adds later stays off until it is listed here, so an agent-side feature can
+// never reach a tester's plan card by accident. The plans, their prices and
+// what the backend grants are unchanged; only the card text is filtered.
+export const SELF_SERVICE_PLAN_FEATURES: ReadonlySet<string> = new Set<
+  FeatureKey | string
+>([
+  'applications.create',
+  'documents.upload',
+  'self_service',
+  'priority_support',
+  'news.alerts',
+  // The paid AI review (full cited review, per-upload checks, re-runs). The
+  // whole point of a paid plan in the self-service launch, so it must show.
+  'ai.case_officer',
+]);
+
+/**
  * One backend PlanDTO → the Explorer's `Plan`.
  *
  * • price:    kobo → naira (÷100, rounded).
  * • interval: "none" is treated as no interval (null) so a free plan doesn't
- *             render "/none" under its price — preserves the demo's design where
+ *             render "/none" under its price — preserves the design where
  *             the Free tier shows a bare "Free" with no interval suffix.
  * • tag:      flagged "Most popular" when its id matches the caller-chosen
  *             `popularId` (the middle-priced paid plan; see subscription.tsx).
  * • features: FeatureKey[] → human labels (fallback: title-cased key).
  * • blurb:    the backend has no marketing blurb, so leave it empty.
+ *
+ * `opts.selfServiceOnly` (japa#334) keeps only SELF_SERVICE_PLAN_FEATURES in
+ * `features`. Off (the default) maps every feature, exactly as before.
  */
-export function mapPlan(p: PlanDTO, popularId?: string): Plan {
+export function mapPlan(
+  p: PlanDTO,
+  popularId?: string,
+  opts: { selfServiceOnly?: boolean } = {},
+): Plan {
   const interval = p.interval && p.interval !== 'none' ? p.interval : null;
   return {
     id: p.id,
@@ -56,7 +108,9 @@ export function mapPlan(p: PlanDTO, popularId?: string): Plan {
     price: Math.round(p.priceKobo / 100),
     interval,
     tag: p.id === popularId ? 'Most popular' : null,
-    features: p.features.map((f) => FEATURE_LABEL[f] ?? titleCase(f)),
+    features: p.features
+      .filter((f) => !opts.selfServiceOnly || SELF_SERVICE_PLAN_FEATURES.has(f))
+      .map(featureLabel),
     blurb: '',
   };
 }

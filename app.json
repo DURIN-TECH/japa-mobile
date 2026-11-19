@@ -16,7 +16,6 @@
     },
     "ios": {
       "supportsTablet": true,
-      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -27,8 +26,7 @@
         "foregroundImage": "./src/assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.durintech.japamobile",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.durintech.japamobile"
     },
     "web": {
       "bundler": "metro",
@@ -39,19 +37,19 @@
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-firebase/crashlytics",
+      "@react-native-firebase/messaging",
       "expo-router",
       "expo-document-picker",
+      "expo-secure-store",
       "expo-font",
       [
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "static",
-            "forceStaticLinking": [
-              "RNFBApp",
-              "RNFBAuth",
-              "RNFBCrashlytics"
-            ]
+            "useFrameworks": "dynamic"
+          },
+          "android": {
+            "kotlinVersion": "2.4.0"
           }
         }
       ],
@@ -63,7 +61,17 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
-      ]
+      ],
+      "expo-image",
+      "expo-web-browser",
+      [
+        "react-native-permissions",
+        {
+          "iosPermissions": ["Notifications"]
+        }
+      ],
+      "./plugins/withPodsDeploymentTarget",
+      "./plugins/withAndroidPushSetup"
     ],
     "experiments": {
       "typedRoutes": true

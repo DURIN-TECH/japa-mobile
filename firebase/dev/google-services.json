@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "442994259610",
+    "project_id": "durin-seli-dev",
+    "storage_bucket": "durin-seli-dev.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:442994259610:android:f60e4293d57c12e844d123",
+        "android_client_info": {
+          "package_name": "com.durintech.japamobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDbbgS3fb1nbgE48Dx3K3wzGxjaljpcRLg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

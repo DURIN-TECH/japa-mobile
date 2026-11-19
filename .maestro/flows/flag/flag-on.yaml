@@ -1,0 +1,168 @@
+# Self-service-only flag ON (japa#361; flag japa#334, dev link japa#375).
+#
+# Signed in as the seeded client John Doe (FLAG_EMAIL), who has the
+# agent-managed application seed-app-001. Sets the flag itself at the start
+# (order-independent), then checks every agent entry point is gone:
+#   - 4 tabs (Home, Explore, Tracker, Profile), no Agents
+#   - the 14 hidden deep links, from a non-Home tab, end on Home and a
+#     swipe-back stays on Home; the kept links still open their screens
+#   - Home: no Messages button, no "Find an agent"
+#   - Destination: no "Work with an agent", no Top agents; Self-service there
+#   - seed-app-001: no message button, no Payment requests
+#   - Profile: no My consultations / Messages / Verify identity / Payments
+#     rows, no Agents stat; Settings: no Privacy group
+# Nothing here taps a review, checkout or payment control.
+appId: ${APP_ID}
+tags:
+  - flag
+  - flag-on
+---
+- runFlow:
+    file: ../../subflows/sign-in.yaml
+    env:
+      EMAIL: ${FLAG_EMAIL}
+- runFlow: ../../subflows/flag-on.yaml
+
+# ── Tab bar: 4 tabs ──────────────────────────────────────────────────────────
+- assertVisible:
+    id: "tab\\.home"
+- assertVisible:
+    id: "tab\\.explore"
+- assertVisible:
+    id: "tab\\.tracker"
+- assertVisible:
+    id: "tab\\.profile"
+- assertNotVisible:
+    id: "tab\\.agents"
+
+# ── The 14 hidden deep links end on Home (from Tracker), swipe-back stays ────
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://agents" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://agent/x" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://agency/x" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://book/x" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://consultations" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://consultation/x" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://messages" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://messages/x" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://pay" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://payments" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://confirmation" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://ai-message-access" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://verify-identity" }
+- runFlow:
+    file: ../../subflows/hidden-link.yaml
+    env: { LINK: "durintech://shared-document/x" }
+
+# ── Home: no Messages button, no "Find an agent" ─────────────────────────────
+- tapOn:
+    id: "tab\\.home"
+- extendedWaitUntil:
+    visible:
+      id: "home\\.quick\\.explore"
+    timeout: 15000
+- assertVisible:
+    id: "home\\.notifications"
+- assertNotVisible:
+    id: "home\\.messages"
+- assertNotVisible:
+    id: "home\\.quick\\.findAgent"
+
+# ── Kept links open their own screens ────────────────────────────────────────
+- openLink: "durintech://subscription"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.subscription"
+    timeout: 20000
+- openLink: "durintech://notifications"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.notifications"
+    timeout: 20000
+- openLink: "durintech://self-service/${FLAG_APP_ID}"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.selfService"
+    timeout: 30000
+
+# ── seed-app-001: no message button, no Payment requests ─────────────────────
+- openLink: "durintech://application/${FLAG_APP_ID}"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.application"
+    timeout: 30000
+- assertNotVisible:
+    id: "application\\.message"
+- runFlow:
+    file: ../../subflows/assert-absent-on-page.yaml
+    env:
+      ABSENT: "application\\.paymentRequests|application\\.message"
+
+# ── Destination: Self-service there, no agent card, no Top agents ────────────
+- runFlow:
+    file: ../../subflows/open-destination.yaml
+- scrollUntilVisible:
+    element:
+      id: "destination\\.path\\.self"
+    direction: DOWN
+- assertNotVisible:
+    id: "destination\\.path\\.agent"
+- runFlow:
+    file: ../../subflows/assert-absent-on-page.yaml
+    env:
+      ABSENT: "destination\\.path\\.agent|destination\\.topAgents"
+
+# ── Profile: no agent rows, no Agents stat; Settings: no Privacy group ───────
+- openLink: "durintech://profile"
+- extendedWaitUntil:
+    visible:
+      id: "profile\\.stat\\.active"
+    timeout: 15000
+- assertVisible:
+    id: "profile\\.stat\\.saved"
+- assertNotVisible:
+    id: "profile\\.stat\\.agents"
+- scrollUntilVisible:
+    element:
+      id: "profile\\.row\\.documents"
+    direction: DOWN
+- runFlow:
+    file: ../../subflows/assert-absent-on-page.yaml
+    env:
+      ABSENT: "profile\\.row\\.(consultations|messages|verifyIdentity|payments)|profile\\.stat\\.agents"
+# Settings by its link: a tap on the Settings row can land on the glass tab
+# bar when the row stops just above it (seen in a full run).
+- openLink: "durintech://settings"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.settings"
+    timeout: 15000
+- runFlow:
+    file: ../../subflows/assert-absent-on-page.yaml
+    env:
+      ABSENT: "settings\\.group\\.privacy|settings\\.row\\.aiMessageAccess"

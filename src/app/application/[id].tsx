@@ -7,6 +7,17 @@
 // header, a vertical Timeline stepper, and a "Your agent" row. The sticky CTA
 // performs the next step or messages the agent.
 //
+// japa#106: a case on an agency-only visa shows the visa's real name (the
+// backend's denormalised `visaTypeName`, else the visa detail, which the
+// applicant may read because they have a case on it) and a "Visa details"
+// link row. A 404 shows the not-found EmptyState; other load failures show
+// an InlineError with "Try again".
+//
+// japa#259: a self-service applicant can withdraw their own open application
+// from a "Withdraw application" text action at the very bottom of the sheet
+// (danger colour, native confirmation first). A withdrawn application shows
+// a neutral "Withdrawn" pill, no withdraw action and no sticky button.
+//
 // Every measurement is quoted from AppDetail: HERO 240, scrim to-top
 // (.8 → .2@50% → .36), StatusPill full, country · Ref 13/600, visa 28 Space
 // Grotesk; sheet radius 28 / padding 20-22-130; dark next-step card radius 18;
@@ -38,26 +49,59 @@ import Animated, {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
-import {
-  AppStep,
-  CONVOS,
-  NAIRA,
-  agentById,
-  appById,
-  convoForAgent,
-  destById,
-  paymentRequestsForApp,
-} from '@/components/explorer/data';
+import { priceInline, type PriceParts } from '@/components/explorer/content';
+import type { Money } from '@/types/money.type';
+import { analyticsService } from '@/services/analytics.service';
+import type { AppStep } from '@/types/explorer.type';
+// japa#145: the case's agent and their conversation come from the backend
+// (GET /agents/:id, GET /conversations), never the demo AGENTS / CONVOS.
+import { mapAgent } from '@/components/explorer/liveAgents';
+import { useAgent } from '@/hooks/useAgents';
+import { useConversations } from '@/hooks/useMessaging';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
 import {
   mapApplication,
   mapTimeline,
 } from '@/components/explorer/liveApplications';
+// japa#307: what the sticky button says and where it goes.
+// japa#259: whether "Withdraw application" shows, and its copy.
+import {
+  WITHDRAW_CONFIRM_ACTION,
+  WITHDRAW_CONFIRM_CANCEL,
+  WITHDRAW_CONFIRM_MESSAGE,
+  WITHDRAW_CONFIRM_TITLE,
+  WITHDRAW_ERROR_MESSAGE,
+  WITHDRAW_LABEL,
+  canWithdraw,
+  isAlreadyClosedError,
+  stickyAction,
+} from '@/components/explorer/applicationActions';
 import { fmtDate } from '@/components/explorer/liveDate';
 import {
   useApplication,
   useApplicationTimeline,
+  useWithdrawApplication,
 } from '@/hooks/useApplications';
+import { ThroughRow } from '@/components/explorer/SharedRouteParts';
+import {
+  canShowChangeCountry,
+  showRoutePill,
+  showThroughChip,
+} from '@/components/explorer/sharedRouteLogic';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import { useVisaType } from '@/hooks/useVisaTypes';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  PAYMENT_ERROR_MESSAGE,
+  REQUEST_NOT_PAYABLE_MESSAGE,
+  getAuthorizationUrl,
+  getPaystackReference,
+  paymentRequestParts,
+} from '@/hooks/paymentRequestFlow';
 // Live payment-request read + approve/reject mutations (client side of the flow).
+// Approve starts a Paystack charge; the pay screen verifies it (japa#145).
 import {
   useApprovePaymentRequest,
   usePaymentRequests,
@@ -68,6 +112,8 @@ import {
   PaymentRequestStatus,
 } from '@/types/payment-requests.type';
 import { Ic } from '@/components/explorer/icons';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
+import { dedupeSteps, trimSteps } from '@/components/explorer/timelineTrim';
 import {
   Flag,
   GlassButton,
@@ -87,21 +133,33 @@ const REJECT_REASONS = [
 
 const HERO = 240;
 
+// Copy of a keyed record without one key (rollback of per-request state).
+function omitKey<T>(rec: Record<string, T>, key: string): Record<string, T> {
+  const next = { ...rec };
+  delete next[key];
+  return next;
+}
+
 // ── Unified payment-request row ──────────────────────────────────────────────
-// Demo fixtures and live backend requests are both mapped to this single shape so
-// the card renders identically. `live` tells the approve/reject handlers whether
-// to fire the real backend mutations (demo rows stay local-only). `amount` is the
-// display value in whole naira (live rows are pre-divided from kobo).
+// Backend payment requests (GET /payment-requests) mapped to the card's shape.
+// japa#183: `price` is the request's display price (`paymentRequestParts`):
+// dollars while pending, "₦… · about $…" once approve priced it, exact once
+// paid, its own amount + currency on a legacy row. `money` is the request's
+// own amount + currency (analytics only). The app never converts.
 type PayReqRow = {
   id: string;
   title: string;
-  amount: number;
+  price: PriceParts;
+  money: Money;
   agentId: string;
   agentName?: string;
   status: 'pending' | 'approved' | 'rejected';
+  // Backend status is 'paid' (settled): show it as paid, no checkout button.
+  paid: boolean;
+  // Paystack reference minted at approve time; needed to verify the charge.
+  reference?: string;
   due: string;
   note: string;
-  live: boolean;
 };
 
 // ── Timeline — detailed activity stepper ─────────────────────────────────────
@@ -234,21 +292,46 @@ function Timeline({ steps }: { steps: AppStep[] }) {
 
 export default function AppDetail() {
   const router = useRouter();
+  // ── Self-service-only build (japa#334) ───────────────────────────────────
+  // An agent-managed case still shows its progress, timeline, next step and
+  // visa details, but every agent part is hidden: the message button, the
+  // "Payment requests" section, the "Your agent" row, and the sticky CTA's
+  // fall-through to a conversation. The agent / conversation / payment
+  // request calls are skipped too. Off = everything as before.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // ── Resolve demo-first, else fetch live (GET /applications/:id) ─────────────
-  // The single-item hooks are disabled (empty id) on the demo path so we never
-  // hit the backend for a static application.
-  const demo = appById(id);
-  const liveQ = useApplication(demo ? '' : id);
-  const tl = useApplicationTimeline(demo ? '' : id);
-  const app = demo ?? (liveQ.data ? mapApplication(liveQ.data) : undefined);
-  // Live apps carry a resolved `dest`; demo apps resolve from static DESTS.
-  const dest = app?.dest ?? destById(app?.destId);
-  const agent = agentById(app?.agentId);
-  // Find the agent's conversation (matched by agentId) for the message actions.
-  const convo = app ? CONVOS.find((c) => c.agentId === app.agentId) : undefined;
+  // ── The case (GET /applications/:id) and its timeline ─────────────────────
+  // japa#145: live only; an unknown id is the backend 404 → not-found.
+  const liveQ = useApplication(id ?? '');
+  const tl = useApplicationTimeline(id ?? '');
+  // japa#106: when the case has no denormalised visa name, fetch the visa
+  // detail for it (allowed: the user has a case on this visa, #102). The
+  // query stays disabled otherwise (empty ids).
+  const needsVisaName = !!liveQ.data && !liveQ.data.visaTypeName;
+  const visaNameQ = useVisaType(
+    needsVisaName ? (liveQ.data?.countryCode ?? '') : '',
+    needsVisaName ? (liveQ.data?.visaTypeId ?? '') : '',
+  );
+  const app = liveQ.data
+    ? mapApplication(liveQ.data, undefined, visaNameQ.data?.visaType?.name)
+    : undefined;
+  // Mapped cases carry a self-contained `dest` (assets-module art).
+  const dest = app?.dest;
+  // The assigned agent (none for a self-service case → the row's empty copy).
+  // (Skipped in a self-service-only build: no agent row to fill.)
+  const agentQ = useAgent(
+    selfServiceOnly ? undefined : app?.agentId || undefined,
+  );
+  const agent = agentQ.data ? mapAgent(agentQ.data) : undefined;
+  // The user's conversation with that agent, for the message actions.
+  const { data: conversations } = useConversations({
+    enabled: !selfServiceOnly,
+  });
+  const convo = app?.agentId
+    ? conversations?.find((c) => c.agentId === app.agentId)
+    : undefined;
 
   // Parallax: hero translates up at py * -0.3 (source transform translateY).
   const scrollY = useSharedValue(0);
@@ -259,24 +342,37 @@ export default function AppDetail() {
     transform: [{ translateY: scrollY.value * -0.3 }],
   }));
 
-  // Local approve / reject decision per agent-raised payment request (demo state,
-  // keyed by request id; falls back to the request's own status).
+  // Optimistic approve / reject decision per request (keyed by id). The backend
+  // mutation fires too; on FAILURE the entry is rolled back (see rollbackReq)
+  // and an InlineError is shown, so the card never states a decision the
+  // server doesn't have. The list refetches on success.
   const [reqOverride, setReqOverride] = useState<
     Record<string, 'pending' | 'approved' | 'rejected'>
   >({});
   // Reason captured when the client declines a request (id → reason).
   const [reqReason, setReqReason] = useState<Record<string, string>>({});
+  // Failure copy per request (shown as an InlineError under the card actions).
+  const [reqError, setReqError] = useState<Record<string, string>>({});
+  // Request currently being approved (disables a second tap mid-flight).
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  // japa#274: Timeline "Show all (N)" / "Show less" (collapsed by default).
+  const [timelineOpen, setTimelineOpen] = useState(false);
   // Reject-reason modal: which request is being declined, + the picked reason.
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [reasonSel, setReasonSel] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState('');
 
-  // ── Payment requests (live-with-demo-fallback) ──────────────────────────────
-  // For a live application, fetch this client's requests scoped to the route id
-  // (GET /payment-requests?role=client&applicationId=…). Demo apps keep the static
-  // PAYMENT_REQUESTS fixtures. Mutation hooks are created here (top level, before
-  // any early return) so approve/reject can fire the real backend calls.
-  const payReqQ = usePaymentRequests(id);
+  // ── Withdraw (japa#259) ────────────────────────────────────────────────────
+  // The mutation (created here, before any early return) and the failure copy
+  // shown as an InlineError under the action; null = no error.
+  const withdraw = useWithdrawApplication();
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+
+  // ── Payment requests (GET /payment-requests?role=client&applicationId=…) ────
+  // Mutation hooks are created here (top level, before any early return) so
+  // approve/reject fire the real backend calls. None → the block is hidden.
+  // (Skipped in a self-service-only build: the section is hidden.)
+  const payReqQ = usePaymentRequests(id, { enabled: !selfServiceOnly });
   const approveReq = useApprovePaymentRequest();
   const rejectReq = useRejectPaymentRequest();
 
@@ -291,45 +387,30 @@ export default function AppDetail() {
           ? 'rejected'
           : 'pending';
 
-    // Live path: real requests for this application (defensively re-filtered by id).
-    if (!demo && app) {
+    // Real requests for this application (defensively re-filtered by id).
+    if (app) {
       return (payReqQ.data ?? [])
         .filter((r) => r.applicationId === app.id)
         .map<PayReqRow>((r) => ({
           id: r.id,
           title: CATEGORY_LABELS[r.category] ?? 'Payment request',
-          // Backend amount is in kobo → divide by 100 for the ₦ display value.
-          amount: Math.round(r.amount / 100),
+          price: paymentRequestParts(r),
+          money: { amountMinor: r.amount, currency: r.currency },
           agentId: r.agentId,
           // Backend request carries no agent name; card falls back gracefully.
           agentName: undefined,
           status: toRowStatus(r.status),
+          paid: r.status === 'paid',
+          reference: r.paystackReference,
           due: r.expiresAt ? `Due ${fmtDate(r.expiresAt, 'MMM d')}` : '',
           note: r.description,
-          live: true,
         }));
     }
-
-    // Demo path: static fixtures keep their existing display fields verbatim.
-    if (app) {
-      return paymentRequestsForApp(app.id).map<PayReqRow>((r) => ({
-        id: r.id,
-        title: r.title,
-        amount: r.amount,
-        agentId: r.agentId,
-        agentName: undefined,
-        // Demo status is 'pending' | 'paid' — both render as Pending (unchanged).
-        status: r.status === 'paid' ? 'pending' : r.status,
-        due: r.due,
-        note: r.note,
-        live: false,
-      }));
-    }
     return [];
-  }, [demo, app, payReqQ.data]);
+  }, [app, payReqQ.data]);
 
-  // Spinner while the live application is still loading (demo path is instant).
-  if (!demo && liveQ.isLoading) {
+  // Spinner while the case is loading with nothing cached.
+  if (liveQ.isLoading) {
     return (
       <View
         style={{
@@ -344,31 +425,53 @@ export default function AppDetail() {
     );
   }
 
-  if (!app || !dest) {
+  // Load failure that isn't a 404 (offline, server error) with nothing
+  // cached: say so and offer a retry instead of claiming it doesn't exist.
+  if (liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Application not found.</Text>
-      </View>
+      <CenteredState
+        icon={Ic.docs}
+        title="We couldn’t load this application"
+        errorMessage="Check your connection and try again."
+        onRetry={() => liveQ.refetch()}
+        retrying={liveQ.isRefetching}
+        actionLabel="Back to your journey"
+        onAction={() => router.replace('/(tabs)/tracker')}
+      />
     );
   }
 
-  // Timeline: live events (mapped) when present, else the demo app's own steps.
-  const steps: AppStep[] =
-    !demo && tl.data?.length ? mapTimeline(tl.data) : app.steps;
+  // Not found: the backend 404 (closed, or another account's), or no data.
+  if (!app || !dest) {
+    return (
+      <CenteredState
+        icon={Ic.docs}
+        title="We couldn’t find this application"
+        body="It may have been closed, or it belongs to another account."
+        actionLabel="Back to your journey"
+        onAction={() => router.replace('/(tabs)/tracker')}
+      />
+    );
+  }
+
+  // Timeline: the case's live events ([] while loading or when none).
+  // japa#274: identical consecutive entries collapse, then only the newest 3
+  // show until the user taps "Show all (N)".
+  const steps: AppStep[] = dedupeSteps(
+    tl.data?.length ? mapTimeline(tl.data) : app.steps,
+  );
+  const {
+    visible: shownSteps,
+    total: totalSteps,
+    canToggle,
+  } = trimSteps(steps, timelineOpen);
 
   const pct = Math.round(app.progress * 100);
   const actionable = app.next.cta != null;
 
-  // Open (or fall back to) an agent's conversation for a payment-request message.
+  // Open the agent's live conversation, else their profile.
   const messageAgent = (agentId: string) => {
-    const c = convoForAgent(agentId);
+    const c = conversations?.find((x) => x.agentId === agentId);
     if (c) router.push(`/messages/${c.id}`);
     else router.push(`/agent/${agentId}`);
   };
@@ -379,31 +482,211 @@ export default function AppDetail() {
     setReasonSel(null);
     setReasonText('');
   };
-  const confirmReject = () => {
+  // Undo an optimistic decision for one request after a failed write.
+  const rollbackReq = (reqId: string, message: string) => {
+    setReqOverride((s) => {
+      return omitKey(s, reqId);
+    });
+    setReqReason((r) => {
+      return omitKey(r, reqId);
+    });
+    setReqError((e) => ({ ...e, [reqId]: message }));
+  };
+  const clearReqError = (reqId: string) =>
+    setReqError((e) => {
+      return omitKey(e, reqId);
+    });
+
+  const confirmReject = async () => {
     if (!rejectId) return;
+    const reqId = rejectId;
     const reason = reasonSel === 'Other' ? reasonText.trim() : reasonSel;
     if (!reason) return; // guarded by the disabled button, but keep it safe
-    // For a live request, reject on the backend (auto-creates a chat with the
-    // reason). Demo requests only update local state.
-    const target = payReqs.find((r) => r.id === rejectId);
-    if (target?.live) rejectReq.mutate({ requestId: rejectId, reason });
-    setReqOverride((s) => ({ ...s, [rejectId]: 'rejected' }));
-    setReqReason((r) => ({ ...r, [rejectId]: reason }));
+    clearReqError(reqId);
+    // Optimistic: show Declined at once, roll back if the backend refuses.
+    setReqOverride((s) => ({ ...s, [reqId]: 'rejected' }));
+    setReqReason((r) => ({ ...r, [reqId]: reason }));
     closeReject();
+    try {
+      // Reject on the backend (auto-creates a chat with the reason).
+      await rejectReq.mutateAsync({ requestId: reqId, reason });
+      const row = payReqs.find((r) => r.id === reqId);
+      if (row) {
+        void analyticsService.trackPaymentRequestRejected({
+          requestId: reqId,
+          amount: row.money,
+        });
+      }
+    } catch {
+      rollbackReq(
+        reqId,
+        'We couldn’t decline this request. Nothing changed. Try again.',
+      );
+    }
   };
 
-  // Sticky / nudge action: perform the next step (self-service flow) when
-  // actionable, otherwise open the agent conversation.
+  // Approve = client consent. The backend marks the request approved and
+  // returns a Paystack `authorizationUrl` + `paystackReference`; NO money has
+  // moved yet. We hand off to /pay, which opens the checkout and verifies the
+  // charge (POST /payment-requests/:id/verify) before it shows a confirmation.
+  const approveRequest = async (req: PayReqRow) => {
+    if (approvingId) return;
+    clearReqError(req.id);
+    setApprovingId(req.id);
+    // Optimistic: show Approved at once, roll back if the backend refuses.
+    setReqOverride((s) => ({ ...s, [req.id]: 'approved' }));
+    let result: Awaited<ReturnType<typeof approveReq.mutateAsync>>;
+    try {
+      result = await approveReq.mutateAsync(req.id);
+    } catch (err) {
+      setApprovingId(null);
+      // 409 REQUEST_NOT_PAYABLE: the agent cancelled it meanwhile. Say so
+      // and refresh the list so the row shows its real state.
+      const notPayable =
+        (err as { code?: unknown } | null)?.code === 'REQUEST_NOT_PAYABLE';
+      rollbackReq(
+        req.id,
+        notPayable
+          ? REQUEST_NOT_PAYABLE_MESSAGE
+          : 'We couldn’t approve this request. Nothing changed. Try again.',
+      );
+      if (notPayable) void payReqQ.refetch();
+      return;
+    }
+    setApprovingId(null);
+    void analyticsService.trackPaymentRequestApproved({
+      requestId: req.id,
+      amount: req.money,
+    });
+    const url = getAuthorizationUrl(result);
+    const reference = getPaystackReference(result);
+    // The server DID approve, so the row stays Approved. Without a checkout
+    // URL / reference the payment can't start; say so (never fake success).
+    if (!url || !reference) {
+      setReqError((e) => ({ ...e, [req.id]: PAYMENT_ERROR_MESSAGE }));
+      return;
+    }
+    // japa#252: /pay opens the checkout itself (autoOpen) in the in-app
+    // auth browser, which returns to the app after paying, then verifies.
+    toPay(req, reference, url, true);
+  };
+
+  // Open the pay screen for an approved request: it verifies the Paystack
+  // charge by `reference`, and can reopen checkout via `authorizationUrl`.
+  // `autoOpen` (japa#252): open Paystack as soon as /pay mounts (right after
+  // approve); a later "Complete payment" lands on /pay without opening it.
+  const toPay = (
+    req: PayReqRow,
+    reference?: string,
+    authorizationUrl?: string,
+    autoOpen = false,
+  ) =>
+    router.push({
+      pathname: '/pay',
+      params: {
+        type: 'application',
+        requestId: req.id,
+        reference: reference ?? req.reference ?? '',
+        authorizationUrl: authorizationUrl ?? '',
+        autoOpen: autoOpen ? '1' : '',
+        agentId: req.agentId,
+        dateIso: '',
+        time: '',
+        topic: req.title,
+        mode: '',
+        dur: '',
+        // japa#183: no `fee` param; /pay reads the amount from the request
+        // itself (this application's payment-request list).
+        applicationId: app.id,
+      },
+    });
+
+  // ── Sticky button (japa#307) ───────────────────────────────────────────────
+  // The label and target come from the pure `stickyAction` helper, which
+  // reads the raw backend case (it needs `mode` / `agencyId`, which the
+  // mapped `App` doesn't carry). A self-service case always gets a way back
+  // into its steps while it is open; a case without an agent never offers
+  // "Message your agent"; `null` → no sticky button at all.
+  const sticky = stickyAction(liveQ.data);
   const openConvo = () => {
+    // Never into messaging in a self-service-only build (japa#334).
+    if (selfServiceOnly) return;
     if (convo) router.push(`/messages/${convo.id}`);
   };
   const onNext = () => {
-    if (actionable) router.push(`/self-service/${dest.id}`);
+    if (!sticky) return;
+    // self-service/[id] takes the APPLICATION id (japa#145).
+    if (sticky.target === 'self-service')
+      router.push(`/self-service/${app.id}`);
     else openConvo();
+  };
+  // ── Sticky CTA visibility: japa#307 + japa#334 combined ───────────────────
+  // Merge of dev into #307. Dev (#334) hid the CTA in a self-service-only
+  // build when there was no next step (`actionable || !selfServiceOnly`),
+  // because then its only job was "Message your agent". #307 moved the
+  // decision into `stickyAction`, which already returns `null` when there is
+  // nothing to offer. Both rules are kept:
+  //   - no sticky action (closed self-service case, or no agent and not
+  //     self-service) → no CTA (#307);
+  //   - a self-service-only build never shows the messaging CTA, so an
+  //     agent case with nothing outstanding shows no CTA there (#334).
+  // A self-service case's "Continue application" still shows in a
+  // self-service-only build; that is the way back #307 adds (and how #307's
+  // e2e QA ran, with the flag on).
+  const showStickyCta =
+    !!sticky && !(selfServiceOnly && sticky.target === 'agent-conversation');
+
+  // ── Withdraw application (japa#259) ────────────────────────────────────────
+  // Shown only on a self-service application that is still open
+  // (`canWithdraw`, on the raw backend case like the sticky button above).
+  const showWithdraw = canWithdraw(liveQ.data);
+  // The request itself, sent only after the user confirms in the alert.
+  const doWithdraw = () => {
+    // A second request can never start while one is in flight.
+    if (withdraw.isPending) return;
+    setWithdrawError(null);
+    withdraw.mutate(app.id, {
+      // Withdrawn: leave for the journey tab. `replace`, so "back" can't
+      // return to the application the user just took off their journey. The
+      // hook has already removed it from the cached lists.
+      onSuccess: () => router.replace('/(tabs)/tracker'),
+      onError: (error) => {
+        // 409: it was already closed (withdrawn on another device, or decided
+        // meanwhile). That isn't a failure to report: reload the application
+        // so the screen shows its real status (and hides this action). The
+        // hook also marks the lists stale; the timeline is reloaded here.
+        if (isAlreadyClosedError(error)) {
+          liveQ.refetch();
+          tl.refetch();
+          return;
+        }
+        // Network / server failure: nothing changed; say so and let them retry.
+        setWithdrawError(WITHDRAW_ERROR_MESSAGE);
+      },
+    });
+  };
+  // Native confirmation first (as delete-account / sign out do). "Cancel"
+  // just closes it; "Withdraw" (destructive style) sends the request.
+  const confirmWithdraw = () => {
+    if (withdraw.isPending) return;
+    Alert.alert(WITHDRAW_CONFIRM_TITLE, WITHDRAW_CONFIRM_MESSAGE, [
+      { text: WITHDRAW_CONFIRM_CANCEL, style: 'cancel' },
+      {
+        text: WITHDRAW_CONFIRM_ACTION,
+        style: 'destructive',
+        onPress: doWithdraw,
+      },
+    ]);
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+    // e2e ids (Maestro, japa#361): `screen.application`, `application.scroll`,
+    // the header message button `application.message` and the Payment
+    // requests section `application.paymentRequests`. No visual effect.
+    <View
+      testID="screen.application"
+      style={{ flex: 1, backgroundColor: EX.color.bg }}
+    >
       {/* HERO (240) — fixed behind, parallaxes up at py * -0.3 as the sheet rises */}
       <Animated.View
         style={[
@@ -498,11 +781,19 @@ export default function AppDetail() {
         }}
       >
         <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
-        <GlassButton icon={Ic.msg} onPress={openConvo} />
+        {/* Message the agent: hidden in a self-service-only build (japa#334). */}
+        {selfServiceOnly ? null : (
+          <GlassButton
+            testID="application.message"
+            icon={Ic.msg}
+            onPress={openConvo}
+          />
+        )}
       </View>
 
       {/* Scrolling content sheet */}
       <Animated.ScrollView
+        testID="application.scroll"
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
@@ -526,6 +817,32 @@ export default function AppDetail() {
             shadowOffset: { width: 0, height: -8 },
           }}
         >
+          {/* ── japa#237: shared-route applications say which country they go
+              through. Ordinary applications look exactly as before. "Change
+              country" shows only when the backend says it can still change. */}
+          {liveQ.data && showThroughChip(liveQ.data) ? (
+            <ThroughRow
+              countryCode={
+                liveQ.data.throughCountryCode ?? liveQ.data.countryCode
+              }
+              countryName={liveQ.data.countryName ?? dest.country}
+              routeName={liveQ.data.routeName}
+              showRoutePill={showRoutePill(liveQ.data, liveQ.data.visaTypeName)}
+              canChange={canShowChangeCountry(liveQ.data)}
+              onChange={() =>
+                router.push({
+                  pathname: '/apply-through/[visaId]',
+                  params: {
+                    visaId: liveQ.data!.visaTypeId,
+                    code: liveQ.data!.countryCode,
+                    mode: 'change',
+                    applicationId: liveQ.data!.id,
+                  },
+                })
+              }
+            />
+          ) : null}
+
           {/* ── Dark "Next step" card (only when actionable) ────────────────── */}
           {actionable ? (
             <View
@@ -574,56 +891,75 @@ export default function AppDetail() {
             </View>
           ) : null}
 
-          {/* ── Progress header (marginBottom 14) ───────────────────────────── */}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 14,
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: '700',
-                color: EX.color.ink,
-                letterSpacing: -0.18,
-              }}
-            >
-              Timeline
-            </Text>
-            <Text
-              style={{
-                fontSize: 13,
-                fontWeight: '700',
-                color: EX.color.primary,
-              }}
-            >
-              {pct}% complete
-            </Text>
-          </View>
-
-          {/* ── Timeline card (radius 22, padding 20, border rgba(23,19,38,0.07)) ── */}
-          <View
-            style={[
-              {
+          {/* ── Visa details link (japa#106) ─────────────────────────────────
+              Reuses destination/[id].tsx's "Full visa breakdown" row. Opens
+              the visa breakdown, which works for an agency-only visa because
+              the user has a case on it (#102). */}
+          {dest.id ? (
+            <PressableStatic
+              onPress={() =>
+                router.push({
+                  pathname: '/visa/[id]',
+                  params: { id: dest.id, code: dest.flag.toUpperCase() },
+                })
+              }
+              accessibilityRole="button"
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 13,
+                padding: 15,
+                borderRadius: 20,
+                marginBottom: 18,
                 backgroundColor: '#fff',
                 borderWidth: 1,
-                borderColor: 'rgba(23,19,38,0.07)',
-                borderRadius: 22,
-                padding: 20,
-              },
-              EXShadow.card,
-            ]}
-          >
-            <Timeline steps={steps} />
-          </View>
+                borderColor: EX.color.line08,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: EX.color.cream,
+                }}
+              >
+                <Ic.docs size={20} color={EX.color.primary} strokeWidth={1.8} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                  }}
+                >
+                  Visa details
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12.5,
+                    color: EX.color.inkMuted,
+                    marginTop: 1,
+                  }}
+                >
+                  Requirements, processing time and fees
+                </Text>
+              </View>
+              <Ic.chevR size={20} color={EX.color.muted} strokeWidth={1.8} />
+            </PressableStatic>
+          ) : null}
 
           {/* ── Payment requests (only when the agent has raised one) ────────── */}
-          {payReqs.length > 0 ? (
+          {/* Never in a self-service-only build (japa#334): agent payments,
+              their approve / reject / pay and "message your agent" actions. */}
+          {!selfServiceOnly && payReqs.length > 0 ? (
             <>
               <Text
+                testID="application.paymentRequests"
                 style={{
                   fontSize: 18,
                   fontWeight: '700',
@@ -686,16 +1022,31 @@ export default function AppDetail() {
                       >
                         {req.title}
                       </Text>
-                      <Text
-                        style={{
-                          fontSize: 16,
-                          fontWeight: '700',
-                          color: EX.color.ink,
-                          letterSpacing: -0.16,
-                        }}
-                      >
-                        {NAIRA(req.amount)}
-                      </Text>
+                      {/* Amount right-aligned: primary + dollar line. */}
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text
+                          style={{
+                            fontSize: 16,
+                            fontWeight: '700',
+                            color: EX.color.ink,
+                            letterSpacing: -0.16,
+                          }}
+                        >
+                          {req.price.primary}
+                        </Text>
+                        {req.price.secondary ? (
+                          <Text
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: '600',
+                              color: EX.color.inkMuted,
+                              marginTop: 2,
+                            }}
+                          >
+                            {req.price.secondary}
+                          </Text>
+                        ) : null}
+                      </View>
                     </View>
 
                     {/* Attribution — this is an agent-raised request awaiting the client's approval */}
@@ -708,9 +1059,12 @@ export default function AppDetail() {
                       }}
                     >
                       <Portrait
-                        seed={agentById(req.agentId)?.seed ?? 0}
+                        seed={agent?.id === req.agentId ? agent.seed : 0}
                         size={22}
-                        name={req.agentName ?? agentById(req.agentId)?.n ?? 'Agent'}
+                        name={
+                          req.agentName ??
+                          (agent?.id === req.agentId ? agent.n : 'Agent')
+                        }
                       />
                       <Text
                         style={{
@@ -720,7 +1074,8 @@ export default function AppDetail() {
                         }}
                       >
                         Requested by{' '}
-                        {req.agentName ?? agentById(req.agentId)?.n ?? 'your agent'}
+                        {req.agentName ??
+                          (agent?.id === req.agentId ? agent.n : 'your agent')}
                       </Text>
                     </View>
 
@@ -796,22 +1151,6 @@ export default function AppDetail() {
                     {/* Actions by decision state */}
                     {(() => {
                       const st = reqOverride[req.id] ?? req.status;
-                      const setSt = (v: 'pending' | 'approved' | 'rejected') =>
-                        setReqOverride((s) => ({ ...s, [req.id]: v }));
-                      const toPay = () =>
-                        router.push({
-                          pathname: '/pay',
-                          params: {
-                            type: 'application',
-                            agentId: req.agentId,
-                            dateIso: '',
-                            time: '',
-                            topic: req.title,
-                            mode: '',
-                            dur: '',
-                            fee: String(req.amount),
-                          },
-                        });
                       if (st === 'pending') {
                         return (
                           <View
@@ -827,17 +1166,14 @@ export default function AppDetail() {
                               onPress={() =>
                                 Alert.alert(
                                   'Approve request',
-                                  `Approve ${NAIRA(req.amount)} for “${req.title}”?`,
+                                  `Approve ${priceInline(req.price)} for “${req.title}”?`,
                                   [
                                     { text: 'Cancel', style: 'cancel' },
                                     {
                                       text: 'Approve',
-                                      onPress: () => {
-                                        // Live request → approve on the backend
-                                        // (releases escrow); demo stays local.
-                                        if (req.live) approveReq.mutate(req.id);
-                                        setSt('approved');
-                                      },
+                                      // Approve on the backend (consent only; the
+                                      // Paystack charge follows, see approveRequest).
+                                      onPress: () => void approveRequest(req),
                                     },
                                   ],
                                 )
@@ -921,8 +1257,9 @@ export default function AppDetail() {
                                 marginTop: 12,
                               }}
                             >
-                              You approved this request — complete payment to
-                              continue.
+                              {req.paid
+                                ? 'Paid — thank you.'
+                                : 'Approved, awaiting payment — complete payment to continue.'}
                             </Text>
                             <View
                               style={{
@@ -932,39 +1269,41 @@ export default function AppDetail() {
                                 marginTop: 12,
                               }}
                             >
-                              <Pressable
-                                onPress={toPay}
-                                style={{
-                                  flex: 1,
-                                  height: 46,
-                                  borderRadius: 14,
-                                  backgroundColor: EX.color.primary,
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: 7,
-                                  shadowColor: EX.color.primary,
-                                  shadowOpacity: 0.4,
-                                  shadowRadius: 12,
-                                  shadowOffset: { width: 0, height: 8 },
-                                  elevation: 5,
-                                }}
-                              >
-                                <Text
+                              {req.paid ? null : (
+                                <Pressable
+                                  onPress={() => toPay(req)}
                                   style={{
-                                    color: '#fff',
-                                    fontSize: 14.5,
-                                    fontWeight: '700',
+                                    flex: 1,
+                                    height: 46,
+                                    borderRadius: 14,
+                                    backgroundColor: EX.color.primary,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 7,
+                                    shadowColor: EX.color.primary,
+                                    shadowOpacity: 0.4,
+                                    shadowRadius: 12,
+                                    shadowOffset: { width: 0, height: 8 },
+                                    elevation: 5,
                                   }}
                                 >
-                                  Complete payment
-                                </Text>
-                                <Ic.arrow
-                                  size={16}
-                                  color="#fff"
-                                  strokeWidth={1.8}
-                                />
-                              </Pressable>
+                                  <Text
+                                    style={{
+                                      color: '#fff',
+                                      fontSize: 14.5,
+                                      fontWeight: '700',
+                                    }}
+                                  >
+                                    Complete payment
+                                  </Text>
+                                  <Ic.arrow
+                                    size={16}
+                                    color="#fff"
+                                    strokeWidth={1.8}
+                                  />
+                                </Pressable>
+                              )}
                               <Pressable
                                 onPress={() => messageAgent(req.agentId)}
                                 style={{
@@ -1013,29 +1352,6 @@ export default function AppDetail() {
                             }}
                           >
                             <Pressable
-                              onPress={() => setSt('pending')}
-                              style={{
-                                flex: 1,
-                                height: 46,
-                                borderRadius: 14,
-                                backgroundColor: '#fff',
-                                borderWidth: 1,
-                                borderColor: EX.color.line12,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: EX.color.ink,
-                                  fontSize: 14.5,
-                                  fontWeight: '700',
-                                }}
-                              >
-                                Undo
-                              </Text>
-                            </Pressable>
-                            <Pressable
                               onPress={() => messageAgent(req.agentId)}
                               style={{
                                 flex: 1,
@@ -1069,126 +1385,279 @@ export default function AppDetail() {
                         </>
                       );
                     })()}
+                    {/* Failed approve / reject / checkout (spec 1.3). */}
+                    {reqError[req.id] ? (
+                      <View style={{ marginTop: 12 }}>
+                        <InlineError message={reqError[req.id]} />
+                      </View>
+                    ) : null}
                   </View>
                 ))}
               </View>
             </>
           ) : null}
 
-          {/* ── Your agent ───────────────────────────────────────────────────── */}
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            Your agent
-          </Text>
-          {agent ? (
-            <Pressable
-              onPress={() => router.push(`/agent/${agent.id}`)}
-              style={[
-                {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 13,
-                  backgroundColor: '#fff',
-                  borderWidth: 1,
-                  borderColor: EX.color.line08,
-                  borderRadius: 20,
-                  padding: 14,
-                },
-                EXShadow.card,
-              ]}
-            >
-              <Portrait seed={agent.seed} size={48} name={agent.n} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text
-                  style={{
-                    fontSize: 15,
-                    fontWeight: '700',
-                    color: EX.color.ink,
-                  }}
-                  numberOfLines={1}
-                >
-                  {agent.n}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 12.5,
-                    color: EX.color.muted,
-                    marginTop: 2,
-                  }}
-                  numberOfLines={1}
-                >
-                  {agent.spec} · responds in {agent.resp}
-                </Text>
-              </View>
-              {/* Message circle: 38, radius 19, coral tint .10 */}
-              <Pressable
-                onPress={openConvo}
-                hitSlop={8}
+          {/* japa#145: no assigned agent (self-service case) → no section.
+              Never in a self-service-only build (japa#334). */}
+          {!selfServiceOnly && agent ? (
+            <>
+              <Text
                 style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 19,
-                  backgroundColor: EX.color.primaryTint10,
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                  marginTop: 26,
+                  marginBottom: 12,
+                  marginHorizontal: 2,
                 }}
               >
-                <Ic.msg size={18} color={EX.color.primary} strokeWidth={1.8} />
+                Your agent
+              </Text>
+              <Pressable
+                onPress={() => router.push(`/agent/${agent.id}`)}
+                style={[
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 13,
+                    backgroundColor: '#fff',
+                    borderWidth: 1,
+                    borderColor: EX.color.line08,
+                    borderRadius: 20,
+                    padding: 14,
+                  },
+                  EXShadow.card,
+                ]}
+              >
+                <Portrait seed={agent.seed} size={48} name={agent.n} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={{
+                      fontSize: 15,
+                      fontWeight: '700',
+                      color: EX.color.ink,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {agent.n}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      color: EX.color.muted,
+                      marginTop: 2,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {agent.spec} · responds in {agent.resp}
+                  </Text>
+                </View>
+                {/* Message circle: 38, radius 19, coral tint .10 */}
+                <Pressable
+                  onPress={openConvo}
+                  hitSlop={8}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: EX.color.primaryTint10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ic.msg
+                    size={18}
+                    color={EX.color.primary}
+                    strokeWidth={1.8}
+                  />
+                </Pressable>
               </Pressable>
-            </Pressable>
+            </>
+          ) : null}
+
+          {/* ── Timeline: LAST section, below everything else (japa#274) ───── */}
+          {/* ── Progress header (marginBottom 14) ───────────────────────────── */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 14,
+              marginTop: 26,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: EX.color.ink,
+                letterSpacing: -0.18,
+              }}
+            >
+              Timeline
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '700',
+                color: EX.color.primary,
+              }}
+            >
+              {pct}% complete
+            </Text>
+          </View>
+
+          {/* ── Timeline card (radius 22, padding 20, border rgba(23,19,38,0.07)) ── */}
+          <View
+            style={[
+              {
+                backgroundColor: '#fff',
+                borderWidth: 1,
+                borderColor: 'rgba(23,19,38,0.07)',
+                borderRadius: 22,
+                padding: 20,
+              },
+              EXShadow.card,
+            ]}
+          >
+            <Timeline steps={shownSteps} />
+            {/* Show all (N) / Show less — only when entries are hidden (japa#274) */}
+            {canToggle ? (
+              <PressableStatic
+                onPress={() => setTimelineOpen((o) => !o)}
+                accessibilityRole="button"
+                // Announce expanded / collapsed to VoiceOver (japa#274 review).
+                accessibilityState={{ expanded: timelineOpen }}
+                // ~30pt tall visually; hitSlop lifts the tap area past 44pt.
+                hitSlop={8}
+                accessibilityLabel={
+                  timelineOpen
+                    ? 'Show fewer timeline entries'
+                    : `Show all ${totalSteps} timeline entries`
+                }
+                style={({ pressed }) => ({
+                  alignSelf: 'flex-start',
+                  marginTop: 16,
+                  paddingVertical: 6,
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '700',
+                    color: EX.color.primary,
+                  }}
+                >
+                  {timelineOpen ? 'Show less' : `Show all (${totalSteps})`}
+                </Text>
+              </PressableStatic>
+            ) : null}
+          </View>
+
+          {/* ── Withdraw application (japa#259) ─────────────────────────────
+              Last thing in the scroll content, above the space the sheet
+              keeps clear for the sticky bar (its paddingBottom). A quiet text
+              action in the destructive colour: it must be findable, never
+              prominent. Self-service + open status only. */}
+          {showWithdraw ? (
+            <View style={{ marginTop: 28, alignItems: 'center' }}>
+              <PressableStatic
+                onPress={confirmWithdraw}
+                // In flight: locked, so a second tap can't send another request.
+                disabled={withdraw.isPending}
+                accessibilityRole="button"
+                accessibilityLabel={WITHDRAW_LABEL}
+                accessibilityState={{
+                  disabled: withdraw.isPending,
+                  busy: withdraw.isPending,
+                }}
+                // The label is ~20pt tall; padding + hitSlop reach 44pt.
+                hitSlop={8}
+                style={({ pressed }) => ({
+                  minHeight: 32,
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                {withdraw.isPending ? (
+                  // Loading = coral spinner (design system).
+                  <ActivityIndicator color={EX.color.primary} />
+                ) : (
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '700',
+                      color: EX.color.danger,
+                    }}
+                  >
+                    {WITHDRAW_LABEL}
+                  </Text>
+                )}
+              </PressableStatic>
+              {/* Network / server failure: the application is unchanged and
+                  the action above can be tapped again. */}
+              {withdrawError ? (
+                <View style={{ alignSelf: 'stretch', marginTop: 10 }}>
+                  <InlineError message={withdrawError} />
+                </View>
+              ) : null}
+            </View>
           ) : null}
         </View>
       </Animated.ScrollView>
 
-      {/* ── Sticky coral CTA (bar padding 15/22, glass rgba(251,247,240,0.8)) ── */}
-      <BlurView
-        intensity={30}
-        tint="light"
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          paddingTop: 15,
-          paddingHorizontal: 22,
-          paddingBottom: Math.max(insets.bottom, 16) + 8,
-          backgroundColor: 'rgba(251,247,240,0.8)',
-          borderTopWidth: 1,
-          borderTopColor: EX.color.line06,
-        }}
-      >
-        <Pressable
-          onPress={onNext}
+      {/* ── Sticky coral CTA (bar padding 15/22, glass rgba(251,247,240,0.8)) ──
+          japa#307: hidden when `stickyAction` returns null (closed
+          self-service case, or no agent and not self-service).
+          japa#334: also hidden in a self-service-only build when it would
+          only message the agent. See `showStickyCta` above. */}
+      {showStickyCta && sticky ? (
+        <BlurView
+          intensity={30}
+          tint="light"
           style={{
-            height: 54,
-            borderRadius: 16,
-            backgroundColor: EX.color.primary,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            shadowColor: EX.color.primary,
-            shadowOpacity: 0.5,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 12 },
-            elevation: 6,
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingTop: 15,
+            paddingHorizontal: 22,
+            paddingBottom: Math.max(insets.bottom, 16) + 8,
+            backgroundColor: 'rgba(251,247,240,0.8)',
+            borderTopWidth: 1,
+            borderTopColor: EX.color.line06,
           }}
         >
-          <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-            {app.next.cta ?? 'Message your agent'}
-          </Text>
-          <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-        </Pressable>
-      </BlurView>
+          <Pressable
+            onPress={onNext}
+            style={{
+              height: 54,
+              borderRadius: 16,
+              backgroundColor: EX.color.primary,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              shadowColor: EX.color.primary,
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 12 },
+              elevation: 6,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+              {/* japa#307: label from `stickyAction` (replaces dev's
+                  `app.next.cta ?? 'Message your agent'`). */}
+              {sticky.label}
+            </Text>
+            <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
+          </Pressable>
+        </BlurView>
+      ) : null}
 
       {/* ── Reject-reason modal (agent request → client must give a reason) ───── */}
       <Modal

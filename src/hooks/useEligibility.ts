@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { retryUnlessUnavailable } from './queryErrors';
 import { apiService } from '@/services/api.service';
 import {
   EligibilityQuestion,
@@ -12,6 +13,10 @@ import {
 
 /**
  * Pre-check: Does the user need a visa?
+ *
+ * japa#237: the result's `visaRequired` can be null (and `requirementType`
+ * 'unknown') when no official source covers the trip. Callers must treat that
+ * as "we don't know", never as true or false.
  */
 export function useVisaPreCheck() {
   return useMutation({
@@ -114,6 +119,8 @@ export function useEligibilityCheck(checkId: string) {
       return response.data;
     },
     enabled: !!checkId,
+    // japa#145: a 404 or 403 (another user's check) is final, so don't retry.
+    retry: retryUnlessUnavailable,
     staleTime: 1000 * 60 * 5,
   });
 }

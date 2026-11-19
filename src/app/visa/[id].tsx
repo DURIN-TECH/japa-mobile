@@ -4,14 +4,26 @@
 // A leaner sibling of destination/[id].tsx: a COMPACT FIXED photo header (~200,
 // NOT parallax — a plain image behind a rounded content sheet) + rounded sheet
 // + sticky glass CTA. The sheet holds a stat strip (approval / processing /
-// applicants), the requirements checklist, a "common reasons for refusal" list,
+// applicants), japa#255's Cost & timeline / Eligibility cards, the requirements
+// checklist, the Official source link
 // and a dark "boost your chances" nudge toward a specialist.
 //
 // Style, sizes, radii and colours are lifted directly from destination/[id].tsx
 // so the two screens read as one system.
+//
+// japa#106: an agency-only visa 404s for anyone without a case at its agency
+// (#102). The 404 shows the not-found EmptyState, with the same copy for an
+// unknown and a hidden visa (it must not confirm the visa exists). Other
+// load failures show an InlineError with "Try again".
+//
+// japa#145: live data only. The demo DESTS branch, the static REQS fallback
+// and the static "Common reasons for refusal" list (REJECTIONS, no backend
+// source) are gone. No published requirements → "No requirements published
+// yet"; no top agent → the specialist nudge is hidden; a failed "Start
+// application" shows an InlineError above the CTA instead of a demo checklist.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -20,18 +32,10 @@ import {
   ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import {
-  AGENTS,
-  REQS,
-  REJECTIONS,
-  destById,
-  Dest,
-  Req,
-} from '@/components/explorer/data';
+import type { Dest, Req } from '@/types/explorer.type';
 import {
   mapRequirements,
   visaTypeToDest,
@@ -39,9 +43,24 @@ import {
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useCountriesWithVisas, useVisaType } from '@/hooks/useVisaTypes';
 import { useTopAgents } from '@/hooks/useAgents';
-import { useCreateApplication } from '@/hooks/useApplications';
+// Self-service-only launch flag (japa#334).
+import { isSelfServiceOnly } from '@/config/env';
+import { useStartVisa } from '@/hooks/useStartVisa';
+import { AlsoCoversCard } from '@/components/explorer/SharedRouteParts';
+import {
+  StartApplicationBar,
+  startBarExtraHeight,
+} from '@/components/explorer/StartApplicationBar';
 import { Ic } from '@/components/explorer/icons';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import { StateEmpty } from '@/components/explorer/states';
 import { Flag, GlassButton, Scrim } from '@/components/explorer/primitives';
+import {
+  CostTimelineSection,
+  EligibilitySection,
+  OfficialSourceSection,
+} from '@/components/explorer/VisaBreakdownSections';
 
 // Compact fixed header height (destination hero is 376; this breakdown uses ~200).
 const HERO = 200;
@@ -83,50 +102,58 @@ function StatCell({
 
 export default function VisaBreakdown() {
   const router = useRouter();
+  // Self-service-only build (japa#334): hides the "Boost your chances"
+  // specialist card. Start-application stays.
+  const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
   const { id, code } = useLocalSearchParams<{ id: string; code?: string }>();
 
-  // Demo tiles resolve from static DESTS; live tiles (reached from the backend
-  // Explore grid via destination/[id]) carry a country `code` and are fetched
-  // by (countryCode, visaId) — mirroring destination/[id].tsx exactly.
-  const demo = destById(id);
-  const liveQ = useVisaType(demo ? '' : (code ?? ''), demo ? '' : id);
+  // Tiles (reached from the Explore grid via destination/[id]) carry a
+  // country `code`; the visa is fetched by (countryCode, visaId), mirroring
+  // destination/[id].tsx. No code → the query stays off → not-found.
+  const liveQ = useVisaType(code ?? '', id ?? '');
   const { data: countries } = useCountriesWithVisas();
 
-  // Effective destination (demo or live-mapped from the visa type).
+  // Effective destination, live-mapped from the visa type.
   const d: Dest | undefined = useMemo(() => {
-    if (demo) return demo;
     const vt = liveQ.data?.visaType;
     if (!vt) return undefined;
     const name = countries?.find(
       (c) => c.code.toLowerCase() === (code ?? '').toLowerCase(),
     )?.name;
     return visaTypeToDest(vt, name);
-  }, [demo, liveQ.data, countries, code]);
+  }, [liveQ.data, countries, code]);
 
-  // Requirements checklist — live requirements when present, else the demo set.
-  const reqs: Req[] = useMemo(() => {
-    if (demo) return REQS;
-    const rq = liveQ.data?.requirements;
-    return rq && rq.length ? mapRequirements(rq) : REQS;
-  }, [demo, liveQ.data]);
+  // Requirements checklist — the live requirements only ([] → empty state).
+  const reqs: Req[] = useMemo(
+    () => mapRequirements(liveQ.data?.requirements ?? []),
+    [liveQ.data],
+  );
 
-  // "Boost your chances" nudge — feature the real #1 top agent (GET /agents/top)
-  // with the demo specialist as fallback.
-  const topAgentsQ = useTopAgents(1);
-  const specialist = useMemo(() => {
-    const live = (topAgentsQ.data ?? []).map(mapAgent);
-    return live[0] ?? AGENTS[0];
-  }, [topAgentsQ.data]);
+  // "Boost your chances" nudge — the real #1 top agent (GET /agents/top).
+  // None (or not loaded) → the nudge section is hidden, never a named demo.
+  // Self-service-only build (japa#334): the nudge is hidden, so the call is
+  // skipped and `specialist` stays null.
+  const topAgentsQ = useTopAgents(1, !selfServiceOnly);
+  const specialist = useMemo(
+    () => (topAgentsQ.data ?? []).map(mapAgent)[0] ?? null,
+    [topAgentsQ.data],
+  );
 
   // Create-application (declared before any early return to keep hook order
   // stable). For a live visa the "Start application" CTA mints a real
-  // Application, then opens self-service with that id; demo/failure fall back.
-  const createApp = useCreateApplication();
-  const [creating, setCreating] = useState(false);
+  // Application, then opens self-service with that id. A failure shows an
+  // InlineError above the CTA (the CTA is the retry).
+  // japa#174: shared start flow (402 → upgrade, 404/403 → unavailable, other → retry).
+  // japa#237: a visa on a shared route opens the "apply through" sheet instead.
+  const startApp = useStartVisa(
+    d?.id ?? id ?? '',
+    code ?? d?.flag ?? '',
+    liveQ.data?.visaType.sharedRoute,
+  );
 
   // Live fetch still in flight.
-  if (!demo && liveQ.isLoading) {
+  if (liveQ.isLoading) {
     return (
       <View
         style={{
@@ -141,44 +168,33 @@ export default function VisaBreakdown() {
     );
   }
 
-  if (!d) {
+  // Load failure that isn't a 404 (offline, server error), nothing cached.
+  if (liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Visa not found.</Text>
-      </View>
+      <CenteredState
+        icon={Ic.globe}
+        title="We couldn’t load this visa"
+        errorMessage="Check your connection and try again."
+        onRetry={() => liveQ.refetch()}
+        retrying={liveQ.isRefetching}
+        actionLabel="Back to explore"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
     );
   }
 
-  // Start (or continue to) the self-service application. For a live visa this
-  // creates a real Application (mode 'self') and opens self-service with its id;
-  // demo dests and any failure fall back to the demo self-service view.
-  const startSelfService = async () => {
-    if (creating) return;
-    if (demo) {
-      router.push(`/self-service/${d.id}`);
-      return;
-    }
-    try {
-      setCreating(true);
-      const app = await createApp.mutateAsync({
-        visaTypeId: d.id,
-        countryCode: (code ?? d.flag).toUpperCase(),
-        mode: 'self',
-      });
-      router.push(`/self-service/${app?.id ?? d.id}`);
-    } catch {
-      router.push(`/self-service/${d.id}`);
-    } finally {
-      setCreating(false);
-    }
-  };
+  // Not found: unknown id, or an agency-only visa this user can't reach.
+  if (!d) {
+    return (
+      <CenteredState
+        icon={Ic.globe}
+        title="We couldn’t find this visa"
+        body="It may have been removed, or it’s only offered through an agency you’re not working with."
+        actionLabel="Back to explore"
+        onAction={() => router.replace('/(tabs)/explore')}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -274,7 +290,8 @@ export default function VisaBreakdown() {
             minHeight: 560,
             paddingTop: 8,
             paddingHorizontal: 20,
-            paddingBottom: EX.space.ctaClear,
+            paddingBottom:
+              EX.space.ctaClear + startBarExtraHeight(startApp.failure),
             shadowColor: '#171326',
             shadowOpacity: 0.28,
             shadowRadius: 30,
@@ -326,6 +343,13 @@ export default function VisaBreakdown() {
             <StatCell value={d.applied.toLocaleString()} label="Applicants" />
           </View>
 
+          {/* japa#237: "Also covers other countries" (only for a shared route
+              that covers a country besides this one; nothing otherwise). */}
+          <AlsoCoversCard
+            route={liveQ.data?.visaType.sharedRoute}
+            countryCode={code ?? d.flag}
+          />
+
           {/* Blurb */}
           <Text
             style={{
@@ -339,7 +363,19 @@ export default function VisaBreakdown() {
             {d.blurb}
           </Text>
 
-          {/* ── What you'll need (REQS — same as destination detail) ────────── */}
+          {/* japa#255: real VisaType data. Each section hides itself when its
+              fields are empty and owns its own top margin (no gap). */}
+          {liveQ.data?.visaType ? (
+            <>
+              <CostTimelineSection
+                visa={liveQ.data.visaType}
+                statStripProcessing={d.processing}
+              />
+              <EligibilitySection visa={liveQ.data.visaType} />
+            </>
+          ) : null}
+
+          {/* ── What you'll need (live requirements, as destination detail) ───── */}
           <Text
             style={{
               fontSize: 18,
@@ -367,9 +403,18 @@ export default function VisaBreakdown() {
               elevation: 1,
             }}
           >
+            {reqs.length === 0 ? (
+              // japa#145: nothing published yet — say so, never a static list.
+              <StateEmpty
+                section
+                icon={Ic.docs}
+                title="No requirements published yet"
+                body="We’ll list every document you need here as soon as it’s published."
+              />
+            ) : null}
             {reqs.map((r, i) => (
               <View
-                key={r.t}
+                key={`${r.t}-${i}`}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -413,7 +458,7 @@ export default function VisaBreakdown() {
                   <Text
                     style={{
                       fontSize: 12.5,
-                      color: EX.color.muted,
+                      color: EX.color.inkMuted,
                       marginTop: 1,
                     }}
                   >
@@ -444,212 +489,103 @@ export default function VisaBreakdown() {
             ))}
           </View>
 
-          {/* ── Common reasons for refusal (REJECTIONS) ─────────────────────── */}
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            Common reasons for refusal
-          </Text>
-          <View style={{ gap: 10 }}>
-            {REJECTIONS.map((reason) => (
-              <View
-                key={reason}
+          {/* japa#255: link to the official application page (only with a URL). */}
+          {liveQ.data?.visaType ? (
+            <OfficialSourceSection visa={liveQ.data.visaType} />
+          ) : null}
+
+          {/* ── Boost your chances (dark specialist nudge) ──────────────────── */}
+          {/* Only with a real top agent (GET /agents/top), and never in a
+              self-service-only build (japa#334). */}
+          {!selfServiceOnly && specialist ? (
+            <>
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: EX.color.ink,
+                  letterSpacing: -0.18,
+                  marginTop: 26,
+                  marginBottom: 12,
+                  marginHorizontal: 2,
+                }}
+              >
+                Boost your chances
+              </Text>
+              <Pressable
+                onPress={() => router.push(`/agent/${specialist.id}`)}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  gap: 12,
-                  backgroundColor: '#fff',
-                  borderWidth: 1,
-                  borderColor: EX.color.line08,
-                  borderRadius: 16,
-                  paddingVertical: 13,
-                  paddingHorizontal: 14,
+                  gap: 14,
+                  padding: 16,
+                  borderRadius: 20,
+                  backgroundColor: EX.color.ink,
                   shadowColor: '#171326',
-                  shadowOpacity: 0.04,
-                  shadowRadius: 2,
-                  shadowOffset: { width: 0, height: 1 },
-                  elevation: 1,
+                  shadowOpacity: 0.4,
+                  shadowRadius: 20,
+                  shadowOffset: { width: 0, height: 12 },
+                  elevation: 6,
                 }}
               >
-                {/* 26px rejected-tint circle with a coral-red X (docStatus.rejected colours) */}
                 <View
                   style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 13,
-                    backgroundColor: '#FBE3E1',
+                    width: 46,
+                    height: 46,
+                    borderRadius: 14,
                     alignItems: 'center',
                     justifyContent: 'center',
+                    backgroundColor: 'rgba(255,255,255,0.12)',
                   }}
                 >
-                  <Ic.x size={14} color="#C0453C" strokeWidth={2.2} />
+                  <Ic.spark size={21} color={EX.color.bg} strokeWidth={1.8} />
                 </View>
-                <Text
-                  style={{
-                    flex: 1,
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: '#9E3630',
-                    lineHeight: 19,
-                  }}
-                >
-                  {reason}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* ── Boost your chances (dark specialist nudge) ──────────────────── */}
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: '700',
-              color: EX.color.ink,
-              letterSpacing: -0.18,
-              marginTop: 26,
-              marginBottom: 12,
-              marginHorizontal: 2,
-            }}
-          >
-            Boost your chances
-          </Text>
-          <Pressable
-            onPress={() => router.push(`/agent/${specialist.id}`)}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              padding: 16,
-              borderRadius: 20,
-              backgroundColor: EX.color.ink,
-              shadowColor: '#171326',
-              shadowOpacity: 0.4,
-              shadowRadius: 20,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 6,
-            }}
-          >
-            <View
-              style={{
-                width: 46,
-                height: 46,
-                borderRadius: 14,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: 'rgba(255,255,255,0.12)',
-              }}
-            >
-              <Ic.spark size={21} color={EX.color.bg} strokeWidth={1.8} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text
-                style={{
-                  fontSize: 15.5,
-                  fontWeight: '700',
-                  color: EX.color.bg,
-                }}
-                numberOfLines={1}
-              >
-                Work with a specialist
-              </Text>
-              <Text
-                style={{
-                  fontSize: 12.5,
-                  marginTop: 2,
-                  color: 'rgba(255,251,245,0.72)',
-                }}
-                numberOfLines={1}
-              >
-                {specialist.n} · {specialist.succ}% success
-              </Text>
-            </View>
-            <Ic.chevR size={20} color={EX.color.primary} strokeWidth={1.8} />
-          </Pressable>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    style={{
+                      fontSize: 15.5,
+                      fontWeight: '700',
+                      color: EX.color.bg,
+                    }}
+                    numberOfLines={1}
+                  >
+                    Work with a specialist
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12.5,
+                      marginTop: 2,
+                      color: 'rgba(255,251,245,0.72)',
+                    }}
+                    numberOfLines={1}
+                  >
+                    {specialist.n} · {specialist.succ}% success
+                  </Text>
+                </View>
+                <Ic.chevR
+                  size={20}
+                  color={EX.color.primary}
+                  strokeWidth={1.8}
+                />
+              </Pressable>
+            </>
+          ) : null}
         </View>
       </ScrollView>
 
-      {/* ── Sticky glass CTA — Starting at $price / Start application ────────── */}
-      <BlurView
-        intensity={30}
-        tint="light"
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          paddingTop: 16,
-          paddingHorizontal: 20,
-          paddingBottom: Math.max(insets.bottom, 16) + 6,
-          backgroundColor: EX.color.glassWarmSoft,
-          borderTopWidth: 1,
-          borderTopColor: EX.color.line06,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View>
-            <Text
-              style={{
-                fontSize: 11.5,
-                color: EX.color.muted,
-                fontWeight: '500',
-              }}
-            >
-              Starting at
-            </Text>
-            <Text
-              style={{
-                fontSize: 21,
-                fontWeight: '700',
-                color: EX.color.ink,
-                letterSpacing: -0.21,
-              }}
-            >
-              ${d.price.toLocaleString()}
-            </Text>
-          </View>
-          <Pressable
-            onPress={startSelfService}
-            disabled={creating}
-            style={{
-              flex: 1,
-              height: 54,
-              borderRadius: 16,
-              backgroundColor: EX.color.primary,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              opacity: creating ? 0.7 : 1,
-              shadowColor: EX.color.primary,
-              shadowOpacity: 0.45,
-              shadowRadius: 16,
-              shadowOffset: { width: 0, height: 10 },
-              elevation: 6,
-            }}
-          >
-            {creating ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Text
-                  style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
-                >
-                  Start application
-                </Text>
-                <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-              </>
-            )}
-          </Pressable>
-        </View>
-      </BlurView>
+      {/* ── Sticky CTA: Government fee from $price / Start application, plus the
+          start-failure states (japa#174) ──────────────────────────────────── */}
+      <StartApplicationBar
+        price={d.price}
+        creating={startApp.creating}
+        failure={startApp.failure}
+        onStart={startApp.start}
+        onDismissUpgrade={startApp.dismissUpgrade}
+        duplicate={startApp.duplicate}
+        onContinueExisting={startApp.continueExisting}
+        onStartAnyway={startApp.startAnyway}
+        onDismissDuplicate={startApp.dismissDuplicate}
+      />
     </View>
   );
 }

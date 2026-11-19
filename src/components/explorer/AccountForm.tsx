@@ -80,18 +80,28 @@ export function LabeledInput({
   label,
   right,
   style,
+  focusRing = false,
   ...inputProps
 }: {
   label: string;
   right?: React.ReactNode;
+  /**
+   * Opt-in (#187): draw a coral 1.5px border while the field has focus. The
+   * default `line10` border is about 1.3:1 on white, below the 3:1 a UI border
+   * needs, so a field the person types long text into shows where it is.
+   */
+  focusRing?: boolean;
 } & TextInputProps) {
+  const [focused, setFocused] = React.useState(false);
+  const ring = focusRing && focused;
   return (
     <View
       style={{
         backgroundColor: EX.color.cardWhite,
         borderRadius: 18,
-        borderWidth: 1,
-        borderColor: EX.color.line10,
+        // 1.5px on focus (a half-pixel growth; nothing around it moves visibly).
+        borderWidth: ring ? 1.5 : 1,
+        borderColor: ring ? EX.color.primary : EX.color.line10,
         paddingHorizontal: 16,
         paddingTop: 12,
         paddingBottom: 14,
@@ -102,20 +112,32 @@ export function LabeledInput({
         elevation: 1,
       }}
     >
-      <Text
-        style={{
-          fontSize: 12.5,
-          fontWeight: '600',
-          color: EX.color.muted,
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </Text>
+      {/* An empty label means "no inner label" (e.g. the statement editor). */}
+      {label ? (
+        <Text
+          style={{
+            fontSize: 12.5,
+            fontWeight: '600',
+            color: EX.color.muted,
+            marginBottom: 4,
+          }}
+        >
+          {label}
+        </Text>
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <TextInput
           placeholderTextColor={EX.color.faint}
           autoCorrect={false}
+          {...inputProps}
+          onFocus={(e) => {
+            setFocused(true);
+            inputProps.onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            inputProps.onBlur?.(e);
+          }}
           style={[
             {
               flex: 1,
@@ -126,7 +148,6 @@ export function LabeledInput({
             },
             style,
           ]}
-          {...inputProps}
         />
         {right}
       </View>
@@ -181,7 +202,15 @@ export function CoralSubmit({
 }
 
 // ── InlineError — small danger text shown above the CTA (null when no error) ──
-export function InlineError({ message }: { message?: string | null }) {
+// `selectable` (japa#346) lets the user long-press → Copy the message text,
+// e.g. an address shown because a link couldn't be opened. No visual change.
+export function InlineError({
+  message,
+  selectable = false,
+}: {
+  message?: string | null;
+  selectable?: boolean;
+}) {
   if (!message) return null;
   return (
     <View
@@ -197,6 +226,7 @@ export function InlineError({ message }: { message?: string | null }) {
     >
       <Ic.x size={16} color={EX.color.danger} strokeWidth={2.4} />
       <Text
+        selectable={selectable}
         style={{
           flex: 1,
           fontSize: 13,
@@ -212,7 +242,14 @@ export function InlineError({ message }: { message?: string | null }) {
 }
 
 // ── InfoNote — soft cream panel for reassurance / "what happens next" copy ────
-export function InfoNote({ children }: { children: React.ReactNode }) {
+export function InfoNote({
+  children,
+  icon: IconCmp = Ic.shield,
+}: {
+  children: React.ReactNode;
+  /** Leading glyph (default: shield). japa#237 uses a clock for "not ready yet". */
+  icon?: React.ElementType;
+}) {
   return (
     <View
       style={{
@@ -225,7 +262,7 @@ export function InfoNote({ children }: { children: React.ReactNode }) {
         padding: 14,
       }}
     >
-      <Ic.shield size={17} color={EX.color.primary} strokeWidth={1.9} />
+      <IconCmp size={17} color={EX.color.primary} strokeWidth={1.9} />
       <Text
         style={{ flex: 1, fontSize: 13, lineHeight: 19, color: EX.color.ink2 }}
       >

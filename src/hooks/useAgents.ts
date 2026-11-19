@@ -9,13 +9,18 @@
  * - GET /agents/:id      → single agent detail (for agent profile screen)
  * - GET /agents/visa/:id → agents specializing in a specific visa type
  *
- * The backend stores consultation fees in cents (e.g. 5000_00 = ₦50,000).
- * The `formatAgentForDisplay()` helper converts to the display format
+ * Consultation fees (japa#183): the backend stores the fee in US dollars and
+ * returns it as `consultationFeeUsd` (Money, cents) next to
+ * `consultationFeeLocal`, the server's figure in the viewer's currency (or
+ * `available: false` when it has no rate). The app never converts.
+ * The `formatAgentForDisplay()` helper maps to the display format
  * expected by existing components (AgentCard, ConsultationCard, etc.).
  */
 
 import { useQuery } from '@tanstack/react-query';
+import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
+import type { LocalPriceQuote, Money } from '@/types/money.type';
 
 /**
  * Agent type matching the backend Agent model.
@@ -24,7 +29,9 @@ import { apiService } from '@/services/api.service';
  */
 export interface ApiAgent {
   id: string;
-  userId: string;
+  // Optional: public agent responses (GET /agents*) no longer carry the account
+  // uid (issue #147). Never read it off a public response.
+  userId?: string;
   agencyId?: string;
   agencyRole?: string; // 'owner' | 'agent'
   displayName: string;
@@ -39,7 +46,10 @@ export interface ApiAgent {
   totalApplications: number;
   successRate: number; // 0-100 percentage
   responseTime: string; // e.g. '2-4 hours'
-  consultationFee: number; // in cents (divide by 100 for display)
+  /** The stored fee in US cents; null = no fee set (books free). */
+  consultationFeeUsd: Money | null;
+  /** The server's local figure for that fee; `available: false` = no rate. */
+  consultationFeeLocal: LocalPriceQuote | null;
   isAvailable: boolean;
   availableSlots?: { dayOfWeek: number; startTime: string; endTime: string }[];
   createdAt: string;
@@ -78,7 +88,7 @@ export interface ApiReview {
  * Used on: Explorer agent detail screen "Recent reviews" section.
  *
  * @param agentId - Agent document ID. Query is disabled until an id is present
- *   (so the demo-agent path, which passes `undefined`, never fires a request).
+ *   A 404 is not retried.
  */
 export function useAgentReviews(agentId: string | undefined) {
   return useQuery({
@@ -90,6 +100,8 @@ export function useAgentReviews(agentId: string | undefined) {
       return response.data ?? [];
     },
     enabled: !!agentId,
+    // japa#145: a 404 is final (not-found state), so don't retry it.
+    retry: retryUnlessNotFound,
   });
 }
 
@@ -105,16 +117,6 @@ function getInitials(name: string): string {
     .join('')
     .toUpperCase()
     .slice(0, 2);
-}
-
-/**
- * Convert cents (backend storage format) to display amount.
- * Backend stores all monetary values in cents to avoid floating-point issues.
- * e.g. 5000_00 → 50000 (₦50,000 stored as 5000000 cents → display as 50000)
- * Note: the backend uses kobo (1/100 of Naira), so 500000 kobo = ₦5,000
- */
-function centsToDisplay(cents: number): number {
-  return Math.round(cents / 100);
 }
 
 /**
@@ -142,10 +144,13 @@ export function useAgents() {
  * Used on: Home screen agent carousel.
  *
  * @param limit - Max number of agents to return (default 5)
+ * @param enabled - False skips the call (a self-service-only build, japa#334,
+ *   hides every agent rail, so the request would be wasted). Default true.
  */
-export function useTopAgents(limit = 5) {
+export function useTopAgents(limit = 5, enabled = true) {
   return useQuery({
     queryKey: ['agents', 'top', limit],
+    enabled,
     queryFn: async () => {
       const response = await apiService.get<ApiAgent[]>(
         `/agents/top?limit=${limit}`,
@@ -170,6 +175,8 @@ export function useAgent(id: string | undefined) {
     },
     // Don't fetch until we have an ID (prevents firing on initial render)
     enabled: !!id,
+    // japa#145: a 404 is final (not-found state), so don't retry it.
+    retry: retryUnlessNotFound,
   });
 }
 
@@ -210,10 +217,12 @@ export function formatAgentForDisplay(agent: ApiAgent) {
     initials: getInitials(agent.displayName),
     rating: agent.rating,
     verificationCount: agent.totalReviews, // "verificationCount" = total reviews in legacy UI
-    price: centsToDisplay(agent.consultationFee),
+    // Fee (japa#183): both server objects, unconverted. Format with
+    // `priceParts(consultationFeeLocal, consultationFeeUsd)`.
+    consultationFeeUsd: agent.consultationFeeUsd ?? null,
     description: agent.bio ?? '',
     specializations: agent.specializations,
-    consultationFee: centsToDisplay(agent.consultationFee),
+    consultationFeeLocal: agent.consultationFeeLocal ?? null,
     availability: agent.isAvailable,
     responseTime: agent.responseTime,
     languages: agent.languages,

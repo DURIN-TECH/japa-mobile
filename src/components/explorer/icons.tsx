@@ -48,6 +48,9 @@ import {
   HelpCircle,
   Gauge,
   Crown,
+  CircleAlert,
+  PenLine,
+  Lock,
 } from 'lucide-react-native';
 
 // Design-name → lucide component. Stroke width 1.8 matches the prototype default.
@@ -71,6 +74,8 @@ export const Ic = {
   pin: MapPin,
   zap: Zap,
   sliders: SlidersHorizontal,
+  // #256: the 'detail' (typed answer) icon on the checklist, vs docs for documents.
+  edit: PenLine,
   msg: MessageCircle,
   plus: Plus,
   home: House,
@@ -92,6 +97,10 @@ export const Ic = {
   help: HelpCircle,
   gauge: Gauge,
   crown: Crown,
+  // Blocking-rule / failed-review chip (issue #43).
+  alert: CircleAlert,
+  // japa#384: the review's locked "See how each rule was applied" panel.
+  lock: Lock,
 } as const;
 
 export type IcName = keyof typeof Ic;

@@ -24,6 +24,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { useAuthStore } from '@/stores/auth.store';
+import { putHoldings } from '@/hooks/useHoldings';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
 type IconType = React.ComponentType<{
@@ -132,6 +133,8 @@ export default function CompleteStep() {
   const params = useLocalSearchParams<{
     hasPassport?: string;
     country?: string;
+    // Set by the nationality step when its save did not go through (japa#234).
+    pendingNationalities?: string;
     firstName?: string;
     lastName?: string;
   }>();
@@ -162,6 +165,20 @@ export default function CompleteStep() {
       // On success, flip the local profile flag so the app's onboarding gate
       // treats this user as onboarded.
       if (ok) finalizeOnboarding();
+      // japa#234: the nationality step could not save (offline, or the profile
+      // did not exist yet). Now the profile exists, retry once. Best-effort:
+      // never blocks the person; they can fix it in Settings.
+      if (ok && params.pendingNationalities) {
+        try {
+          await putHoldings({
+            nationalities: params.pendingNationalities
+              .split(',')
+              .filter(Boolean),
+          });
+        } catch {
+          // Swallow: Settings → What you already hold lets them add it later.
+        }
+      }
     } catch {
       // Swallow — a failed onboarding submit must not trap the user here.
     } finally {

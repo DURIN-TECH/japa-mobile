@@ -1,4 +1,3 @@
-import { Platform } from 'react-native';
 import { getApp } from '@react-native-firebase/app';
 import {
   getAuth,
@@ -16,36 +15,50 @@ import {
   updatePassword as fbUpdatePassword,
   deleteUser as fbDeleteUser,
   EmailAuthProvider,
-  FirebaseAuthTypes,
 } from '@react-native-firebase/auth';
+// RNFB 27 (japa#399) dropped the namespaced `FirebaseAuthTypes`; the modular
+// API exports the same shapes as top-level types.
+import type {
+  ConfirmationResult as RNFBConfirmationResult,
+  User as RNFBUser,
+} from '@react-native-firebase/auth';
+// Emulator opt-in flag + resolved Auth-emulator URL (env-driven, platform-aware).
+import { USE_EMULATOR, AUTH_EMULATOR_URL } from '@/config/env';
 
-export type ConfirmationResult = FirebaseAuthTypes.ConfirmationResult;
-export type FirebaseUser = FirebaseAuthTypes.User;
-
-// Connect to Auth emulator in development.
-// Android emulators can't reach the host machine via "localhost" — that's the emulator itself.
-// Use 10.0.2.2 instead (Android emulator's alias for the host's loopback).
-const USE_EMULATOR = __DEV__;
-const AUTH_EMULATOR_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
-const AUTH_EMULATOR_PORT = 9099;
-
-// Get auth instance once
-const authInstance = getAuth(getApp());
-
-// Initialize emulator connection
-if (USE_EMULATOR) {
-  connectAuthEmulator(
-    authInstance,
-    `http://${AUTH_EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`,
-  );
-  console.log(
-    'Auth emulator connected at',
-    `http://${AUTH_EMULATOR_HOST}:${AUTH_EMULATOR_PORT}`,
-  );
-}
+export type ConfirmationResult = RNFBConfirmationResult;
+export type FirebaseUser = RNFBUser;
 
 class AuthService {
-  private auth = authInstance;
+  // ─────────────────────────────────────────────
+  // Cached auth instance — LAZILY initialised on first use, never at import time.
+  //
+  // Why: `web.output` is "static", so `expo export` (the EAS Update / preview CI job)
+  // imports every route file in Node, where no native Firebase app exists. A
+  // module-scope `getAuth(getApp())` throws `No Firebase App '[DEFAULT]' has been
+  // created` there and fails the export. Same pattern as analytics.service.ts and
+  // push-notification.service.ts. On device the first access happens at app start
+  // (auth.store subscribes via onAuthStateChanged), so behaviour is unchanged.
+  // ─────────────────────────────────────────────
+  private _auth: ReturnType<typeof getAuth> | null = null;
+
+  private get auth() {
+    if (!this._auth) {
+      this._auth = getAuth(getApp());
+
+      // Connect to the Auth emulator ONLY when explicitly opted in
+      // (EXPO_PUBLIC_USE_EMULATOR). This must NOT be gated on __DEV__: a normal dev
+      // build targets the DEPLOYED durin-seli-dev backend with REAL Firebase Auth, and
+      // connecting to a local emulator there would mint emulator tokens the deployed
+      // backend rejects. The emulator host (10.0.2.2 on Android) and URL are resolved
+      // centrally in src/config/env.ts. Runs once, inside the cache-fill branch, so
+      // the emulator is connected before any auth call uses the instance.
+      if (USE_EMULATOR) {
+        connectAuthEmulator(this._auth, AUTH_EMULATOR_URL);
+        console.log('Auth emulator connected at', AUTH_EMULATOR_URL);
+      }
+    }
+    return this._auth;
+  }
 
   // Email/Password Authentication
   async registerWithEmail(

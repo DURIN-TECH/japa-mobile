@@ -4,14 +4,20 @@
 // Parallax photo hero (256 tall, translateY py*-0.3) with the same Reanimated
 // approach as destination/[id].tsx. A rounded content sheet rises over it and
 // carries a grab handle, a 4-column icon MiniStat strip, blurb, licence badge
-// pills, and the agency's agents (AgentRow list). A sticky dark CTA
-// ("Contact {name}") anchors the base.
+// pills, the visas the agency handles (japa#106, "Visas they handle"), and the
+// agency's agents (AgentRow list). A sticky dark CTA ("Contact {name}")
+// anchors the base.
 //
 // Every measurement is quoted 1:1 from the prototype source.
+//
+// japa#145: live data only (no demo agencies). The agency, its visas and its
+// agents come from the #144 browse endpoints (GET /agencies/browse/:id and
+// /browse/:id/agents). A 404 shows the not-found state; each section has its
+// own loading / error / empty state, and retries use the Outline button.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,21 +30,39 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { EX } from '@/components/explorer/theme';
-import { agencyById, agentsForAgency } from '@/components/explorer/data';
-import { mapAgency } from '@/components/explorer/liveAgencies';
+import { EX, EXShadow } from '@/components/explorer/theme';
+import {
+  AGENCY_ONLY_CHIP,
+  mapAgency,
+  mapAgencyVisaRows,
+  type AgencyVisaRow,
+} from '@/components/explorer/liveAgencies';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import {
+  useAgencyVisaPrices,
   usePublicAgency,
   usePublicAgencyAgents,
 } from '@/hooks/useAgencies';
+import { useCountriesWithVisas } from '@/hooks/useVisaTypes';
 import { Ic } from '@/components/explorer/icons';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { isNotFoundError } from '@/hooks/queryErrors';
 import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
+import {
+  Chip,
+  Flag,
   GlassButton,
   Portrait,
+  SectionTitle,
   Verified,
 } from '@/components/explorer/primitives';
-import type { Agent } from '@/components/explorer/data';
+import type { Agent } from '@/types/explorer.type';
 
 const HERO = 256;
 
@@ -107,9 +131,9 @@ function MiniDiv() {
 // Duplicated here per the prototype's per-screen "local component" convention.
 // Source shows spec · agencyName, single gold star + rating 12.5/700, "(rev)"
 // 11.5, and a "{succ}% success" pill 11/700 #1E8E55 on #D6F2E2 (padding 3/8).
-function AgentRow({ a }: { a: Agent }) {
+// `agencyName` is this screen's agency (every row here works at it).
+function AgentRow({ a, agencyName }: { a: Agent; agencyName: string }) {
   const router = useRouter();
-  const agency = agencyById(a.agencyId);
   return (
     <Pressable
       onPress={() => router.push(`/agent/${a.id}`)}
@@ -162,7 +186,7 @@ function AgentRow({ a }: { a: Agent }) {
           numberOfLines={1}
         >
           {a.spec}
-          {agency ? ` · ${agency.name}` : ''}
+          {agencyName ? ` · ${agencyName}` : ''}
         </Text>
         <View
           style={{
@@ -212,18 +236,212 @@ function AgentRow({ a }: { a: Agent }) {
   );
 }
 
+// ── Visas they handle (japa#106) ─────────────────────────────────────────────
+// The agency's `visaPrices[]`: its own approved visas plus the global visas it
+// priced, each with ITS service price in WHOLE NAIRA (never /100). Layout per
+// the #106 design spec: one white r20 group card, line06 dividers, rows of
+// Flag 28 · name + "{country} · {processing}" (+ "Only with this agency" chip)
+// · price + "Service fee". Agency-only rows aren't tappable (the visa detail
+// 404s for anyone without a case at this agency, #102); global rows push the
+// visa breakdown.
+
+/** One visa row inside the group card. */
+function AgencyVisaRowView({
+  row,
+  divider,
+}: {
+  row: AgencyVisaRow;
+  /** Draw the line06 divider above this row (all but the first). */
+  divider: boolean;
+}) {
+  const router = useRouter();
+  const content = (
+    <>
+      <Flag code={row.flag} size={28} />
+      {/* Middle: name (2 lines max), sub line (1 line), optional chip */}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          style={{ fontSize: 15, fontWeight: '600', color: EX.color.ink }}
+          numberOfLines={2}
+        >
+          {row.name}
+        </Text>
+        <Text
+          style={{
+            fontSize: 12.5,
+            fontWeight: '500',
+            color: EX.color.inkMuted,
+            marginTop: 2,
+          }}
+          numberOfLines={1}
+        >
+          {row.subLine}
+        </Text>
+        {row.isAgencyOnly ? (
+          <View style={{ flexDirection: 'row', marginTop: 8 }}>
+            {/* Small Chip: padding 10×5 (spec), never wraps. */}
+            <Chip
+              label={AGENCY_ONLY_CHIP}
+              style={{ paddingHorizontal: 10, paddingVertical: 5 }}
+            />
+          </View>
+        ) : null}
+      </View>
+      {/* Right: price + caption, or "Contact for pricing" (wraps to 2 lines). */}
+      <View style={{ alignItems: 'flex-end', maxWidth: '40%' }}>
+        {row.priceCaption ? (
+          <>
+            <Text
+              style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }}
+              numberOfLines={1}
+            >
+              {row.priceLabel}
+            </Text>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '500',
+                color: EX.color.inkMuted,
+                marginTop: 2,
+              }}
+            >
+              {row.priceCaption}
+            </Text>
+          </>
+        ) : (
+          <Text
+            style={{
+              fontSize: 12.5,
+              fontWeight: '600',
+              color: EX.color.inkMuted,
+              textAlign: 'right',
+            }}
+            numberOfLines={2}
+          >
+            {row.priceLabel}
+          </Text>
+        )}
+      </View>
+      {row.tappable ? (
+        <Ic.chevR size={18} color={EX.color.muted} strokeWidth={1.8} />
+      ) : null}
+    </>
+  );
+
+  const rowStyle = {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-start' as const,
+    gap: 13,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderTopWidth: divider ? 1 : 0,
+    borderTopColor: EX.color.line06,
+  };
+
+  // Agency-only: a plain row (no press, no chevron).
+  if (!row.tappable) return <View style={rowStyle}>{content}</View>;
+
+  // Global: push the visa breakdown (from the right).
+  return (
+    <Pressable
+      onPress={() =>
+        router.push({
+          pathname: '/visa/[id]',
+          params: { id: row.visaTypeId, code: row.countryCode },
+        })
+      }
+      style={({ pressed }) => [rowStyle, { opacity: pressed ? 0.7 : 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`${row.name}, ${row.subLine}, ${row.priceLabel}`}
+    >
+      {content}
+    </Pressable>
+  );
+}
+
+/**
+ * The whole section: title + loading / error / empty / list.
+ * Data comes from `useAgencyVisaPrices` (the one swap point for the source).
+ */
+function AgencyVisasSection({
+  agencyId,
+  agencyName,
+}: {
+  agencyId: string;
+  agencyName: string;
+}) {
+  const visasQ = useAgencyVisaPrices(agencyId);
+  // Country names for the sub line (falls back to Intl / the code).
+  const { data: countries } = useCountriesWithVisas();
+  const rows = mapAgencyVisaRows(visasQ.data ?? [], countries);
+
+  // japa#145: the shared section states (Outline "Try again", one retry
+  // style app-wide; #106's coral text link failed contrast).
+  let body: React.ReactNode;
+  if (visasQ.isLoading) {
+    body = <StateLoading section />;
+  } else if (visasQ.isError && !visasQ.data) {
+    // Error with no cached data (offline with a cold cache, server error).
+    body = (
+      <StateError
+        section
+        message={loadErrorCopy('this agency’s visas')}
+        onRetry={() => visasQ.refetch()}
+        retrying={visasQ.isRefetching}
+      />
+    );
+  } else if (rows.length === 0) {
+    // Empty: compact section state (it sits mid-sheet). No button; the
+    // sticky "Contact {name}" CTA is the next step.
+    body = (
+      <StateEmpty
+        section
+        icon={Ic.globe}
+        title="No visas listed yet"
+        body={`Message ${agencyName} to ask which visas they can help with.`}
+      />
+    );
+  } else {
+    body = (
+      <View
+        style={[
+          {
+            backgroundColor: EX.color.cardWhite,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: EX.color.line08,
+            overflow: 'hidden',
+          },
+          EXShadow.card,
+        ]}
+      >
+        {rows.map((r, i) => (
+          <AgencyVisaRowView key={r.key} row={r} divider={i > 0} />
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <>
+      {/* Shared SectionTitle (18/700 ink, marginTop 26); spec bottom gap 12. */}
+      <SectionTitle style={{ marginBottom: 12 }}>
+        Visas they handle
+      </SectionTitle>
+      {body}
+    </>
+  );
+}
+
 export default function AgencyDetail() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // Resolve demo-or-live. If the id matches a demo agency we render that and
-  // disable the network queries; otherwise we fetch the public agency (and its
-  // agents) from the backend. Both queries are disabled on the demo path.
-  const demo = agencyById(id);
-  const agQ = usePublicAgency(demo ? undefined : id);
-  const agentsQ = usePublicAgencyAgents(demo ? undefined : id);
-  const a = demo ?? (agQ.data ? mapAgency(agQ.data) : undefined);
+  // ── Live sources (japa#145: no demo agencies) ────────────────────────────
+  const agQ = usePublicAgency(id);
+  const agentsQ = usePublicAgencyAgents(id);
+  const a = agQ.data ? mapAgency(agQ.data) : undefined;
 
   // Hero parallax driven by the sheet's scroll offset (source py * -0.3).
   const scrollY = useSharedValue(0);
@@ -246,62 +464,68 @@ export default function AgencyDetail() {
     ],
   }));
 
-  // Loading — only on the live path while the single-agency fetch is in flight.
-  if (!demo && agQ.isLoading) {
+  // First load: coral spinner, with the back button reachable.
+  if (agQ.isLoading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <ActivityIndicator color={EX.color.primary} />
+      <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: insets.top + 6,
+            left: 18,
+            zIndex: 50,
+          }}
+        >
+          <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
+        </View>
+        <StateLoading />
       </View>
     );
   }
 
+  // Load failed (not a 404) with nothing cached: error + retry.
+  if (!a && agQ.isError && !isNotFoundError(agQ.error)) {
+    return (
+      <CenteredState
+        icon={Ic.users}
+        title="We couldn’t load this agency"
+        errorMessage="Check your connection and try again."
+        onRetry={() => agQ.refetch()}
+        retrying={agQ.isRefetching}
+        actionLabel="Back to agents"
+        onAction={() => router.replace('/(tabs)/agents')}
+      />
+    );
+  }
+
+  // Not found (404 / not public / no id). Copy never confirms it exists.
   if (!a) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Agency not found.</Text>
-      </View>
+      <CenteredState
+        icon={Ic.users}
+        title="We couldn’t find this agency"
+        actionLabel="Back to agents"
+        onAction={() => router.replace('/(tabs)/agents')}
+      />
     );
   }
 
-  // Agents list — demo lookup, or live agents mapped from the backend.
-  const agents = demo
-    ? agentsForAgency(a.id)
-    : (agentsQ.data ?? []).map(mapAgent);
+  // The agency's agents, mapped from GET /agencies/browse/:id/agents.
+  const agents = (agentsQ.data ?? []).map(mapAgent);
+  const agentsState = queryState(agentsQ);
 
-  // MiniStat strip stats. Live agencies carry no agency-level rating/reviews/
+  // MiniStat strip stats. Agencies carry no agency-level rating/reviews/
   // success, so we COMPUTE them from the agency's agents: rating = avg (1dp),
-  // reviews = sum, success = avg (rounded). Fall back to the agency's own
-  // values when demo, or when a live agency has no agents yet.
-  const isLive = !demo;
+  // reviews = sum, success = avg (rounded). With no agents they stay at the
+  // agency's own (zero) values.
   const hasAgents = agents.length > 0;
-  const statR =
-    isLive && hasAgents
-      ? Number(
-          (agents.reduce((s, x) => s + x.r, 0) / agents.length).toFixed(1),
-        )
-      : a.r;
-  const statRev =
-    isLive && hasAgents
-      ? agents.reduce((s, x) => s + x.rev, 0)
-      : a.rev;
-  const statSucc =
-    isLive && hasAgents
-      ? Math.round(agents.reduce((s, x) => s + x.succ, 0) / agents.length)
-      : a.succ;
+  const statR = hasAgents
+    ? Number((agents.reduce((s, x) => s + x.r, 0) / agents.length).toFixed(1))
+    : a.r;
+  const statRev = hasAgents ? agents.reduce((s, x) => s + x.rev, 0) : a.rev;
+  const statSucc = hasAgents
+    ? Math.round(agents.reduce((s, x) => s + x.succ, 0) / agents.length)
+    : a.succ;
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -383,7 +607,8 @@ export default function AgencyDetail() {
                   fontWeight: '600',
                 }}
               >
-                {a.city}, Nigeria
+                {/* No leading comma when the agency has no city. */}
+                {a.city ? `${a.city}, Nigeria` : 'Nigeria'}
               </Text>
             </View>
             {/* "Since {year}" only when we actually have a founding year
@@ -549,7 +774,10 @@ export default function AgencyDetail() {
             ))}
           </View>
 
-          {/* Agents here */}
+          {/* Visas they handle (japa#106). */}
+          <AgencyVisasSection agencyId={a.id} agencyName={a.name} />
+
+          {/* Agents here — count only once the list is loaded with rows. */}
           <Text
             style={{
               fontSize: 18,
@@ -561,13 +789,26 @@ export default function AgencyDetail() {
               marginHorizontal: 2,
             }}
           >
-            {agents.length} agents here
+            {hasAgents ? `${agents.length} agents here` : 'Agents here'}
           </Text>
-          <View style={{ gap: 12 }}>
-            {agents.map((ag) => (
-              <AgentRow key={ag.id} a={ag} />
-            ))}
-          </View>
+          {agentsState === 'loading' ? (
+            <StateLoading section />
+          ) : agentsState === 'error' ? (
+            <StateError
+              section
+              message={loadErrorCopy('this agency’s agents')}
+              onRetry={() => agentsQ.refetch()}
+              retrying={agentsQ.isFetching}
+            />
+          ) : !hasAgents ? (
+            <StateEmpty section icon={Ic.users} title="No agents listed yet" />
+          ) : (
+            <View style={{ gap: 12 }}>
+              {agents.map((ag) => (
+                <AgentRow key={ag.id} a={ag} agencyName={a.name} />
+              ))}
+            </View>
+          )}
         </View>
       </Animated.ScrollView>
 

@@ -5,12 +5,19 @@
 // pinned to the bottom. Own bubbles are coral with a bottom-right tail; agent
 // bubbles are white/bordered with a bottom-left tail. Uses KeyboardAvoidingView
 // so the composer lifts above the keyboard, and auto-scrolls on send.
+//
+// japa#145: live only. The conversation comes from GET /conversations and its
+// messages from GET /conversations/:id/messages (both on origin/dev). No demo
+// thread: loading → coral spinner, failure → InlineError + "Try again", an
+// unknown id → "We couldn’t find this conversation", no messages yet → "Say
+// hello to {agent}". A failed send shows an InlineError above the composer.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -18,17 +25,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
+// RN 0.88 strict TypeScript API (Expo SDK 58, japa#399): `ScrollView` is a
+// component value, not a class, so refs are typed with its instance type.
+import type { ScrollViewInstance } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { format } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
-import {
-  THREAD,
-  agentById,
-  convoById,
-  type Msg,
-} from '@/components/explorer/data';
+import type { Msg } from '@/types/explorer.type';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Verified } from '@/components/explorer/primitives';
 import {
@@ -37,6 +42,28 @@ import {
   useSendMessage,
 } from '@/hooks/useMessaging';
 import { mapConvo, mapMessage } from '@/components/explorer/liveMessaging';
+import {
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+  queryState,
+} from '@/components/explorer/states';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { InlineError } from '@/components/explorer/AccountForm';
+import { isUnavailableError } from '@/hooks/queryErrors';
+import { hashString } from '@/assets/countries';
+
+// Send-failure copy (design spec, Thread row).
+const SEND_ERROR = 'Your message didn’t send. Tap send to try again.';
+
+// An optimistic bubble, tagged so it can be dropped once the send settles.
+type PendingMsg = Msg & { key: number };
+// AI message access (#172/#193): the chat shows only a header icon. Its
+// highlighted/gray decision is the pure `chatAiIconView`.
+import { chatAiIconView } from '@/components/explorer/aiMessageAccessLogic';
+import { useConversation } from '@/hooks/useAiMessageAccess';
+import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
 
 // ── Single message row (bubble + timestamp) ──────────────────────────────────
 function Bubble({ m }: { m: Msg }) {
@@ -77,6 +104,49 @@ function Bubble({ m }: { m: Msg }) {
         >
           {m.t}
         </Text>
+
+        {/* Documents shared on this message. Rendered inline as well as in the
+            thread's Files sheet, so a file keeps the context it arrived in. */}
+        {m.files?.length ? (
+          <View style={{ marginTop: 8, gap: 6 }}>
+            {m.files.map((f) => (
+              <Pressable
+                key={f.url}
+                onPress={() => void Linking.openURL(f.url)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  borderRadius: 10,
+                  paddingHorizontal: 9,
+                  paddingVertical: 7,
+                  // Tinted panel inside the bubble: translucent white on the
+                  // coral own-bubble, faint ink on the white agent bubble.
+                  backgroundColor: mine
+                    ? 'rgba(255,255,255,0.18)'
+                    : 'rgba(23,19,38,0.04)',
+                }}
+              >
+                <Ic.docs
+                  size={14}
+                  color={mine ? '#fff' : EX.color.primary}
+                  strokeWidth={1.8}
+                />
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 12.5,
+                    fontWeight: '600',
+                    color: mine ? '#fff' : EX.color.ink,
+                  }}
+                  numberOfLines={1}
+                >
+                  {f.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
       </View>
       <Text
         style={{
@@ -98,43 +168,54 @@ export default function ChatView() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const convId = id ?? '';
 
-  // ── Resolve the conversation (demo first, then live) ─────────────────────
-  // Prefer the demo roster (richer portrait art); otherwise resolve the row
-  // from the live conversations list by id. Hooks run unconditionally.
-  const demoConvo = convoById(convId);
-  const { data: liveConvos } = useConversations();
-  const liveConvo = useMemo(
-    () =>
-      demoConvo
-        ? undefined
-        : (liveConvos ?? []).map(mapConvo).find((c) => c.id === convId),
-    [demoConvo, liveConvos, convId],
+  // ── Resolve the conversation from the live list (GET /conversations) ─────
+  // There is no single-conversation endpoint, so the header row (agent name,
+  // unread) is found in the list by id.
+  const convosQ = useConversations();
+  const convo = useMemo(
+    () => (convosQ.data ?? []).map(mapConvo).find((c) => c.id === convId),
+    [convosQ.data, convId],
   );
-  const convo = demoConvo ?? liveConvo;
 
-  const agent = agentById(convo?.agentId);
-  const agentName = agent?.n ?? convo?.agentName ?? 'Agent';
-  const agentSeed = agent?.seed ?? 0;
+  // Agent display: backend-enriched name; stable portrait seed from the id.
+  const agentName = convo?.agentName ?? 'your agent';
+  const agentSeed = hashString(convo?.agentId ?? '') % 6;
   const online = convo?.online ?? false;
 
-  // ── Messages: demo THREAD fallback, else live from the backend ───────────
-  // When a demo thread exists we disable the live query (empty id); otherwise
-  // fetch messages for this conversation and map them onto the bubble shape.
-  const demoThread = THREAD[convId];
-  const isLive = !demoThread;
-  const liveMsgs = useMessages(isLive ? convId : '');
+  // ── Messages (GET /conversations/:id/messages) ───────────────────────────
+  const msgsQ = useMessages(convId);
   const base = useMemo<Msg[]>(
-    () => demoThread ?? (liveMsgs.data ?? []).map(mapMessage),
-    [demoThread, liveMsgs.data],
+    () => (msgsQ.data ?? []).map(mapMessage),
+    [msgsQ.data],
   );
+  const msgsState = queryState(msgsQ);
 
-  // Locally-appended optimistic sends (kept in-session on top of `base`).
-  const [sent, setSent] = useState<Msg[]>([]);
-  const msgs = useMemo<Msg[]>(() => [...base, ...sent], [base, sent]);
+  // Optimistic sends in flight. Each is removed when its send settles: on
+  // success the refetched thread already contains it (no duplicate), on
+  // failure it is withdrawn and the draft restored.
+  const [pending, setPending] = useState<PendingMsg[]>([]);
+  const msgs = useMemo<Msg[]>(() => [...base, ...pending], [base, pending]);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const keyRef = useRef(0);
 
   const [draft, setDraft] = useState('');
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const sendMessage = useSendMessage();
+
+  // ── Files shared in this thread ───────────────────────────────────────────
+  // Flattened out of the messages (newest first) so a client can find a document
+  // without scrolling back through the whole conversation. Costs no extra
+  // request — the messages are already loaded.
+  const [filesOpen, setFilesOpen] = useState(false);
+  const files = useMemo(
+    () =>
+      msgs
+        .flatMap((m) =>
+          (m.files ?? []).map((f) => ({ ...f, mine: m.from === 'me' })),
+        )
+        .reverse(),
+    [msgs],
+  );
 
   // Keep the newest message in view on mount, on new content, and after a send.
   const scrollToEnd = useCallback(() => {
@@ -145,23 +226,60 @@ export default function ChatView() {
 
   const send = () => {
     const t = draft.trim();
-    if (!t) return;
-    // Optimistically append locally for both demo and live conversations.
-    setSent((prev) => [
+    if (!t || !convId) return;
+    // Optimistically show the bubble, then persist it.
+    const key = ++keyRef.current;
+    setPending((prev) => [
       ...prev,
-      { from: 'me', t, at: format(new Date(), 'h:mm a') },
+      { key, from: 'me', t, at: format(new Date(), 'h:mm a') },
     ]);
     setDraft('');
+    setSendError(null);
     scrollToEnd();
-    // For a live conversation, also persist the message to the backend.
-    if (isLive && convId)
-      sendMessage.mutate({ conversationId: convId, content: t });
+    sendMessage.mutate(
+      { conversationId: convId, content: t },
+      {
+        onError: () => {
+          // Nothing was sent: put the text back so the send button retries.
+          setDraft((d) => d || t);
+          setSendError(SEND_ERROR);
+        },
+        onSettled: () =>
+          setPending((prev) => prev.filter((m) => m.key !== key)),
+      },
+    );
   };
 
+  // ── AI message access (#193) ───────────────────────────────────────────────
+  // Every thread is a real server conversation (no demo threads since #145).
+  // The query is disabled for an empty id. Unknown / loading state stays gray.
+  const aiConv = useConversation(convId);
+  // Pick up changes made elsewhere (e.g. the settings screen) on coming back.
+  useRefetchOnFocus(aiConv.refetch, !!convId);
+  const aiIcon = chatAiIconView(aiConv.data?.aiAccess);
+  const openAiSettings = () => router.push('/ai-message-access');
+
   const hasText = draft.trim().length > 0;
-  // Show a spinner only when a live thread is still loading its first page.
-  const showLoading = isLive && liveMsgs.isLoading && msgs.length === 0;
   const headerH = insets.top + 62; // approx header height for keyboard offset
+
+  // ── Not found ─────────────────────────────────────────────────────────────
+  // The messages route 404s (or 403s) for an unknown / not-your conversation; and once
+  // the list has loaded, an id that isn't in it is not one of yours either.
+  // The copy never confirms the conversation exists.
+  const notFound =
+    !convId ||
+    isUnavailableError(msgsQ.error) ||
+    (convosQ.data !== undefined && !convo);
+  if (notFound) {
+    return (
+      <CenteredState
+        icon={Ic.msg}
+        title="We couldn’t find this conversation"
+        actionLabel="Back to messages"
+        onAction={() => router.replace('/messages')}
+      />
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -217,7 +335,9 @@ export default function ChatView() {
 
         {/* Name + status — name taps through to the agent profile */}
         <Pressable
-          onPress={() => agent && router.push(`/agent/${agent.id}`)}
+          onPress={() =>
+            convo?.agentId && router.push(`/agent/${convo.agentId}`)
+          }
           style={{ flex: 1, minWidth: 0 }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -241,6 +361,65 @@ export default function ChatView() {
           </Text>
         </Pressable>
 
+        {/* Files button — same 38px chip as the call button, shown only when
+            documents have actually been shared in this thread. */}
+        {files.length > 0 ? (
+          <Pressable
+            onPress={() => setFilesOpen(true)}
+            hitSlop={6}
+            accessibilityLabel={`${files.length} shared files`}
+            style={{
+              height: 38,
+              paddingHorizontal: 11,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+              borderRadius: 19,
+              backgroundColor: EX.color.primaryTint10,
+            }}
+          >
+            <Ic.docs size={17} color={EX.color.primary} strokeWidth={1.8} />
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: '700',
+                color: EX.color.primary,
+              }}
+            >
+              {files.length}
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {/* AI access button: same 38px round chip as the call button. Coral when
+            AI access is on for this chat, gray otherwise (incl. loading). Static
+            style objects only (#190). Needs a conversation id. */}
+        {convId ? (
+          <Pressable
+            onPress={openAiSettings}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={aiIcon.label}
+            accessibilityState={{ selected: aiIcon.highlighted }}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: aiIcon.highlighted
+                ? EX.color.primaryTint10
+                : EX.color.line06,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ic.spark
+              size={18}
+              color={aiIcon.highlighted ? EX.color.primary : EX.color.inkMuted}
+              strokeWidth={1.8}
+            />
+          </Pressable>
+        ) : null}
+
         {/* Phone / call button — source: 38px coral-tint chip (no border) */}
         <Pressable
           hitSlop={6}
@@ -256,6 +435,120 @@ export default function ChatView() {
           <Ic.phone size={18} color={EX.color.primary} strokeWidth={1.8} />
         </Pressable>
       </BlurView>
+
+      {/* ── Shared files sheet ────────────────────────────────────────────── */}
+      <Modal
+        visible={filesOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setFilesOpen(false)}
+      >
+        <Pressable
+          onPress={() => setFilesOpen(false)}
+          style={{
+            flex: 1,
+            justifyContent: 'flex-end',
+            backgroundColor: 'rgba(23,19,38,0.35)',
+          }}
+        >
+          {/* Stop taps inside the sheet from closing it. */}
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: EX.color.bg,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              paddingTop: 16,
+              paddingHorizontal: 22,
+              paddingBottom: Math.max(insets.bottom, 22),
+              maxHeight: '70%',
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 14,
+              }}
+            >
+              <Text
+                style={{ fontSize: 17, fontWeight: '700', color: EX.color.ink }}
+              >
+                Shared files ({files.length})
+              </Text>
+              <Pressable onPress={() => setFilesOpen(false)} hitSlop={8}>
+                <Ic.x size={20} color={EX.color.muted} strokeWidth={1.8} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 8 }}>
+                {files.map((f, i) => (
+                  <Pressable
+                    key={`${f.url}-${i}`}
+                    onPress={() => void Linking.openURL(f.url)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 11,
+                      backgroundColor: '#fff',
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: EX.color.line06,
+                      paddingHorizontal: 13,
+                      paddingVertical: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 10,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: EX.color.primaryTint10,
+                      }}
+                    >
+                      <Ic.docs
+                        size={16}
+                        color={EX.color.primary}
+                        strokeWidth={1.8}
+                      />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: '600',
+                          color: EX.color.ink,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {f.name}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: EX.color.muted,
+                          marginTop: 2,
+                        }}
+                      >
+                        {f.mine ? 'Shared by you' : `Shared by ${agentName}`}
+                      </Text>
+                    </View>
+                    <Ic.chevR
+                      size={16}
+                      color={EX.color.faint}
+                      strokeWidth={1.8}
+                    />
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* ── Messages + composer (lifts above keyboard) ────────────────────── */}
       <KeyboardAvoidingView
@@ -274,39 +567,62 @@ export default function ChatView() {
             paddingBottom: 12,
           }}
         >
-          {/* "Today" divider chip (source: rgba(23,19,38,0.05) fill, padding '4px 12px', no border) */}
-          <View style={{ alignItems: 'center', marginBottom: 8 }}>
-            <View
-              style={{
-                backgroundColor: 'rgba(23,19,38,0.05)',
-                borderRadius: 999,
-                paddingHorizontal: 12,
-                paddingVertical: 4,
-              }}
-            >
-              <Text
+          {/* "Today" divider chip (source: rgba(23,19,38,0.05) fill, padding '4px 12px', no border).
+              Only above real bubbles, not over a state. */}
+          {msgsState === 'ready' && msgs.length > 0 ? (
+            <View style={{ alignItems: 'center', marginBottom: 8 }}>
+              <View
                 style={{
-                  fontSize: 11.5,
-                  fontWeight: '600',
-                  color: EX.color.muted,
+                  backgroundColor: 'rgba(23,19,38,0.05)',
+                  borderRadius: 999,
+                  paddingHorizontal: 12,
+                  paddingVertical: 4,
                 }}
               >
-                Today
-              </Text>
+                <Text
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: '600',
+                    color: EX.color.muted,
+                  }}
+                >
+                  Today
+                </Text>
+              </View>
             </View>
-          </View>
-
-          {showLoading ? (
-            <ActivityIndicator
-              color={EX.color.primary}
-              style={{ marginTop: 24 }}
-            />
           ) : null}
 
-          {msgs.map((m, i) => (
-            <Bubble key={i} m={m} />
-          ))}
+          {/* Thread states: spinner on first load, error + retry when
+              nothing is cached, the "say hello" empty state for a new
+              conversation; otherwise the bubbles. */}
+          {msgsState === 'loading' ? (
+            <StateLoading />
+          ) : msgsState === 'error' ? (
+            <StateError
+              message={loadErrorCopy('this conversation')}
+              onRetry={() => msgsQ.refetch()}
+              retrying={msgsQ.isRefetching}
+              style={{ paddingHorizontal: 0 }}
+            />
+          ) : msgs.length === 0 ? (
+            // The composer below is the action.
+            <StateEmpty
+              icon={Ic.msg}
+              title={`Say hello to ${agentName}`}
+              body="Ask about fees, timelines or the documents you need."
+            />
+          ) : (
+            msgs.map((m, i) => <Bubble key={i} m={m} />)
+          )}
         </ScrollView>
+
+        {/* Send failure: InlineError above the composer (no retry button —
+            the send button is the retry; the draft was restored). */}
+        {sendError ? (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+            <InlineError message={sendError} />
+          </View>
+        ) : null}
 
         {/* ── Input row ───────────────────────────────────────────────────── */}
         <View

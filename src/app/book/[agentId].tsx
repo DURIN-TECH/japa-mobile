@@ -27,7 +27,16 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { addDays, addMinutes, format, setHours, setMinutes } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
-import { NAIRA, agentById, CONSULT_TOPICS } from '@/components/explorer/data';
+import {
+  CONSULT_TOPICS,
+  localUnavailableNote,
+  priceInline,
+  priceParts,
+} from '@/components/explorer/content';
+import { PriceBlock } from '@/components/explorer/PriceBlock';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import { loadErrorCopy } from '@/components/explorer/states';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useAgent } from '@/hooks/useAgents';
 import { Ic } from '@/components/explorer/icons';
@@ -137,10 +146,9 @@ export default function BookConsultation() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { agentId } = useLocalSearchParams<{ agentId: string }>();
-  // Demo agents resolve from static AGENTS; live agents fetch GET /agents/:id.
-  const demo = agentById(agentId);
-  const liveQ = useAgent(demo ? undefined : agentId);
-  const a = demo ?? (liveQ.data ? mapAgent(liveQ.data) : undefined);
+  // The agent from GET /agents/:id (japa#145: no demo AGENTS lookup).
+  const liveQ = useAgent(agentId || undefined);
+  const a = liveQ.data ? mapAgent(liveQ.data) : undefined;
 
   // ── Form state ─────────────────────────────────────────────────────────────
   const [date, setDate] = useState<Date | null>(null);
@@ -164,7 +172,7 @@ export default function BookConsultation() {
     );
   }, []);
 
-  if (!demo && liveQ.isLoading) {
+  if (liveQ.isLoading) {
     return (
       <View
         style={{
@@ -179,20 +187,37 @@ export default function BookConsultation() {
     );
   }
 
-  if (!a) {
+  // Load failed (not a 404) with nothing cached → error + retry.
+  if (liveQ.isError && !liveQ.data && !isNotFoundError(liveQ.error)) {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Agent not found.</Text>
-      </View>
+      <CenteredState
+        icon={Ic.users}
+        title="We couldn’t load this agent"
+        errorMessage={loadErrorCopy('this agent')}
+        onRetry={() => liveQ.refetch()}
+        retrying={liveQ.isRefetching}
+        actionLabel="Back to agents"
+        onAction={() => router.replace('/(tabs)/agents')}
+      />
     );
   }
+
+  // Not found (404, or no id): the spec's agent not-found state.
+  if (!a) {
+    return (
+      <CenteredState
+        icon={Ic.users}
+        title="We couldn’t find this agent"
+        actionLabel="Back to agents"
+        onAction={() => router.replace('/(tabs)/agents')}
+      />
+    );
+  }
+
+  // The agent's fee as the server quoted it (japa#183): local figure +
+  // "about $"; dollars only when there is no rate; $0 / none → "Free".
+  // Indicative only: the pay screen shows the locked amount.
+  const feeParts = priceParts(a.feeLocal, a.feeUsd, { freeWhenNoUsd: true });
 
   // Continue is enabled only once a date + time + topic are all chosen.
   const canContinue = !!(date && time && topic);
@@ -208,7 +233,8 @@ export default function BookConsultation() {
         topic,
         mode,
         dur,
-        fee: String(a.fee),
+        // japa#183: no `fee` param. The pay screen books first and shows
+        // the server's LOCKED amount; the client never carries a price.
       },
     });
   };
@@ -336,7 +362,8 @@ export default function BookConsultation() {
                   color: EX.color.inkMuted,
                 }}
               >
-                {dur} · {NAIRA(a.fee)}
+                {/* Indicative fee (japa#183): "₦47,389 · about $35". */}
+                {dur} · {priceInline(feeParts)}
               </Text>
             </View>
           </View>
@@ -570,17 +597,12 @@ export default function BookConsultation() {
             >
               Total
             </Text>
-            <Text
-              style={{
-                fontSize: 20,
-                fontWeight: '700',
-                color: EX.color.ink,
-                letterSpacing: -0.2,
-                lineHeight: 22,
-              }}
-            >
-              {NAIRA(a.fee)}
-            </Text>
+            {/* Indicative until the pay screen locks the quote. */}
+            <PriceBlock
+              parts={feeParts}
+              primarySize={20}
+              unavailableNote={localUnavailableNote(a.feeLocal?.currency)}
+            />
           </View>
 
           {/* Continue (coral, flex 1, disabled until date+time+topic) */}

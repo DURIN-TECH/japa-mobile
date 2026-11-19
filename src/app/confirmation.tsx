@@ -7,6 +7,17 @@
 // outline "Back to home" (→ home tab). A small top-right close (X) also returns
 // home. No back header — this ends the flow, so both routes use router.replace.
 //
+// japa#183: no `fee` param. The amount shown is the one the pay screen
+// LOCKED (the booking / request's stored charge), passed through as
+// `paidAmountMinor` + `paidCurrency` with the dollar price `priceUsdCents`;
+// never refetched or recomputed. Status row: "Paid · ₦47,389.40 · Card",
+// then the dollar line in ink-muted. `free=1` → "Free booking".
+//
+// japa#332: the dollar line is "$35.00 at ₦1,353.97 per $1" when the pay
+// screen passed the server's `effectiveRate` (amount charged ÷ dollar price,
+// markup included: the only rate a client is sent). With no rate (a legacy
+// record) it stays "$35.00 consultation price", as before.
+//
 // Design system: coral/cream Explorer tokens (EX), Space Grotesk display font.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -17,7 +28,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, parseISO } from 'date-fns';
 import { EX, displayText } from '@/components/explorer/theme';
-import { NAIRA } from '@/components/explorer/data';
+import {
+  formatMoney,
+  isUsableRate,
+  usdAtRateLine,
+  usdCents,
+} from '@/components/explorer/content';
 import { Ic } from '@/components/explorer/icons';
 
 // Lucide-style icon component signature (size/color/strokeWidth props).
@@ -58,21 +74,69 @@ export default function ConfirmationScreen() {
   const insets = useSafeAreaInsets();
 
   // Same param shape as the pay screen, plus `method`.
-  const { type, dateIso, time, topic, mode, dur, fee, method } =
-    useLocalSearchParams<{
-      type?: string;
-      agentId: string;
-      dateIso: string;
-      time: string;
-      topic: string;
-      mode: string;
-      dur: string;
-      fee: string;
-      method: string;
-    }>();
+  const {
+    type,
+    dateIso,
+    time,
+    topic,
+    mode,
+    dur,
+    method,
+    paidAmountMinor,
+    paidCurrency,
+    priceUsdCents,
+    effectiveRate,
+    free,
+  } = useLocalSearchParams<{
+    type?: string;
+    agentId: string;
+    dateIso: string;
+    time: string;
+    topic: string;
+    mode: string;
+    dur: string;
+    method: string;
+    /** The locked charge, minor units of `paidCurrency` (from /pay). */
+    paidAmountMinor?: string;
+    paidCurrency?: string;
+    /** The dollar price in US cents (from /pay). */
+    priceUsdCents?: string;
+    /**
+     * The server's effective rate for the charge, local units per 1 USD
+     * (from /pay, japa#332). '' or absent = none: dollar price only.
+     */
+    effectiveRate?: string;
+    /** '1' = a free booking (no Paystack). */
+    free?: string;
+  }>();
 
   const isApp = type === 'application';
-  const feeNum = Number(fee) || 0;
+  const isFree = free === '1';
+  // The locked / paid amount exactly as the pay screen held it.
+  const paidText = formatMoney(
+    paidCurrency && Number.isFinite(Number(paidAmountMinor))
+      ? { amountMinor: Number(paidAmountMinor), currency: paidCurrency }
+      : null,
+  );
+  // "$35.00 consultation price" — only for a non-USD charge (a USD charge
+  // already says it) and only when the dollar price is known.
+  const usdText =
+    priceUsdCents && (paidCurrency ?? '').toUpperCase() !== 'USD'
+      ? formatMoney(usdCents(Number(priceUsdCents)))
+      : '';
+  // The line under the paid amount. With a usable rate:
+  // "$35.00 at ₦1,353.97 per $1"; without one (legacy record, or a param
+  // that is not a number): "$35.00 consultation price". `Number('')` is 0
+  // and `Number('abc')` is NaN, both of which `isUsableRate` refuses.
+  const rate = Number(effectiveRate);
+  const usdLine = !usdText
+    ? ''
+    : isUsableRate(rate)
+      ? usdAtRateLine(usdCents(Number(priceUsdCents)), paidCurrency, rate)
+      : `${usdText} ${isApp ? 'price' : 'consultation price'}`;
+  const statusLabel = isFree
+    ? 'Free booking'
+    : ['Paid', paidText, method].filter(Boolean).join(' · ');
   const isVideo = (mode ?? '').toLowerCase().includes('video');
   const dateLabel = dateIso
     ? format(parseISO(dateIso), 'EEEE, MMMM d, yyyy')
@@ -192,10 +256,23 @@ export default function ConfirmationScreen() {
               <DetailRow icon={isVideo ? Ic.video : Ic.phone} label={mode} />
             </>
           )}
-          <DetailRow
-            icon={Ic.check2}
-            label={`Paid · ${NAIRA(feeNum)} · ${method}`}
-          />
+          <View>
+            <DetailRow icon={Ic.check2} label={statusLabel} />
+            {/* The dollar price under the paid amount (label, ink-muted). */}
+            {!isFree && usdLine ? (
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: '600',
+                  color: EX.color.inkMuted,
+                  marginTop: 4,
+                  marginLeft: 28,
+                }}
+              >
+                {usdLine}
+              </Text>
+            ) : null}
+          </View>
         </View>
 
         {/* ── CTAs ───────────────────────────────────────────────────────────── */}
@@ -203,11 +280,7 @@ export default function ConfirmationScreen() {
           {/* Primary — consultations, or applications for an app payment (coral, replace) */}
           <Pressable
             onPress={() =>
-              router.replace(
-                isApp
-                  ? '/(tabs)/tracker'
-                  : '/consultations',
-              )
+              router.replace(isApp ? '/(tabs)/tracker' : '/consultations')
             }
             style={{
               height: 54,

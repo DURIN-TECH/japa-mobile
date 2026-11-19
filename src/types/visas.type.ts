@@ -54,10 +54,17 @@ export interface VisaType {
   applicationInstructions?: string; // Brief instructions for completing official application
   successRate?: number;
   totalApplications?: number;
+  /** Where the record came from, e.g. "scraped" (official-source import) vs seeded. */
+  source?: string;
   isActive: boolean;
   quotaLimit?: number;
   currentQuotaUsed?: number;
   agentIds: string[];
+  /**
+   * japa#237: set when this visa is one route shared by several countries
+   * (null / absent for an ordinary visa). Names come from the backend.
+   */
+  sharedRoute?: import('@/types/sharedRoute.type').PublicSharedRoute | null;
 }
 
 export interface RequiredDocument {
@@ -67,6 +74,12 @@ export interface RequiredDocument {
   acceptedFormats: string[];
   maxSizeMb: number;
   isRequired: boolean;
+  /** #187: same meaning as on a checklist item. All optional (older data has none). */
+  kind?: 'document' | 'information';
+  kindReview?: true;
+  kindQuote?: string;
+  need?: 'required' | 'conditional' | 'optional';
+  appliesWhen?: string;
   validationCriteria?: string[];
   sampleUrl?: string;
 }

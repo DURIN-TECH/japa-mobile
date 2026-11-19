@@ -9,8 +9,12 @@ import { Pressable, StyleProp, Text, View, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { EX } from './theme';
-import { Dest } from './data';
 import { Flag, Scrim } from './primitives';
+import { GOV_FEE_COPY, formatCostUsd } from './visaBreakdownLogic';
+import type { Dest } from '@/types/explorer.type';
+// Country art fallback (japa#145): a Dest built without art still gets the
+// country's photo / tone (or the default skyline) from the assets module.
+import { countryImage, countryTone } from '@/assets/countries';
 
 // Small translucent glass chip used for price / "Most popular" over imagery.
 function GlassChip({
@@ -49,21 +53,25 @@ export function Tile({
   d,
   big = false,
   onPress,
+  testID,
 }: {
   d: Dest;
   big?: boolean;
   onPress: () => void;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
 }) {
   const [failed, setFailed] = useState(false);
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       style={{
         width: '100%',
         height: big ? 248 : 214,
         borderRadius: EX.radius.hero,
         overflow: 'hidden',
-        backgroundColor: d.tone,
+        backgroundColor: d.tone || countryTone(d.flag),
         shadowColor: '#171326',
         shadowOpacity: 0.2,
         shadowRadius: 22,
@@ -73,7 +81,7 @@ export function Tile({
     >
       {!failed ? (
         <Image
-          source={{ uri: d.img }}
+          source={{ uri: d.img || countryImage(d.flag) }}
           style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
           contentFit="cover"
           transition={200}
@@ -82,7 +90,7 @@ export function Tile({
       ) : null}
       <Scrim variant="tile" />
 
-      {/* price chip */}
+      {/* Government fee chip (japa#183): "Fee from $120", dollars only. */}
       <View style={{ position: 'absolute', top: 12, right: 12 }}>
         <GlassChip>
           <Text
@@ -93,7 +101,7 @@ export function Tile({
               letterSpacing: 0.1,
             }}
           >
-            ${d.price.toLocaleString()}
+            {`${GOV_FEE_COPY.chipPrefix} ${formatCostUsd(d.price)}`}
           </Text>
         </GlassChip>
       </View>

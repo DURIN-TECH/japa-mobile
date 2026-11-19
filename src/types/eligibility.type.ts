@@ -7,7 +7,10 @@ export type VisaRequirementType =
   | 'visa_on_arrival'
   | 'eta'
   | 'evisa'
-  | 'visa_required';
+  | 'visa_required'
+  // japa#237: the backend answers "unknown" when no official source covers the
+  // trip. It is NOT visa-free and NOT visa-required: never map it to either.
+  | 'unknown';
 
 // ============================================
 // ELIGIBILITY QUESTIONS
@@ -101,7 +104,9 @@ export interface EligibilityCheck {
   nationality: string;
 
   // Pre-check result
-  visaRequired: boolean;
+  // japa#237: null = "we don't know" (no official source). Never read it as
+  // true or false: check `=== true` / `=== false` explicitly.
+  visaRequired: boolean | null;
   visaRequirementType: VisaRequirementType;
   exemptionDetails?: {
     maxStayDays?: number;
@@ -155,7 +160,8 @@ export interface RecommendedVisa {
 }
 
 export interface VisaPreCheckResult {
-  visaRequired: boolean;
+  // japa#237: null = "we don't know" (requirementType is then 'unknown').
+  visaRequired: boolean | null;
   requirementType: VisaRequirementType;
 
   // If visa free

@@ -1,5 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { retryUnlessNotFound } from './queryErrors';
 import { apiService } from '@/services/api.service';
+// japa#259: the one place withdrawn applications leave the applicant's lists.
+import {
+  isAlreadyClosedError,
+  withoutWithdrawn,
+} from '@/components/explorer/applicationActions';
+// japa#106: a 404 is final (show the not-found state), so don't retry it.
 import {
   Application,
   ApplicationTimeline,
@@ -8,7 +15,14 @@ import {
 } from '@/types/applications.type';
 
 /**
- * Get all applications for the current user
+ * Get all applications for the current user.
+ *
+ * japa#259: withdrawn applications are dropped here (`select`), so every
+ * screen that lists applications (journey tab, Home, the Profile count) is
+ * rid of them without filtering on its own, and a user whose only application
+ * is withdrawn gets an empty list (the first-run state). The cache keeps the
+ * full server answer; only what the hook hands out is filtered. Asking for
+ * `status: 'withdrawn'` explicitly still returns them.
  */
 export function useApplications(status?: ApplicationStatus) {
   return useQuery({
@@ -20,6 +34,9 @@ export function useApplications(status?: ApplicationStatus) {
       const response = await apiService.get<Application[]>(endpoint);
       return response.data ?? [];
     },
+    // Module-level function (stable identity), so React Query memoises the
+    // filtered array and consumers don't re-render on every observer update.
+    select: status === 'withdrawn' ? undefined : withoutWithdrawn,
     staleTime: 1000 * 60 * 2, // 2 minutes
   });
 }
@@ -38,6 +55,9 @@ export function useApplication(applicationId: string) {
     },
     enabled: !!applicationId,
     staleTime: 1000 * 60 * 2,
+    // japa#106: a 404 (not yours / gone) never succeeds on retry; fail fast
+    // so the screen shows its not-found state instead of a long spinner.
+    retry: retryUnlessNotFound,
   });
 }
 
@@ -125,7 +145,19 @@ export function useDeleteApplication() {
 }
 
 /**
- * Withdraw an application
+ * Withdraw an application (japa#259).
+ *
+ * Sends `PUT /applications/:id/status` with a body of `{ status: 'withdrawn' }`
+ * and nothing else. Only the applicant's own open application is accepted; the
+ * backend answers 409 when it is already closed (the screen then refetches).
+ *
+ * On success the caches are corrected AT ONCE, before the refetch lands:
+ *   - the detail entry takes the server's updated application;
+ *   - every cached list marks that application withdrawn, so `useApplications`
+ *     (which filters withdrawn out) no longer shows it on the journey tab or
+ *     Home the moment the screen navigates there, rather than a beat later.
+ * Then both are invalidated so the server stays the source of truth.
+ * On the 409 the same two are invalidated (see `onError`).
  */
 export function useWithdrawApplication() {
   const queryClient = useQueryClient();
@@ -138,9 +170,34 @@ export function useWithdrawApplication() {
       );
       return response.data;
     },
-    onSuccess: (data) => {
-      if (data) {
-        queryClient.invalidateQueries({ queryKey: ['application', data.id] });
+    onSuccess: (data, applicationId) => {
+      if (data) queryClient.setQueryData(['application', applicationId], data);
+      queryClient.setQueriesData<Application[]>(
+        { queryKey: ['applications'] },
+        // Guarded: only touch an entry that really is a list.
+        (list) =>
+          Array.isArray(list)
+            ? list.map((a) =>
+                a.id === applicationId
+                  ? { ...a, status: 'withdrawn' as const }
+                  : a,
+              )
+            : list,
+      );
+      queryClient.invalidateQueries({
+        queryKey: ['application', applicationId],
+      });
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+    },
+    onError: (error, applicationId) => {
+      // 409 = the application was already closed (withdrawn elsewhere, or
+      // decided meanwhile). What this device has cached is out of date, so
+      // reload the application and the lists; the screen then shows its real
+      // status. Any other failure changed nothing and leaves the caches alone.
+      if (isAlreadyClosedError(error)) {
+        queryClient.invalidateQueries({
+          queryKey: ['application', applicationId],
+        });
         queryClient.invalidateQueries({ queryKey: ['applications'] });
       }
     },

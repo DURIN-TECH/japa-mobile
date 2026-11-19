@@ -1,0 +1,125 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Dynamic Expo config — selects the Firebase project + backend by environment.
+//
+// The static base lives in app.json; this file extends it and overrides the pieces
+// that differ per environment so DEV (durin-seli-dev) and PROD (japa-platform) never
+// require manual file swaps:
+//   • the native Firebase config file (firebase/<env>/…)
+//   • the API base URL + project id (exposed to runtime via `extra`, read by
+//     src/config/env.ts)
+//
+// APP_ENV is supplied by the EAS build profile (see eas.json: development/staging/
+// production) or the shell for local runs. It defaults to `development` so a bare
+// `expo start` talks to the DEV backend — matching how the team develops.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { ExpoConfig, ConfigContext } from 'expo/config';
+
+type AppEnv = 'development' | 'staging' | 'production';
+
+const APP_ENV = (process.env.APP_ENV as AppEnv) || 'development';
+const IS_PROD = APP_ENV === 'production';
+
+// Per-environment Firebase project + deployed API. PROD stays on the existing
+// japa-platform project; every non-prod environment uses the isolated dev project.
+const FIREBASE_PROJECT_ID = IS_PROD ? 'japa-platform' : 'durin-seli-dev';
+const API_URL = IS_PROD
+  ? 'https://us-central1-japa-platform.cloudfunctions.net/api'
+  : 'https://us-central1-durin-seli-dev.cloudfunctions.net/api';
+
+// Opt-in local emulator suite (functions + auth). Off by default so builds hit the
+// DEPLOYED backend; set EXPO_PUBLIC_USE_EMULATOR=true to develop against
+// `firebase emulators:start`. (Only surfaced to runtime here; the URL is derived in
+// src/config/env.ts because the emulator host depends on the platform.)
+const USE_EMULATOR = process.env.EXPO_PUBLIC_USE_EMULATOR === 'true';
+
+// Project id the local emulator suite runs under. This is NOT the app's Firebase
+// project: seli-backend runs the emulators in `singleProjectMode` as `japa-platform`
+// (the id its seed data + the portal's .env.local assume), and the Functions emulator
+// only serves `/<that-id>/us-central1/api` — any other id 404s. The Auth emulator
+// likewise mints tokens for that id regardless of the app's API key, so API + auth
+// agree. `make mobile` passes the Makefile's PROJECT in; the default covers running
+// `npx expo start` by hand.
+const EMULATOR_PROJECT_ID =
+  process.env.EXPO_PUBLIC_EMULATOR_PROJECT_ID || 'japa-platform';
+
+// Emulator ports (japa#361). Unset, the app keeps the firebase.json defaults
+// (Auth 9099, Functions 5001) — src/config/env.ts applies those defaults, so
+// existing set-ups are unchanged. The Maestro e2e runner sets them to the ports
+// in seli-backend's firebase.e2e.json, so its emulators never collide with a
+// developer's. Passed through as raw strings: env.ts validates them (the config
+// loader cannot import local TS files, so the rule lives in one place there).
+const EMULATOR_AUTH_PORT = process.env.EXPO_PUBLIC_EMULATOR_AUTH_PORT;
+const EMULATOR_FUNCTIONS_PORT = process.env.EXPO_PUBLIC_EMULATOR_FUNCTIONS_PORT;
+
+// Native Firebase config files live under firebase/<env>/ so dev/prod never clobber
+// each other. Expo prebuild copies the selected file into the native project.
+const googleServicesDir = IS_PROD ? './firebase/prod' : './firebase/dev';
+
+export default ({ config }: ConfigContext): ExpoConfig => ({
+  ...config,
+  // name/slug are required on ExpoConfig; carry them through from app.json.
+  name: config.name ?? 'Seli',
+  slug: config.slug ?? 'japa-mobile',
+  ios: {
+    ...config.ios,
+    infoPlist: {
+      ...config.ios?.infoPlist,
+      // Lets a silent/data push wake the app in the background (japa#264).
+      UIBackgroundModes: Array.from(
+        new Set([
+          ...((config.ios?.infoPlist?.UIBackgroundModes as
+            | string[]
+            | undefined) ?? []),
+          'remote-notification',
+        ]),
+      ),
+    },
+    entitlements: {
+      ...config.ios?.entitlements,
+      // `development` for local builds; EAS rewrites it to `production` for
+      // store/TestFlight builds from the provisioning profile.
+      'aps-environment': 'development',
+    },
+    googleServicesFile: `${googleServicesDir}/GoogleService-Info.plist`,
+  },
+  android: {
+    ...config.android,
+    // Android 13+ runtime notification permission (japa#264). The channel, icon
+    // and default channel id come from plugins/withAndroidPushSetup.js.
+    permissions: [
+      ...(config.android?.permissions ?? []),
+      'android.permission.POST_NOTIFICATIONS',
+    ],
+    googleServicesFile: `${googleServicesDir}/google-services.json`,
+  },
+  extra: {
+    ...config.extra,
+    // Consumed by src/config/env.ts at runtime.
+    appEnv: APP_ENV,
+    firebaseProjectId: FIREBASE_PROJECT_ID,
+    apiUrl: API_URL,
+    useEmulator: USE_EMULATOR,
+    emulatorProjectId: EMULATOR_PROJECT_ID,
+    // Emulator ports (japa#361); undefined → env.ts defaults 9099 / 5001.
+    emulatorAuthPort: EMULATOR_AUTH_PORT,
+    emulatorFunctionsPort: EMULATOR_FUNCTIONS_PORT,
+    // Feedback button build flag (EXPO_PUBLIC_FEEDBACK_ENABLED=false removes it).
+    // Same rule as isFeedbackEnabledFlag in src/config/feedback.ts (the config
+    // loader cannot import local TS files, so it is repeated here).
+    feedbackEnabled:
+      process.env.EXPO_PUBLIC_FEEDBACK_ENABLED?.trim().toLowerCase() !==
+      'false',
+    // Temporary launch flag — remove when agent features are released (DURIN-TECH/japa#336).
+    // Self-service-only launch flag (japa#334). EXPO_PUBLIC_SELF_SERVICE_ONLY=true
+    // hides agents, agencies, booking, agent messaging and agent payments.
+    // OFF unless the value is exactly "true" (case and spaces ignored): the same
+    // rule as isSelfServiceOnlyFlag in src/config/selfServiceOnly.ts, repeated
+    // here because the config loader cannot import local TS files. Baked in at
+    // build time, so an `eas update` for a flag-on channel must also run with
+    // EXPO_PUBLIC_SELF_SERVICE_ONLY=true or the update carries the flag off.
+    selfServiceOnly:
+      process.env.EXPO_PUBLIC_SELF_SERVICE_ONLY?.trim().toLowerCase() ===
+      'true',
+  },
+});

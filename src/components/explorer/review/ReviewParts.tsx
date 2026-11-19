@@ -1,0 +1,1179 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Review UI parts (issue #43 design spec, "Components").
+//
+// Built only from existing Explorer tokens (EX) and primitives. Shared by the
+// self-service review card and the review screen.
+//
+//   ReadinessGauge   130px ring cut into four segments, filled = band level
+//   ReadinessMeter   the same four levels as a row of four pill segments
+//   ReviewHero       dark gradient hero with the gauge and a "Reviewed" pill
+//   RuleQuote        rule reference + verbatim quote + "Read the rule" link
+//   FindingCard      one finding; `footer` is the reserved per-item action slot (#44)
+//   BlockingRuleCard a fixed rule blocks the application
+//   (UpgradePanel and StickyBar moved to explorer/UpgradePrompt.tsx and explorer/StickyBar.tsx)
+//   NumberedRow / CheckRow / OutlineButton / SolidButton   small shared pieces
+//   ReadingCard      japa#384: the reading's paragraphs + the conclusion panel
+//   NextStepsCard    japa#384: "What would change this", numbered steps in a card
+//   LockedPanel      japa#384: static "See how each rule was applied" panel
+//   WorkingToggle    japa#384: disclosure row over the rule-by-rule working
+//
+// No number is ever drawn for readiness: only the band label and its level.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import React, { useEffect } from 'react';
+import {
+  ActivityIndicator,
+  Linking,
+  Text,
+  View,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle } from 'react-native-svg';
+import Animated, {
+  Easing,
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
+import { EX, EXShadow, displayText } from '@/components/explorer/theme';
+import { Ic } from '@/components/explorer/icons';
+import { Card, GlassButton } from '@/components/explorer/primitives';
+import type {
+  AssessmentNarrative,
+  CountryContext,
+  ReadinessBand,
+} from '@/types/assessment.type';
+import {
+  BAND_LABEL,
+  BAND_LEVEL,
+  fmtDate,
+  LOCKED_WORKING_BODY,
+  LOCKED_WORKING_TITLE,
+  READING_CONCLUSION_EYEBROW,
+  WORKING_HIDE,
+  WORKING_HINT,
+  WORKING_SHOW,
+  WORKING_SUBLINE,
+} from '@/components/explorer/review/reviewCopy';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+// ── Gauge geometry (same as eligibility/result.tsx) ───────────────────────────
+const SIZE = 130;
+const CENTER = 65;
+const R = 52;
+const STROKE = 10;
+const C = 2 * Math.PI * R;
+const GAP = 8; // gap between segments, in px of arc
+const SEG = C / 4;
+
+/** One quarter of the ring; fades in as the shared progress passes its turn. */
+function GaugeSegment({
+  index,
+  filled,
+  progress,
+}: {
+  index: number;
+  filled: boolean;
+  progress: SharedValue<number>;
+}) {
+  // Dash = one segment minus the gap; offset places it at its quarter.
+  const dash = SEG - GAP;
+  const offset = -(index * SEG + GAP / 2);
+  const props = useAnimatedProps(() => ({
+    // Segments fill one after another as progress runs 0 → 1 across the level.
+    strokeOpacity: filled
+      ? Math.min(1, Math.max(0, progress.value * 4 - index))
+      : 0,
+  }));
+  return (
+    <AnimatedCircle
+      cx={CENTER}
+      cy={CENTER}
+      r={R}
+      stroke="#ffffff"
+      strokeWidth={STROKE}
+      fill="none"
+      strokeDasharray={`${dash} ${C - dash}`}
+      strokeDashoffset={offset}
+      animatedProps={props}
+    />
+  );
+}
+
+/** The gauge: four segments, band label in the centre, READINESS under it. */
+export function ReadinessGauge({ band }: { band: ReadinessBand | null }) {
+  const level = band ? BAND_LEVEL[band] : 0;
+  const reduced = useReducedMotion();
+  const progress = useSharedValue(reduced ? 1 : 0);
+  useEffect(() => {
+    // 1100ms on the system curve; instant with reduced motion.
+    progress.value = reduced
+      ? 1
+      : withTiming(1, {
+          duration: 1100,
+          easing: Easing.bezier(0.2, 0.8, 0.2, 1),
+        });
+  }, [band, reduced, progress]);
+
+  const label = band ? BAND_LABEL[band] : 'Reviewed';
+  return (
+    <View
+      accessible
+      accessibilityLabel={`Readiness: ${label}, level ${level} of 4`}
+      style={{
+        width: SIZE,
+        height: SIZE,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Svg
+        width={SIZE}
+        height={SIZE}
+        style={{ transform: [{ rotate: '-90deg' }] }}
+      >
+        {/* Track: four dim segments */}
+        {[0, 1, 2, 3].map((i) => (
+          <Circle
+            key={`t${i}`}
+            cx={CENTER}
+            cy={CENTER}
+            r={R}
+            stroke="rgba(255,255,255,0.2)"
+            strokeWidth={STROKE}
+            fill="none"
+            strokeDasharray={`${SEG - GAP} ${C - (SEG - GAP)}`}
+            strokeDashoffset={-(i * SEG + GAP / 2)}
+          />
+        ))}
+        {/* Filled segments */}
+        {[0, 1, 2, 3].map((i) => (
+          <GaugeSegment
+            key={`f${i}`}
+            index={i}
+            filled={i < level}
+            progress={progress}
+          />
+        ))}
+      </Svg>
+      <View
+        style={{
+          position: 'absolute',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: 22,
+        }}
+      >
+        <Text
+          style={{
+            fontFamily: EX.font.display.bold,
+            fontSize: 22,
+            lineHeight: 23,
+            color: '#fff',
+            textAlign: 'center',
+          }}
+          numberOfLines={2}
+        >
+          {label}
+        </Text>
+        <Text
+          style={{
+            fontSize: 11,
+            fontWeight: '600',
+            letterSpacing: 0.44,
+            color: 'rgba(255,255,255,0.85)',
+            marginTop: 3,
+          }}
+        >
+          READINESS
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** Four 6px pill segments: filled coral, empty line-08. The band is also a word. */
+export function ReadinessMeter({ band }: { band: ReadinessBand | null }) {
+  const level = band ? BAND_LEVEL[band] : 0;
+  return (
+    <View style={{ flexDirection: 'row', gap: 4, marginTop: 12 }}>
+      {[0, 1, 2, 3].map((i) => (
+        <View
+          key={i}
+          style={{
+            flex: 1,
+            height: 6,
+            borderRadius: EX.radius.pill,
+            backgroundColor: i < level ? EX.color.primary : EX.color.line08,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** Dark hero for every band (a green/red hero would read as approve/refuse). */
+export function ReviewHero({
+  band,
+  reviewedAt,
+  stale,
+  offline,
+  insetTop,
+  onBack,
+  caption,
+}: {
+  /** japa#237: a line under the date pill, e.g. "Doesn't include everything yet". */
+  caption?: string;
+  band: ReadinessBand | null;
+  reviewedAt: string | null;
+  stale: boolean;
+  offline?: boolean;
+  insetTop: number;
+  onBack: () => void;
+}) {
+  const date = fmtDate(reviewedAt);
+  const pill = date
+    ? `Reviewed ${date}${stale ? ' · out of date' : ''}`
+    : stale
+      ? 'Out of date'
+      : 'Reviewed';
+  return (
+    <LinearGradient
+      colors={[EX.color.dark1, EX.color.dark2]}
+      start={{ x: 0.33, y: 0 }}
+      end={{ x: 0.67, y: 1 }}
+      style={{
+        paddingTop: insetTop + 38,
+        paddingBottom: 34,
+        paddingHorizontal: 22,
+        alignItems: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Decorative circle, as in the eligibility result */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: -50,
+          right: -40,
+          width: 190,
+          height: 190,
+          borderRadius: 95,
+          backgroundColor: 'rgba(255,255,255,0.07)',
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          top: insetTop + 6,
+          left: 18,
+          zIndex: 10,
+        }}
+      >
+        <GlassButton icon={Ic.chevL} onPress={onBack} />
+      </View>
+      <ReadinessGauge band={band} />
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginTop: 16,
+          paddingHorizontal: 15,
+          paddingVertical: 7,
+          borderRadius: EX.radius.pill,
+          backgroundColor: 'rgba(255,255,255,0.16)',
+        }}
+      >
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+          {pill}
+        </Text>
+      </View>
+      {caption ? (
+        <Text
+          style={{
+            color: 'rgba(255,255,255,0.85)',
+            fontSize: 12.5,
+            fontWeight: '600',
+            marginTop: 8,
+          }}
+        >
+          {caption}
+        </Text>
+      ) : null}
+      {offline ? (
+        <Text
+          style={{
+            color: 'rgba(255,255,255,0.85)',
+            fontSize: 12,
+            marginTop: 8,
+          }}
+        >
+          You’re offline. Showing your last saved review.
+        </Text>
+      ) : null}
+    </LinearGradient>
+  );
+}
+
+/**
+ * Rule reference, the quote word for word (never truncated), and a link to the
+ * source. `onSurface` swaps the cream fill for white inside the blocking card.
+ */
+export function RuleQuote({
+  ruleRef,
+  quote,
+  url,
+  label,
+  onSurface = false,
+  onOpen,
+}: {
+  ruleRef: string | null;
+  quote: string;
+  url: string;
+  /** Overrides the heading line (e.g. "You wrote"). */
+  label?: string;
+  onSurface?: boolean;
+  onOpen?: () => void;
+}) {
+  const head = label ?? ruleRef;
+  return (
+    <View
+      style={{
+        backgroundColor: onSurface ? EX.color.cardWhite : EX.color.cream,
+        borderWidth: 1,
+        borderColor: EX.color.line08,
+        borderRadius: EX.radius.chip,
+        padding: 12,
+        marginTop: 10,
+      }}
+    >
+      {head ? (
+        <Text
+          style={{
+            fontSize: 12,
+            fontWeight: '600',
+            color: EX.color.inkMuted,
+            marginBottom: 4,
+          }}
+        >
+          {head}
+        </Text>
+      ) : null}
+      {quote ? (
+        <Text style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink2 }}>
+          {`“${quote}”`}
+        </Text>
+      ) : null}
+      {url ? (
+        <PressableStatic
+          accessibilityRole="link"
+          accessibilityLabel={`Read the rule${ruleRef ? `: ${ruleRef}` : ''}`}
+          onPress={() => {
+            onOpen?.();
+            Linking.openURL(url).catch(() => undefined);
+          }}
+          hitSlop={8}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 5,
+            marginTop: 10,
+            minHeight: 44,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <Text
+            style={{
+              fontSize: 13.5,
+              fontWeight: '600',
+              color: EX.color.ink,
+              textDecorationLine: 'underline',
+            }}
+          >
+            Read the rule
+          </Text>
+          <Ic.arrowUR size={15} color={EX.color.primary} strokeWidth={2} />
+        </PressableStatic>
+      ) : null}
+    </View>
+  );
+}
+
+/** Chip kinds for a finding: rule, officer question, or "couldn't tell". */
+export type FindingKind = 'rule' | 'question' | 'unknown' | 'statement';
+
+const CHIP: Record<
+  FindingKind,
+  { bg: string; fg: string; icon: React.ElementType }
+> = {
+  rule: { bg: '#FCEAC8', fg: EX.color.amber, icon: Ic.plus },
+  question: { bg: '#DCEBF7', fg: '#2F62A0', icon: Ic.search },
+  unknown: { bg: EX.color.line06, fg: EX.color.inkMuted, icon: Ic.help },
+  statement: { bg: EX.color.line06, fg: EX.color.inkMuted, icon: Ic.docs },
+};
+
+/**
+ * One finding. Colour sits on the chip only; all text is ink. `footer` is the
+ * reserved per-item action slot (Slot B, issue #44): it renders nothing until
+ * something is passed.
+ */
+export function FindingCard({
+  kind,
+  title,
+  body,
+  parts,
+  children,
+  footer,
+  layer,
+}: {
+  /** japa#237: the layer pill (shared rules / a country's own); none on a one-layer rulebook. */
+  layer?: React.ReactNode;
+  kind: FindingKind;
+  title: string;
+  body?: string;
+  /** Labelled parts, e.g. "Why it may come up" / "What would help". */
+  parts?: Array<{ label: string; text: string }>;
+  children?: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const chip = CHIP[kind];
+  const Icon = chip.icon;
+  return (
+    <View
+      style={[
+        {
+          backgroundColor: EX.color.cardWhite,
+          borderRadius: EX.radius.card,
+          borderWidth: 1,
+          borderColor: EX.color.line06,
+          paddingVertical: 15,
+          paddingHorizontal: 16,
+        },
+        EXShadow.card,
+      ]}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 13,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: chip.bg,
+          }}
+        >
+          <Icon size={15} color={chip.fg} strokeWidth={2.2} />
+        </View>
+        <Text
+          style={{
+            flex: 1,
+            fontSize: 15,
+            fontWeight: '700',
+            color: EX.color.ink,
+          }}
+        >
+          {title}
+        </Text>
+      </View>
+      {layer ? <View style={{ marginTop: 8 }}>{layer}</View> : null}
+      {body ? (
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.ink2,
+            marginTop: 8,
+          }}
+        >
+          {body}
+        </Text>
+      ) : null}
+      {parts
+        ?.filter((p) => p.text)
+        .map((p) => (
+          <View key={p.label} style={{ marginTop: 10 }}>
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: '600',
+                color: EX.color.inkMuted,
+                marginBottom: 2,
+              }}
+            >
+              {p.label}
+            </Text>
+            <Text
+              style={{ fontSize: 13, lineHeight: 19, color: EX.color.ink2 }}
+            >
+              {p.text}
+            </Text>
+          </View>
+        ))}
+      {children}
+      {footer ? <View style={{ marginTop: 12 }}>{footer}</View> : null}
+    </View>
+  );
+}
+
+/** A fixed rule stands in the way: the error chrome at card size. */
+export function BlockingRuleCard({
+  title,
+  body,
+  children,
+}: {
+  title: string;
+  body: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: '#FBE3E1',
+        borderWidth: 1,
+        borderColor: 'rgba(217,66,91,0.24)',
+        borderRadius: EX.radius.card,
+        padding: 16,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 13,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: EX.color.cardWhite,
+          }}
+        >
+          <Ic.alert size={15} color="#C0453C" strokeWidth={2.2} />
+        </View>
+        <Text
+          style={{
+            flex: 1,
+            fontSize: 16,
+            fontWeight: '700',
+            color: EX.color.ink,
+          }}
+        >
+          {title}
+        </Text>
+      </View>
+      <Text
+        style={{
+          fontSize: 13,
+          lineHeight: 19,
+          color: EX.color.ink2,
+          marginTop: 8,
+        }}
+      >
+        {body}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
+/** Numbered row (criteria-row geometry from eligibility/result.tsx). */
+export function NumberedRow({ n, label }: { n: number; label: string }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 11,
+        paddingVertical: 13,
+        paddingHorizontal: 15,
+        borderRadius: 15,
+        backgroundColor: EX.color.cardWhite,
+        borderWidth: 1,
+        borderColor: EX.color.line06,
+      }}
+    >
+      <View
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: EX.color.cream,
+          borderWidth: 1,
+          borderColor: EX.color.line08,
+        }}
+      >
+        <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>
+          {n}
+        </Text>
+      </View>
+      <Text
+        style={{
+          flex: 1,
+          fontSize: 14,
+          fontWeight: '600',
+          color: EX.color.ink,
+        }}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** Success-check row (the "What you've got" rows). */
+export function CheckRow({ label }: { label: string }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 11,
+        paddingVertical: 13,
+        paddingHorizontal: 15,
+        borderRadius: 15,
+        backgroundColor: '#EAF7F0',
+        borderWidth: 1,
+        borderColor: 'rgba(30,142,85,0.2)',
+      }}
+    >
+      <View
+        style={{
+          width: 26,
+          height: 26,
+          borderRadius: 13,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#D6F2E2',
+        }}
+      >
+        <Ic.check size={15} color={EX.color.success} strokeWidth={2.6} />
+      </View>
+      <Text
+        style={{
+          flex: 1,
+          fontSize: 14,
+          fontWeight: '600',
+          color: EX.color.ink,
+        }}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** Filled button: coral (the one primary action) or dark ink. */
+export function SolidButton({
+  label,
+  onPress,
+  tone = 'coral',
+  loading = false,
+  disabled = false,
+  icon,
+  style,
+  testID,
+}: {
+  label: string;
+  onPress: () => void;
+  tone?: 'coral' | 'ink';
+  loading?: boolean;
+  disabled?: boolean;
+  icon?: React.ElementType;
+  style?: StyleProp<ViewStyle>;
+  /** e2e id (Maestro, japa#361). No visual effect. */
+  testID?: string;
+}) {
+  const Icon = icon;
+  const off = disabled || loading;
+  return (
+    <PressableStatic
+      testID={testID}
+      onPress={onPress}
+      disabled={off}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: off, busy: loading }}
+      style={({ pressed }) => [
+        {
+          height: 54,
+          borderRadius: EX.radius.button,
+          backgroundColor: tone === 'coral' ? EX.color.primary : EX.color.ink,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          opacity: off ? 0.6 : pressed ? 0.85 : 1,
+        },
+        tone === 'coral' ? EXShadow.primaryBtn : EXShadow.darkNudge,
+        style,
+      ]}
+    >
+      {loading ? <ActivityIndicator color="#fff" /> : null}
+      <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+        {label}
+      </Text>
+      {Icon && !loading ? (
+        <Icon size={18} color="#fff" strokeWidth={1.8} />
+      ) : null}
+    </PressableStatic>
+  );
+}
+
+/** Outline button; `height` 46 in cards, 54 on screens. */
+export function OutlineButton({
+  label,
+  onPress,
+  height = 46,
+  disabled = false,
+  style,
+}: {
+  label: string;
+  onPress: () => void;
+  height?: number;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <PressableStatic
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        {
+          height,
+          borderRadius: 13,
+          borderWidth: 1.5,
+          borderColor: EX.color.line16,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: disabled ? 0.6 : pressed ? 0.85 : 1,
+        },
+        style,
+      ]}
+    >
+      <Text
+        style={{
+          color: EX.color.ink,
+          fontSize: height >= 54 ? 15.5 : 14,
+          fontWeight: '700',
+        }}
+      >
+        {label}
+      </Text>
+    </PressableStatic>
+  );
+}
+
+/**
+ * Country context card (#116): published figures, shown exactly as the server
+ * sends them. Visually separate from findings (its own white card with a
+ * hairline border, no finding chip, no colour accent). It has NO wording of its
+ * own about likelihood or the applicant's chances: the headline and every line
+ * come from `context.text`; this component only lays them out and adds the
+ * source link. Renders nothing unless the note is `available`.
+ */
+export function CountryContextCard({
+  context,
+  onOpen,
+}: {
+  context: CountryContext | undefined;
+  onOpen?: () => void;
+}) {
+  if (!context || context.status !== 'available') return null;
+  const { text, source } = context;
+  return (
+    <View
+      accessibilityRole="summary"
+      style={{
+        backgroundColor: EX.color.cardWhite,
+        borderWidth: 1,
+        borderColor: EX.color.line08,
+        borderRadius: EX.radius.chip,
+        padding: 14,
+        marginTop: 20,
+      }}
+    >
+      <Text style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}>
+        {text.headline}
+      </Text>
+      {text.lines.map((line, i) => (
+        <Text
+          key={`${i}-${line.slice(0, 24)}`}
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.ink2,
+            marginTop: i === 0 ? 8 : 6,
+          }}
+        >
+          {line}
+        </Text>
+      ))}
+      {source.pageUrl ? (
+        <PressableStatic
+          accessibilityRole="link"
+          accessibilityLabel="Open the published data tables"
+          onPress={() => {
+            onOpen?.();
+            Linking.openURL(source.pageUrl).catch(() => undefined);
+          }}
+          hitSlop={8}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 5,
+            marginTop: 8,
+            minHeight: 44,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <Text
+            style={{
+              fontSize: 13.5,
+              fontWeight: '600',
+              color: EX.color.ink,
+              textDecorationLine: 'underline',
+            }}
+          >
+            Open the published data tables
+          </Text>
+          <Ic.arrowUR size={15} color={EX.color.primary} strokeWidth={2} />
+        </PressableStatic>
+      ) : null}
+    </View>
+  );
+}
+
+/** Small caption under a section title. */
+export function Caption({ children }: { children: React.ReactNode }) {
+  return (
+    <Text
+      style={{
+        fontSize: 13,
+        lineHeight: 19,
+        color: EX.color.inkMuted,
+        marginBottom: 12,
+        marginHorizontal: 2,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+/** Icon + title + body (+ optional reassurance line), centred. No error styling. */
+export function ReviewEmpty({
+  icon: Icon,
+  title,
+  body,
+  note,
+}: {
+  icon: React.ElementType;
+  title: string;
+  body?: string;
+  note?: string;
+}) {
+  return (
+    <View
+      style={{
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 28,
+      }}
+    >
+      <View
+        style={{
+          width: 54,
+          height: 54,
+          borderRadius: 27,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: EX.color.cream,
+          borderWidth: 1,
+          borderColor: EX.color.line08,
+          marginBottom: 14,
+        }}
+      >
+        <Icon size={24} color={EX.color.inkMuted} strokeWidth={1.8} />
+      </View>
+      <Text style={[displayText(22, 'semibold'), { textAlign: 'center' }]}>
+        {title}
+      </Text>
+      {body ? (
+        <Text
+          style={{
+            fontSize: 14,
+            lineHeight: 21,
+            color: EX.color.inkMuted,
+            textAlign: 'center',
+            marginTop: 8,
+          }}
+        >
+          {body}
+        </Text>
+      ) : null}
+      {note ? (
+        <Text
+          style={{
+            fontSize: 13,
+            color: EX.color.inkMuted,
+            textAlign: 'center',
+            marginTop: 6,
+          }}
+        >
+          {note}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// japa#384: the reading, the locked panel and the working toggle (design spec
+// on the issue). All from existing tokens; coral is used on icons only, never
+// on text (coral text fails contrast on these surfaces).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 38px icon chip geometry (radius 12, the system's `radius-icon-chip`). */
+const ICON_CHIP = {
+  width: 38,
+  height: 38,
+  borderRadius: 12,
+  alignItems: 'center',
+  justifyContent: 'center',
+} as const;
+
+/**
+ * The reading: one card with every paragraph as its own Text, in order, then
+ * the conclusion set apart in a cream panel. It reads as a letter, so there are
+ * no bullets, chips, bold or icons inside, and nothing is ever truncated (no
+ * `numberOfLines`, no "read more"). `textBreakStrategy="simple"` lets a very
+ * long word (a URL, a reference number) wrap on Android.
+ *
+ * The conclusion carries no colour accent, so it doesn't read as a verdict.
+ */
+export function ReadingCard({ narrative }: { narrative: AssessmentNarrative }) {
+  return (
+    <Card style={{ padding: 18, gap: 14 }}>
+      {narrative.paragraphs.map((p, i) => (
+        <Text
+          // Paragraph text can repeat; the index keeps keys unique.
+          key={`p${i}`}
+          textBreakStrategy="simple"
+          style={{ fontSize: 14.5, lineHeight: 23, color: EX.color.ink2 }}
+        >
+          {p}
+        </Text>
+      ))}
+      {/* Conclusion panel: cream, hairline, 4 extra above (gap 14 + 4). */}
+      <View
+        style={{
+          backgroundColor: EX.color.cream,
+          borderWidth: 1,
+          borderColor: EX.color.line08,
+          borderRadius: EX.radius.chip,
+          padding: 14,
+          marginTop: 4,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 12.5,
+            fontWeight: '600',
+            color: EX.color.inkMuted,
+            marginBottom: 4,
+          }}
+        >
+          {READING_CONCLUSION_EYEBROW}
+        </Text>
+        <Text
+          textBreakStrategy="simple"
+          style={{
+            fontSize: 15,
+            fontWeight: '600',
+            lineHeight: 23,
+            color: EX.color.ink,
+          }}
+        >
+          {narrative.conclusion}
+        </Text>
+      </View>
+    </Card>
+  );
+}
+
+/**
+ * "What would change this": one card, one row per step. Each row has the 26px
+ * NumberedRow disc on the left and the step on the right, top-aligned so a long
+ * step hangs cleanly under its first line. The caller omits the section when
+ * the list is empty (no empty heading).
+ */
+export function NextStepsCard({ steps }: { steps: string[] }) {
+  return (
+    <Card style={{ gap: 12 }}>
+      {steps.map((s, i) => (
+        <View
+          key={`s${i}`}
+          style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 11 }}
+        >
+          <View
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 13,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: EX.color.cream,
+              borderWidth: 1,
+              borderColor: EX.color.line08,
+            }}
+          >
+            <Text
+              style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}
+            >
+              {i + 1}
+            </Text>
+          </View>
+          <Text
+            textBreakStrategy="simple"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 14,
+              lineHeight: 21,
+              color: EX.color.ink2,
+              // Optically centre the first line on the 26px disc.
+              paddingTop: 2,
+            }}
+          >
+            {s}
+          </Text>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+/**
+ * The locked working (no `ai.review_working` in the plan). STATIC on purpose:
+ * no chevron, shadow, press state, button, price or link (purchase is japa#385).
+ * One accessibility element reads title + body. `onLayout` lets the screen
+ * measure when it first comes into view (analytics).
+ */
+export function LockedPanel({
+  onLayout,
+}: {
+  onLayout?: (e: LayoutChangeEvent) => void;
+}) {
+  return (
+    <View
+      onLayout={onLayout}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`${LOCKED_WORKING_TITLE}. ${LOCKED_WORKING_BODY}`}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 13,
+        backgroundColor: EX.color.cream,
+        borderWidth: 1,
+        borderColor: EX.color.line08,
+        borderRadius: EX.radius.card,
+        padding: 16,
+      }}
+    >
+      {/* White chip: the panel itself is cream. */}
+      <View style={[ICON_CHIP, { backgroundColor: EX.color.cardWhite }]}>
+        <Ic.lock size={18} color={EX.color.primary} strokeWidth={1.8} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }}>
+          {LOCKED_WORKING_TITLE}
+        </Text>
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.ink2,
+            marginTop: 4,
+          }}
+        >
+          {LOCKED_WORKING_BODY}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Disclosure row over the rule-by-rule working (the plan includes it). Follows
+ * the `OfficialRequirement` disclosure in DocumentChecklist.tsx: a coral `chevR`
+ * that turns 90° when open and no animation (reduced motion). The open/closed
+ * state is owned by the screen, so it resets on each visit.
+ */
+export function WorkingToggle({
+  open,
+  onToggle,
+}: {
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const title = open ? WORKING_HIDE : WORKING_SHOW;
+  return (
+    <PressableStatic
+      onPress={onToggle}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      accessibilityLabel={title}
+      accessibilityHint={WORKING_HINT}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 13,
+        minHeight: 48,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        backgroundColor: EX.color.cardWhite,
+        borderWidth: 1,
+        borderColor: EX.color.line08,
+        borderRadius: EX.radius.cardSm,
+        opacity: pressed ? 0.85 : 1,
+      })}
+    >
+      <View style={[ICON_CHIP, { backgroundColor: EX.color.cream }]}>
+        <Ic.layers size={18} color={EX.color.primary} strokeWidth={1.8} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ fontSize: 15, fontWeight: '700', color: EX.color.ink }}>
+          {title}
+        </Text>
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 19,
+            color: EX.color.inkMuted,
+            marginTop: 2,
+          }}
+        >
+          {WORKING_SUBLINE}
+        </Text>
+      </View>
+      <View style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
+        <Ic.chevR size={16} color={EX.color.primary} strokeWidth={2} />
+      </View>
+    </PressableStatic>
+  );
+}
+
+/** Re-export so screens import display text style from one place. */
+export { displayText };

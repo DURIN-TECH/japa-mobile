@@ -30,6 +30,12 @@ export interface Application {
   // Mode
   mode: ApplicationMode;
   agentId?: string;
+  /**
+   * The agency the case belongs to, when there is one (japa#307). The backend
+   * already returns it; a case with an agency is never self-service, even
+   * with `mode: 'self'` (see `isSelfServiceApplication`).
+   */
+  agencyId?: string;
 
   // Status & Progress
   status: ApplicationStatus;
@@ -50,9 +56,12 @@ export interface Application {
   documentsVerified: number;
   documentsRejected: number;
 
-  // Financial
+  // Financial (japa#183 / backend #181): integer US CENTS, in `costCurrency`.
+  // A 5,000,000 totalCost is $50,000.00, never ₦ and never $5,000,000.
   totalCost: number;
   amountPaid: number;
+  /** "USD"; absent on older docs, which are treated as USD. */
+  costCurrency?: string;
   paymentStatus: PaymentStatus;
 
   // Denormalized display fields (populated by backend)
@@ -61,6 +70,17 @@ export interface Application {
   clientName?: string;
   clientEmail?: string;
   agentName?: string;
+
+  // japa#237: shared-route applications only (absent on every ordinary one).
+  /** The shared route's name. `countryName` stays the country applied through. */
+  routeName?: string;
+  throughCountryCode?: string;
+  /** Present on a shared-route application (the confirmed choice). */
+  throughCountry?: { sharedRouteId?: string; countryCode?: string };
+  /** The backend's answer to "may the country still be changed?" (never computed here). */
+  canChangeThroughCountry?: boolean;
+  /** Rulebook keys the application runs on. */
+  routeStack?: string[];
 
   // Notes
   userNotes?: string;
@@ -84,9 +104,19 @@ export interface ApplicationTimeline {
 }
 
 export interface CreateApplicationInput {
-  visaTypeId: string;
-  countryCode: string;
+  /** Ordinary start. Omitted when starting through a shared route. */
+  visaTypeId?: string;
+  countryCode?: string;
+  /** japa#237: start through a shared route (send these INSTEAD of the two above). */
+  sharedRouteId?: string;
+  throughCountryCode?: string;
+  competenceAnswers?: Record<string, unknown>;
   mode: ApplicationMode;
   agentId?: string;
   userNotes?: string;
+  /**
+   * #253: set to true once the user confirmed "start another" after the
+   * backend answered 409 DUPLICATE_ACTIVE_APPLICATION. Never sent otherwise.
+   */
+  confirmNew?: boolean;
 }

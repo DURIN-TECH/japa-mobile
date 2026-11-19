@@ -7,47 +7,45 @@
 // numbered steps (official portal + document upload) and per-requirement cards
 // with individual DocRows.
 //
-// TWO MODES (live-with-demo-fallback, see scratchpad/LIVE_PATTERN.md):
-//   • DEMO  — opened with a demo destination id (e.g. `ca`). Renders the original
-//             static checklist verbatim from `SS`/`DOC_STATUS`/`destById(SS.destId)`.
-//   • LIVE  — opened with a real backend application id (created by the destination
-//             detail's "Start application"). Drives the same hero + sheet layout
-//             from the backend: `useApplication` → `useVisaType` (requirements) →
-//             `useApplicationDocuments`, and wires real document upload.
+// LIVE ONLY (japa#145): opened with a real backend APPLICATION id (created by
+// the visa breakdown's "Start application", or from the case's next step).
+// The hero + sheet come from the backend: `useApplication` → `useVisaType`
+// (requirements) → `useApplicationDocuments`, with real document upload.
+// States (#145 + #174 design spec, self-service rows):
+//   • loading      → coral spinner
+//   • not found    → CenteredState "We couldn’t find this application" → Tracker
+//     (404 OR 403: an unknown id, a visa id, someone else's application; the
+//     same screen so it never confirms another account's application exists)
+//   • load error   → CenteredState with InlineError + Outline "Try again"
+//   • Step 1       → official link only when the visa has an `applicationUrl`;
+//     otherwise a plain "we don't have the link yet" body (never a guessed host)
+//   • Step 2       → no requirements and no checklist → ONE empty state with an
+//     "Upload a document" button; a failed upload → InlineError + Try again
+// Nothing here is ever drawn from a fixture (no IRCC, no Canada, no demo rows).
 //
 // Every measurement below is quoted from the prototype (flows.jsx). All hooks are
 // called unconditionally before any early return; the mode branch happens in the
 // render only.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import Animated, {
+  useAnimatedRef,
   useAnimatedScrollHandler,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
-import {
-  SS,
-  DOC_STATUS,
-  destById,
-  type SSDoc,
-  type SSReq,
-} from '@/components/explorer/data';
 import { countryArt } from '@/components/explorer/liveExplore';
 import { Ic } from '@/components/explorer/icons';
 import {
@@ -59,6 +57,15 @@ import {
 } from '@/components/explorer/primitives';
 // Live data hooks + document upload helper.
 import { useApplication } from '@/hooks/useApplications';
+import { isNotFoundError } from '@/hooks/queryErrors';
+import { CenteredState } from '@/components/explorer/CenteredState';
+import {
+  OutlineButton,
+  StateEmpty,
+  StateError,
+  StateLoading,
+  loadErrorCopy,
+} from '@/components/explorer/states';
 import { useVisaType } from '@/hooks/useVisaTypes';
 import {
   useApplicationDocuments,
@@ -66,229 +73,103 @@ import {
   useCreateDocument,
   uploadToStorage,
 } from '@/hooks/useDocuments';
-import { Document, DocumentStatus } from '@/types/documents.type';
+import {
+  Document,
+  DocumentStatus,
+  documentDisplayName,
+} from '@/types/documents.type';
 import { VisaRequirement } from '@/types/visas.type';
+// Visitor intake (#113): Step 1 card driven by the approved rubric's questions.
+import { intakeKey, useIntake } from '@/hooks/useIntake';
+import { openRequired } from '@/components/explorer/intake/intakeLogic';
+import {
+  IntakeStep,
+  intakeOccupiesStep,
+} from '@/components/explorer/intake/IntakeStep';
+// Personal document checklist (#114): built server-side from the verified record.
+import { useChecklist } from '@/hooks/useChecklist';
+import {
+  DocumentChecklist,
+  isChecklistDocument,
+} from '@/components/explorer/DocumentChecklist';
+import type { ChecklistItem } from '@/types/checklist.type';
+import { useAnswerDraftsStore } from '@/stores/answerDrafts.store';
+import { useAuthStore } from '@/stores/auth.store';
+// Information items (#187): typed answers, saved on the server.
+import { useAnswers, useSaveAnswer } from '@/hooks/useAnswers';
+import type { AnswerValue } from '@/components/explorer/answerTypes';
+import {
+  computeProgress,
+  isInformationItem,
+} from '@/components/explorer/checklistLogic';
+// Per-upload document check (#115).
+import {
+  useDocumentChecks,
+  useRetryDocumentCheck,
+} from '@/hooks/useDocumentChecks';
+// Review (issue #43): statement + review cards and the wired submit CTA.
+import {
+  StatementCard,
+  ReviewCard,
+  deriveReviewState,
+  deriveReviewCta,
+} from '@/components/explorer/review/SelfServiceCards';
+import { InlineError } from '@/components/explorer/AccountForm';
+import {
+  assessmentKey,
+  lastReviewFinishedAt,
+  useAssessment,
+  useStartReview,
+} from '@/hooks/useCaseOfficer';
+// japa#309: the "enough to review" rule and its "still needed" lines.
+import {
+  reviewContent,
+  reviewGapLines,
+  reviewableDocumentCount,
+  NEEDS_CONTENT_GENERIC,
+  // japa#310: a failure a retry cannot fix points at support instead.
+  failedCanRetry,
+  SUPPORT_MAILTO,
+  type ReviewContent,
+  type ReviewGap,
+  type ReviewGaps,
+} from '@/components/explorer/review/reviewCopy';
+import { PLANS_ROUTE } from '@/components/explorer/UpgradePrompt';
+import {
+  SUBMITTED_STATUSES,
+  isStatementLocked,
+  useStatement,
+} from '@/hooks/useStatement';
+// japa#312: step numbering and the "Where you apply" card copy.
+import {
+  OFFICIAL_SITE_HEADING,
+  OFFICIAL_SITE_TITLE,
+  officialSiteBody,
+  selfServiceSteps,
+  stepNumberOf,
+  type SelfServiceStep,
+} from '@/components/explorer/selfServiceSteps';
+
+// japa#310: the size and type the backend accepts, checked before uploading.
+import {
+  pickedContentType,
+  pickedFileProblem,
+  uploadFailureCopy,
+} from '@/components/explorer/uploadLimits';
+
+// japa#174: requirement key for an upload tied to no requirement or checklist
+// item (the "upload what you already have" buttons). The backend only needs a
+// requirementId to be present (it does not check it against the visa), and the
+// screen's "Other documents" card shows every document whose requirementId is
+// not a listed requirement and not a checklist item, so these land there.
+const GENERAL_REQUIREMENT_ID = 'general';
+
+// japa#174: the upload-failure lines (they replace the old Alert) live in
+// uploadLimits.ts since japa#310, next to the size and type checks.
 
 // Hero height for this flow — shorter than the destination detail (376) so the
 // checklist content dominates the screen (prototype: `const HERO = 210`).
 const HERO = 210;
-
-// ── DocRow — a single uploadable document inside a requirement card ───────────
-// Prototype: 34px status chip, 14/600 name, 12 file-or-label, missing→coral
-// Upload button (radius 12) else a status Pill, with a rejected reason band.
-function DocRow({ doc, first }: { doc: SSDoc; first: boolean }) {
-  const s = DOC_STATUS[doc.status];
-  const missing = doc.status === 'missing';
-  const rejected = doc.status === 'rejected';
-  // Prototype colours: missing rows fade the chip icon to #A39FB0.
-  const iconColor = missing ? '#A39FB0' : s.fg;
-
-  return (
-    <View
-      style={{ borderTopWidth: first ? 0 : 1, borderTopColor: EX.color.line06 }}
-    >
-      {/* Main row: status icon · name/file · action (Upload button or status Pill) */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12,
-          paddingVertical: 13,
-        }}
-      >
-        {/* Status icon chip — 34px, bg/fg from DOC_STATUS (missing uses 0.05 tint) */}
-        <View
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 10,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: missing ? 'rgba(23,19,38,0.05)' : s.bg,
-          }}
-        >
-          {/* verified → check2 (19) · rejected → x (17) · else → docs (17) */}
-          {doc.status === 'verified' ? (
-            <Ic.check2 size={19} color={iconColor} strokeWidth={1.8} />
-          ) : rejected ? (
-            <Ic.x size={17} color={iconColor} strokeWidth={1.8} />
-          ) : (
-            <Ic.docs size={17} color={iconColor} strokeWidth={1.8} />
-          )}
-        </View>
-
-        {/* Name + filename (or the status label when there is no file) */}
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text
-            style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}
-            numberOfLines={1}
-          >
-            {doc.name}
-          </Text>
-          <Text
-            style={{
-              fontSize: 12,
-              fontWeight: '600',
-              color: missing ? EX.color.muted : s.fg,
-              marginTop: 1,
-            }}
-            numberOfLines={1}
-          >
-            {doc.file ?? s.label}
-          </Text>
-        </View>
-
-        {/* Missing → coral Upload button (radius 12); otherwise a status Pill */}
-        {missing ? (
-          <Pressable
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              backgroundColor: EX.color.primary,
-              borderRadius: 12,
-              paddingHorizontal: 14,
-              paddingVertical: 9,
-            }}
-          >
-            <Ic.upload size={15} color="#fff" strokeWidth={2} />
-            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>
-              Upload
-            </Text>
-          </Pressable>
-        ) : (
-          <Pill label={s.label} fg={s.fg} bg={s.bg} small />
-        )}
-      </View>
-
-      {/* Rejected → indented red reason band + plain-text Re-upload link */}
-      {doc.reason ? (
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 7,
-            marginTop: 8,
-            marginLeft: 46,
-            paddingVertical: 8,
-            paddingHorizontal: 11,
-            borderRadius: 10,
-            backgroundColor: '#FBE3E1',
-          }}
-        >
-          <Ic.help size={14} color="#C0453C" strokeWidth={1.8} />
-          <Text
-            style={{
-              flex: 1,
-              fontSize: 12,
-              lineHeight: 16.5,
-              color: '#9E3630',
-              fontWeight: '600',
-            }}
-          >
-            {doc.reason}
-          </Text>
-          <Pressable hitSlop={6}>
-            <Text style={{ color: '#C0453C', fontSize: 12, fontWeight: '700' }}>
-              Re-upload
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-// ── Requirement card — a grouped set of documents ────────────────────────────
-// Prototype: radius 20, padding 15/16, 22px done-check circle, 15.5/700 title,
-// clock+est 12, full-width description, then the DocRow list.
-function RequirementCard({ req }: { req: SSReq }) {
-  // A requirement is "done" only when every document within it is verified or
-  // uploaded (prototype: `r.docs.every(x => verified || uploaded)`).
-  const done = req.docs.every(
-    (d) => d.status === 'verified' || d.status === 'uploaded',
-  );
-
-  return (
-    <View
-      style={{
-        backgroundColor: '#fff',
-        borderRadius: EX.radius.card, // 20
-        borderWidth: 1,
-        borderColor: 'rgba(23,19,38,0.07)',
-        paddingHorizontal: 16,
-        paddingVertical: 15,
-        marginBottom: 13,
-        shadowColor: '#171326',
-        shadowOpacity: 0.04,
-        shadowRadius: 2,
-        shadowOffset: { width: 0, height: 1 },
-        elevation: 1,
-      }}
-    >
-      {/* Header: done-check (22px) · title · est (clock) */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 11,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: done ? '#D6F2E2' : 'rgba(23,19,38,0.06)',
-          }}
-        >
-          {done ? (
-            <Ic.check size={12} color="#1E8E55" strokeWidth={3.4} />
-          ) : null}
-        </View>
-        <Text
-          style={{
-            flex: 1,
-            fontSize: 15.5,
-            fontWeight: '700',
-            color: EX.color.ink,
-          }}
-          numberOfLines={1}
-        >
-          {req.title}
-        </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Ic.clock size={13} color={EX.color.muted} strokeWidth={1.8} />
-          <Text
-            style={{ fontSize: 12, color: EX.color.muted, fontWeight: '600' }}
-          >
-            {req.est}
-          </Text>
-        </View>
-      </View>
-
-      {/* Description — full width (prototype has no left indent) */}
-      <Text
-        style={{
-          fontSize: 13,
-          lineHeight: 19,
-          color: EX.color.inkMuted,
-          marginTop: 8,
-          marginBottom: 2,
-        }}
-      >
-        {req.desc}
-      </Text>
-
-      {/* Documents */}
-      <View style={{ marginTop: 6 }}>
-        {req.docs.map((doc, i) => (
-          <DocRow key={doc.name} doc={doc} first={i === 0} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LIVE mode primitives (backend-driven).
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Map a backend Document status → a chip using the same palette as DOC_STATUS.
 // `kind` drives the row icon (verified→check2, rejected→x, else→docs).
@@ -323,7 +204,7 @@ function liveDocChip(status: DocumentStatus): {
         bg: '#FBE3E1',
       };
     default:
-      // pending_upload | uploading — grey, matches demo "missing" chip.
+      // pending_upload | uploading — grey "missing" chip.
       return {
         kind: 'pending',
         label: status === 'uploading' ? 'Uploading' : 'Pending',
@@ -333,7 +214,7 @@ function liveDocChip(status: DocumentStatus): {
   }
 }
 
-// ── LiveDocRow — a real backend Document rendered like the demo DocRow ────────
+// ── LiveDocRow — one real backend Document row ────────────────────────────────
 // Read-only row (upload happens at the requirement level): status chip + name +
 // status Pill, plus a red rejection-reason band when the doc was rejected.
 function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
@@ -376,7 +257,7 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
             style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}
             numberOfLines={1}
           >
-            {doc.fileName}
+            {documentDisplayName(doc)}
           </Text>
           <Text
             style={{
@@ -389,6 +270,21 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
           >
             {s.label}
           </Text>
+          {/* Provenance — the client must be able to tell a document their
+              agency filed for them from one they submitted themselves. */}
+          {doc.uploadedOnBehalf ? (
+            <Text
+              style={{
+                fontSize: 11.5,
+                fontWeight: '600',
+                color: EX.color.muted,
+                marginTop: 2,
+              }}
+              numberOfLines={1}
+            >
+              Added by {doc.uploadedByName || 'your agency'}
+            </Text>
+          ) : null}
         </View>
 
         <Pill label={s.label} fg={s.fg} bg={s.bg} small />
@@ -427,8 +323,77 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
   );
 }
 
+// ── LiveOtherDocsCard — documents not tied to any listed requirement ──────────
+// Same card chrome as LiveRequirementCard, minus the upload button (there's no
+// requirement to upload against). Read-only by design: these documents were
+// either filed by the agency or already answered a specific ask.
+function LiveOtherDocsCard({ docs }: { docs: Document[] }) {
+  return (
+    <View
+      style={{
+        backgroundColor: '#fff',
+        borderRadius: EX.radius.card, // 20
+        borderWidth: 1,
+        borderColor: 'rgba(23,19,38,0.07)',
+        paddingHorizontal: 16,
+        paddingVertical: 15,
+        marginBottom: 13,
+        shadowColor: '#171326',
+        shadowOpacity: 0.04,
+        shadowRadius: 2,
+        shadowOffset: { width: 0, height: 1 },
+        elevation: 1,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(23,19,38,0.06)',
+          }}
+        >
+          <Ic.docs size={12} color={EX.color.muted} strokeWidth={2} />
+        </View>
+        <Text
+          style={{
+            flex: 1,
+            fontSize: 15.5,
+            fontWeight: '700',
+            color: EX.color.ink,
+          }}
+          numberOfLines={1}
+        >
+          Other documents
+        </Text>
+      </View>
+
+      <Text
+        style={{
+          fontSize: 13,
+          lineHeight: 19,
+          color: EX.color.inkMuted,
+          marginTop: 8,
+          marginBottom: 2,
+        }}
+      >
+        Also on file for this application.
+      </Text>
+
+      <View style={{ marginTop: 6 }}>
+        {docs.map((doc, i) => (
+          <LiveDocRow key={doc.id} doc={doc} first={i === 0} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ── LiveRequirementCard — a backend VisaRequirement + its Documents ───────────
-// Same card chrome as the demo RequirementCard, but the DocRows come from the
+// Requirement card chrome; the DocRows come from the
 // live documents filtered to this requirement, and it exposes a coral Upload
 // button (per-requirement) with an in-flight spinner state.
 function LiveRequirementCard({
@@ -436,14 +401,19 @@ function LiveRequirementCard({
   docs,
   uploading,
   onUpload,
+  uploadError,
+  onRetryUpload,
 }: {
   req: VisaRequirement;
   docs: Document[];
   uploading: boolean;
   onUpload: (requirementId: string) => void;
+  /** japa#174: message of the last failed upload made from THIS card. */
+  uploadError?: string | null;
+  onRetryUpload?: () => void;
 }) {
   // Done when every uploaded doc has reached verified / in-review (and at least
-  // one exists) — mirrors the demo "every verified || uploaded" heuristic.
+  // one exists) — "every verified || uploaded" heuristic.
   const done =
     docs.length > 0 &&
     docs.every(
@@ -533,8 +503,18 @@ function LiveRequirementCard({
         </View>
       ) : null}
 
+      {/* Failed upload from this card: InlineError + outline Try again (#174) */}
+      {uploadError ? (
+        <View style={{ marginTop: 12, gap: 8 }}>
+          <InlineError message={uploadError} />
+          {onRetryUpload ? (
+            <OutlineButton label="Try again" onPress={onRetryUpload} />
+          ) : null}
+        </View>
+      ) : null}
+
       {/* Coral Upload button (per-requirement) with in-flight spinner */}
-      <Pressable
+      <PressableStatic
         onPress={() => onUpload(req.id)}
         disabled={uploading}
         style={{
@@ -557,33 +537,258 @@ function LiveRequirementCard({
         <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>
           {uploading ? 'Uploading…' : 'Upload document'}
         </Text>
-      </Pressable>
+      </PressableStatic>
     </View>
   );
 }
+
+// ── SelfServiceHero — the fixed, parallaxing photo behind the sheet ───────────
+// japa#174: lives in its own memoized component that owns its animated style
+// and only receives the scroll shared value. The screen re-renders often
+// (review / document-check polling, focus refetches) and a long application
+// re-renders most; before, every render rebuilt the hero's animated style
+// array next to the screen's scroll handler and the parallax stopped tracking
+// on long applications. Memoized, the hero never re-renders unless its own
+// props change, so its animated style is created once and stays attached.
+const SelfServiceHero = React.memo(function SelfServiceHero({
+  scrollY,
+  img,
+  tone,
+  flag,
+  country,
+  refCode,
+  visa,
+}: {
+  scrollY: SharedValue<number>;
+  img: string;
+  tone: string;
+  flag: string;
+  country: string;
+  refCode: string;
+  visa: string;
+}) {
+  // The prototype translated the hero at `py * -0.3` (no image zoom).
+  const heroStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: scrollY.value * -0.3 }],
+  }));
+  return (
+    <Animated.View
+      style={[
+        {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: HERO,
+          overflow: 'hidden',
+          backgroundColor: tone,
+        },
+        heroStyle,
+      ]}
+    >
+      <Image
+        source={{ uri: img }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+        }}
+        contentFit="cover"
+        transition={200}
+      />
+      {/* Scrim — prototype: .82 → .2 @55% → .34, bottom→top */}
+      <LinearGradient
+        colors={[
+          'rgba(12,10,8,0.82)',
+          'rgba(12,10,8,0.2)',
+          'rgba(12,10,8,0.34)',
+        ]}
+        locations={[0, 0.55, 1]}
+        start={{ x: 0.5, y: 1 }}
+        end={{ x: 0.5, y: 0 }}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+        }}
+      />
+
+      {/* Bottom hero content: glass "Self-service" badge · flag+country·ref · visa */}
+      <View style={{ position: 'absolute', left: 22, right: 22, bottom: 42 }}>
+        <BlurView
+          intensity={20}
+          tint="light"
+          style={{
+            alignSelf: 'flex-start',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            borderRadius: 999,
+            overflow: 'hidden',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.26)',
+            backgroundColor: 'rgba(255,255,255,0.16)',
+            paddingHorizontal: 11,
+            paddingVertical: 5,
+            marginBottom: 8,
+          }}
+        >
+          <Ic.docs size={13} color="#fff" strokeWidth={2} />
+          <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}>
+            Self-service
+          </Text>
+        </BlurView>
+
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 4,
+          }}
+        >
+          <Flag code={flag} size={18} radius={5} />
+          <Text
+            style={{
+              color: '#fff',
+              fontSize: 12.5,
+              fontWeight: '600',
+              opacity: 0.95,
+            }}
+          >
+            {country} · Ref {refCode}
+          </Text>
+        </View>
+        <Text
+          style={{
+            color: '#fff',
+            fontFamily: EX.font.display.semibold,
+            fontSize: 26,
+            lineHeight: 28,
+            letterSpacing: -0.26,
+            textShadowColor: 'rgba(0,0,0,0.3)',
+            textShadowOffset: { width: 0, height: 2 },
+            textShadowRadius: 14,
+          }}
+        >
+          {visa}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+});
 
 export default function SelfServiceView() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  // ── Mode resolution ─────────────────────────────────────────────────────────
-  // A demo destination id (e.g. `ca`) → static demo. Anything else → treat the id
-  // as a real backend application id and drive the screen live.
-  const demoDest = destById(id);
-  const wantLive = !demoDest;
-
-  // ── Live data hooks (ALL called unconditionally; disabled on the demo path) ──
-  const appQ = useApplication(wantLive ? (id ?? '') : '');
+  // ── Live data hooks (ALL called unconditionally) ────────────────────────────
+  // The route id must be a real application id; anything else is the backend
+  // 404 → not-found below.
+  const appQ = useApplication(id ?? '');
   const app = appQ.data;
   const vtQ = useVisaType(
-    wantLive && app ? app.countryCode : '',
-    wantLive && app ? app.visaTypeId : '',
+    app ? app.countryCode : '',
+    app ? app.visaTypeId : '',
   );
   const requirements = vtQ.data?.requirements ?? [];
   const visaType = vtQ.data?.visaType;
-  const docsQ = useApplicationDocuments(wantLive && app ? app.id : '');
+  const docsQ = useApplicationDocuments(app ? app.id : '');
   const docs = docsQ.data ?? [];
+
+  // Intake questions (#113). Enabled as soon as the application resolves and
+  // (there is no demo path since #145).
+  const intakeQ = useIntake(app ? app.id : '', !!app);
+  // When the route has an intake it is the first step and shifts the others
+  // down by one (see `stepNo` in the render below).
+  const intakeStep = intakeOccupiesStep(intakeQ);
+  // Checklist (#114): self-service applications only.
+  const checklistQ = useChecklist(
+    app ? app.id : '',
+    !!app && app.mode === 'self',
+  );
+  const checklist = checklistQ.data;
+  // Answers (#187): fetched only once the list has an information item. A failed
+  // fetch never hides document items (the checklist shows its own error).
+  const hasInfoItems = !!checklist?.items.some(isInformationItem);
+  const answersQ = useAnswers(
+    app ? app.id : '',
+    !!app && app.mode === 'self' && hasInfoItems,
+  );
+  const saveAnswerM = useSaveAnswer(app?.id ?? '');
+  // Set by a 409 ANSWERS_LOCKED from a save: answers are read-only from then on.
+  const [answersLockedByServer, setAnswersLockedByServer] = useState(false);
+  // Unsaved answers from an earlier visit (offline, app killed) come back from
+  // the encrypted vault when the screen opens.
+  // Drafts that can no longer be saved are dropped: all of this application's
+  // when it is read-only, and those of items no longer in the list (after
+  // "Refresh list"). The server answer is shown instead.
+  const draftsLocked =
+    answersLockedByServer || isStatementLocked(app?.status as string);
+  useEffect(() => {
+    if (!app) return;
+    if (draftsLocked) {
+      useAnswerDraftsStore.getState().pruneDrafts(app.id, []);
+      return;
+    }
+    if (checklist?.state !== 'ready') return; // not known yet: keep everything
+    useAnswerDraftsStore.getState().pruneDrafts(
+      app.id,
+      checklist.items
+        .filter(
+          (i) => isInformationItem(i) && i.current && i.status !== 'waived',
+        )
+        .map((i) => i.checklistItemId),
+    );
+  }, [app, checklist, draftsLocked]);
+  useEffect(() => {
+    const uid = useAuthStore.getState().user?.uid;
+    if (uid) void useAnswerDraftsStore.getState().loadFromVault(uid);
+  }, []);
+  // Per-upload document checks (#115): polled while one is running.
+  const checksQ = useDocumentChecks(
+    app ? app.id : '',
+    !!app && app.mode === 'self',
+  );
+  const retryCheck = useRetryDocumentCheck(app?.id ?? '');
+  // documentRequestId currently uploading from a checklist item.
+  const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
+  // ── Review + statement (issue #43). Disabled until the application loads. ──
+  // The review query polls itself while a job is queued/running and refetches on
+  // app foreground, so a run survives backgrounding. The tier it carries comes
+  // from the server response.
+  const reviewId = app ? app.id : '';
+  const reviewQ = useAssessment(reviewId);
+  const stmtQ = useStatement(reviewId);
+  const {
+    start: startReview,
+    isStarting,
+    notEnough: refusedGaps,
+  } = useStartReview(reviewId);
+  // Inline error for the sticky bar when a start fails (offline / generic).
+  const [ctaError, setCtaError] = useState<string | null>(null);
+  // japa#309: the inputs key (open questions | documents) at the moment the
+  // backend refused a start for missing content. While the screen's own inputs
+  // still match it, the backend's "still needed" lines win over the app's
+  // (its view was stale); as soon as either changes, the app's view is used.
+  const [refusedAtKey, setRefusedAtKey] = useState<string | null>(null);
+  // Scroll target for the "Upload at least one document." line.
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const [docsStepY, setDocsStepY] = useState(0);
+  const queryClient = useQueryClient();
+  // Returning to this screen (from the statement, the review or the plans screen)
+  // refetches the review: the inputs or the plan may have changed meanwhile.
+  useFocusEffect(
+    useCallback(() => {
+      if (reviewId)
+        queryClient.invalidateQueries({ queryKey: assessmentKey(reviewId) });
+    }, [queryClient, reviewId]),
+  );
 
   // Upload mutation hooks (createDoc invalidates the documents query → list refreshes).
   const getUploadUrl = useGetUploadUrl();
@@ -591,6 +796,18 @@ export default function SelfServiceView() {
 
   // Per-requirement upload-in-flight tracking (holds the requirement id).
   const [uploadingReqId, setUploadingReqId] = useState<string | null>(null);
+  // Uploading from the Step 2 empty state (no requirement, no checklist item).
+  const [uploadingGeneral, setUploadingGeneral] = useState(false);
+  // japa#174: the last failed upload, replacing the old Alert. `key` says which
+  // card it came from: a requirement id, a checklist request id, or 'general'.
+  const [uploadFailure, setUploadFailure] = useState<{
+    key: string;
+    requirementId: string | null;
+    documentRequestId?: string;
+    fileName: string;
+    /** japa#310: the line to show (generic, too large or wrong type). */
+    message: string;
+  } | null>(null);
 
   // Parallax driven by the sheet's scroll offset. The prototype translated the
   // hero at `py * -0.3` (no image zoom) — matched exactly here.
@@ -598,17 +815,29 @@ export default function SelfServiceView() {
   const onScroll = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
   });
-  const heroStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: scrollY.value * -0.3 }],
-  }));
 
   // ── Upload flow (pick → signed URL → PUT to storage → register doc) ──────────
   // `uploadToStorage(uploadUrl, { uri, type, name })` fetches the file as a blob
   // internally and PUTs it — so we hand it the picked file descriptor, not a
   // pre-fetched blob (matching the helper's actual signature in useDocuments.ts).
   const handleUpload = useCallback(
-    async (requirementId: string) => {
+    async (requirementId: string | null, documentRequestId?: string) => {
       if (!app) return;
+      // Where the upload comes from (for the in-card error) and the file's name
+      // once it is known.
+      const failureKey = documentRequestId ?? requirementId ?? 'general';
+      let fileName = 'your file';
+      let contentType = 'application/octet-stream';
+      // The in-card failure for this upload, with its line.
+      const fail = (message: string) =>
+        setUploadFailure({
+          key: failureKey,
+          requirementId,
+          documentRequestId,
+          fileName,
+          message,
+        });
+      setUploadFailure(null);
       try {
         const res = await DocumentPicker.getDocumentAsync({
           type: ['application/pdf', 'image/*'],
@@ -616,9 +845,27 @@ export default function SelfServiceView() {
         });
         if (res.canceled) return;
         const f = res.assets[0];
-        const contentType = f.mimeType ?? 'application/octet-stream';
+        fileName = f.name;
+        contentType = pickedContentType(f);
 
-        setUploadingReqId(requirementId);
+        // japa#310: refuse a file the backend would refuse (wrong type, or
+        // over 7 MB for an image / 10 MB otherwise) before asking for an
+        // upload URL, so nothing is uploaded. Shown in the card it came from.
+        // HEIC/HEIF photos are refused too: the review cannot read them.
+        const problem = pickedFileProblem({
+          size: f.size,
+          contentType,
+          name: f.name,
+        });
+        if (problem) {
+          fail(problem);
+          return;
+        }
+
+        // Checklist uploads track the request id; requirement uploads the req id.
+        if (documentRequestId) setUploadingItemId(documentRequestId);
+        else if (requirementId) setUploadingReqId(requirementId);
+        else setUploadingGeneral(true);
 
         // 1) Signed upload URL for this file.
         const up = await getUploadUrl.mutateAsync({
@@ -638,26 +885,41 @@ export default function SelfServiceView() {
         // 3) Register the document — invalidates the documents query on success.
         await createDoc.mutateAsync({
           applicationId: app.id,
-          requirementId,
+          // A checklist upload carries `documentRequestId`: the backend fulfils
+          // the request and derives the requirement id (`docreq:<id>`).
+          ...(documentRequestId
+            ? { documentRequestId }
+            : { requirementId: requirementId ?? GENERAL_REQUIREMENT_ID }),
           fileName: f.name,
           fileType: contentType,
           fileSizeMb: (f.size ?? 0) / 1e6,
           storagePath: up.storagePath,
         });
-      } catch (e) {
-        Alert.alert(
-          'Upload failed',
-          e instanceof Error ? e.message : 'Please try again.',
-        );
+        // A new document changes the review's inputs: refresh the review state
+        // so the card can show it as out of date.
+        queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
+      } catch (err) {
+        // Signed URL, storage PUT or register failed: show it in the card the
+        // upload came from (never an Alert), with a retry for the same target.
+        // japa#310: a 413 FILE_TOO_LARGE (the backend has already deleted the
+        // file) and a wrong-type 400 get their own line, not the generic one.
+        fail(uploadFailureCopy(err, fileName, contentType));
       } finally {
         setUploadingReqId(null);
+        setUploadingItemId(null);
+        setUploadingGeneral(false);
       }
     },
-    [app, getUploadUrl, createDoc],
+    [app, getUploadUrl, createDoc, queryClient],
   );
 
   // ── Live loading — initial application fetch in flight ───────────────────────
-  if (wantLive && appQ.isLoading) {
+  // Waits for the intake (#113), statement and review (#43) queries too (once the
+  // application is known) so step cards don't pop in and shift the numbering.
+  if (
+    appQ.isLoading ||
+    (!!app && (intakeQ.isLoading || reviewQ.isLoading || stmtQ.isLoading))
+  ) {
     return (
       <View
         style={{
@@ -672,6 +934,21 @@ export default function SelfServiceView() {
     );
   }
 
+  // ── Load failed (not a 404) with nothing cached → error + retry ────────────
+  if (appQ.isError && !app && !isNotFoundError(appQ.error)) {
+    return (
+      <CenteredState
+        icon={Ic.docs}
+        title="We couldn’t load your application"
+        errorMessage={loadErrorCopy('your application')}
+        onRetry={() => appQ.refetch()}
+        retrying={appQ.isRefetching}
+        actionLabel="Back to your journey"
+        onAction={() => router.replace('/(tabs)/tracker')}
+      />
+    );
+  }
+
   // ── LIVE VIEW — real application resolved ────────────────────────────────────
   if (app) {
     const art = countryArt(app.countryCode); // { city, img, tone }
@@ -682,133 +959,230 @@ export default function SelfServiceView() {
 
     // Progress: backend may send a fraction (0–1) or a percentage (0–100).
     const frac = app.progress > 1 ? app.progress / 100 : app.progress;
-    const livePct = Math.round((frac || 0) * 100);
+    // #187: with typed details in the list, the card counts from the checklist
+    // (both kinds, required items only in the bar) once the answers have loaded.
+    // Until then, or if they failed, it keeps the backend values: it never shows
+    // a count it can't back up.
+    const checklistProgress =
+      app.mode === 'self' &&
+      checklist?.state === 'ready' &&
+      hasInfoItems &&
+      answersQ.isSuccess
+        ? computeProgress(checklist, docs, answersQ.data ?? {})
+        : null;
+    const shownFrac = checklistProgress
+      ? checklistProgress.fraction
+      : frac || 0;
+    const livePct = Math.round(shownFrac * 100);
+    // Read-only once under review or later (same window as the statement), or
+    // after the server said so.
+    const answersLocked =
+      answersLockedByServer || isStatementLocked(app.status as string);
 
     // Requirements ordered by their orderIndex (backend sort key).
     const orderedReqs = [...requirements].sort(
       (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0),
     );
 
+    // Documents that belong to no listed requirement.
+    //
+    // WHY THIS EXISTS: the requirement cards below render
+    // `docs.filter(d => d.requirementId === req.id)`, so anything whose
+    // requirementId isn't a real requirement id was silently dropped from the
+    // screen — the client simply never saw it. That covers documents an agency
+    // filed on the client's behalf and uploads answering an ad-hoc agent ask
+    // (`docreq:<id>`). Collecting the leftovers guarantees every document on the
+    // application is visible somewhere.
+    const reqIds = new Set(orderedReqs.map((r) => r.id));
+    // A document uploaded against a checklist item is shown in the checklist,
+    // so it is left out here: nothing is listed twice (#114).
+    const otherDocs = docs.filter(
+      (d) => !reqIds.has(d.requirementId) && !isChecklistDocument(d, checklist),
+    );
+    // With a checklist on screen, requirement cards that hold no document yet
+    // are hidden (the checklist already asks for the documents); cards with
+    // documents stay, so nothing already uploaded disappears.
+    const hasChecklist = !!checklist && checklist.items.length > 0;
+    const shownReqs = hasChecklist
+      ? orderedReqs.filter((r) => docs.some((d) => d.requirementId === r.id))
+      : orderedReqs;
+
+    // ── Step 2 states (japa#174) ─────────────────────────────────────────────
+    // Requirements (or documents) still loading / failed with nothing cached.
+    const reqsLoading =
+      (vtQ.isLoading && !vtQ.data) || (docsQ.isLoading && !docsQ.data);
+    const reqsError =
+      (vtQ.isError && !vtQ.data) || (docsQ.isError && !docsQ.data);
+    // The checklist has settled (not loading, not failed) for self-service.
+    const checklistSettled = !checklistQ.isLoading && !checklistQ.isError;
+    // Waiting on the visit details: the checklist keeps its own prompt.
+    const intakeWaiting =
+      orderedReqs.length === 0 && checklist?.state === 'intake_needed';
+    // Nothing published at all: no requirements and no personal checklist items.
+    const noRequirements =
+      orderedReqs.length === 0 &&
+      !hasChecklist &&
+      !intakeWaiting &&
+      (app.mode !== 'self' || checklistSettled);
+
+    // japa#174: when the visa lists requirements but the personal checklist is
+    // empty (e.g. "There is no document list for this visa yet."), showing that
+    // line above the requirement cards contradicts them. Hide the checklist
+    // section then; keep it while loading / failed / waiting on intake / filled.
+    const showChecklist =
+      checklistQ.isLoading ||
+      checklistQ.isError ||
+      hasChecklist ||
+      checklist?.state === 'intake_needed' ||
+      orderedReqs.length === 0;
+
+    // ── Review state (issue #43) ─────────────────────────────────────────────
+    const submitted = SUBMITTED_STATUSES.includes(app.status as string);
+    // japa#309: "enough to review", worked out from what the screen has loaded:
+    // the intake's open required questions (a route with no intake skips it)
+    // and the uploaded documents, not counting the refusal letter. A part that
+    // failed to load never blocks (the backend decides, see `refusedGaps`).
+    const intakeOpen: number | 'none' | 'unknown' | 'loading' =
+      intakeQ.isLoading
+        ? 'loading'
+        : intakeQ.isError || !intakeQ.data
+          ? 'unknown'
+          : !intakeQ.data.available
+            ? 'none'
+            : // The server's own count when it sends one (the rule the backend
+              // gates on), else the same rule worked out in the app.
+              Array.isArray(intakeQ.data.openRequiredIds)
+              ? intakeQ.data.openRequiredIds.length
+              : openRequired(intakeQ.data.questions, intakeQ.data.answers)
+                  .length;
+    const docCount: number | 'unknown' | 'loading' =
+      docsQ.isLoading && !docsQ.data
+        ? 'loading'
+        : docsQ.isError && !docsQ.data
+          ? 'unknown'
+          : reviewableDocumentCount(docs);
+    const contentKey = `${intakeOpen}|${docCount}`;
+    const localContent = reviewContent({
+      intakeOpen,
+      // A read-only intake (past the editable statuses) never blocks.
+      intakeEditable: intakeQ.data?.editable !== false,
+      documents: docCount,
+    });
+    // The backend's answer wins only while the inputs are what they were then.
+    const serverGaps =
+      refusedGaps && refusedAtKey === contentKey ? refusedGaps : null;
+    const content: ReviewContent = serverGaps
+      ? { status: 'missing', gaps: serverGaps }
+      : localContent;
+    const contentGaps: ReviewGaps | null =
+      content.status === 'missing' ? content.gaps : null;
+    // View only once submitted: the content check is ignored there (see
+    // `deriveReviewState`), so the card is as it was before japa#309.
+    const reviewState = deriveReviewState(reviewQ.data, reviewQ.isError, {
+      check: content,
+      submitted,
+    });
+    // japa#310: a failure a retry cannot fix (too many documents, too large)
+    // offers "Contact support" instead of "Try again".
+    const reviewCta = deriveReviewCta(
+      reviewState,
+      submitted,
+      reviewQ.data?.kind === 'review'
+        ? failedCanRetry(reviewQ.data.view.meta)
+        : true,
+    );
+    // Step numbers are computed from the steps that are present: the intake
+    // (#113) only exists for routes with questions, and it shifts the rest. The
+    // statement and review steps (#43) are always there on this live path.
+    // japa#312: the official-site card is not a step ("Where you apply").
+    const presentSteps = selfServiceSteps(intakeStep);
+    const stepNo = (key: SelfServiceStep) => stepNumberOf(presentSteps, key);
+    // japa#309: a refusal for missing content from a state the card keeps
+    // (e.g. "Run review again" after a document was removed), or one whose
+    // body named nothing usable, is said above the sticky button. It is never
+    // a generic error and never the upgrade screen.
+    const refusedNote =
+      refusedAtKey === contentKey && reviewState !== 'needs_content'
+        ? serverGaps
+          ? reviewGapLines(serverGaps, stepNo('intake'))
+              .map((l) => l.text)
+              .join(' ')
+          : NEEDS_CONTENT_GENERIC
+        : null;
+    // A refetch failed but a cached review is on screen → offline note.
+    const offlineCached = reviewQ.isError && !!reviewQ.data;
+    const openReview = () => router.push(`/self-service/${app.id}/review`);
+    // A "still needed" line opens its step: the intake screen, or the
+    // documents step further up this screen.
+    const openGap = (gap: ReviewGap) => {
+      if (gap === 'intake')
+        return router.push(`/self-service/${app.id}/intake`);
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, HERO - 26 + docsStepY - 12),
+        animated: true,
+      });
+    };
+    const openStatement = () =>
+      router.push(`/self-service/${app.id}/statement`);
+
+    // Sticky CTA tap. Disabled while a start is in flight (no double jobs).
+    const onReviewCta = async () => {
+      if (!reviewCta || reviewCta.disabled || isStarting) return;
+      setCtaError(null);
+      setRefusedAtKey(null);
+      if (reviewCta.action === 'open') return openReview();
+      if (reviewCta.action === 'upgrade') return router.push(PLANS_ROUTE);
+      if (reviewCta.action === 'contact') {
+        Linking.openURL(SUPPORT_MAILTO).catch(() => undefined);
+        return;
+      }
+      const out = await startReview(
+        reviewCta.action === 'retry' ? 'retry' : 'cta',
+      );
+      if (out === 'started') return openReview();
+      if (out === 'not_enough') {
+        // japa#309: the app's view was stale. Remember the inputs it was based
+        // on (the card then shows the backend's lines), and refresh them.
+        setRefusedAtKey(contentKey);
+        queryClient.invalidateQueries({ queryKey: intakeKey(app.id) });
+        queryClient.invalidateQueries({ queryKey: ['documents', app.id] });
+        return;
+      }
+      if (out === 'offline')
+        setCtaError(
+          'You’re offline, so we couldn’t start your review. Reconnect and try again.',
+        );
+      else if (out === 'error')
+        setCtaError('We couldn’t start your review. Try again in a moment.');
+      // 'upgrade' (402) is not an error: the refetch shows the free out-of-date
+      // state. 'no_rubric': the refetch shows the no-rubric card.
+    };
+
     // Official application URL → button host label (strip protocol + path).
-    const officialUrl = visaType?.applicationUrl;
+    // japa#174: no URL → no button and no guessed host (never a search link).
+    const officialUrl = visaType?.applicationUrl?.trim() || undefined;
     const officialHost = officialUrl
       ? officialUrl.replace(/^https?:\/\//, '').split('/')[0]
       : '';
 
     return (
-      <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
-        {/* HERO — fixed behind, parallaxes as the sheet scrolls over it */}
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: HERO,
-              overflow: 'hidden',
-              backgroundColor: art.tone,
-            },
-            heroStyle,
-          ]}
-        >
-          <Image
-            source={{ uri: art.img }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-            }}
-            contentFit="cover"
-            transition={200}
-          />
-          {/* Scrim — prototype: .82 → .2 @55% → .34, bottom→top */}
-          <LinearGradient
-            colors={[
-              'rgba(12,10,8,0.82)',
-              'rgba(12,10,8,0.2)',
-              'rgba(12,10,8,0.34)',
-            ]}
-            locations={[0, 0.55, 1]}
-            start={{ x: 0.5, y: 1 }}
-            end={{ x: 0.5, y: 0 }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-            }}
-          />
-
-          {/* Bottom hero content: glass "Self-service" badge · flag+country·ref · visa */}
-          <View
-            style={{ position: 'absolute', left: 22, right: 22, bottom: 42 }}
-          >
-            <BlurView
-              intensity={20}
-              tint="light"
-              style={{
-                alignSelf: 'flex-start',
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                borderRadius: 999,
-                overflow: 'hidden',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.26)',
-                backgroundColor: 'rgba(255,255,255,0.16)',
-                paddingHorizontal: 11,
-                paddingVertical: 5,
-                marginBottom: 8,
-              }}
-            >
-              <Ic.docs size={13} color="#fff" strokeWidth={2} />
-              <Text
-                style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}
-              >
-                Self-service
-              </Text>
-            </BlurView>
-
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 4,
-              }}
-            >
-              <Flag code={flag} size={18} radius={5} />
-              <Text
-                style={{
-                  color: '#fff',
-                  fontSize: 12.5,
-                  fontWeight: '600',
-                  opacity: 0.95,
-                }}
-              >
-                {country} · Ref {ref}
-              </Text>
-            </View>
-            <Text
-              style={{
-                color: '#fff',
-                fontFamily: EX.font.display.semibold,
-                fontSize: 26,
-                lineHeight: 28,
-                letterSpacing: -0.26,
-                textShadowColor: 'rgba(0,0,0,0.3)',
-                textShadowOffset: { width: 0, height: 2 },
-                textShadowRadius: 14,
-              }}
-            >
-              {visa}
-            </Text>
-          </View>
-        </Animated.View>
+      // e2e ids (Maestro, japa#361): `screen.selfService` (the hub with an
+      // application loaded), `selfService.scroll`, `selfService.reviewCta`
+      // (the sticky review button — flows assert on it and NEVER tap it: it
+      // can start an AI review). No visual effect.
+      <View
+        testID="screen.selfService"
+        style={{ flex: 1, backgroundColor: EX.color.bg }}
+      >
+        <SelfServiceHero
+          scrollY={scrollY}
+          img={art.img}
+          tone={art.tone}
+          flag={flag}
+          country={country}
+          refCode={ref}
+          visa={visa}
+        />
 
         {/* Top glass back control (prototype top:54 → safe-area inset + 6) */}
         <View
@@ -824,6 +1198,8 @@ export default function SelfServiceView() {
 
         {/* Scrolling content sheet */}
         <Animated.ScrollView
+          testID="selfService.scroll"
+          ref={scrollRef}
           onScroll={onScroll}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
@@ -887,9 +1263,10 @@ export default function SelfServiceView() {
                   {livePct}%
                 </Text>
               </View>
-              <Progress value={frac || 0} height={7} />
+              <Progress value={shownFrac} height={7} />
 
-              {/* 3 counts with dividers: Uploaded · Verified (green) · Required */}
+              {/* Counts with dividers: Uploaded · Verified (green) · Answered (#187, only
+                  with typed details) · Required */}
               <View style={{ flexDirection: 'row', marginTop: 16 }}>
                 <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
                   <Text
@@ -900,7 +1277,9 @@ export default function SelfServiceView() {
                       letterSpacing: -0.2,
                     }}
                   >
-                    {app.documentsUploaded}
+                    {checklistProgress
+                      ? checklistProgress.uploaded
+                      : app.documentsUploaded}
                   </Text>
                   <Text
                     style={{
@@ -922,7 +1301,9 @@ export default function SelfServiceView() {
                       letterSpacing: -0.2,
                     }}
                   >
-                    {app.documentsVerified}
+                    {checklistProgress
+                      ? checklistProgress.verified
+                      : app.documentsVerified}
                   </Text>
                   <Text
                     style={{
@@ -934,6 +1315,34 @@ export default function SelfServiceView() {
                     Verified
                   </Text>
                 </View>
+                {checklistProgress?.hasInformation ? (
+                  <>
+                    <View
+                      style={{ width: 1, backgroundColor: EX.color.line08 }}
+                    />
+                    <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
+                      <Text
+                        style={{
+                          fontSize: 20,
+                          fontWeight: '700',
+                          color: EX.color.ink,
+                          letterSpacing: -0.2,
+                        }}
+                      >
+                        {checklistProgress.answered}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11.5,
+                          color: EX.color.muted,
+                          fontWeight: '500',
+                        }}
+                      >
+                        Answered
+                      </Text>
+                    </View>
+                  </>
+                ) : null}
                 <View style={{ width: 1, backgroundColor: EX.color.line08 }} />
                 <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
                   <Text
@@ -944,7 +1353,9 @@ export default function SelfServiceView() {
                       letterSpacing: -0.2,
                     }}
                   >
-                    {app.documentsRequired}
+                    {checklistProgress
+                      ? checklistProgress.required
+                      : app.documentsRequired}
                   </Text>
                   <Text
                     style={{
@@ -959,8 +1370,19 @@ export default function SelfServiceView() {
               </View>
             </View>
 
-            {/* ── Step 1 · Official application ───────────────────────────────── */}
-            <SectionTitle>Step 1 · Official application</SectionTitle>
+            {/* ── Intake summary card (#113), only when the route has an intake ──
+                It is the first step when present. Every step number below comes
+                from `stepNo`, so the numbering is right whichever steps exist. */}
+            <IntakeStep
+              query={intakeQ}
+              onOpen={() => router.push(`/self-service/${app.id}/intake`)}
+              lastReviewAt={lastReviewFinishedAt(reviewQ.data)}
+              stepNumber={stepNo('intake')}
+            />
+            {/* ── Where you apply (official site) ─────────────────────────────────
+                japa#312: not a numbered step. It stays here, but says the real
+                order: get ready in the app first, then apply on the official site. */}
+            <SectionTitle>{OFFICIAL_SITE_TITLE}</SectionTitle>
             <View
               style={{
                 backgroundColor: EX.color.cream, // #FFF6EC
@@ -993,7 +1415,7 @@ export default function SelfServiceView() {
                       color: '#7A5A2E',
                     }}
                   >
-                    Complete the online form
+                    {OFFICIAL_SITE_HEADING}
                   </Text>
                   <Text
                     style={{
@@ -1003,14 +1425,13 @@ export default function SelfServiceView() {
                       marginTop: 2,
                     }}
                   >
-                    Fill in your application on the official government portal
-                    before uploading documents here.
+                    {officialSiteBody(!!officialUrl, country)}
                   </Text>
                 </View>
               </View>
               {/* Only render the open-portal button when the backend supplies a URL */}
               {officialUrl ? (
-                <Pressable
+                <PressableStatic
                   onPress={() => Linking.openURL(officialUrl)}
                   style={{
                     flexDirection: 'row',
@@ -1029,450 +1450,364 @@ export default function SelfServiceView() {
                   >
                     Open {officialHost}
                   </Text>
-                </Pressable>
+                </PressableStatic>
               ) : null}
             </View>
 
-            {/* ── Step 2 · Upload documents ───────────────────────────────────── */}
-            <SectionTitle>Step 2 · Upload documents</SectionTitle>
-            {orderedReqs.map((req) => (
+            {/* ── Upload documents: the personal checklist (#114) with each item's
+                upload-check result (#115), then any leftover requirement cards.
+                japa#174: the empty / loading / error states of this step. ── */}
+            {/* japa#309: scroll target for "Upload at least one document." */}
+            <View
+              onLayout={(e) => setDocsStepY(e.nativeEvent.layout.y)}
+              pointerEvents="none"
+            />
+            <SectionTitle>
+              {`Step ${stepNo('documents')} · ${hasInfoItems ? 'Documents and details' : 'Upload documents'}`}
+            </SectionTitle>
+            {reqsLoading ? (
+              <StateLoading section />
+            ) : reqsError ? (
+              <StateError
+                section
+                message={loadErrorCopy('your checklist')}
+                onRetry={() => {
+                  vtQ.refetch();
+                  docsQ.refetch();
+                }}
+                retrying={vtQ.isRefetching || docsQ.isRefetching}
+              />
+            ) : noRequirements ? (
+              // ONE empty state (replaces both "Nothing to upload yet" and the
+              // checklist's own "no document list" line). Uploads still work.
+              <View
+                style={{
+                  backgroundColor: EX.color.cardWhite,
+                  borderRadius: EX.radius.card,
+                  borderWidth: 1,
+                  borderColor: EX.color.line06,
+                }}
+              >
+                <StateEmpty
+                  section
+                  icon={Ic.docs}
+                  title="No requirements published for this visa yet."
+                  body="You can still upload documents you already have."
+                />
+                <View
+                  style={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}
+                >
+                  {uploadFailure?.key === 'general' ? (
+                    <InlineError message={uploadFailure.message} />
+                  ) : null}
+                  {uploadingGeneral ? (
+                    <ActivityIndicator color={EX.color.primary} />
+                  ) : (
+                    <OutlineButton
+                      label={
+                        uploadFailure?.key === 'general'
+                          ? 'Try again'
+                          : 'Upload a document'
+                      }
+                      onPress={() => handleUpload(null)}
+                    />
+                  )}
+                </View>
+              </View>
+            ) : app.mode === 'self' && showChecklist ? (
+              <>
+                <DocumentChecklist
+                  checklist={checklist}
+                  loading={checklistQ.isLoading}
+                  error={checklistQ.isError}
+                  onRetry={() => checklistQ.refetch()}
+                  docs={docs}
+                  uploadingId={uploadingItemId}
+                  // A failed item upload shows inside that item's card (#174);
+                  // its button becomes Try again.
+                  uploadFailure={
+                    uploadFailure?.documentRequestId
+                      ? {
+                          documentRequestId: uploadFailure.documentRequestId,
+                          message: uploadFailure.message,
+                        }
+                      : null
+                  }
+                  // Before the visit questions are answered the list points at them.
+                  onOpenIntake={
+                    intakeStep
+                      ? () => router.push(`/self-service/${app.id}/intake`)
+                      : undefined
+                  }
+                  answersProps={{
+                    applicationId: app.id,
+                    countryCode: app.countryCode,
+                    answers: answersQ.data,
+                    answersLoading: answersQ.isLoading,
+                    answersError: answersQ.isError,
+                    onRetryAnswers: () => answersQ.refetch(),
+                    saveAnswer: (
+                      itemId: string,
+                      value: AnswerValue | '' | null,
+                    ) => saveAnswerM.mutateAsync({ itemId, value }),
+                    locked: answersLocked,
+                    onLocked: () => setAnswersLockedByServer(true),
+                    onSeePlans: () => router.push(PLANS_ROUTE),
+                    onRefreshList: () => {
+                      checklistQ.refetch();
+                      answersQ.refetch();
+                    },
+                  }}
+                  checksProps={{
+                    checks: checksQ.data,
+                    checksLoading: checksQ.isLoading,
+                    checksError: checksQ.isError,
+                    onReloadChecks: () => checksQ.refetch(),
+                    onRetryCheck: (documentId: string) =>
+                      retryCheck.mutate(documentId),
+                    retryingDocId: retryCheck.isPending
+                      ? (retryCheck.variables ?? null)
+                      : null,
+                  }}
+                  onUpload={(item: ChecklistItem) =>
+                    item.documentRequestId
+                      ? handleUpload(null, item.documentRequestId)
+                      : undefined
+                  }
+                />
+                {/* Waiting on the visit details with no requirements: uploading
+                    what you already have must still be possible. */}
+                {intakeWaiting ? (
+                  <View style={{ marginTop: 10, gap: 8 }}>
+                    {/* Error above the button; label becomes Try again (#174). */}
+                    {uploadFailure?.key === 'general' ? (
+                      <InlineError message={uploadFailure.message} />
+                    ) : null}
+                    {uploadingGeneral ? (
+                      <ActivityIndicator color={EX.color.primary} />
+                    ) : (
+                      <OutlineButton
+                        label={
+                          uploadFailure?.key === 'general'
+                            ? 'Try again'
+                            : 'Upload a document'
+                        }
+                        onPress={() => handleUpload(null)}
+                      />
+                    )}
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+            {shownReqs.map((req) => (
               <LiveRequirementCard
                 key={req.id}
                 req={req}
                 docs={docs.filter((d) => d.requirementId === req.id)}
                 uploading={uploadingReqId === req.id}
                 onUpload={handleUpload}
+                uploadError={
+                  uploadFailure?.key === req.id ? uploadFailure.message : null
+                }
+                onRetryUpload={() => handleUpload(req.id)}
               />
             ))}
+
+            {/* Documents on this application that map to no requirement —
+                typically ones the agency filed for the client, or uploads
+                answering an ad-hoc request. Without this they'd be invisible. */}
+            {otherDocs.length > 0 ? (
+              <LiveOtherDocsCard docs={otherDocs} />
+            ) : null}
+
+            {/* ── Your statement (issue #43) ──────────────────────────────────── */}
+            <SectionTitle>{`Step ${stepNo('statement')} · Your statement`}</SectionTitle>
+            <StatementCard
+              statement={stmtQ.data}
+              loadFailed={stmtQ.isError}
+              // The statement locks once the application is under review (server: 409).
+              readOnly={isStatementLocked(app.status as string)}
+              onOpen={openStatement}
+              onRetry={() => stmtQ.refetch()}
+            />
+
+            {/* ── Your review (issue #43; country context #116 shows on the review
+                screen it opens) ────────────────────────────────────────────── */}
+            <SectionTitle>{`Step ${stepNo('review')} · Your review`}</SectionTitle>
+            <ReviewCard
+              state={reviewState}
+              result={reviewQ.data}
+              offlineCached={offlineCached}
+              onSeeLast={openReview}
+              onRetryLoad={() => reviewQ.refetch()}
+              gaps={contentGaps}
+              intakeStep={stepNo('intake')}
+              onOpenGap={openGap}
+            />
+            {/* ── Ask about your review (issue #45) ─────────────────────────────
+                A clearly separated entry to the ask-anywhere chat. */}
+            <SectionTitle>Questions?</SectionTitle>
+            <PressableStatic
+              onPress={() => router.push(`/ai-chat/${app.id}`)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: '#fff',
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: EX.color.line06,
+                padding: 14,
+              }}
+            >
+              <Ic.msg size={20} color={EX.color.primary} strokeWidth={1.8} />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '700',
+                    color: EX.color.ink,
+                  }}
+                >
+                  Ask about your review
+                </Text>
+                <Text style={{ fontSize: 12.5, color: EX.color.muted }}>
+                  Get answers from your saved review.
+                </Text>
+              </View>
+              <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
+            </PressableStatic>
+
+            {/* ── Been refused before? (issue #122) ─────────────────────────────
+                Entry to the refusal-letter analysis. Opens the static route
+                `self-service/refusal-letter`, which uploads the letter and shows
+                the mapped reasons, the checklist and the disclosure notice. */}
+            <SectionTitle>Been refused before?</SectionTitle>
+            <PressableStatic
+              onPress={() =>
+                router.push({
+                  pathname: '/self-service/refusal-letter',
+                  params: { applicationId: app.id },
+                })
+              }
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: EX.color.cardWhite,
+                borderRadius: EX.radius.cardLg,
+                borderWidth: 1,
+                borderColor: EX.color.line06,
+                padding: 15,
+              }}
+            >
+              <Ic.docs size={22} color={EX.color.primary} strokeWidth={1.8} />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    color: EX.color.ink,
+                    fontSize: 15,
+                    fontWeight: '700',
+                  }}
+                >
+                  Refusal letter
+                </Text>
+                <Text
+                  style={{
+                    color: EX.color.inkMuted,
+                    fontSize: 13,
+                    lineHeight: 18,
+                    marginTop: 2,
+                  }}
+                >
+                  See what it says next to the published rule.
+                </Text>
+              </View>
+              <Ic.chevR size={18} color={EX.color.faint} strokeWidth={1.8} />
+            </PressableStatic>
           </View>
         </Animated.ScrollView>
 
         {/* ── Sticky dark CTA (prototype glass bar → BlurView) ─────────────────── */}
-        <BlurView
-          intensity={30}
-          tint="light"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            paddingTop: 15,
-            paddingHorizontal: 22,
-            paddingBottom: Math.max(insets.bottom, 16) + 6,
-            backgroundColor: EX.color.glassWarm,
-            borderTopWidth: 1,
-            borderTopColor: EX.color.line06,
-          }}
-        >
-          <Pressable
-            style={{
-              height: 54,
-              borderRadius: EX.radius.button, // 16
-              backgroundColor: EX.color.ink,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              shadowColor: '#171326',
-              shadowOpacity: 0.5,
-              shadowRadius: 24,
-              shadowOffset: { width: 0, height: 14 },
-              elevation: 8,
-            }}
-          >
-            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-              Submit application
-            </Text>
-            <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-          </Pressable>
-        </BlurView>
-      </View>
-    );
-  }
-
-  // ── DEMO VIEW (also the fallback for an unknown live id) ─────────────────────
-  // Renders the original static self-service checklist verbatim.
-  const d = destById(SS.destId);
-
-  // ── Progress counts, computed across every document in every requirement ────
-  // Prototype: uploaded = non-missing, verified = verified, required = total.
-  const allDocs = SS.requirements.flatMap((r) => r.docs);
-  const uploaded = allDocs.filter((doc) => doc.status !== 'missing').length;
-  const verified = allDocs.filter((doc) => doc.status === 'verified').length;
-  const required = allDocs.length;
-  const pct = Math.round(SS.progress * 100);
-
-  if (!d) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: EX.color.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ color: EX.color.muted }}>Application not found.</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
-      {/* HERO — fixed behind, parallaxes as the sheet scrolls over it */}
-      <Animated.View
-        style={[
-          {
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: HERO,
-            overflow: 'hidden',
-            backgroundColor: d.tone,
-          },
-          heroStyle,
-        ]}
-      >
-        <Image
-          source={{ uri: d.img }}
-          style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
-          contentFit="cover"
-          transition={200}
-        />
-        {/* Scrim — prototype: .82 → .2 @55% → .34, bottom→top */}
-        <LinearGradient
-          colors={[
-            'rgba(12,10,8,0.82)',
-            'rgba(12,10,8,0.2)',
-            'rgba(12,10,8,0.34)',
-          ]}
-          locations={[0, 0.55, 1]}
-          start={{ x: 0.5, y: 1 }}
-          end={{ x: 0.5, y: 0 }}
-          style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
-        />
-
-        {/* Bottom hero content: glass "Self-service" badge · flag+country·ref · visa */}
-        <View style={{ position: 'absolute', left: 22, right: 22, bottom: 42 }}>
+        {/* Wired to the review (issue #43). It starts a review and sends nothing
+            to anyone. Not rendered when there is no action (no approved rubric,
+            or a submitted application that was never reviewed). */}
+        {reviewCta ? (
           <BlurView
-            intensity={20}
+            intensity={30}
             tint="light"
             style={{
-              alignSelf: 'flex-start',
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              borderRadius: 999,
-              overflow: 'hidden',
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.26)',
-              backgroundColor: 'rgba(255,255,255,0.16)',
-              paddingHorizontal: 11,
-              paddingVertical: 5,
-              marginBottom: 8,
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              paddingTop: 15,
+              paddingHorizontal: 22,
+              paddingBottom: Math.max(insets.bottom, 16) + 6,
+              backgroundColor: EX.color.glassWarm,
+              borderTopWidth: 1,
+              borderTopColor: EX.color.line06,
             }}
           >
-            <Ic.docs size={13} color="#fff" strokeWidth={2} />
-            <Text style={{ color: '#fff', fontSize: 11.5, fontWeight: '700' }}>
-              Self-service
-            </Text>
-          </BlurView>
-
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: 4,
-            }}
-          >
-            <Flag code={d.flag} size={18} radius={5} />
-            <Text
-              style={{
-                color: '#fff',
-                fontSize: 12.5,
-                fontWeight: '600',
-                opacity: 0.95,
+            {ctaError || refusedNote ? (
+              <View style={{ marginBottom: 10 }}>
+                <InlineError message={(ctaError ?? refusedNote)!} />
+              </View>
+            ) : null}
+            <PressableStatic
+              testID="selfService.reviewCta"
+              onPress={onReviewCta}
+              disabled={reviewCta.disabled || isStarting}
+              accessibilityRole="button"
+              accessibilityLabel={isStarting ? 'Starting' : reviewCta.label}
+              accessibilityState={{
+                disabled: !!reviewCta.disabled || isStarting,
+                busy: isStarting || !!reviewCta.disabled,
               }}
-            >
-              {d.country} · Ref {SS.ref}
-            </Text>
-          </View>
-          <Text
-            style={{
-              color: '#fff',
-              fontFamily: EX.font.display.semibold,
-              fontSize: 26,
-              lineHeight: 28,
-              letterSpacing: -0.26,
-              textShadowColor: 'rgba(0,0,0,0.3)',
-              textShadowOffset: { width: 0, height: 2 },
-              textShadowRadius: 14,
-            }}
-          >
-            {d.visa}
-          </Text>
-        </View>
-      </Animated.View>
-
-      {/* Top glass back control (prototype top:54 → safe-area inset + 6) */}
-      <View
-        style={{
-          position: 'absolute',
-          top: insets.top + 6,
-          left: 18,
-          zIndex: 50,
-        }}
-      >
-        <GlassButton icon={Ic.chevL} onPress={() => router.back()} />
-      </View>
-
-      {/* Scrolling content sheet */}
-      <Animated.ScrollView
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Spacer revealing the hero (sheet overlaps ~26px) */}
-        <View style={{ height: HERO - 26 }} pointerEvents="none" />
-
-        <View
-          style={{
-            backgroundColor: EX.color.bg,
-            borderTopLeftRadius: EX.radius.sheet, // 28
-            borderTopRightRadius: EX.radius.sheet,
-            minHeight: 620,
-            paddingTop: 20,
-            paddingHorizontal: 22,
-            paddingBottom: EX.space.ctaClear, // 130
-            shadowColor: '#171326',
-            shadowOpacity: 0.26,
-            shadowRadius: 30,
-            shadowOffset: { width: 0, height: -8 },
-          }}
-        >
-          {/* ── Progress card (radius 22, padding 18) ───────────────────────── */}
-          <View
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: 22,
-              borderWidth: 1,
-              borderColor: 'rgba(23,19,38,0.07)',
-              padding: 18,
-              shadowColor: '#171326',
-              shadowOpacity: 0.04,
-              shadowRadius: 2,
-              shadowOffset: { width: 0, height: 1 },
-              elevation: 1,
-            }}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                marginBottom: 8,
-              }}
-            >
-              <Text
-                style={{ fontSize: 14, fontWeight: '700', color: EX.color.ink }}
-              >
-                Application progress
-              </Text>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '700',
-                  color: EX.color.primary,
-                }}
-              >
-                {pct}%
-              </Text>
-            </View>
-            <Progress value={SS.progress} height={7} />
-
-            {/* 3 counts with dividers: Uploaded · Verified (green) · Required */}
-            <View style={{ flexDirection: 'row', marginTop: 16 }}>
-              <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
-                <Text
-                  style={{
-                    fontSize: 20,
-                    fontWeight: '700',
-                    color: EX.color.ink,
-                    letterSpacing: -0.2,
-                  }}
-                >
-                  {uploaded}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 11.5,
-                    color: EX.color.muted,
-                    fontWeight: '500',
-                  }}
-                >
-                  Uploaded
-                </Text>
-              </View>
-              <View style={{ width: 1, backgroundColor: EX.color.line08 }} />
-              <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
-                <Text
-                  style={{
-                    fontSize: 20,
-                    fontWeight: '700',
-                    color: EX.color.success,
-                    letterSpacing: -0.2,
-                  }}
-                >
-                  {verified}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 11.5,
-                    color: EX.color.muted,
-                    fontWeight: '500',
-                  }}
-                >
-                  Verified
-                </Text>
-              </View>
-              <View style={{ width: 1, backgroundColor: EX.color.line08 }} />
-              <View style={{ flex: 1, alignItems: 'center', gap: 2 }}>
-                <Text
-                  style={{
-                    fontSize: 20,
-                    fontWeight: '700',
-                    color: EX.color.ink,
-                    letterSpacing: -0.2,
-                  }}
-                >
-                  {required}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 11.5,
-                    color: EX.color.muted,
-                    fontWeight: '500',
-                  }}
-                >
-                  Required
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* ── Step 1 · Official application ───────────────────────────────── */}
-          <SectionTitle>Step 1 · Official application</SectionTitle>
-          <View
-            style={{
-              backgroundColor: EX.color.cream, // #FFF6EC
-              borderRadius: EX.radius.card, // 20
-              borderWidth: 1,
-              borderColor: 'rgba(178,106,20,0.2)',
-              padding: 16,
-            }}
-          >
-            <View
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 13 }}
-            >
-              <View
-                style={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: 12,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: '#FCEAC8',
-                }}
-              >
-                <Ic.docs size={20} color={EX.color.amber} strokeWidth={1.8} />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text
-                  style={{ fontSize: 15, fontWeight: '700', color: '#7A5A2E' }}
-                >
-                  Complete the online form
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 13,
-                    lineHeight: 19,
-                    color: '#8A6A38',
-                    marginTop: 2,
-                  }}
-                >
-                  Fill in your application on the official government portal
-                  before uploading documents here.
-                </Text>
-              </View>
-            </View>
-            <Pressable
-              onPress={() => Linking.openURL(`https://${SS.officialUrl}`)}
-              style={{
+              style={({ pressed }) => ({
+                height: 54,
+                borderRadius: EX.radius.button, // 16
+                backgroundColor: EX.color.ink,
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 7,
-                backgroundColor: EX.color.amber, // #B26A14
-                borderRadius: 13,
-                height: 46,
-                marginTop: 14,
-              }}
+                gap: 8,
+                opacity:
+                  reviewCta.disabled || isStarting ? 0.6 : pressed ? 0.85 : 1,
+                shadowColor: '#171326',
+                shadowOpacity: 0.5,
+                shadowRadius: 24,
+                shadowOffset: { width: 0, height: 14 },
+                elevation: 8,
+              })}
             >
-              <Ic.arrowUR size={17} color="#fff" strokeWidth={2} />
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '700' }}>
-                Open {SS.officialUrl}
+              {isStarting || reviewCta.disabled ? (
+                <ActivityIndicator color="#fff" />
+              ) : null}
+              <Text
+                style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
+              >
+                {isStarting ? 'Starting…' : reviewCta.label}
               </Text>
-            </Pressable>
-          </View>
+              {reviewCta.withArrow && !isStarting ? (
+                <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
+              ) : null}
+            </PressableStatic>
+          </BlurView>
+        ) : null}
+      </View>
+    );
+  }
 
-          {/* ── Step 2 · Upload documents ───────────────────────────────────── */}
-          <SectionTitle>Step 2 · Upload documents</SectionTitle>
-          {SS.requirements.map((req) => (
-            <RequirementCard key={req.id} req={req} />
-          ))}
-        </View>
-      </Animated.ScrollView>
-
-      {/* ── Sticky dark CTA (prototype glass bar → BlurView) ─────────────────── */}
-      <BlurView
-        intensity={30}
-        tint="light"
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          paddingTop: 15,
-          paddingHorizontal: 22,
-          paddingBottom: Math.max(insets.bottom, 16) + 6,
-          backgroundColor: EX.color.glassWarm,
-          borderTopWidth: 1,
-          borderTopColor: EX.color.line06,
-        }}
-      >
-        <Pressable
-          style={{
-            height: 54,
-            borderRadius: EX.radius.button, // 16
-            backgroundColor: EX.color.ink,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            shadowColor: '#171326',
-            shadowOpacity: 0.5,
-            shadowRadius: 24,
-            shadowOffset: { width: 0, height: 14 },
-            elevation: 8,
-          }}
-        >
-          <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
-            Submit application
-          </Text>
-          <Ic.arrow size={18} color="#fff" strokeWidth={1.8} />
-        </Pressable>
-      </BlurView>
-    </View>
+  // ── Not found: unknown id, a non-application id, or another account's ──────
+  // japa#145/#174: 404 and 403 both land here; never the static demo checklist.
+  return (
+    <CenteredState
+      icon={Ic.docs}
+      title="We couldn’t find this application"
+      body="Check the link, or open it from your journey."
+      actionLabel="Back to your journey"
+      onAction={() => router.replace('/(tabs)/tracker')}
+    />
   );
 }

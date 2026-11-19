@@ -5,35 +5,23 @@
 // `Agency` shape. The backend model is deliberately lean — it has NO
 // city/cover/rating/reviewCount/successRate/badges/flag — so we synthesise the
 // visual fields here:
-//   • `cover`  → a deterministic Unsplash office/city photo chosen by an id hash
-//   • `tone`   → a deterministic dark backdrop tone chosen by the same hash
+//   • `cover`  → a deterministic office/city photo (`agencyCover`, assets module)
+//   • `tone`   → a deterministic dark backdrop tone (`agencyTone`, same module)
 //   • `flag`   → always 'ng' (the model carries no country; Nigeria market)
 // Agency-level rating/reviews/success are NOT on the model (all 0 here); the
 // detail screen computes them live from the agency's agents instead.
 //
-// Consultation fees are in kobo/cents on the backend (not needed by `Agency`).
+// Prices are dollars + the server's local quote (japa#183); the visa rows
+// below format them with `priceParts` (consultation fee not needed by `Agency`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Agency, IMG } from './data';
-import type { ApiAgency } from '@/hooks/useAgencies';
+import { priceInline, priceParts } from './content';
+import type { Agency } from '@/types/explorer.type';
+import { agencyCover, agencyTone } from '@/assets/countries';
+import type { ApiAgency, PublicVisaPrice } from '@/hooks/useAgencies';
 
-// Deterministic FNV-ish string hash → stable per-agency art selection.
-export function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
-}
-
-// Small pool of office / city cover images (Unsplash ids via `IMG`).
-const COVERS = [
-  IMG('1568515387631-8b650bbcdb90'), // modern office lobby
-  IMG('1542315192-1f61a1792f33'), // city skyline
-  IMG('1497366216548-37526070297c'), // open-plan office
-  IMG('1524758631624-e2822e304c36'), // meeting room
-];
-
-// Small pool of dark backdrop tones (matches the demo agencies' palette).
-const TONES = ['#1F3A44', '#2C3540', '#2A3A52', '#3A2E38'];
+// The cover photo + tone pools live in the assets module (japa#145):
+// `agencyCover(id)` / `agencyTone(id)` pick one deterministically by id.
 
 /**
  * Extract the founding year from a `PublicAgency.createdAt`, which may be an
@@ -51,7 +39,6 @@ function estYear(createdAt: ApiAgency['createdAt']): number {
 }
 
 export function mapAgency(p: ApiAgency): Agency {
-  const h = hash(p.id);
   return {
     id: p.id,
     name: p.name,
@@ -63,9 +50,158 @@ export function mapAgency(p: ApiAgency): Agency {
     rev: 0, // no agency-level review count
     succ: 0, // no agency-level success rate
     verified: !!p.verified,
-    cover: COVERS[h % COVERS.length],
-    tone: TONES[h % TONES.length],
+    cover: agencyCover(p.id),
+    tone: agencyTone(p.id),
     blurb: p.description ?? '',
     badges: p.verified ? ['Compliance verified'] : [],
+    // #144: the public page slug, when the browse endpoint sends it.
+    slug: p.slug || undefined,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agency visas — "Visas they handle" (japa#106).
+//
+// `visaPrices[]` (see `PublicVisaPrice` in useAgencies.ts) → display rows for
+// the agency screen. Rules from the #106 design spec:
+//   • price (japa#183) is `priceLocal` + `priceUsd`: "₦12,500 · about $9"
+//     (dollars only when the server has no rate); `priceUsd` null →
+//     "Contact for pricing" with no caption;
+//   • sub line "{country name} · {processingTime}" (just the country when
+//     there's no processing time);
+//   • agency-only visas (visibility "agency") get the "Only with this
+//     agency" chip and are NOT tappable: the single-visa endpoints 404 for
+//     anyone without a case at that agency (#102). Global ones (including an
+//     agency's own visa made global) push /visa/[id].
+// Order is kept as the backend returns it (own visas first).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Chip copy on agency-only visas. */
+export const AGENCY_ONLY_CHIP = 'Only with this agency';
+
+/** One row of the agency screen's visas list. */
+export interface AgencyVisaRow {
+  key: string;
+  visaTypeId: string;
+  /** Upper-case ISO2 code (route param for /visa/[id]). */
+  countryCode: string;
+  /** Lower-case ISO2 for `Flag`. */
+  flag: string;
+  name: string;
+  /** "United Kingdom · 3 to 8 weeks" or "United Kingdom". */
+  subLine: string;
+  /** "₦12,500 · about $9", "$9.00" (no local rate) or "Contact for pricing". */
+  priceLabel: string;
+  /** "Service fee" under a price; null when there's no price. */
+  priceCaption: string | null;
+  /** Shows the AGENCY_ONLY_CHIP. */
+  isAgencyOnly: boolean;
+  /** Global visas open the visa breakdown; agency-only rows don't. */
+  tappable: boolean;
+}
+
+/**
+ * Defensive read of `visaPrices`: a missing / non-array field is [], rows
+ * without a visa id or country are dropped, a malformed `priceUsd` (not a
+ * non-negative finite `amountMinor` + currency) is null, a malformed
+ * `priceLocal` is null, and an unknown visibility counts as global
+ * (the backend treats a missing visibility as global).
+ */
+export function normalizeVisaPrices(raw: unknown): PublicVisaPrice[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PublicVisaPrice[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.visaTypeId !== 'string' || !v.visaTypeId) continue;
+    if (typeof v.countryCode !== 'string' || !v.countryCode) continue;
+    const usd = v.priceUsd as {
+      amountMinor?: unknown;
+      currency?: unknown;
+    } | null;
+    const priceUsd =
+      usd &&
+      typeof usd.amountMinor === 'number' &&
+      Number.isFinite(usd.amountMinor) &&
+      usd.amountMinor >= 0 &&
+      typeof usd.currency === 'string'
+        ? { amountMinor: usd.amountMinor, currency: usd.currency }
+        : null;
+    const loc = v.priceLocal as PublicVisaPrice['priceLocal'];
+    const priceLocal =
+      loc && typeof loc === 'object' && typeof loc.currency === 'string'
+        ? loc
+        : null;
+    out.push({
+      ...(v as unknown as PublicVisaPrice),
+      visaName: typeof v.visaName === 'string' ? v.visaName : '',
+      category: typeof v.category === 'string' ? v.category : '',
+      priceUsd,
+      priceLocal,
+      isAgencyVisa: v.isAgencyVisa === true,
+      visibility: v.visibility === 'agency' ? 'agency' : 'global',
+      processingTime:
+        typeof v.processingTime === 'string' ? v.processingTime : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Country name for an ISO2 code: the app's countries list first, then the
+ * runtime's `Intl.DisplayNames` (may be missing on Hermes), else the code.
+ */
+export function countryNameFor(
+  code: string,
+  countries?: { code: string; name: string }[] | null,
+): string {
+  const cc = code.toUpperCase();
+  const hit = countries?.find((c) => c.code.toUpperCase() === cc)?.name;
+  if (hit) return hit;
+  try {
+    const DisplayNames = (
+      Intl as unknown as {
+        DisplayNames?: new (
+          l: string[],
+          o: { type: string },
+        ) => { of: (c: string) => string | undefined };
+      }
+    ).DisplayNames;
+    if (DisplayNames) {
+      const name = new DisplayNames(['en'], { type: 'region' }).of(cc);
+      if (name && name !== cc) return name;
+    }
+  } catch {
+    // Unknown code or no Intl support: fall through to the code.
+  }
+  return cc;
+}
+
+/** `visaPrices[]` → the agency screen's rows (order kept). */
+export function mapAgencyVisaRows(
+  visaPrices: PublicVisaPrice[],
+  countries?: { code: string; name: string }[] | null,
+): AgencyVisaRow[] {
+  return visaPrices.map((v) => {
+    const cc = v.countryCode.toUpperCase();
+    const country = countryNameFor(cc, countries);
+    const processing = v.processingTime?.trim();
+    const hasPrice = !!v.priceUsd;
+    const isAgencyOnly = v.visibility === 'agency';
+    return {
+      key: `${cc}__${v.visaTypeId}`,
+      visaTypeId: v.visaTypeId,
+      countryCode: cc,
+      flag: cc.toLowerCase(),
+      name: v.visaName,
+      subLine: processing ? `${country} · ${processing}` : country,
+      // Local primary + "about $" (japa#183); a $0 service reads "Free".
+      priceLabel: hasPrice
+        ? priceInline(priceParts(v.priceLocal, v.priceUsd))
+        : 'Contact for pricing',
+      priceCaption: hasPrice ? 'Service fee' : null,
+      isAgencyOnly,
+      tappable: !isAgencyOnly,
+    };
+  });
 }

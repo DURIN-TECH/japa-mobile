@@ -13,6 +13,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { retryUnlessUnavailable } from './queryErrors';
 import { apiService } from '@/services/api.service';
 import { Conversation, Message } from '@/types/messaging.type';
 
@@ -24,13 +25,16 @@ import { Conversation, Message } from '@/types/messaging.type';
  * Fetch all conversations for the authenticated user.
  * Sorted by lastMessageAt descending (most recent first).
  */
-export function useConversations() {
+export function useConversations(opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['conversations'],
     queryFn: async () => {
       const response = await apiService.get<Conversation[]>('/conversations');
       return response.data ?? [];
     },
+    // False skips the call: a self-service-only build (japa#334) hides agent
+    // messaging, so screens that only read conversations for it opt out.
+    enabled: opts.enabled ?? true,
   });
 }
 
@@ -50,6 +54,8 @@ export function useMessages(conversationId: string) {
       return response.data ?? [];
     },
     enabled: !!conversationId,
+    // japa#145: a 404/403 (unknown / not your conversation) is final.
+    retry: retryUnlessUnavailable,
   });
 }
 

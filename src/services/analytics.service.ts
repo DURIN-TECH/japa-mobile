@@ -27,6 +27,21 @@ import {
   setUserId,
   setUserProperty,
 } from '@react-native-firebase/analytics';
+// RNFB 26+ (japa#399): `logEvent` returns void (it queues the event
+// synchronously), so it is called without `await`. The `log*` helpers and
+// `setUser*` still return promises and are still awaited. Errors from either
+// are caught by the same try/catch, so nothing a user sees changes.
+
+import { minorUnitFactor } from '@/components/explorer/content';
+import type { Money } from '@/types/money.type';
+
+/**
+ * Minor units → major units in the money's OWN currency (japa#183): kobo /
+ * 100, cents / 100, a zero-decimal currency / 1. For analytics `value` only.
+ */
+export function toMajorUnits(m: Money): number {
+  return m.amountMinor / minorUnitFactor(m.currency);
+}
 
 class AnalyticsService {
   // ─────────────────────────────────────────────
@@ -90,7 +105,7 @@ class AnalyticsService {
     mode: 'self' | 'agent'; // self-service vs agent-assisted
   }) {
     try {
-      await logEvent(this.analytics, 'application_created', params);
+      logEvent(this.analytics, 'application_created', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics app created error:', error);
     }
@@ -101,7 +116,7 @@ class AnalyticsService {
     status: string;
   }) {
     try {
-      await logEvent(this.analytics, 'application_status_change', params);
+      logEvent(this.analytics, 'application_status_change', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics status change error:', error);
     }
@@ -110,18 +125,23 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   // CONSULTATION EVENTS
   // Track when users book consultations with agents.
-  // Includes fee as `value` for revenue tracking in Firebase.
+  // japa#183: `value` is the amount actually charged, in MAJOR units of its
+  // own `currency` (minor units ÷ the currency's factor), with that real
+  // currency, never a hard-coded 'NGN'. A free booking sends value 0, USD.
+  // Called by pay.tsx once the backend confirms the booking (paid or free).
   // ─────────────────────────────────────────────
   async trackConsultationBooked(params: {
     agentId: string;
     type: string; // e.g. 'initial', 'document_review', 'interview_prep'
-    fee: number; // consultation fee in base currency units
+    /** The charged amount (minor units + currency) from the booking. */
+    charged: Money;
   }) {
     try {
-      await logEvent(this.analytics, 'consultation_booked', {
-        ...params,
-        value: params.fee, // Firebase uses `value` for revenue
-        currency: 'NGN', // Nigerian Naira — primary currency
+      logEvent(this.analytics, 'consultation_booked', {
+        agentId: params.agentId,
+        type: params.type,
+        value: toMajorUnits(params.charged), // Firebase uses `value` for revenue
+        currency: params.charged.currency,
       });
     } catch (error) {
       if (__DEV__) console.warn('Analytics consultation error:', error);
@@ -137,7 +157,7 @@ class AnalyticsService {
     fileType: string;
   }) {
     try {
-      await logEvent(this.analytics, 'document_uploaded', params);
+      logEvent(this.analytics, 'document_uploaded', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics doc upload error:', error);
     }
@@ -154,9 +174,103 @@ class AnalyticsService {
     score: number; // 0-100 eligibility score
   }) {
     try {
-      await logEvent(this.analytics, 'eligibility_check', params);
+      logEvent(this.analytics, 'eligibility_check', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics eligibility error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // DO I NEED A VISA? (japa#237, P8b)
+  // Names only, NO properties: never the nationality, destination, outcome,
+  // purpose, stay or anything from the person's holdings.
+  // ─────────────────────────────────────────────
+  async trackNeedAVisaEvent(
+    name:
+      | 'need_a_visa_answered'
+      | 'need_a_visa_unknown'
+      | 'need_a_visa_official_link_opened'
+      | 'need_a_visa_holdings_opened'
+      | 'need_a_visa_details_opened',
+  ) {
+    try {
+      logEvent(this.analytics, name);
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics need-a-visa error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // WHAT YOU ALREADY HOLD (japa#234)
+  // Names only, NO properties: never a nationality, country code, document kind,
+  // issuer or date. Those are personal data and stay out of analytics.
+  // ─────────────────────────────────────────────
+  async trackHoldingsEvent(
+    name:
+      | 'holdings_viewed'
+      | 'holdings_nationality_added'
+      | 'holdings_residence_saved'
+      | 'holdings_document_added'
+      | 'holdings_document_removed'
+      | 'holdings_none_declared',
+  ) {
+    try {
+      logEvent(this.analytics, name);
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics holdings error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // APPLY THROUGH A SHARED ROUTE (japa#237)
+  // Names only, NO properties: never a country, a route, an answer or a code.
+  // ─────────────────────────────────────────────
+  async trackSharedRouteEvent(
+    name:
+      | 'apply_through_viewed'
+      | 'apply_through_skipped'
+      | 'apply_through_confirmed'
+      | 'apply_through_overrode_proposal'
+      | 'apply_through_changed',
+  ) {
+    try {
+      logEvent(this.analytics, name);
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics shared-route error:', error);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // REVIEW EVENTS (issue #43)
+  // The application review: started, viewed, upgrade prompt tapped, rule source
+  // opened. `tier` is the tier the SERVER answered with; `band` is the readiness
+  // band word. Never send a number or any finding text.
+  //
+  // japa#384: `review_viewed` also carries `working` (the server's
+  // `meta.working`: the rule-by-rule working was in the response) and
+  // `hasNarrative` (a reading was drawn). `review_working_locked_seen` fires
+  // once per review when the locked "See how each rule was applied" panel first
+  // comes on screen: the demand signal for the working (priced in japa#385).
+  // ─────────────────────────────────────────────
+  async trackReviewEvent(
+    name:
+      | 'review_run_started'
+      | 'review_viewed'
+      | 'review_upgrade_prompt_tapped'
+      | 'review_rule_source_opened'
+      | 'review_working_locked_seen',
+    params: {
+      tier?: string;
+      band?: string;
+      source?: string;
+      working?: boolean;
+      hasNarrative?: boolean;
+    } = {},
+  ) {
+    try {
+      logEvent(this.analytics, name, params);
+    } catch (error) {
+      if (__DEV__) console.warn('Analytics review error:', error);
     }
   }
 
@@ -167,7 +281,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackAgentViewed(agentId: string) {
     try {
-      await logEvent(this.analytics, 'agent_viewed', { agent_id: agentId });
+      logEvent(this.analytics, 'agent_viewed', { agent_id: agentId });
     } catch (error) {
       if (__DEV__) console.warn('Analytics agent view error:', error);
     }
@@ -175,7 +289,7 @@ class AnalyticsService {
 
   async trackVisaViewed(params: { visaTypeId: string; countryCode: string }) {
     try {
-      await logEvent(this.analytics, 'visa_viewed', params);
+      logEvent(this.analytics, 'visa_viewed', params);
     } catch (error) {
       if (__DEV__) console.warn('Analytics visa view error:', error);
     }
@@ -188,7 +302,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackOnboardingStep(step: string) {
     try {
-      await logEvent(this.analytics, 'onboarding_step', { step });
+      logEvent(this.analytics, 'onboarding_step', { step });
     } catch (error) {
       if (__DEV__) console.warn('Analytics onboarding error:', error);
     }
@@ -196,7 +310,7 @@ class AnalyticsService {
 
   async trackOnboardingCompleted() {
     try {
-      await logEvent(this.analytics, 'onboarding_completed');
+      logEvent(this.analytics, 'onboarding_completed');
     } catch (error) {
       if (__DEV__) console.warn('Analytics onboarding complete error:', error);
     }
@@ -212,7 +326,7 @@ class AnalyticsService {
       await logSearch(this.analytics, { search_term: query });
       // If a category filter was applied, log a separate detailed event
       if (category) {
-        await logEvent(this.analytics, 'search_with_category', {
+        logEvent(this.analytics, 'search_with_category', {
           search_term: query,
           category,
         });
@@ -227,15 +341,18 @@ class AnalyticsService {
   // Track when clients approve or reject payment requests.
   // Amount is tracked as `value` for revenue analysis.
   // ─────────────────────────────────────────────
+  // japa#183: both take the request's real money (minor units + currency;
+  // a #181 request is US cents) and report `value` in major units.
+  // Called by application/[id].tsx after a successful approve / reject.
   async trackPaymentRequestApproved(params: {
     requestId: string;
-    amount: number; // In kobo/cents
+    amount: Money;
   }) {
     try {
-      await logEvent(this.analytics, 'payment_request_approved', {
+      logEvent(this.analytics, 'payment_request_approved', {
         request_id: params.requestId,
-        value: params.amount,
-        currency: 'NGN',
+        value: toMajorUnits(params.amount),
+        currency: params.amount.currency,
       });
     } catch (error) {
       if (__DEV__) console.warn('Analytics payment approved error:', error);
@@ -244,13 +361,13 @@ class AnalyticsService {
 
   async trackPaymentRequestRejected(params: {
     requestId: string;
-    amount: number; // In kobo/cents
+    amount: Money;
   }) {
     try {
-      await logEvent(this.analytics, 'payment_request_rejected', {
+      logEvent(this.analytics, 'payment_request_rejected', {
         request_id: params.requestId,
-        value: params.amount,
-        currency: 'NGN',
+        value: toMajorUnits(params.amount),
+        currency: params.amount.currency,
       });
     } catch (error) {
       if (__DEV__) console.warn('Analytics payment rejected error:', error);
@@ -265,7 +382,7 @@ class AnalyticsService {
   // ─────────────────────────────────────────────
   async trackError(errorMessage: string, context?: Record<string, string>) {
     try {
-      await logEvent(this.analytics, 'app_error', {
+      logEvent(this.analytics, 'app_error', {
         error_message: errorMessage.substring(0, 100),
         ...context,
       });

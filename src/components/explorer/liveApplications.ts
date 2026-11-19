@@ -9,8 +9,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { agoFrom, fmtDate } from './liveDate';
-import { App, AppStep, Dest } from './data';
 import { countryArt } from './liveExplore';
+import { formatMoney, minorUnitFactor } from './content';
+import { App, AppStep, Dest } from '@/types/explorer.type';
+import type { Money } from '@/types/money.type';
 import {
   Application,
   ApplicationStatus,
@@ -19,10 +21,11 @@ import {
 
 // Backend ApplicationStatus → one of the Explorer STATUS keys
 // ('documents' | 'review' | 'interview' | 'submitted' | 'approved').
-// Anything without a natural Explorer bucket (draft, pending_payment, rejected,
-// withdrawn, expired) falls back to 'review' so the row still renders a pill.
+// ('draft' and 'withdrawn' are their own buckets.) Anything without a natural
+// bucket (pending_payment, rejected, expired) falls back to 'review' so the row
+// still renders a pill.
 const STATUS_MAP: Record<ApplicationStatus, string> = {
-  draft: 'review',
+  draft: 'draft', // japa#174: shown as "Draft", not "Under review"
   pending_payment: 'review',
   pending_documents: 'documents', // *_documents → documents
   under_review: 'review', // *review → review
@@ -30,7 +33,7 @@ const STATUS_MAP: Record<ApplicationStatus, string> = {
   interview_scheduled: 'interview', // interview* → interview
   approved: 'approved', // approved / completed → approved
   rejected: 'review',
-  withdrawn: 'review',
+  withdrawn: 'withdrawn', // japa#259: shown as "Withdrawn", not "Under review"
   expired: 'review',
 };
 
@@ -43,25 +46,81 @@ function normalizeProgress(progress: number): number {
 }
 
 // One backend Application → the Explorer's `App`. Builds a self-contained `dest`
-// (via countryArt) so the row/detail can render without a static DESTS match.
-// `agentSeed` is accepted for call-site parity but the Explorer derives portrait
-// art from the demo agent set, so it is not consumed here.
-export function mapApplication(app: Application, agentSeed?: number): App {
-  void agentSeed; // reserved; portrait seed is resolved from the demo agent set
+// (via countryArt → the `@/assets/countries` module) so the row/detail renders
+// from the case alone. `agentSeed` is accepted for call-site parity only.
+/**
+ * The case's visa title (japa#106). A case on an agency-only visa must show
+ * the visa's real name, never "Visa" / "unknown visa":
+ *   1. `visaTypeName`, denormalised on the case by the backend;
+ *   2. else the name fetched from the visa detail (`fetchedVisaName`; the
+ *      applicant may read it because they have a case on it, #102);
+ *   3. else, while that fetch runs, the country name (design spec).
+ */
+export function resolveVisaTitle(
+  app: Pick<Application, 'visaTypeName' | 'countryName' | 'countryCode'>,
+  fetchedVisaName?: string | null,
+): string {
+  const denorm = app.visaTypeName?.trim();
+  if (denorm) return denorm;
+  const fetched = fetchedVisaName?.trim();
+  if (fetched) return fetched;
+  return app.countryName ?? app.countryCode;
+}
+
+/**
+ * The case's total cost as money in its own currency (japa#183 / backend
+ * #181): `totalCost` is integer MINOR units of `costCurrency` (absent on
+ * older docs = USD). Null when the case has no usable cost.
+ */
+export function caseCost(
+  app: Pick<Application, 'totalCost' | 'costCurrency'>,
+): Money | null {
+  const amountMinor = app.totalCost;
+  if (typeof amountMinor !== 'number' || !Number.isFinite(amountMinor)) {
+    return null;
+  }
+  const currency = (app.costCurrency ?? 'USD').trim().toUpperCase() || 'USD';
+  return { amountMinor, currency };
+}
+
+/**
+ * The cost as whole US dollars for `Dest.price` (5,000,000 cents → 50,000),
+ * through the currency's own factor, never a literal 100. A non-USD cost is
+ * 0: `Dest.price` is printed with "$", so putting another currency's figure
+ * there would show e.g. naira as dollars.
+ */
+function caseCostUsdWhole(cost: Money | null): number {
+  if (!cost || cost.currency !== 'USD') return 0;
+  return Math.round(cost.amountMinor / minorUnitFactor(cost.currency));
+}
+
+export function mapApplication(
+  app: Application,
+  agentSeed?: number,
+  fetchedVisaName?: string | null,
+): App {
+  void agentSeed; // reserved for call-site parity; not used
 
   const art = countryArt(app.countryCode);
+  // The case cost in its OWN currency (never assumed to be dollars).
+  const cost = caseCost(app);
   const dest: Dest = {
     id: app.visaTypeId,
     country: app.countryName ?? app.countryCode,
     city: art.city,
     flag: app.countryCode.toLowerCase(),
-    visa: app.visaTypeName ?? 'Visa',
+    // japa#106: real visa name (see resolveVisaTitle), never a bare "Visa".
+    visa: resolveVisaTitle(app, fetchedVisaName),
     cat: '',
     blurb: '',
     img: art.img,
     tone: art.tone,
     processing: '',
-    price: Math.round(app.totalCost ?? 0),
+    // `Dest.price` is a whole-DOLLAR figure that screens print with "$"
+    // (japa#183), so it only ever carries a USD cost. A case priced in
+    // another currency gets 0 here and is shown through `cost` /
+    // `costLabel` below, in its own currency.
+    price: caseCostUsdWhole(cost),
     approval: '',
     applied: 0,
   };
@@ -84,6 +143,9 @@ export function mapApplication(app: Application, agentSeed?: number): App {
           : null,
     },
     steps: [], // list rows carry no steps; the detail screen fetches the timeline
+    cost,
+    // Formatted by the one money helper: right symbol, right decimals.
+    costLabel: formatMoney(cost),
     dest,
   };
 }
