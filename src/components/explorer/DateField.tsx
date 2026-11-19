@@ -69,8 +69,9 @@ export function clampToRange(d: Date, min?: Date, max?: Date): Date {
  * month or year. So: same day of the month, different month or year → browsing
  * (stay open); anything else → a day was picked (commit and close).
  *
- * Not checked on a simulator in japa#407 (the criteria's fallback rule, applied
- * whatever the selector does: if it fired nothing, this rule never runs for it).
+ * Checked on the iOS simulator by QA in japa#407: the selector does fire
+ * `onChange` (same day of the month, new month/year), this rule counts it as
+ * browsing and the calendar stays open, and Done then sets that date.
  *
  * Known gaps:
  *   - picking the same day number in a month reached with the arrows counts as
