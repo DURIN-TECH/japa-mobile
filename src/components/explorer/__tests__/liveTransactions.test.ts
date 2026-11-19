@@ -72,16 +72,16 @@ describe('mapTransaction', () => {
 // ── japa#353: failed charges and unknown statuses ───────────────────────────
 describe('mapStatus', () => {
   it('keeps the existing mappings', () => {
-    expect(mapStatus('completed')).toBe('paid');
-    expect(mapStatus('released')).toBe('paid');
-    expect(mapStatus('pending')).toBe('pending');
-    expect(mapStatus('processing')).toBe('pending');
-    expect(mapStatus('held_in_escrow')).toBe('pending');
-    expect(mapStatus('refunded')).toBe('refunded');
+    expect(mapStatus('completed', 'consultation_fee')).toBe('paid');
+    expect(mapStatus('released', 'consultation_fee')).toBe('paid');
+    expect(mapStatus('pending', 'consultation_fee')).toBe('pending');
+    expect(mapStatus('processing', 'consultation_fee')).toBe('pending');
+    expect(mapStatus('held_in_escrow', 'consultation_fee')).toBe('pending');
+    expect(mapStatus('refunded', 'consultation_fee')).toBe('refunded');
   });
 
   it('maps a failed charge to failed, never paid', () => {
-    expect(mapStatus('failed')).toBe('failed');
+    expect(mapStatus('failed', 'consultation_fee')).toBe('failed');
     expect(mapTransaction({ ...clientRow, status: 'failed' }).status).toBe(
       'failed',
     );
@@ -89,7 +89,7 @@ describe('mapStatus', () => {
 
   it('maps an unknown status to pending, never paid', () => {
     const odd = 'something_new' as unknown as ApiTransaction['status'];
-    expect(mapStatus(odd)).toBe('pending');
+    expect(mapStatus(odd, 'consultation_fee')).toBe('pending');
     expect(mapTransaction({ ...clientRow, status: odd }).status).toBe(
       'pending',
     );
@@ -151,15 +151,18 @@ describe('totalsPaid', () => {
 // ── japa#398: a refund is never Paid, never in "Total paid" ─────────────────
 
 /** Every backend status, so a test can sweep them all. */
-const ALL_STATUSES: ApiTransaction['status'][] = [
-  'pending',
-  'processing',
-  'completed',
-  'failed',
-  'refunded',
-  'held_in_escrow',
-  'released',
-];
+// Built from a Record keyed by the status union: a new backend status fails
+// to compile here until it is added.
+const STATUS_SET: Record<ApiTransaction['status'], true> = {
+  pending: true,
+  processing: true,
+  completed: true,
+  failed: true,
+  refunded: true,
+  held_in_escrow: true,
+  released: true,
+};
+const ALL_STATUSES = Object.keys(STATUS_SET) as ApiTransaction['status'][];
 
 /** A transaction of `type` and `status` for `amountMinor`, in `currency`. */
 const txn = (
@@ -259,7 +262,6 @@ describe('non-refund rows keep their mapping (japa#398)', () => {
     for (const type of others) {
       for (const s of ALL_STATUSES) {
         expect(mapStatus(s, type)).toBe(expected[s]);
-        expect(mapStatus(s)).toBe(expected[s]);
       }
     }
   });

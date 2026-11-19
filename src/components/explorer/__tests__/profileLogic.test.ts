@@ -11,6 +11,19 @@ import {
 } from '../profileLogic';
 import type { ApiTransaction } from '@/hooks/useTransactions';
 
+// Built from a Record keyed by the status union: a new backend status fails
+// to compile here until it is added.
+const STATUS_SET: Record<ApiTransaction['status'], true> = {
+  pending: true,
+  processing: true,
+  completed: true,
+  failed: true,
+  refunded: true,
+  held_in_escrow: true,
+  released: true,
+};
+const ALL_STATUSES = Object.keys(STATUS_SET) as ApiTransaction['status'][];
+
 const tx = (
   status: ApiTransaction['status'],
   type: ApiTransaction['type'] = 'consultation_fee',
@@ -61,21 +74,7 @@ describe('paidCount / paidLabel', () => {
     ).toBe('1 paid');
   });
   it('no refund counts, whatever its status (japa#398)', () => {
-    expect(
-      paidCount(
-        (
-          [
-            'pending',
-            'processing',
-            'completed',
-            'failed',
-            'refunded',
-            'held_in_escrow',
-            'released',
-          ] as const
-        ).map((s) => tx(s, 'refund')),
-      ),
-    ).toBe(0);
+    expect(paidCount(ALL_STATUSES.map((s) => tx(s, 'refund')))).toBe(0);
   });
   it('none → "0 paid"; loading / error → "–"', () => {
     expect(paidLabel([])).toBe('0 paid');

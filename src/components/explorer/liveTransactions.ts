@@ -79,15 +79,15 @@ export function countsAsPaid(
 }
 
 // Collapse the backend's 7 statuses into the 4 Payment states the pills expect.
-// `type` matters only for refund rows (japa#398); callers that pass just a
-// status get the non-refund mapping. Exported for its unit tests.
+// `type` is required (japa#398): `paid` can only come from `countsAsPaid`,
+// which needs the type to rule refunds out. Exported for its unit tests.
 export function mapStatus(
   status: ApiTransaction['status'],
-  type?: ApiTransaction['type'],
+  type: ApiTransaction['type'],
 ): Payment['status'] {
   // `paid` comes ONLY from the shared rule, so a Payments row is `paid`
   // exactly when Profile counts it. Guarded by the agreement test.
-  if (type !== undefined && countsAsPaid({ status, type })) return 'paid';
+  if (countsAsPaid({ status, type })) return 'paid';
 
   // ── Refund rows (japa#398) — never `paid` ──
   if (type === 'refund') {
@@ -109,10 +109,9 @@ export function mapStatus(
   }
 
   // ── Every other row: unchanged since japa#353 ──
+  // `completed` / `released` never get here: `countsAsPaid` above already
+  // returned `paid` for them, so this switch has no `paid` branch.
   switch (status) {
-    case 'completed':
-    case 'released':
-      return 'paid';
     case 'pending':
     case 'processing':
     case 'held_in_escrow':
