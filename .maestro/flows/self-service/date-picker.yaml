@@ -32,23 +32,29 @@ tags:
 # A day of this month that is not today (tapping the highlighted day fires no
 # change on iOS; that case is Done's job). The cell's label ends in the day
 # number ("Sunday, November 15") or is just the number, hence the regex.
+# No `childOf` on the tap: in the iOS accessibility tree the day cells are not
+# children of the calendar's View, so a childOf match finds nothing.
 - evalScript: "${output.day = new Date().getDate() === 15 ? 16 : 15}"
 - evalScript: "${output.dayRe = '(.*[^0-9])?' + output.day + '([^0-9].*)?'}"
+
+# "Closed" is checked on the calendar, not on Done: `notVisible` on Done also
+# passes when Done is merely scrolled off screen.
 
 # ── 1. Open, pick a day → closed, the field shows it ─────────────────────────
 - tapOn:
     id: "addDocument\\.validUntil"
-- extendedWaitUntil:
-    visible:
+# Done sits below the fold once the calendar opens near the bottom of the
+# screen (iPhone 17 Pro), so scroll it into view.
+- scrollUntilVisible:
+    element:
       id: "addDocument\\.validUntil\\.done"
+    direction: DOWN
     timeout: 10000
 - tapOn:
     text: "${output.dayRe}"
-    childOf:
-      id: "addDocument\\.validUntil\\.calendar"
 - extendedWaitUntil:
     notVisible:
-      id: "addDocument\\.validUntil\\.done"
+      id: "addDocument\\.validUntil\\.calendar"
     timeout: 10000
 # The field's spoken label is "Valid until, <d> <Mon> <yyyy>".
 - assertVisible:
@@ -58,15 +64,18 @@ tags:
 # ── 2. Open again: a field tap closes it and changes nothing ─────────────────
 - tapOn:
     id: "addDocument\\.validUntil"
-- extendedWaitUntil:
-    visible:
+# Done sits below the fold once the calendar opens near the bottom of the
+# screen (iPhone 17 Pro), so scroll it into view.
+- scrollUntilVisible:
+    element:
       id: "addDocument\\.validUntil\\.done"
+    direction: DOWN
     timeout: 10000
 - tapOn:
     id: "addDocument\\.validUntil"
 - extendedWaitUntil:
     notVisible:
-      id: "addDocument\\.validUntil\\.done"
+      id: "addDocument\\.validUntil\\.calendar"
     timeout: 10000
 - assertVisible:
     id: "addDocument\\.validUntil"
@@ -75,11 +84,16 @@ tags:
 # ── 3. Open again: Done keeps the highlighted (chosen) day and closes ────────
 - tapOn:
     id: "addDocument\\.validUntil"
+- scrollUntilVisible:
+    element:
+      id: "addDocument\\.validUntil\\.done"
+    direction: DOWN
+    timeout: 10000
 - tapOn:
     id: "addDocument\\.validUntil\\.done"
 - extendedWaitUntil:
     notVisible:
-      id: "addDocument\\.validUntil\\.done"
+      id: "addDocument\\.validUntil\\.calendar"
     timeout: 10000
 - assertVisible:
     id: "addDocument\\.validUntil"
