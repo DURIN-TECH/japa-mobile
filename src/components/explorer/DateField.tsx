@@ -17,7 +17,8 @@
 //     replaces it. Tapping the open field again closes it and changes nothing.
 //   - Tapping a day commits it and closes. Browsing months with the `<` `>`
 //     arrows fires nothing. The header's month/year selector DOES fire a change
-//     (see `isBrowseChange`), so it is told apart and leaves the calendar open.
+//     (see `isBrowseChange`), so it is told apart and leaves the calendar open,
+//     including when iOS moves the day for it (short month, min/max clamp).
 //   - "Done" commits the date the calendar is highlighting (clamped to the
 //     min/max) and closes. It is the only way to pick the date that is already
 //     highlighted (today, or the From date for To): tapping it fires no change.
@@ -73,17 +74,61 @@ export function clampToRange(d: Date, min?: Date, max?: Date): Date {
  * `onChange` (same day of the month, new month/year), this rule counts it as
  * browsing and the calendar stays open, and Done then sets that date.
  *
- * Known gaps:
- *   - picking the same day number in a month reached with the arrows counts as
- *     browsing and stays open; Done or a tap on the field closes it;
- *   - the selector moving to a shorter month (31 → 30) or past min/max, where
- *     iOS also moves the day, counts as a pick and closes.
+ * iOS also moves the day itself in two cases, and those count as browsing too
+ * (so we never save a date the person did not tap):
+ *   - the new month is shorter than the old day (31 Jan → Feb gives 28 Feb, or
+ *     29 Feb in a leap year): the new date is the LAST day of its month and
+ *     earlier in the month than the old one;
+ *   - the new month/year is outside min/max: iOS clamps to the bound, so the
+ *     new date EQUALS `min` or `max` (same calendar day).
+ * Browsing leaves that date highlighted, so Done sets it.
+ *
+ * What the rule cannot tell apart (the native event says nothing more):
+ *   - a real tap on exactly the last day of a month, or on the min/max day,
+ *     after the month changed (e.g. 31 Jan highlighted, arrows to Feb, tap
+ *     28 Feb) looks like the selector moving the day: it counts as browsing
+ *     and stays open, with that day highlighted; the person presses Done;
+ *   - likewise picking the same day number in a month reached with the arrows
+ *     counts as browsing and stays open; Done or a tap on the field closes it.
+ * Both fail safe: the calendar stays open and nothing is saved.
  */
-export function isBrowseChange(prev: Date, next: Date): boolean {
+export function isBrowseChange(
+  prev: Date,
+  next: Date,
+  min?: Date,
+  max?: Date,
+): boolean {
+  const monthChanged =
+    prev.getMonth() !== next.getMonth() ||
+    prev.getFullYear() !== next.getFullYear();
+  // A change inside the same month is always a day tap.
+  if (!monthChanged) return false;
+
+  // The selector kept the day of the month.
+  if (prev.getDate() === next.getDate()) return true;
+
+  // The selector landed on a shorter month and iOS moved the day to its end.
+  const lastDayOfNextMonth = new Date(
+    next.getFullYear(),
+    next.getMonth() + 1,
+    0,
+  ).getDate();
+  if (next.getDate() === lastDayOfNextMonth && next.getDate() < prev.getDate())
+    return true;
+
+  // The selector went past a bound and iOS clamped to it.
+  if (min && sameDay(next, min)) return true;
+  if (max && sameDay(next, max)) return true;
+
+  return false;
+}
+
+/** Same calendar day (local), whatever the time of day. */
+function sameDay(a: Date, b: Date): boolean {
   return (
-    prev.getDate() === next.getDate() &&
-    (prev.getMonth() !== next.getMonth() ||
-      prev.getFullYear() !== next.getFullYear())
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
   );
 }
 
@@ -132,9 +177,12 @@ export interface DateFieldSide {
 
 // ── useDateSide — open state + highlighted date of one field ─────────────────
 function useDateSide(side: DateFieldSide, key: string, disabled?: boolean) {
-  const openKey = useOpenDateField((s) => s.openKey);
+  // Watch only "is the open key mine" (a boolean), not the key itself, so
+  // opening a calendar re-renders just the field that opens and the one that
+  // closes, not every date field in the app.
+  const isMine = useOpenDateField((s) => s.openKey === key);
   const setOpenKey = useOpenDateField((s) => s.setOpenKey);
-  const open = openKey === key && !disabled;
+  const open = isMine && !disabled;
 
   // The date the calendar shows. Set on opening; moved by the month/year
   // selector; what Done commits.
@@ -186,8 +234,9 @@ function useDateSide(side: DateFieldSide, key: string, disabled?: boolean) {
       return;
     }
     if (type !== 'set' || !date) return;
-    if (isBrowseChange(highlighted, date)) {
-      // The month/year selector: stay open, change no value.
+    if (isBrowseChange(highlighted, date, side.minimumDate, side.maximumDate)) {
+      // The month/year selector (or iOS moving the day for it): stay open,
+      // save nothing, keep that date highlighted for Done.
       setHighlighted(date);
       return;
     }

@@ -31,6 +31,7 @@ import {
   isBrowseChange,
   useOpenDateField,
 } from '@/components/explorer/DateField';
+import { DateAnswerInput } from '@/components/explorer/AnswerInputs';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,39 @@ describe('isBrowseChange', () => {
   });
   it('another day = picked', () => {
     expect(isBrowseChange(d(2027, 3, 12), d(2027, 3, 14))).toBe(false);
-    expect(isBrowseChange(d(2027, 3, 31), d(2027, 4, 30))).toBe(false);
+    // A day in another month that is not its last day, nor a bound.
+    expect(isBrowseChange(d(2027, 3, 31), d(2027, 4, 28))).toBe(false);
+    expect(isBrowseChange(d(2027, 1, 31), d(2027, 3, 28))).toBe(false);
+  });
+
+  // iOS moves the day itself when the new month is shorter (japa#407 review).
+  it('31 Jan → Feb (iOS gives 28 Feb) = browsing', () => {
+    expect(isBrowseChange(d(2027, 1, 31), d(2027, 2, 28))).toBe(true);
+  });
+  it('30 Jan → Feb in a leap year (iOS gives 29 Feb) = browsing', () => {
+    expect(isBrowseChange(d(2028, 1, 30), d(2028, 2, 29))).toBe(true);
+  });
+  it('the last day of a month that is LATER in the month is a pick', () => {
+    // 12 Mar → 30 Apr: iOS would have kept the 12th, so a tap moved it.
+    expect(isBrowseChange(d(2027, 3, 12), d(2027, 4, 30))).toBe(false);
+  });
+
+  // iOS clamps to min/max when the selector goes past a bound.
+  it('the selector clamped at the minimum = browsing', () => {
+    const min = d(2027, 6, 15);
+    expect(isBrowseChange(d(2027, 3, 20), min, min)).toBe(true);
+    // Same calendar day with a time of day still counts.
+    expect(
+      isBrowseChange(d(2027, 3, 20), new Date(2027, 5, 15, 9, 30), min),
+    ).toBe(true);
+  });
+  it('the selector clamped at the maximum = browsing', () => {
+    const max = d(2027, 9, 10);
+    expect(isBrowseChange(d(2027, 6, 20), max, undefined, max)).toBe(true);
+  });
+  it('tapping the min/max day in the SAME month is a pick', () => {
+    const min = d(2027, 6, 15);
+    expect(isBrowseChange(d(2027, 6, 20), min, min)).toBe(false);
   });
 });
 
@@ -159,6 +192,83 @@ describe('DateField on iOS', () => {
     expect(pickers()).toHaveLength(0);
   });
 
+  it('31 Jan → Feb via the selector saves nothing, stays open on 28 Feb; Done sets it', () => {
+    const onChange = jest.fn();
+    render(
+      <DateField
+        testID="f"
+        value={d(2027, 1, 31)}
+        accessibilityLabel="Arrival"
+        onChange={onChange}
+      />,
+    );
+    tap('f');
+    change('set', d(2027, 2, 28));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(pickers()).toHaveLength(1);
+    expect(pickers()[0].props.value).toEqual(d(2027, 2, 28));
+    tap('f.done');
+    expect(onChange).toHaveBeenCalledWith(d(2027, 2, 28));
+    expect(pickers()).toHaveLength(0);
+  });
+
+  it('after browsing with the arrows, a tap on the 28th of another month is a pick', () => {
+    const onChange = jest.fn();
+    render(
+      <DateField
+        testID="f"
+        value={d(2027, 1, 31)}
+        accessibilityLabel="Arrival"
+        onChange={onChange}
+      />,
+    );
+    tap('f');
+    // The arrows page to March (no event), then the 28th is tapped.
+    change('set', d(2027, 3, 28));
+    expect(onChange).toHaveBeenCalledWith(d(2027, 3, 28));
+    expect(pickers()).toHaveLength(0);
+  });
+
+  it('after the selector moved to 28 Feb, a tap on another Feb day is a pick', () => {
+    const onChange = jest.fn();
+    render(
+      <DateField
+        testID="f"
+        value={d(2027, 1, 31)}
+        accessibilityLabel="Arrival"
+        onChange={onChange}
+      />,
+    );
+    tap('f');
+    change('set', d(2027, 2, 28)); // selector → Feb (browse)
+    change('set', d(2027, 2, 10));
+    expect(onChange).toHaveBeenCalledWith(d(2027, 2, 10));
+    expect(pickers()).toHaveLength(0);
+  });
+
+  it('the selector clamped to min or max saves nothing and stays open', () => {
+    const onChange = jest.fn();
+    const min = d(2027, 6, 15);
+    const max = d(2027, 9, 10);
+    render(
+      <DateField
+        testID="f"
+        value={d(2027, 7, 20)}
+        minimumDate={min}
+        maximumDate={max}
+        accessibilityLabel="Arrival"
+        onChange={onChange}
+      />,
+    );
+    tap('f');
+    change('set', max); // selector → Sep 20, clamped to 10 Sep
+    expect(pickers()).toHaveLength(1);
+    change('set', min); // selector → Mar/Apr/May, clamped to 15 Jun
+    expect(pickers()).toHaveLength(1);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(pickers()[0].props.value).toEqual(min);
+  });
+
   it('tapping the open field again closes it and changes nothing', () => {
     const onChange = jest.fn();
     render(
@@ -195,7 +305,7 @@ describe('DateField on iOS', () => {
     expect(pickers()).toHaveLength(0);
   });
 
-  it('Done never sets a date outside min/max: it sets the nearest allowed one', () => {
+  it('Done never sets a date before the minimum: it sets the minimum', () => {
     const onChange = jest.fn();
     const min = d(2027, 6, 1);
     render(
@@ -211,9 +321,11 @@ describe('DateField on iOS', () => {
     tap('f');
     tap('f.done');
     expect(onChange).toHaveBeenCalledWith(min);
+  });
 
-    // And the same against the maximum (today is far past this one).
-    onChange.mockClear();
+  it('Done never sets a date after the maximum: it sets the maximum', () => {
+    // Today is far past this maximum.
+    const onChange = jest.fn();
     const max = d(2000, 1, 1);
     render(
       <DateField
@@ -241,6 +353,73 @@ describe('DateField on iOS', () => {
     );
     tap('f');
     expect(pickers()).toHaveLength(0);
+  });
+
+  it('a field that becomes disabled while open closes and clears the open key', () => {
+    const el = (disabled: boolean) => (
+      <DateField
+        testID="f"
+        value={null}
+        disabled={disabled}
+        accessibilityLabel="Arrival"
+        onChange={() => {}}
+      />
+    );
+    render(el(false));
+    tap('f');
+    expect(pickers()).toHaveLength(1);
+    act(() => tree.update(el(true)));
+    expect(pickers()).toHaveLength(0);
+    expect(useOpenDateField.getState().openKey).toBeNull();
+  });
+
+  it('a field that unmounts while open leaves no stale open key', () => {
+    function Screen({ show }: { show: boolean }) {
+      return show ? (
+        <DateField
+          testID="f"
+          value={null}
+          accessibilityLabel="Arrival"
+          onChange={() => {}}
+        />
+      ) : null;
+    }
+    render(<Screen show />);
+    tap('f');
+    expect(useOpenDateField.getState().openKey).not.toBeNull();
+    act(() => tree.update(<Screen show={false} />));
+    expect(useOpenDateField.getState().openKey).toBeNull();
+  });
+});
+
+// ── A call site: the requirement answer stores an ISO date ───────────────────
+
+describe('DateAnswerInput', () => {
+  it('turns a day pick into a local yyyy-MM-dd string and shows the saved one', () => {
+    const onChange = jest.fn();
+    const onCommit = jest.fn();
+    render(
+      <DateAnswerInput
+        title="Date of birth"
+        editable
+        form="2027-03-12"
+        onChange={onChange}
+        onCommit={onCommit}
+      />,
+    );
+    const field = tree.root.find(
+      (n) =>
+        typeof n.props.onPress === 'function' &&
+        typeof n.props.accessibilityLabel === 'string' &&
+        n.props.accessibilityLabel.startsWith('Date of birth'),
+    );
+    // The stored ISO string is read as that local day.
+    expect(field.props.accessibilityLabel).toBe('Date of birth, 12 Mar 2027');
+    act(() => field.props.onPress());
+    expect(pickers()[0].props.value).toEqual(d(2027, 3, 12));
+    change('set', d(2027, 3, 20));
+    expect(onChange).toHaveBeenCalledWith('2027-03-20');
+    expect(onCommit).toHaveBeenCalledWith('date');
   });
 });
 
