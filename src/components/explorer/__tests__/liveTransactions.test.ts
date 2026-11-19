@@ -6,7 +6,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { describe, expect, it } from '@jest/globals';
-import { mapStatus, mapTransaction, totalsPaid } from '../liveTransactions';
+import {
+  countsAsPaid,
+  mapStatus,
+  mapTransaction,
+  totalsPaid,
+} from '../liveTransactions';
+import { paidCount } from '../profileLogic';
+import { PAY_STATUS } from '../content';
 import type { Payment } from '@/types/explorer.type';
 import type { ApiTransaction } from '@/hooks/useTransactions';
 
@@ -138,5 +145,215 @@ describe('totalsPaid', () => {
   it('only failed rows → no totals (the screen shows the zero total)', () => {
     expect(totalsPaid([row('failed', 5_000_000)])).toEqual([]);
     expect(totalsPaid([])).toEqual([]);
+  });
+});
+
+// ── japa#398: a refund is never Paid, never in "Total paid" ─────────────────
+
+/** Every backend status, so a test can sweep them all. */
+const ALL_STATUSES: ApiTransaction['status'][] = [
+  'pending',
+  'processing',
+  'completed',
+  'failed',
+  'refunded',
+  'held_in_escrow',
+  'released',
+];
+
+/** A transaction of `type` and `status` for `amountMinor`, in `currency`. */
+const txn = (
+  id: string,
+  type: ApiTransaction['type'],
+  status: ApiTransaction['status'],
+  amountMinor: number,
+  currency = 'NGN',
+): ApiTransaction => ({
+  ...clientRow,
+  id,
+  type,
+  status,
+  description: '',
+  amount: amountMinor,
+  currency,
+  amountCharged: { amountMinor, currency },
+});
+
+describe('refund rows (japa#398)', () => {
+  it('done refunds (completed, released, refunded) map to Refunded', () => {
+    for (const s of ['completed', 'released', 'refunded'] as const) {
+      expect(mapStatus(s, 'refund')).toBe('refunded');
+      expect(mapTransaction(txn('r', 'refund', s, 100)).status).toBe(
+        'refunded',
+      );
+    }
+    // …which is the existing grey "Refunded" pill.
+    expect(PAY_STATUS[mapStatus('completed', 'refund')]).toEqual({
+      label: 'Refunded',
+      fg: '#8B8499',
+      bg: 'rgba(23,19,38,0.06)',
+    });
+  });
+
+  it('in-flight refunds map to Pending, a failed one to Failed', () => {
+    expect(mapStatus('pending', 'refund')).toBe('pending');
+    expect(mapStatus('processing', 'refund')).toBe('pending');
+    expect(mapStatus('held_in_escrow', 'refund')).toBe('pending');
+    expect(mapStatus('failed', 'refund')).toBe('failed');
+  });
+
+  it('an unknown refund status maps to Pending', () => {
+    const odd = 'something_new' as unknown as ApiTransaction['status'];
+    expect(mapStatus(odd, 'refund')).toBe('pending');
+  });
+
+  it('no refund maps to paid or counts as paid, whatever its status', () => {
+    for (const s of ALL_STATUSES) {
+      expect(mapStatus(s, 'refund')).not.toBe('paid');
+      expect(mapTransaction(txn('r', 'refund', s, 100)).status).not.toBe(
+        'paid',
+      );
+      expect(countsAsPaid({ status: s, type: 'refund' })).toBe(false);
+    }
+  });
+
+  it('₦50,000 service fee + ₦50,000 completed refund → Total paid ₦50,000', () => {
+    const rows = [
+      txn('a', 'service_fee', 'completed', 5_000_000),
+      txn('b', 'refund', 'completed', 5_000_000),
+    ].map(mapTransaction);
+    expect(totalsPaid(rows)).toEqual([
+      { amountMinor: 5_000_000, currency: 'NGN' },
+    ]);
+  });
+
+  it('only refunds → no totals (the hero shows its zero total), row kept', () => {
+    const rows = [txn('b', 'refund', 'completed', 5_000_000)].map(
+      mapTransaction,
+    );
+    expect(totalsPaid(rows)).toEqual([]);
+    // The refund row itself is still listed, as Refunded.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('refunded');
+  });
+});
+
+describe('non-refund rows keep their mapping (japa#398)', () => {
+  const expected: Record<ApiTransaction['status'], Payment['status']> = {
+    completed: 'paid',
+    released: 'paid',
+    pending: 'pending',
+    processing: 'pending',
+    held_in_escrow: 'pending',
+    refunded: 'refunded',
+    failed: 'failed',
+  };
+  const others: ApiTransaction['type'][] = [
+    'consultation_fee',
+    'service_fee',
+    'government_fee',
+    'escrow_release',
+    'withdrawal',
+  ];
+  it('every non-refund type × status maps as before', () => {
+    for (const type of others) {
+      for (const s of ALL_STATUSES) {
+        expect(mapStatus(s, type)).toBe(expected[s]);
+        expect(mapStatus(s)).toBe(expected[s]);
+      }
+    }
+  });
+});
+
+// ── Payments and Profile agree (japa#398) ───────────────────────────────────
+describe('Payments totals and Profile count use the same rule', () => {
+  // One mixed fixture: paid, pending, failed, refunded, refund-completed,
+  // refund-pending, and more than one currency.
+  const fixture: ApiTransaction[] = [
+    txn('paid-ngn', 'consultation_fee', 'completed', 1_000),
+    txn('released-ngn', 'escrow_release', 'released', 2_000),
+    txn('paid-usd', 'service_fee', 'completed', 300, 'USD'),
+    txn('pending', 'service_fee', 'pending', 4_000),
+    txn('processing-usd', 'government_fee', 'processing', 8_000, 'USD'),
+    txn('failed', 'service_fee', 'failed', 16_000),
+    txn('refunded', 'consultation_fee', 'refunded', 32_000),
+    txn('refund-completed', 'refund', 'completed', 64_000),
+    txn('refund-released-usd', 'refund', 'released', 128_000, 'USD'),
+    txn('refund-pending', 'refund', 'pending', 256_000),
+    txn('withdrawal', 'withdrawal', 'completed', 512, 'GBP'),
+  ];
+  const rows = fixture.map(mapTransaction);
+  const paidRows = rows.filter((r) => r.status === 'paid');
+
+  it("Profile's count equals the number of paid Payments rows", () => {
+    expect(paidCount(fixture)).toBe(paidRows.length);
+    expect(paidRows.map((r) => r.id)).toEqual([
+      'paid-ngn',
+      'released-ngn',
+      'paid-usd',
+      'withdrawal',
+    ]);
+  });
+
+  it('a row is paid exactly when countsAsPaid says so', () => {
+    fixture.forEach((t, i) => {
+      expect(rows[i].status === 'paid').toBe(countsAsPaid(t));
+    });
+  });
+
+  it('every paid row, and only those, is summed into the totals', () => {
+    // Expected totals rebuilt by hand from the paid rows alone.
+    expect(totalsPaid(rows)).toEqual([
+      { amountMinor: 3_000, currency: 'NGN' },
+      { amountMinor: 300, currency: 'USD' },
+      { amountMinor: 512, currency: 'GBP' },
+    ]);
+    // And the sum over all currencies equals the sum over paid rows.
+    const total = totalsPaid(rows).reduce((n, m) => n + m.amountMinor, 0);
+    const paidSum = paidRows.reduce((n, r) => n + r.amount.amountMinor, 0);
+    expect(total).toBe(paidSum);
+  });
+
+  it('payment-request rows (always pending) count in neither', () => {
+    const request: Payment = {
+      id: 'pr-1',
+      title: 'Payment request',
+      sub: '',
+      amount: { amountMinor: 99_000, currency: 'NGN' },
+      usd: null,
+      date: '',
+      status: 'pending',
+      method: '—',
+    };
+    expect(totalsPaid([...rows, request])).toEqual(totalsPaid(rows));
+    // Profile counts transactions only; a request is not one, and as a
+    // `pending` row it would not count anyway.
+    expect(countsAsPaid({ status: 'pending', type: 'service_fee' })).toBe(
+      false,
+    );
+  });
+});
+
+// ── PAY_STATUS is keyed by Payment['status'] (japa#398) ─────────────────────
+// Checked by `tsc --noEmit` (this file is in the tsconfig): a map missing a
+// Payment status must not type-check as PAY_STATUS's type.
+describe('PAY_STATUS type', () => {
+  it('has a pill for every Payment status', () => {
+    const statuses: Record<Payment['status'], true> = {
+      paid: true,
+      pending: true,
+      refunded: true,
+      failed: true,
+    };
+    for (const s of Object.keys(statuses) as Payment['status'][]) {
+      expect(PAY_STATUS[s].label).toBeTruthy();
+    }
+    // @ts-expect-error — `failed` is missing, so this is not a PAY_STATUS.
+    const incomplete: typeof PAY_STATUS = {
+      paid: PAY_STATUS.paid,
+      pending: PAY_STATUS.pending,
+      refunded: PAY_STATUS.refunded,
+    };
+    expect(incomplete).toBeDefined();
   });
 });

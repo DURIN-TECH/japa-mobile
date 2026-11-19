@@ -60,6 +60,23 @@ describe('paidCount / paidLabel', () => {
       ]),
     ).toBe('1 paid');
   });
+  it('no refund counts, whatever its status (japa#398)', () => {
+    expect(
+      paidCount(
+        (
+          [
+            'pending',
+            'processing',
+            'completed',
+            'failed',
+            'refunded',
+            'held_in_escrow',
+            'released',
+          ] as const
+        ).map((s) => tx(s, 'refund')),
+      ),
+    ).toBe(0);
+  });
   it('none → "0 paid"; loading / error → "–"', () => {
     expect(paidLabel([])).toBe('0 paid');
     expect(paidLabel(undefined)).toBe('–');

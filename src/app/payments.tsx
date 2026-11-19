@@ -229,7 +229,8 @@ export default function PaymentsView() {
 
   // ── Total paid — one sum PER CURRENCY of every `paid` transaction ────────
   // Pure helper (`totalsPaid` in liveTransactions.ts, unit-tested): failed,
-  // pending and refunded rows never count (japa#353). The hero shows one
+  // pending and refunded rows never count (japa#353), and nor does any
+  // `refund` transaction, whatever its status (japa#398). The hero shows one
   // line per currency (in first-seen order).
   const totals: Money[] = React.useMemo(() => totalsPaid(rows), [rows]);
 
