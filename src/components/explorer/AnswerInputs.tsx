@@ -1,20 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Answer inputs (issue #187, regroomed): one input per answer type, built from
-// the design system's own pieces (LabeledInput, the native date picker, EX
+// the design system's own pieces (LabeledInput, the shared DateField, EX
 // tokens). Each is a controlled view: it shows `form` and reports the next form
 // through `onChange`. Saving, drafts and errors live in InformationAnswer.
 // Answers are personal: nothing here logs them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useRef, useState } from 'react';
-import { Platform, Text, View } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { Text, View } from 'react-native';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { LabeledInput } from '@/components/explorer/AccountForm';
+import { DateField, DateRangeField } from '@/components/explorer/DateField';
 import {
-  displayDate,
   fromIsoDate,
   toIsoDate,
 } from '@/components/explorer/intake/intakeLogic';
@@ -44,111 +43,9 @@ const inputText = {
   fontWeight: '400' as const,
 };
 
-// ── Date picker field ─────────────────────────────────────────────────────────
-
-function DateField({
-  value,
-  label,
-  accessibilityLabel,
-  minimumDate,
-  editable,
-  onChange,
-}: {
-  value: string;
-  label?: string;
-  accessibilityLabel: string;
-  /** Opens on this date when nothing is chosen (e.g. the range's start). */
-  minimumDate?: Date;
-  editable: boolean;
-  onChange: (iso: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const current = fromIsoDate(value) ?? minimumDate ?? new Date();
-  // iOS inline calendar: the date it shows, so "Done" can commit it. Tapping the
-  // date already shown (today, when nothing is chosen) fires no change event.
-  const shown = useRef<Date>(current);
-  shown.current = fromIsoDate(value) ?? shown.current;
-  return (
-    <View style={{ flex: 1, minWidth: 0 }}>
-      <PressableStatic
-        onPress={() => setOpen((o) => !o)}
-        disabled={!editable}
-        accessibilityRole="button"
-        accessibilityLabel={`${accessibilityLabel}${value ? `, ${displayDate(value)}` : ', not chosen'}`}
-        style={({ pressed }) => ({
-          backgroundColor: EX.color.cardWhite,
-          borderRadius: 18,
-          borderWidth: 1,
-          borderColor: EX.color.line10,
-          minHeight: 44,
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          opacity: pressed ? 0.85 : 1,
-        })}
-      >
-        {label ? (
-          <Text
-            style={{
-              fontSize: 12.5,
-              fontWeight: '600',
-              color: EX.color.muted,
-              marginBottom: 4,
-            }}
-          >
-            {label}
-          </Text>
-        ) : null}
-        <Text
-          style={{
-            fontSize: 16.5,
-            fontWeight: value ? '600' : '400',
-            color: value ? EX.color.ink : EX.color.inkMuted,
-          }}
-        >
-          {value ? displayDate(value) : 'Choose a date'}
-        </Text>
-      </PressableStatic>
-      {open ? (
-        <DateTimePicker
-          value={current}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'inline' : 'default'}
-          accentColor={EX.color.primary}
-          onChange={(event, date) => {
-            if (Platform.OS !== 'ios') setOpen(false);
-            if (event.type === 'set' && date) {
-              shown.current = date;
-              onChange(toIsoDate(date));
-            }
-          }}
-        />
-      ) : null}
-      {open && Platform.OS === 'ios' ? (
-        <PressableStatic
-          onPress={() => {
-            // Commit the date the calendar shows (picks today when untouched).
-            onChange(toIsoDate(shown.current));
-            setOpen(false);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`${accessibilityLabel}, done`}
-          style={{
-            alignSelf: 'flex-end',
-            minHeight: 44,
-            justifyContent: 'center',
-            paddingHorizontal: 8,
-          }}
-        >
-          <Text
-            style={{ fontSize: 14, fontWeight: '700', color: EX.color.primary }}
-          >
-            Done
-          </Text>
-        </PressableStatic>
-      ) : null}
-    </View>
-  );
-}
+// ── Dates: the shared DateField (japa#407) in its 'answer' look ───────────────
+// One calendar open at a time across the screen, closes when a day is picked,
+// Done commits the highlighted date. From/To share one calendar slot below them.
 
 export function DateAnswerInput({
   form,
@@ -157,11 +54,12 @@ export function DateAnswerInput({
 }: BaseProps & { form: string; onChange: (f: string) => void }) {
   return (
     <DateField
-      value={form}
+      look="answer"
+      value={fromIsoDate(form)}
       accessibilityLabel={base.title}
-      editable={base.editable}
-      onChange={(iso) => {
-        onChange(iso);
+      disabled={!base.editable}
+      onChange={(d) => {
+        onChange(toIsoDate(d));
         base.onCommit('date');
       }}
     />
@@ -176,30 +74,35 @@ export function DateRangeAnswerInput({
   form: DateRangeValue;
   onChange: (f: DateRangeValue) => void;
 }) {
+  const fromDate = fromIsoDate(form.from);
   return (
-    <View style={{ gap: 10 }}>
-      <DateField
-        label="From"
-        value={form.from}
-        accessibilityLabel={`${base.title}, from`}
-        editable={base.editable}
-        onChange={(iso) => {
-          onChange({ ...form, from: iso });
+    <DateRangeField
+      look="answer"
+      // Stacked, as this input always was.
+      stacked
+      disabled={!base.editable}
+      from={{
+        value: fromDate,
+        innerLabel: 'From',
+        accessibilityLabel: `${base.title}, from`,
+        onChange: (d) => {
+          onChange({ ...form, from: toIsoDate(d) });
           base.onCommit('from');
-        }}
-      />
-      <DateField
-        label="To"
-        value={form.to}
-        minimumDate={fromIsoDate(form.from) ?? undefined}
-        accessibilityLabel={`${base.title}, to`}
-        editable={base.editable}
-        onChange={(iso) => {
-          onChange({ ...form, to: iso });
+        },
+      }}
+      to={{
+        value: fromIsoDate(form.to),
+        innerLabel: 'To',
+        accessibilityLabel: `${base.title}, to`,
+        // Opens on the From date and cannot go before it.
+        minimumDate: fromDate ?? undefined,
+        initialDate: fromDate ?? undefined,
+        onChange: (d) => {
+          onChange({ ...form, to: toIsoDate(d) });
           base.onCommit('to');
-        }}
-      />
-    </View>
+        },
+      }}
+    />
   );
 }
 
