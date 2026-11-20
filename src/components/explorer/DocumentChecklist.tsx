@@ -30,6 +30,7 @@ import { EX, EXShadow } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Pill, SectionTitle } from '@/components/explorer/primitives';
 import { InlineError } from '@/components/explorer/AccountForm';
+import { uploadErrorAction } from '@/components/explorer/pickUploadFile';
 import { Checklist, ChecklistItem } from '@/types/checklist.type';
 import type { SavedAnswer } from '@/types/answers.type';
 import {
@@ -482,7 +483,11 @@ function ItemRow({
           {/* Failed upload from this item: error above its button (#174). */}
           {uploadError ? (
             <View style={{ marginTop: 10 }}>
-              <InlineError message={uploadError} />
+              {/* japa#420: the camera-denied line carries "Open Settings". */}
+              <InlineError
+                message={uploadError}
+                action={uploadErrorAction(uploadError)}
+              />
             </View>
           ) : null}
 
