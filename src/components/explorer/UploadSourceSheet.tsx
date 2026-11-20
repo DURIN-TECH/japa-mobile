@@ -225,18 +225,62 @@ export function UploadSourceSheet({
   const cbs = useRef({ onChoose, onClose });
   cbs.current = { onChoose, onClose };
 
+  // ── Timers (japa#420 review) ──────────────────────────────────────────────
+  // The close animation timer(s) (`closeWith` / `finishDrag` → `hide`) and
+  // the iOS 600 ms backup that stands in for a missing `onDismiss`. Their ids
+  // are kept so that:
+  //  - the backup is cleared the moment the choice is delivered (normally by
+  //    `onDismiss`), and again when the sheet opens: a backup left over from
+  //    the previous opening must never fire into the NEW opening and hand the
+  //    parent a fresh choice while this Modal is still on screen (iOS would
+  //    then refuse to present the picker);
+  //  - nothing fires after unmount (no setState / parent call on a dead
+  //    sheet).
+  const closeTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const backupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Cancel the iOS backup timer, if one is waiting. */
+  const clearBackup = useCallback(() => {
+    if (backupTimer.current !== null) {
+      clearTimeout(backupTimer.current);
+      backupTimer.current = null;
+    }
+  }, []);
+  /** Start a close timer and remember its id (cleared on unmount). */
+  const startCloseTimer = (fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      // Forget this id once it has run; the list only holds pending ones.
+      closeTimers.current = closeTimers.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    closeTimers.current.push(id);
+  };
+  // Unmount: drop every timer still waiting.
+  useEffect(
+    () => () => {
+      for (const t of closeTimers.current) clearTimeout(t);
+      closeTimers.current = [];
+      clearBackup();
+    },
+    [clearBackup],
+  );
+
   /** Tell the parent what happened, exactly once per opening. */
   const deliver = useCallback(() => {
+    // Whoever delivers first (onDismiss or the backup) wins; the backup is
+    // no longer needed either way.
+    clearBackup();
     const p = pending.current;
     pending.current = null;
     if (p === null) return;
     if (p === 'close') cbs.current.onClose();
     else cbs.current.onChoose(p);
-  }, []);
+  }, [clearBackup]);
 
   // ── Open ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!visible || shown) return;
+    // A backup from the previous opening must not deliver into this one.
+    clearBackup();
     closing.current = false;
     pending.current = null;
     setLocked(false);
@@ -280,9 +324,16 @@ export function UploadSourceSheet({
   /** Hide the Modal, then tell the parent (onDismiss on iOS, else now). */
   const hide = useCallback(() => {
     setShown(false);
-    if (Platform.OS === 'ios') setTimeout(deliver, DISMISS_FALLBACK_MS);
-    else deliver();
-  }, [deliver]);
+    if (Platform.OS === 'ios') {
+      // iOS: `onDismiss` normally delivers first and clears this backup; it
+      // only fires when `onDismiss` never comes. Replace (never stack) one.
+      clearBackup();
+      backupTimer.current = setTimeout(() => {
+        backupTimer.current = null;
+        deliver();
+      }, DISMISS_FALLBACK_MS);
+    } else deliver();
+  }, [deliver, clearBackup]);
 
   /**
    * Animate out from wherever the card is, then hide. `what` is the source
@@ -304,7 +355,8 @@ export function UploadSourceSheet({
       });
       backdrop.value = withTiming(0, { duration: CLOSE_MS, easing: CURVE });
     }
-    setTimeout(hide, reduceMotion ? REDUCED_MS : CLOSE_MS);
+    // Hide once the close animation has run (id kept for unmount).
+    startCloseTimer(hide, reduceMotion ? REDUCED_MS : CLOSE_MS);
   };
   const dismiss = () => closeWith('close');
 
@@ -331,7 +383,7 @@ export function UploadSourceSheet({
         easing: CURVE,
       });
       backdrop.value = withTiming(0, { duration: CLOSE_MS, easing: CURVE });
-      setTimeout(hide, CLOSE_MS);
+      startCloseTimer(hide, CLOSE_MS);
     } else {
       translateY.value = withTiming(0, { duration: CLOSE_MS, easing: CURVE });
       backdrop.value = withTiming(1, { duration: CLOSE_MS, easing: CURVE });

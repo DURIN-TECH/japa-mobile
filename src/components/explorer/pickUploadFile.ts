@@ -116,8 +116,9 @@ export function photoResize(
 /**
  * Convert a picked photo to a JPEG (resized when needed) and return it as an
  * upload file. Uses the SDK 58 context API (`ImageManipulator.manipulate`),
- * not the deprecated `manipulateAsync`. The native objects are released once
- * the file is saved so a few large photos do not pile up in memory.
+ * not the deprecated `manipulateAsync`. The native objects are always
+ * released (in `finally`, also when a render or the save fails) so a few
+ * large photos do not pile up in memory.
  */
 export async function convertPhoto(
   asset: { uri: string; width?: number; height?: number },
@@ -125,29 +126,51 @@ export async function convertPhoto(
 ): Promise<PickedUploadFile> {
   // Size from the picker when it gave one (the usual case).
   let resize = photoResize(asset.width ?? 0, asset.height ?? 0);
-  const ctx = ImageManipulator.manipulate(asset.uri);
-  if (resize) ctx.resize(resize);
-  let image = await ctx.renderAsync();
-  ctx.release();
 
-  // No size from the picker: check the rendered image instead and scale it
-  // down in a second pass when it is still too large.
-  if (!asset.width || !asset.height) {
-    resize = photoResize(image.width, image.height);
-    if (resize) {
-      const again = ImageManipulator.manipulate(image).resize(resize);
-      const smaller = await again.renderAsync();
-      again.release();
-      image.release();
-      image = smaller;
-    }
+  // ── Native objects are released in `finally` (japa#420 review) ──────────
+  // Each context and rendered image holds a full-size native bitmap (a 48 MP
+  // photo is ~190 MB decoded). If a render or the save throws, the error
+  // still goes up to the screen's upload-failure line, but the bitmap must
+  // not stay behind in memory. So every object is released in a `finally`
+  // tied to its own step, whatever that step ends in.
+  const ctx = ImageManipulator.manipulate(asset.uri);
+  let image: Awaited<ReturnType<typeof ctx.renderAsync>>;
+  try {
+    if (resize) ctx.resize(resize);
+    image = await ctx.renderAsync();
+  } finally {
+    ctx.release();
   }
 
-  const saved = await image.saveAsync({
-    format: SaveFormat.JPEG,
-    compress: PHOTO_JPEG_QUALITY,
-  });
-  image.release();
+  let saved: { uri: string };
+  try {
+    // No size from the picker: check the rendered image instead and scale it
+    // down in a second pass when it is still too large.
+    if (!asset.width || !asset.height) {
+      resize = photoResize(image.width, image.height);
+      if (resize) {
+        const again = ImageManipulator.manipulate(image).resize(resize);
+        let smaller: typeof image;
+        try {
+          smaller = await again.renderAsync();
+        } finally {
+          again.release();
+        }
+        // Swap in the smaller image; the first one is released right away
+        // (the outer `finally` then releases whichever `image` is current).
+        image.release();
+        image = smaller;
+      }
+    }
+
+    saved = await image.saveAsync({
+      format: SaveFormat.JPEG,
+      compress: PHOTO_JPEG_QUALITY,
+    });
+  } finally {
+    // Released on success AND when the second render or the save throws.
+    image.release();
+  }
 
   return {
     uri: saved.uri,

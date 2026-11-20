@@ -39,7 +39,7 @@ jest.mock('react-native-gesture-handler', () => {
 import React from 'react';
 import { describe, expect, it, jest } from '@jest/globals';
 import TestRenderer, { act } from 'react-test-renderer';
-import { Text } from 'react-native';
+import { Modal, Platform, Text } from 'react-native';
 import { UPLOAD_SOURCE_COPY, UploadSourceSheet } from '../UploadSourceSheet';
 import { InlineError } from '../AccountForm';
 
@@ -107,6 +107,74 @@ describe('UploadSourceSheet', () => {
       jest.useRealTimers();
     },
   );
+
+  // ── iOS backup timer (japa#420 review) ─────────────────────────────────
+  // onDismiss delivers the choice; the 600 ms backup that was started for a
+  // missing onDismiss must then be cleared, so the parent is told once.
+  it('iOS: onDismiss delivers, and the backup timer elapsing after it adds nothing', async () => {
+    jest.useFakeTimers();
+    const restore = jest.replaceProperty(Platform, 'OS', 'ios');
+    const { tree, onChoose, onClose } = await renderOpen();
+    act(() => byTestId(tree, 'uploadSourceSheet.camera').props.onPress());
+    // Run the close animation timer only: the Modal is hidden and the backup
+    // is waiting, but nothing has been delivered yet.
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(onChoose).not.toHaveBeenCalled();
+    // The Modal reports it has fully gone.
+    act(() => tree.root.findByType(Modal).props.onDismiss());
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onChoose).toHaveBeenCalledWith('camera');
+    // Now let the backup's 600 ms (and more) pass: still exactly once.
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+    restore.restore();
+    jest.useRealTimers();
+  });
+
+  // ── Android: no onDismiss wait; the close timer delivers directly ─────────
+  it('Android: a row tap delivers when the close animation ends', async () => {
+    jest.useFakeTimers();
+    const restore = jest.replaceProperty(Platform, 'OS', 'android');
+    const { tree, onChoose, onClose } = await renderOpen();
+    act(() => byTestId(tree, 'uploadSourceSheet.files').props.onPress());
+    expect(onChoose).not.toHaveBeenCalled();
+    // The 240 ms close animation, and no 600 ms backup after it.
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onChoose).toHaveBeenCalledWith('files');
+    expect(jest.getTimerCount()).toBe(0);
+    // A late onDismiss (Android does not normally send one) adds nothing.
+    act(() => tree.root.findByType(Modal).props.onDismiss?.());
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    restore.restore();
+    jest.useRealTimers();
+  });
+
+  it('unmounting mid-close drops the waiting timers (nothing fires later)', async () => {
+    jest.useFakeTimers();
+    const restore = jest.replaceProperty(Platform, 'OS', 'ios');
+    const { tree, onChoose, onClose } = await renderOpen();
+    act(() => byTestId(tree, 'uploadSourceSheet.library').props.onPress());
+    act(() => tree.unmount());
+    // Without the unmount cleanup the close timer and then the iOS backup
+    // would still run and call the parent of a sheet that no longer exists.
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    restore.restore();
+    jest.useRealTimers();
+  });
 
   it('Cancel and the backdrop close without choosing', async () => {
     jest.useFakeTimers();

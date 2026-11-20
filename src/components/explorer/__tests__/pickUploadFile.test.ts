@@ -28,7 +28,10 @@ jest.mock('expo-document-picker', () => ({
 }));
 
 // The manipulator context: records resize calls, renders an image ref that
-// saves to a fixed JPEG uri.
+// saves to a fixed JPEG uri. Every native object's `release` is recorded as
+// 'ctx' (a manipulator context) or 'image' (a rendered image), so the tests
+// can check nothing is left holding a bitmap (japa#420 review).
+const mockRelease = jest.fn<(what: 'ctx' | 'image') => void>();
 const mockResize = jest.fn();
 const mockSave = jest.fn<(o: unknown) => Promise<unknown>>();
 const mockManipulate = jest.fn();
@@ -46,9 +49,9 @@ jest.mock('expo-image-manipulator', () => ({
         renderAsync: async () => ({
           ...mockRendered,
           saveAsync: (o: unknown) => mockSave(o),
-          release: () => undefined,
+          release: () => mockRelease('image'),
         }),
-        release: () => undefined,
+        release: () => mockRelease('ctx'),
       };
       return ctx;
     },
@@ -185,6 +188,48 @@ describe('pickUploadFile("library")', () => {
     });
     await pickUploadFile('library', now);
     expect(mockResize).toHaveBeenCalledWith({ height: 3000 });
+  });
+
+  // ── Native memory (japa#420 review): every context and image released ──
+  it('releases the context and the image after a successful save', async () => {
+    mockLibrary.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///a.jpg', width: 8064, height: 6048 }],
+    });
+    await pickUploadFile('library', now);
+    // One context, one rendered image: each released exactly once.
+    expect(mockRelease.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'ctx',
+      'image',
+    ]);
+  });
+
+  it('a failed save still releases the image, and the error goes up', async () => {
+    mockSave.mockRejectedValue(new Error('disk full'));
+    mockLibrary.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///a.jpg', width: 8064, height: 6048 }],
+    });
+    await expect(pickUploadFile('library', now)).rejects.toThrow('disk full');
+    expect(mockRelease).toHaveBeenCalledWith('ctx');
+    expect(mockRelease).toHaveBeenCalledWith('image');
+    expect(mockRelease).toHaveBeenCalledTimes(2);
+  });
+
+  it('the two-pass path releases both contexts and both images', async () => {
+    // No size from the picker and a large render: a second resize pass.
+    mockRendered = { width: 4000, height: 6000 };
+    mockLibrary.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///a.jpg' }],
+    });
+    await pickUploadFile('library', now);
+    expect(mockRelease.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'ctx',
+      'ctx',
+      'image',
+      'image',
+    ]);
   });
 
   it('cancel returns cancelled and converts nothing', async () => {
