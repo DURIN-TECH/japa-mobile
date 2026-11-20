@@ -40,6 +40,14 @@
       "@react-native-firebase/messaging",
       "expo-router",
       "expo-document-picker",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow Seli to use your camera so you can take a photo of a document for your application.",
+          "photosPermission": "Allow Seli to open your photos so you can add a document to your application.",
+          "microphonePermission": false
+        }
+      ],
       "expo-secure-store",
       "expo-font",
       [
