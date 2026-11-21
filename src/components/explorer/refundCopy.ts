@@ -123,9 +123,11 @@ export const CANCEL_ERROR =
  * marked paid with a dollar price above 0.
  */
 export function wasPaidBooking(
-  c: Pick<
-    ApiConsultation,
-    'cancellationRefund' | 'paymentStatus' | 'priceUsdCents'
+  c: Partial<
+    Pick<
+      ApiConsultation,
+      'cancellationRefund' | 'paymentStatus' | 'priceUsdCents'
+    >
   >,
 ): boolean {
   if (c.cancellationRefund) return true;
