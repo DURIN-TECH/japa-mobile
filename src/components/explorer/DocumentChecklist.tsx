@@ -53,7 +53,14 @@ import {
   type GroupId,
   type ItemState,
 } from '@/components/explorer/checklistLogic';
-import { Document } from '@/types/documents.type';
+import { Document, documentDisplayName } from '@/types/documents.type';
+// japa#446: tapping the uploaded file opens it in the in-app viewer, through
+// the screen's one shared opener (same lock and error line as the other cards).
+import {
+  isDocumentOpenable,
+  type DocumentOpener,
+} from '@/components/explorer/openDocument';
+import { DOC_OPEN_COPY } from '@/components/explorer/openDocumentCopy';
 // japa#237: layer pill on a row of a stacked (shared-route) rulebook.
 import {
   LayerPillFor,
@@ -328,6 +335,94 @@ function UploadButton({
   );
 }
 
+// ── The uploaded file on a document item (japa#446) ──────────────────────────
+// A checklist item row holds its own buttons (Upload, Official requirement, the
+// document-check retry), so the item can't become one big button without
+// nesting them. Instead the item's LATEST file (`latestDocFor`) gets its own
+// small tappable line in the text column: docs icon + file name + the spec's
+// 20px chevron / coral-spinner slot, with the 0.7 pressed opacity, the button
+// role / hint / label, and testIDs `doc-row-<documentId>` (+ `-opening`,
+// `-error`). The error line (InlineError) sits right under it, outside the
+// Pressable so its action isn't nested in the row button.
+function ChecklistFileRow({
+  doc,
+  itemTitle,
+  opener,
+}: {
+  doc: Document;
+  /** The item's title, read out with the file name. */
+  itemTitle: string;
+  /** The screen's one document opener. */
+  opener: DocumentOpener;
+}) {
+  const opening = opener.openingId === doc.id;
+  const error = opener.errorFor(doc.id);
+  const name = documentDisplayName(doc);
+  return (
+    <View style={{ marginTop: 6 }}>
+      <PressableStatic
+        testID={`doc-row-${doc.id}`}
+        onPress={() =>
+          opener.open(doc.id, { onBehalf: !!doc.uploadedOnBehalf })
+        }
+        // Screen-wide lock: every row ignores taps while any row opens.
+        disabled={opener.locked}
+        android_ripple={undefined}
+        accessibilityRole="button"
+        accessibilityLabel={`${name}, ${itemTitle}`}
+        accessibilityHint={DOC_OPEN_COPY.rowHint}
+        accessibilityState={{
+          busy: opening,
+          disabled: opener.locked && !opening,
+        }}
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+          // 44pt touch target (the line itself is ~18pt of text).
+          minHeight: 44,
+          opacity: pressed ? 0.7 : 1,
+        })}
+      >
+        <Ic.docs size={14} color={EX.color.inkMuted} strokeWidth={1.8} />
+        <Text
+          style={{
+            flex: 1,
+            fontSize: 13,
+            fontWeight: '600',
+            color: EX.color.ink,
+          }}
+          numberOfLines={1}
+        >
+          {name}
+        </Text>
+        {/* Fixed slot: chevron at rest, coral spinner while opening. */}
+        <View style={{ width: 20, alignItems: 'center' }}>
+          {opening ? (
+            <ActivityIndicator
+              testID={`doc-row-${doc.id}-opening`}
+              size="small"
+              color={EX.color.primary}
+              accessibilityLabel={DOC_OPEN_COPY.openingLabel}
+            />
+          ) : (
+            <Ic.chevR size={17} color={EX.color.faint} strokeWidth={1.8} />
+          )}
+        </View>
+      </PressableStatic>
+      {error ? (
+        <View testID={`doc-row-${doc.id}-error`} style={{ marginTop: 8 }}>
+          <InlineError
+            message={error.message}
+            action={error.action}
+            selectable={error.selectable}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // ── One item row inside a group card ─────────────────────────────────────────
 // Header: tile, text column (title, status line, clause, notice, buttons),
 // right slot (Upload button while waiting, else the state pill). A detail's
@@ -341,10 +436,13 @@ function ItemRow({
   checksProps,
   uploadError,
   answersProps,
+  opener,
 }: {
   item: ChecklistItem;
   docs: Document[];
   first: boolean;
+  /** japa#446: the screen's document opener (absent = file not tappable). */
+  opener?: DocumentOpener;
   uploading: boolean;
   onUpload: (item: ChecklistItem) => void;
   checksProps: ChecksProps;
@@ -465,6 +563,15 @@ function ItemRow({
             >
               “{clause}”
             </Text>
+          ) : null}
+
+          {/* japa#446: the uploaded file, tappable to open it in the viewer. */}
+          {latestDoc && opener && isDocumentOpenable(latestDoc.status) ? (
+            <ChecklistFileRow
+              doc={latestDoc}
+              itemTitle={item.title}
+              opener={opener}
+            />
           ) : null}
 
           {/* Document check result (#115): only once a document is uploaded. */}
@@ -597,6 +704,7 @@ function GroupCard({
   checksProps: ChecksProps;
   uploadFailure?: UploadFailure | null;
   answersProps?: AnswersProps;
+  opener?: DocumentOpener;
 }) {
   // Hidden when empty (the caller already drops empty groups).
   if (items.length === 0) return null;
@@ -689,6 +797,7 @@ function GroupCard({
             onUpload={rest.onUpload}
             checksProps={rest.checksProps}
             answersProps={rest.answersProps}
+            opener={rest.opener}
             uploadError={
               rest.uploadFailure &&
               rest.uploadFailure.documentRequestId === item.documentRequestId
@@ -768,6 +877,7 @@ export function DocumentChecklist({
   checksProps,
   uploadFailure,
   answersProps,
+  opener,
 }: {
   checklist?: Checklist | null;
   loading: boolean;
@@ -788,6 +898,11 @@ export function DocumentChecklist({
   uploadFailure?: UploadFailure | null;
   /** Answers for information items (#187). */
   answersProps?: AnswersProps;
+  /**
+   * japa#446: the screen's one document opener, shared with the other
+   * document cards. When given, each item's uploaded file can be tapped.
+   */
+  opener?: DocumentOpener;
 }) {
   let body: React.ReactNode;
   if (loading) {
@@ -895,6 +1010,7 @@ export function DocumentChecklist({
               checksProps={checksProps}
               uploadFailure={uploadFailure}
               answersProps={answersProps}
+              opener={opener}
             />
           ))}
         </StackLayersProvider>

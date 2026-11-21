@@ -1713,6 +1713,9 @@ export default function SelfServiceView() {
               <>
                 <DocumentChecklist
                   checklist={checklist}
+                  // japa#446: the same opener as the requirement and Other
+                  // documents cards (one lock, one error line per screen).
+                  opener={docOpener}
                   loading={checklistQ.isLoading}
                   error={checklistQ.isError}
                   onRetry={() => checklistQ.refetch()}
