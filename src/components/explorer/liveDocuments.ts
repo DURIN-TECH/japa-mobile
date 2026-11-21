@@ -54,5 +54,7 @@ export function mapDocument(d: Document, appCtx?: Application): Doc {
     date: fmtDate(d.uploadedAt, 'MMM d', '—'),
     // Link the row to its destination country (country art key).
     destId: appCtx?.countryCode ? appCtx.countryCode.toLowerCase() : undefined,
+    // japa#446: agency-filed documents get the "ask your agency" 409 line.
+    onBehalf: d.uploadedOnBehalf ? true : undefined,
   };
 }

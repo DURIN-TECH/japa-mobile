@@ -268,6 +268,8 @@ export type Doc = {
   size?: string;
   date: string;
   destId?: string;
+  /** japa#446: the agency filed it for the client (picks the 409 copy). */
+  onBehalf?: boolean;
 };
 
 /** A payments-history row. */
