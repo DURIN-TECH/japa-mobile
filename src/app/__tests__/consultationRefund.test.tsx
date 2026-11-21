@@ -273,6 +273,7 @@ describe('refund card (japa#356)', () => {
         amount: 812_437,
         currency: 'NGN',
         consultationId: 'cons-1',
+        refundOf: 'fee-1',
         refundState: 'on_its_way',
       },
     ];

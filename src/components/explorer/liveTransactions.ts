@@ -243,6 +243,10 @@ export function totalsPaid(
  * it. Null (the card then drops the figure) when:
  *  - there is no refund row for the booking yet (the list may be loading);
  *  - the row carries no real amount (a HELD row is 0, backend #413 H);
+ *  - the row is not a refund OF THIS BOOKING'S FEE: only those carry
+ *    `refundOf` (backend client-transaction.ts). A #354 / #392 refund of a
+ *    payment made on a retired checkout also carries the `consultationId`
+ *    but no `refundOf`, and is never this booking's refund (review fix);
  *  - the booking has MORE than one refund row (e.g. a resolved mismatch plus
  *    its top-up, #413): adding them up would be the app working money out,
  *    so no figure is shown at all.
@@ -256,7 +260,11 @@ export function bookingRefundAmount(
   consultationId: string,
 ): Money | null {
   const refunds = (rows ?? []).filter(
-    (t) => t.type === 'refund' && t.consultationId === consultationId,
+    (t) =>
+      t.type === 'refund' &&
+      t.consultationId === consultationId &&
+      // Only a refund of the booking's own fee row (review fix).
+      !!t.refundOf,
   );
   if (refunds.length !== 1) return null;
   const [r] = refunds;

@@ -241,6 +241,7 @@ describe('bookingRefundAmount', () => {
     consultationId: 'cons-1',
     createdAt: '2026-11-20T10:00:00.000Z',
     refundState: 'on_its_way',
+    refundOf: 'fee-1',
     ...over,
   });
   it('the one refund row of the booking, exactly', () => {
@@ -255,6 +256,23 @@ describe('bookingRefundAmount', () => {
       ),
     ).toEqual(ngn(812_437));
   });
+  // Review fix: a #354 / #392 refund of a payment on a retired checkout
+  // carries the booking's id but no `refundOf`: never this booking's refund.
+  it('ignores a refund with no refundOf (an unapplied-payment refund)', () => {
+    const unapplied = row({
+      id: 'rf-old',
+      amount: 4_738_940,
+      refundOf: undefined,
+      description: 'Refund: consultation payment that could not be applied',
+    });
+    // Alone: no figure (never the old price as this booking's refund).
+    expect(bookingRefundAmount([unapplied], 'cons-1')).toBeNull();
+    // Next to the booking's own fee refund: that one's figure comes back.
+    expect(bookingRefundAmount([unapplied, row({})], 'cons-1')).toEqual(
+      ngn(812_437),
+    );
+  });
+
   it('none, held (0), or two refund rows: null', () => {
     expect(bookingRefundAmount([], 'cons-1')).toBeNull();
     expect(bookingRefundAmount(undefined, 'cons-1')).toBeNull();
