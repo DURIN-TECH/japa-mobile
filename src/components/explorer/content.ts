@@ -24,7 +24,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { IMG } from '@/assets/countries';
-import type { OnboardSlide } from '@/types/explorer.type';
+import type { OnboardSlide, Payment } from '@/types/explorer.type';
 import type { LocalPriceQuote, Money } from '@/types/money.type';
 
 // ── Currency (legacy) ────────────────────────────────────────────────────────
@@ -392,8 +392,11 @@ export const DOC_STATUS: Record<
 };
 
 // Payment status → pill label + colours.
+// Keyed by `Payment['status']` (japa#398), not `string`: a status added to
+// the Payment type without a pill here is a compile error, not an undefined
+// lookup crashing `PaymentRow` in payments.tsx.
 export const PAY_STATUS: Record<
-  string,
+  Payment['status'],
   { label: string; fg: string; bg: string }
 > = {
   paid: { label: 'Paid', fg: '#1E8E55', bg: '#D6F2E2' },

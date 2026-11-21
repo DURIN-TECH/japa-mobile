@@ -7,6 +7,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { ApiTransaction } from '@/hooks/useTransactions';
+// The shared "counts as paid" rule (japa#398), also behind Payments' totals.
+import { countsAsPaid } from '@/components/explorer/liveTransactions';
 
 /** The "unknown" value: an en dash (U+2013), as on every other Profile row. */
 export const UNKNOWN_VALUE = '–';
@@ -22,25 +24,16 @@ export function fileCountLabel(count: number | null | undefined): string {
 // ── Payments ─────────────────────────────────────────────────────────────────
 
 /**
- * Backend statuses that mean the money actually moved: `completed`, and
- * `released` (an escrowed payment paid out). `failed`, `pending`,
- * `processing`, `held_in_escrow` and `refunded` are not counted.
- */
-const PAID_STATUSES: ReadonlySet<ApiTransaction['status']> = new Set([
-  'completed',
-  'released',
-]);
-
-/**
- * How many of the user's payments completed. A `refund` row is money coming
- * BACK to the user, not a payment they made, so it never counts — even when
- * its own status is `completed` (review note, japa#346).
+ * How many of the user's payments completed. Uses `countsAsPaid`, the same
+ * rule that makes a Payments row `paid` and sums it into "Total paid", so the
+ * Profile count and the Payments screen always count the same transactions
+ * (japa#398). That rule skips `refund` rows whatever their status (review
+ * note, japa#346) and counts only `completed` / `released`.
  */
 export function paidCount(
   txns: Pick<ApiTransaction, 'status' | 'type'>[],
 ): number {
-  return txns.filter((t) => t.type !== 'refund' && PAID_STATUSES.has(t.status))
-    .length;
+  return txns.filter(countsAsPaid).length;
 }
 
 /**
