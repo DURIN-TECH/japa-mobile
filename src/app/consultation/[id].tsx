@@ -625,6 +625,9 @@ export default function ConsultationDetailView() {
                 disabled={cancelQ.isPending || checkingCancel}
                 hitSlop={6}
                 accessibilityRole="button"
+                // Review fix: the label stays when the text is a spinner,
+                // so VoiceOver never reads only "button, busy".
+                accessibilityLabel="Cancel consultation"
                 accessibilityState={{
                   busy: cancelQ.isPending || checkingCancel,
                 }}

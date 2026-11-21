@@ -340,6 +340,8 @@ describe('cancel confirm and result (japa#356)', () => {
     const link = byTestId(tree, 'cancel-consultation');
     expect(link.props.disabled).toBe(true);
     expect(text(tree)).not.toContain('Cancel consultation');
+    // …but it is still named for screen readers.
+    expect(link.props.accessibilityLabel).toBe('Cancel consultation');
   });
 });
 
