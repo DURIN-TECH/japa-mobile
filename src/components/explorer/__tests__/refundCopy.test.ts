@@ -83,6 +83,33 @@ describe('cancelConfirmCopy (japa#356 §1)', () => {
     expect(c.message).not.toMatch(/₦/);
   });
 
+  // Review fix: `amount: null` WITH a known fee = the fee covers the whole
+  // charge; nothing comes back, and the copy must say so.
+  it('D2. amount null, fee known: nothing to refund, said plainly', () => {
+    const c = cancelConfirmCopy(
+      preview({ amount: null, processingFee: ngn(825_000) }),
+      'Africa/Lagos',
+      'Africa/Lagos',
+    );
+    expect(c.message).toBe(
+      'This will release your booked slot. The payment provider’s processing fee covers the whole payment, so there’s nothing to refund.',
+    );
+    expect(c.destructive).toBe('Cancel without refund');
+    expect(c.message).not.toMatch(/₦|get your payment back/);
+  });
+
+  it('D1. amount null, no fee (or a fee of 0): the "we’ll confirm" copy', () => {
+    for (const processingFee of [null, ngn(0)]) {
+      const c = cancelConfirmCopy(
+        preview({ amount: null, processingFee }),
+        'Africa/Lagos',
+        'Africa/Lagos',
+      );
+      expect(c.message).toMatch(/We’ll confirm the exact amount\.$/);
+      expect(c.destructive).toBe('Cancel consultation');
+    }
+  });
+
   it('E. not refundable: no refund, cut-off in the booking’s zone', () => {
     const c = cancelConfirmCopy(
       preview({ refundable: false, amount: null, processingFee: null }),

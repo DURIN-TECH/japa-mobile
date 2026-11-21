@@ -54,8 +54,13 @@ const RELEASE = 'This will release your booked slot.';
  *  A. no preview (free / unpaid / already cancelled): today's copy;
  *  B. refundable, amount, fee > 0: amount back + the fee the provider keeps;
  *  C. refundable, amount, no fee: amount back;
- *  D. refundable, amount null: "minus the processing fee, we'll confirm",
- *     and NO figure (never the full price as a fallback);
+ *  D. refundable, amount null. The backend sends null in two cases
+ *     (consultation-refund.service.ts `cancellationRefundPreview`):
+ *     D1. fee not known yet (`processingFee: null`): "minus the processing
+ *         fee, we'll confirm", and NO figure (never the full price);
+ *     D2. fee KNOWN and at least the charge (`processingFee` set): nothing
+ *         comes back, so say so plainly (review fix) and label the button
+ *         "Cancel without refund", as E does;
  *  E. not refundable: no refund, with the cut-off in the booking's zone.
  *
  * @param preview  `cancellationRefund` from GET /consultations/:id
@@ -87,7 +92,16 @@ export function cancelConfirmCopy(
       destructive: 'Cancel without refund',
     };
   }
-  // D. Refundable, but the provider's fee is not known yet: no figure.
+  // D2. The fee is known and covers the whole charge: nothing comes back.
+  // Never promise money that won't arrive.
+  if (!positive(preview.amount) && positive(preview.processingFee)) {
+    return {
+      title,
+      message: `${RELEASE} The payment provider’s processing fee covers the whole payment, so there’s nothing to refund.`,
+      destructive: 'Cancel without refund',
+    };
+  }
+  // D1. Refundable, but the provider's fee is not known yet: no figure.
   if (!positive(preview.amount)) {
     return {
       title,
