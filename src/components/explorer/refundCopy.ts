@@ -14,7 +14,8 @@
 // they follow the system's voice and are listed in the build report.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { formatMoney } from './content';
+import { PAY_STATUS, formatMoney } from './content';
+import { EX } from './theme';
 import { formatCutoff } from './zoneTime';
 import type {
   ApiConsultation,
@@ -182,10 +183,15 @@ export function cancelResultMessage(
 
 // ── 3. Refund card ───────────────────────────────────────────────────────────
 
-/** Pill colours: the system's status pairs (same as PAY_STATUS). */
-const WARNING = { fg: '#B26A14', bg: '#FCEAC8' };
-const NEUTRAL = { fg: '#8B8499', bg: 'rgba(23,19,38,0.06)' };
-const ERROR = { fg: '#C0453C', bg: '#FBE3E1' };
+/**
+ * Pill colours: the system's status pairs, READ from their one source (review
+ * fix), never copied: PAY_STATUS for the refund pills (warning / neutral /
+ * error) and EX.status for the report pills (review / approved).
+ */
+const pair = (p: { fg: string; bg: string }) => ({ fg: p.fg, bg: p.bg });
+const WARNING = pair(PAY_STATUS.refund_pending);
+const NEUTRAL = pair(PAY_STATUS.refunded);
+const ERROR = pair(PAY_STATUS.refund_delayed);
 
 /** The refund card's pill and body line. */
 export interface RefundCardCopy {
@@ -273,12 +279,12 @@ export function noShowReportCopy(
     case 'open':
       return {
         // status-review pair (blue), as "Under review" elsewhere in the app.
-        pill: { label: 'Under review', fg: '#2F62A0', bg: '#DCEBF7' },
+        pill: { label: 'Under review', ...pair(EX.status.review) },
         body: 'You told us the meeting didn’t happen. Seli is looking into it, and your agent’s payment is paused until we let you know.',
       };
     case 'refunded':
       return {
-        pill: { label: 'Resolved', fg: '#1E8E55', bg: '#D6F2E2' },
+        pill: { label: 'Resolved', ...pair(EX.status.approved) },
         body: 'Seli confirmed the meeting didn’t happen, so we’re refunding your payment in full.',
       };
     case 'released':
