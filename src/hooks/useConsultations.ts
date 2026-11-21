@@ -15,7 +15,11 @@
  *                                   (200, `resumed: true`, japa#288)
  * - POST /consultations/:id/checkout → resume paying a pending booking
  * - POST /consultations/public/verify → confirm a Paystack charge by reference
- * - PUT /consultations/:id/status → update status (cancel, complete, etc.)
+ * - PUT /consultations/:id/status → update status (cancel, complete, etc.);
+ *                                   a cancel answers with the refund outcome
+ *                                   (`refund`, japa#356)
+ * - POST /consultations/:id/no-show-report → the client says the meeting did
+ *                                   not happen (japa#442, backend #382)
  *
  * MONEY (japa#183): the app never sends a fee, amount, currency or rate. The
  * server reads the agent's dollar fee, quotes it in the client's currency,
@@ -38,6 +42,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { retryUnlessNotFound } from './queryErrors';
 import { RETURN_TO_APP } from '@/hooks/paystackCheckout';
 import { apiService } from '@/services/api.service';
+import { tracked } from '@/utils/networkStatus';
+import type { Money } from '@/types/money.type';
 
 /**
  * A backend timestamp as the API serialises it: an ISO string or a Firestore
@@ -113,8 +119,100 @@ export interface ApiConsultation {
   notes?: string;
   summary?: string;
   recordingUrl?: string;
+  /** When it was cancelled (Timestamp as serialised). */
+  cancelledAt?: ApiTimestamp;
+
+  // ── Refunds (backend #317 / #390 / #413, read by japa#356) ────────────────
+  /**
+   * What cancelling NOW would give back, worked out by the server (client
+   * view of `GET /consultations/:id` only). Absent on a free, unpaid or
+   * already-cancelled booking, and on the list / mutation answers. The app
+   * never works out refundability or amounts itself: it reads this.
+   */
+  cancellationRefund?: CancellationRefundPreview;
+  /**
+   * Where the refund of this booking's fee stands, once one was started:
+   * `pending` / `processing` (on its way), `completed` (refunded), `failed`
+   * (delayed; a HELD refund is mirrored as `failed` too), `closed` (an admin
+   * closed a held refund with nothing to give back, #413 B). Absent when
+   * there is no refund.
+   */
+  refundStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'closed';
+
+  // ── "The meeting didn't happen" (backend #382, read by japa#442) ──────────
+  /**
+   * Whether the client may report now that the meeting did not happen. The
+   * server applies every rule (paid, not cancelled, fee still held, no
+   * refund, the slot started, no report yet). False on answers that did not
+   * work it out (create, cancel, checkout). Absent on an older backend.
+   */
+  canReportNoShow?: boolean;
+  /** The booking's report, or null when there is none. */
+  noShowReport?: NoShowReport | null;
+
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * The cancel preview on the client's booking (backend
+ * `CancellationRefundPreview`, consultation-refund.service.ts).
+ */
+export interface CancellationRefundPreview {
+  /** Whether cancelling now gives the fee back (24 h before the slot or more). */
+  refundable: boolean;
+  /**
+   * What cancelling now gives back: the charge minus the payment provider's
+   * processing fee (#390). NULL while that fee is not known: then the app
+   * shows no figure at all, never the full price as a guess.
+   */
+  amount: Money | null;
+  /** The processing fee the client does not get back; null while unknown. */
+  processingFee: Money | null;
+  /** ISO instant: slot start minus 24 hours (cancel by then for a refund). */
+  refundableUntil: string;
+}
+
+/**
+ * The refund outcome a cancel answers with (backend `RefundSummary`). Null
+ * on the answer when there is no refund (free booking, or a cancel less than
+ * 24 hours before the slot).
+ */
+export interface RefundSummary {
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'closed';
+  /** What the client gets back; NULL while the refund is held (#390). */
+  amount: Money | null;
+  /** The processing fee kept out of the charge; null when none / held. */
+  processingFee: Money | null;
+  /** Why the refund is held for an admin (only while it is). Not shown. */
+  heldReason?: string;
+}
+
+/** PUT /consultations/:id/status (200): the booking plus the refund outcome. */
+export type CancelConsultationResult = ApiConsultation & {
+  refund?: RefundSummary | null;
+};
+
+/**
+ * The client's "the meeting didn't happen" report (backend #382 client
+ * view): its status and times only.
+ *  - `open`: Seli is looking into it (the agent's payment is paused);
+ *  - `refunded`: Seli found the agent didn't show: full refund;
+ *  - `released`: Seli found the meeting took place: no refund.
+ */
+export interface NoShowReport {
+  status: 'open' | 'refunded' | 'released';
+  createdAt: ApiTimestamp;
+  resolvedAt?: ApiTimestamp;
+}
+
+/** The longest note the backend accepts on a report (`NO_SHOW_NOTE_MAX_LENGTH`). */
+export const NO_SHOW_NOTE_MAX_LENGTH = 1000;
+
+/** POST /consultations/:id/no-show-report (201). */
+export interface NoShowReportResult {
+  noShowReport: NoShowReport;
+  consultation: ApiConsultation;
 }
 
 /**
@@ -196,10 +294,60 @@ export type ConsultationCheckoutResult =
 
 /** POST /consultations/public/verify (200): the booking is paid. */
 export interface VerifyConsultationResult {
+  /** japa#392: set by `useVerifyConsultation` (not the backend) on a 200. */
+  kind?: 'paid';
   verified: true;
   consultation: BookingSummary;
   /** An extra payment landed on a paid booking and is held for a refund. */
   refundPending?: boolean;
+}
+
+/**
+ * japa#392: verify answered 409 `CONSULTATION_RESCHEDULED`. The agent moved
+ * the booking after its price lock, so the old checkout was retired: the
+ * payment just made is being refunded IN FULL and the client pays again for
+ * the new time. Never "paid", never a failure.
+ */
+export interface VerifyConsultationRescheduled {
+  kind: 'rescheduled';
+  /** The booking summary with the NEW date / time / timezone. */
+  consultation: BookingSummary;
+  /** The backend's own sentence (the screen uses its own copy). */
+  message: string;
+}
+
+/** What `useVerifyConsultation` resolves with (japa#392). */
+export type VerifyConsultationOutcome =
+  | VerifyConsultationResult
+  | VerifyConsultationRescheduled;
+
+/**
+ * japa#392: the rescheduled outcome out of a failed verify, or null when the
+ * error is anything else (those still reject as before). Reads the 409's
+ * `data.consultation` defensively: without a usable booking id it is not
+ * treated as rescheduled. Pure, never throws.
+ */
+export function rescheduledFromVerifyError(
+  error: unknown,
+): VerifyConsultationRescheduled | null {
+  const e = (typeof error === 'object' && error !== null ? error : {}) as {
+    code?: unknown;
+    message?: unknown;
+    data?: unknown;
+  };
+  if (e.code !== 'CONSULTATION_RESCHEDULED') return null;
+  const data = (
+    typeof e.data === 'object' && e.data !== null ? e.data : {}
+  ) as { consultation?: unknown };
+  const c = data.consultation as { id?: unknown } | null | undefined;
+  if (!c || typeof c !== 'object' || typeof c.id !== 'string' || !c.id) {
+    return null;
+  }
+  return {
+    kind: 'rescheduled',
+    consultation: c as BookingSummary,
+    message: typeof e.message === 'string' ? e.message : '',
+  };
 }
 
 // ─────────────────────────────────────────────
@@ -325,19 +473,32 @@ export function useConsultationCheckout() {
  * Confirm a consultation's Paystack charge: POST /consultations/public/verify
  * `{ reference }` (public despite the name; the reference is the one OUR
  * backend returned, never one read from the return deep link). 200 =
- * `{ verified: true }`; 400 "not completed" and the 409s reject as
- * `ApiError` (see `classifyConsultationPayError`).
+ * `{ kind: 'paid', verified: true }`; 400 "not completed" and the other 409s
+ * reject as `ApiError` (see `classifyConsultationPayError`).
+ *
+ * japa#392: a 409 `CONSULTATION_RESCHEDULED` RESOLVES (it is not an error)
+ * with `{ kind: 'rescheduled', consultation }`: the booking moved, the
+ * payment is being refunded in full, and the client pays again for the new
+ * time. Verifying the same old reference again gives the same outcome.
  */
 export function useVerifyConsultation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (reference: string) => {
-      const response = await apiService.post<VerifyConsultationResult>(
-        '/consultations/public/verify',
-        { reference },
-      );
-      return response.data!;
+    mutationFn: async (
+      reference: string,
+    ): Promise<VerifyConsultationOutcome> => {
+      try {
+        const response = await apiService.post<VerifyConsultationResult>(
+          '/consultations/public/verify',
+          { reference },
+        );
+        return { ...response.data!, kind: 'paid' };
+      } catch (err) {
+        const moved = rescheduledFromVerifyError(err);
+        if (moved) return moved;
+        throw err;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['consultations'] });
@@ -350,6 +511,11 @@ export function useVerifyConsultation() {
  * Cancel a consultation.
  * Calls PUT /consultations/:id/status with { status: 'cancelled' }.
  *
+ * japa#356: the answer carries `refund` (`{ status, amount, processingFee }`
+ * or null). The screen tells the client what ACTUALLY happened from it, not
+ * from the preview it showed before: the 24-hour line may have passed while
+ * the screen was open.
+ *
  * Used on: Consultation detail screen (cancel button)
  */
 export function useCancelConsultation() {
@@ -357,14 +523,66 @@ export function useCancelConsultation() {
 
   return useMutation({
     mutationFn: async (consultationId: string) => {
-      const response = await apiService.put<ApiConsultation>(
+      const response = await apiService.put<CancelConsultationResult>(
         `/consultations/${consultationId}/status`,
         { status: 'cancelled' },
       );
       return response.data!;
     },
-    // Refetch both the list and the specific consultation detail
+    // Refetch both the list and the specific consultation detail, and the
+    // payments (a refund row may have just been written, japa#356).
     onSuccess: (_data, consultationId) => {
+      queryClient.invalidateQueries({ queryKey: ['consultations'] });
+      queryClient.invalidateQueries({
+        queryKey: ['consultations', consultationId],
+      });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+  });
+}
+
+/**
+ * japa#442: the client says the meeting did not happen.
+ * POST /consultations/:id/no-show-report `{ note? }` (backend #382). Only
+ * the booking's own client may call it, and only while `canReportNoShow`.
+ *
+ * - 201: `{ noShowReport: { status: 'open' }, consultation }`;
+ * - 409 (nothing written): NO_SHOW_REPORT_EXISTS, FEE_NOT_HELD, NOT_PAID,
+ *   ALREADY_REFUNDED, MEETING_NOT_STARTED, BOOKING_CANCELLED, each with a
+ *   plain-words `message`;
+ * - 400 VALIDATION_ERROR: the note is too long (the input caps it first).
+ *
+ * The call feeds the offline signal (`tracked`), so a network failure flips
+ * `useIsOffline` and the screen can say so. Whatever the outcome, the
+ * booking is refetched afterwards so the screen shows what the server holds.
+ */
+export function useReportNoShow() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      consultationId,
+      note,
+    }: {
+      consultationId: string;
+      note?: string;
+    }) => {
+      // An empty note is not sent at all (the field is optional).
+      const trimmed = (note ?? '').trim();
+      const response = await tracked(() =>
+        apiService.post<NoShowReportResult>(
+          `/consultations/${consultationId}/no-show-report`,
+          trimmed ? { note: trimmed } : {},
+        ),
+      );
+      return response.data!;
+    },
+    // Success or a 409: the booking changed (or was not what we thought), so
+    // read it again. A network error leaves the cache alone.
+    onSettled: (_data, error, { consultationId }) => {
+      if (error && (error as { code?: unknown }).code === 'NETWORK_ERROR') {
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ['consultations'] });
       queryClient.invalidateQueries({
         queryKey: ['consultations', consultationId],

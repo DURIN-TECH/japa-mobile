@@ -410,9 +410,13 @@ export function classifyConsultationPayError(
  */
 export function isBookingPaidResult(data: unknown): boolean {
   const d = (typeof data === 'object' && data !== null ? data : {}) as {
+    kind?: unknown;
     verified?: unknown;
     consultation?: { paymentStatus?: unknown } | null;
   };
+  // japa#392: a moved booking (verify 409 CONSULTATION_RESCHEDULED) is never
+  // paid, whatever its summary says: the payment is being refunded.
+  if (d.kind === 'rescheduled') return false;
   return d.verified === true || d.consultation?.paymentStatus === 'paid';
 }
 
