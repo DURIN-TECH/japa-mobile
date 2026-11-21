@@ -123,7 +123,7 @@ seed, simulator, first bundle); the flows themselves are the "suite" time.
 .maestro/
   flows/          suite flows, one YAML file per flow (unique file names)
     auth/         sign-in.yaml, sign-in-wrong-password.yaml
-    self-service/ journey-flag-on.yaml, journey-flag-off.yaml
+    self-service/ journey-flag-on.yaml, journey-flag-off.yaml, open-document.yaml
     flag/         flag-on.yaml, flag-off.yaml
   subflows/       shared steps (launch, sign-in, sign-out, flag switches, ...)
   support/        runner-only: preflight.yaml, restore-flag.yaml, scripts/
@@ -154,6 +154,7 @@ order-independent.
 | `auth/sign-in` | welcome → Log in → email + password → Home |
 | `auth/sign-in-wrong-password` | wrong password → "Login failed" + inline error, stays on Log in |
 | `self-service/journey-flag-on` / `-flag-off` | as the fixture client: Explore → Ireland Short Stay 'C' → Self-service → new application's hub → intake (answer all, save) → intake card answered → documents step lists "Passport" and "Proof of accommodation" → review screen (by link) shows "See how ready you are" with "Review my application" (not tapped) |
+| `self-service/open-document` | as John Doe (flag any): tap the seeded passport document on `seed-app-001`'s hub → its error line (`doc-row-<id>-error`, the seed's placeholder file answers 409) with the "can't be opened" copy; tap again → error again; same row on My documents → error line (japa#446). The viewer itself is a walk |
 | `flag/flag-on` | as John Doe: 4 tabs; the 14 hidden deep links from Tracker end on Home and a swipe-back stays there; `/subscription`, `/notifications`, `/self-service/seed-app-001` open; Home without Messages / "Find an agent"; Destination without "Work with an agent" / Top agents; `seed-app-001` without message button / Payment requests; Profile without the four agent rows and the Agents stat; Settings without Privacy |
 | `flag/flag-off` | as John Doe: 5 tabs; Home Messages + "Find an agent"; `durintech://messages` opens Messages; `seed-app-001` message button + Payment requests; Destination "Work with an agent"; Profile's four rows and Agents stat; Settings Privacy |
 

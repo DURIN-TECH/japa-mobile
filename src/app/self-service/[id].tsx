@@ -162,6 +162,13 @@ import {
   type UploadSource,
 } from '@/components/explorer/pickUploadFile';
 import { UploadSourceSheet } from '@/components/explorer/UploadSourceSheet';
+// japa#446: tapping an uploaded document opens it in the in-app viewer.
+import {
+  isDocumentOpenable,
+  useOpenDocument,
+  type DocumentOpener,
+} from '@/components/explorer/openDocument';
+import { DOC_OPEN_COPY } from '@/components/explorer/openDocumentCopy';
 
 // japa#174: requirement key for an upload tied to no requirement or checklist
 // item (the "upload what you already have" buttons). The backend only needs a
@@ -221,14 +228,52 @@ function liveDocChip(status: DocumentStatus): {
 }
 
 // ── LiveDocRow — one real backend Document row ────────────────────────────────
-// Read-only row (upload happens at the requirement level): status chip + name +
-// status Pill, plus a red rejection-reason band when the doc was rejected.
-function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
+// Status chip + name + status Pill, plus a red rejection-reason band when the
+// doc was rejected. Upload happens at the requirement level.
+//
+// japa#446: a row with a file behind it (`isDocumentOpenable`) is one
+// Pressable — the top row AND the rejection band — that opens the file in the
+// in-app viewer through the screen's shared `opener`. A trailing 20px slot
+// after the Pill shows a chevron, or the coral spinner while the link is being
+// fetched (same width, so the Pill never moves). `pending_upload` / `uploading`
+// rows stay a plain View: no role, no chevron, no pressed state.
+// Exported for its unit test (src/app/__tests__/docRows.test.tsx).
+//
+// The top divider stays on the outer View (outside the Pressable) so the
+// pressed opacity never fades it, and the row's error line sits below the
+// Pressable so its action button isn't nested inside the row button.
+export function LiveDocRow({
+  doc,
+  first,
+  opener,
+}: {
+  doc: Document;
+  first: boolean;
+  /** The screen's one document opener (single lock, single error). */
+  opener: DocumentOpener;
+}) {
   const s = liveDocChip(doc.status);
-  return (
-    <View
-      style={{ borderTopWidth: first ? 0 : 1, borderTopColor: EX.color.line06 }}
-    >
+  const openable = isDocumentOpenable(doc.status);
+  const opening = opener.openingId === doc.id;
+  const error = openable ? opener.errorFor(doc.id) : null;
+  const showBand = s.kind === 'rejected' && !!doc.rejectionReason;
+  const name = documentDisplayName(doc);
+
+  // Read-out in the row's reading order, without the duplicate status Pill.
+  const a11yLabel =
+    [
+      name,
+      s.label,
+      doc.uploadedOnBehalf
+        ? `Added by ${doc.uploadedByName || 'your agency'}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(', ') + (showBand ? `. ${doc.rejectionReason}` : '');
+
+  // The row's visible content, shared by the Pressable and the plain View.
+  const content = (
+    <>
       <View
         style={{
           flexDirection: 'row',
@@ -263,7 +308,7 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
             style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}
             numberOfLines={1}
           >
-            {documentDisplayName(doc)}
+            {name}
           </Text>
           <Text
             style={{
@@ -293,11 +338,31 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
           ) : null}
         </View>
 
-        <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+        {openable ? (
+          // Pill + fixed 20px slot: chevron at rest, coral spinner while the
+          // link is fetched (japa#446). Same pattern as My documents' DocRow.
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+            <View style={{ width: 20, alignItems: 'center' }}>
+              {opening ? (
+                <ActivityIndicator
+                  testID={`doc-row-${doc.id}-opening`}
+                  size="small"
+                  color={EX.color.primary}
+                  accessibilityLabel={DOC_OPEN_COPY.openingLabel}
+                />
+              ) : (
+                <Ic.chevR size={17} color={EX.color.faint} strokeWidth={1.8} />
+              )}
+            </View>
+          </View>
+        ) : (
+          <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+        )}
       </View>
 
       {/* Rejected → indented red reason band (rejectionReason from backend) */}
-      {s.kind === 'rejected' && doc.rejectionReason ? (
+      {showBand ? (
         <View
           style={{
             flexDirection: 'row',
@@ -306,7 +371,9 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
             marginTop: 8,
             // Bottom gap = the row's own vertical padding (13), so the band
             // clears the next row's top divider instead of sitting on it.
-            marginBottom: 13,
+            // japa#446: the 13 belongs to the LAST element of the block, so
+            // it moves to the error line when one sits under the band.
+            marginBottom: error ? 0 : 13,
             marginLeft: 46,
             paddingVertical: 8,
             paddingHorizontal: 11,
@@ -328,6 +395,58 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
           </Text>
         </View>
       ) : null}
+    </>
+  );
+
+  return (
+    <View
+      style={{ borderTopWidth: first ? 0 : 1, borderTopColor: EX.color.line06 }}
+    >
+      {openable ? (
+        <PressableStatic
+          testID={`doc-row-${doc.id}`}
+          onPress={() =>
+            opener.open(doc.id, { onBehalf: !!doc.uploadedOnBehalf })
+          }
+          // Screen-wide lock: every row ignores taps while any row opens.
+          disabled={opener.locked}
+          android_ripple={undefined}
+          accessibilityRole="button"
+          accessibilityLabel={a11yLabel}
+          accessibilityHint={DOC_OPEN_COPY.rowHint}
+          accessibilityState={{
+            busy: opening,
+            disabled: opener.locked && !opening,
+          }}
+          // Subtle press feedback (design system: opacity on new pressables).
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        >
+          {content}
+        </PressableStatic>
+      ) : (
+        <View
+          testID={`doc-row-${doc.id}`}
+          accessible
+          accessibilityLabel={a11yLabel}
+        >
+          {content}
+        </View>
+      )}
+
+      {/* japa#446: the screen's one open error, under this row (and under
+          the band when rejected). Lined up with the name (34 chip + 12). */}
+      {error ? (
+        <View
+          testID={`doc-row-${doc.id}-error`}
+          style={{ marginLeft: 46, marginTop: 8, marginBottom: 13 }}
+        >
+          <InlineError
+            message={error.message}
+            action={error.action}
+            selectable={error.selectable}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -336,7 +455,14 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
 // Same card chrome as LiveRequirementCard, minus the upload button (there's no
 // requirement to upload against). Read-only by design: these documents were
 // either filed by the agency or already answered a specific ask.
-function LiveOtherDocsCard({ docs }: { docs: Document[] }) {
+function LiveOtherDocsCard({
+  docs,
+  opener,
+}: {
+  docs: Document[];
+  /** japa#446: the screen's shared document opener. */
+  opener: DocumentOpener;
+}) {
   return (
     <View
       style={{
@@ -394,7 +520,7 @@ function LiveOtherDocsCard({ docs }: { docs: Document[] }) {
 
       <View style={{ marginTop: 6 }}>
         {docs.map((doc, i) => (
-          <LiveDocRow key={doc.id} doc={doc} first={i === 0} />
+          <LiveDocRow key={doc.id} doc={doc} first={i === 0} opener={opener} />
         ))}
       </View>
     </View>
@@ -412,9 +538,12 @@ function LiveRequirementCard({
   onUpload,
   uploadError,
   onRetryUpload,
+  opener,
 }: {
   req: VisaRequirement;
   docs: Document[];
+  /** japa#446: the screen's shared document opener. */
+  opener: DocumentOpener;
   uploading: boolean;
   onUpload: (requirementId: string) => void;
   /** japa#174: message of the last failed upload made from THIS card. */
@@ -507,7 +636,12 @@ function LiveRequirementCard({
       {docs.length > 0 ? (
         <View style={{ marginTop: 6 }}>
           {docs.map((doc, i) => (
-            <LiveDocRow key={doc.id} doc={doc} first={i === 0} />
+            <LiveDocRow
+              key={doc.id}
+              doc={doc}
+              first={i === 0}
+              opener={opener}
+            />
           ))}
         </View>
       ) : null}
@@ -712,6 +846,9 @@ export default function SelfServiceView() {
   const visaType = vtQ.data?.visaType;
   const docsQ = useApplicationDocuments(app ? app.id : '');
   const docs = docsQ.data ?? [];
+  // japa#446: one document opener for the whole screen, so the requirement
+  // cards and "Other documents" share one lock and one error line.
+  const docOpener = useOpenDocument();
 
   // Intake questions (#113). Enabled as soon as the application resolves and
   // (there is no demo path since #145).
@@ -1671,6 +1808,7 @@ export default function SelfServiceView() {
                   uploadFailure?.key === req.id ? uploadFailure.message : null
                 }
                 onRetryUpload={() => handleUpload(req.id)}
+                opener={docOpener}
               />
             ))}
 
@@ -1678,7 +1816,7 @@ export default function SelfServiceView() {
                 typically ones the agency filed for the client, or uploads
                 answering an ad-hoc request. Without this they'd be invisible. */}
             {otherDocs.length > 0 ? (
-              <LiveOtherDocsCard docs={otherDocs} />
+              <LiveOtherDocsCard docs={otherDocs} opener={docOpener} />
             ) : null}
 
             {/* ── Your statement (issue #43) ──────────────────────────────────── */}
