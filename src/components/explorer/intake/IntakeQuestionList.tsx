@@ -8,13 +8,12 @@
 //
 // Built from the Explorer tokens (`EX`) only. Local building blocks proposed
 // by the design spec live in this file: QuestionBlock, OptionCard (with the
-// square multi-choice indicator), YesNo, DateField, FilterChip and the
-// text/amount controls.
+// square multi-choice indicator), YesNo, FilterChip and the text/amount
+// controls. Dates use the shared DateField / DateRangeField (japa#407).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { Platform, Text, TextInput, View } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { Text, TextInput, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -24,7 +23,6 @@ import Animated, {
 import {
   daysBetween,
   daysLabel,
-  displayDate,
   fromIsoDate,
   groupDigits,
   hiddenAnsweredBy,
@@ -34,6 +32,8 @@ import {
   visibleIds,
 } from './intakeLogic';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
+// The shared date picker (japa#407): one calendar open at a time, closes on a pick.
+import { DateField, DateRangeField } from '@/components/explorer/DateField';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import type {
@@ -54,7 +54,7 @@ const ERROR_FG = '#C0453C';
 
 // ── Shared chrome ────────────────────────────────────────────────────────────
 
-/** Card-style surface used by inputs and date fields (radius-card-sm). */
+/** Card-style surface used by inputs (radius-card-sm); DateField's 'intake' look matches it. */
 const fieldSurface = (hasError: boolean) => ({
   backgroundColor: EX.color.cardWhite,
   borderRadius: EX.radius.cardSm,
@@ -246,94 +246,6 @@ function FilterChip({
         {label}
       </Text>
     </PressableStatic>
-  );
-}
-
-// ── DateField — LabeledInput chrome that opens the native date picker ─────────
-function DateField({
-  value,
-  innerLabel,
-  accessibilityLabel,
-  hint,
-  minimumDate,
-  maximumDate,
-  initialDate,
-  hasError,
-  disabled,
-  onChange,
-}: {
-  value?: string;
-  innerLabel?: string;
-  accessibilityLabel: string;
-  hint?: string;
-  minimumDate?: Date;
-  maximumDate?: Date;
-  /** Date the picker opens on when nothing is chosen yet. */
-  initialDate?: Date;
-  hasError?: boolean;
-  disabled?: boolean;
-  onChange: (iso: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const current =
-    fromIsoDate(value) ?? initialDate ?? minimumDate ?? new Date();
-
-  return (
-    <View style={{ flex: 1, minWidth: 0 }}>
-      <PressableStatic
-        onPress={() => setOpen((o) => !o)}
-        disabled={disabled}
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel}
-        accessibilityHint={hint}
-        style={({ pressed }) => ({
-          ...fieldSurface(!!hasError),
-          minHeight: 44,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          opacity: pressed ? 0.85 : 1,
-        })}
-      >
-        {innerLabel ? (
-          <Text
-            style={{
-              fontSize: 12.5,
-              fontWeight: '600',
-              color: EX.color.inkMuted,
-              marginBottom: 4,
-            }}
-          >
-            {innerLabel}
-          </Text>
-        ) : null}
-        <Text
-          style={{
-            fontSize: 16.5,
-            fontWeight: value ? '600' : '400',
-            // The empty prompt is an instruction, so `inkMuted` (readable), not `faint`.
-            color: value ? EX.color.ink : EX.color.inkMuted,
-          }}
-        >
-          {value ? displayDate(value) : 'Choose a date'}
-        </Text>
-      </PressableStatic>
-      {open ? (
-        <DateTimePicker
-          value={current}
-          mode="date"
-          // iOS shows the calendar inline under the field; Android opens its dialog.
-          display={Platform.OS === 'ios' ? 'inline' : 'default'}
-          minimumDate={minimumDate}
-          maximumDate={maximumDate}
-          accentColor={EX.color.primary}
-          onChange={(event, date) => {
-            // Android fires once ('set' | 'dismissed') and closes itself.
-            if (Platform.OS !== 'ios') setOpen(false);
-            if (event.type === 'set' && date) onChange(toIsoDate(date));
-          }}
-        />
-      ) : null}
-    </View>
   );
 }
 
@@ -723,14 +635,16 @@ function Control({
       const { min, max } = dateBounds(q);
       return (
         <DateField
-          value={typeof value === 'string' ? value : undefined}
+          look="intake"
+          value={fromIsoDate(typeof value === 'string' ? value : undefined)}
           accessibilityLabel={q.label}
           hint={q.helpText}
+          testID={`intake.q.${q.id}.date`}
           minimumDate={min}
           maximumDate={max}
           hasError={hasError}
           disabled={disabled}
-          onChange={onChange}
+          onChange={(d) => onChange(toIsoDate(d))}
         />
       );
     }
@@ -749,34 +663,34 @@ function Control({
       }
       const length = r.from && r.to ? daysBetween(r.from, r.to) : null;
       return (
-        <View style={{ gap: 8 }}>
-          <View
-            style={{ flexDirection: stackRange ? 'column' : 'row', gap: 10 }}
-          >
-            <DateField
-              value={r.from}
-              innerLabel="From"
-              accessibilityLabel={`${q.label}, from`}
-              hint={q.helpText}
-              minimumDate={min}
-              maximumDate={max}
-              hasError={hasError}
-              disabled={disabled}
-              onChange={(iso) => onChange({ ...r, from: iso })}
-            />
-            <DateField
-              value={r.to}
-              innerLabel="To"
-              accessibilityLabel={`${q.label}, to`}
-              hint={q.helpText}
-              minimumDate={toMin}
-              maximumDate={toMax}
-              initialDate={fromDate ?? undefined}
-              hasError={hasError}
-              disabled={disabled}
-              onChange={(iso) => onChange({ ...r, to: iso })}
-            />
-          </View>
+        // One calendar slot under the From/To row, full width (japa#407).
+        <DateRangeField
+          look="intake"
+          stacked={stackRange}
+          hasError={hasError}
+          disabled={disabled}
+          from={{
+            value: fromDate,
+            innerLabel: 'From',
+            accessibilityLabel: `${q.label}, from`,
+            hint: q.helpText,
+            testID: `intake.q.${q.id}.from`,
+            minimumDate: min,
+            maximumDate: max,
+            onChange: (d) => onChange({ ...r, from: toIsoDate(d) }),
+          }}
+          to={{
+            value: fromIsoDate(r.to),
+            innerLabel: 'To',
+            accessibilityLabel: `${q.label}, to`,
+            hint: q.helpText,
+            testID: `intake.q.${q.id}.to`,
+            minimumDate: toMin,
+            maximumDate: toMax,
+            initialDate: fromDate ?? undefined,
+            onChange: (d) => onChange({ ...r, to: toIsoDate(d) }),
+          }}
+        >
           {length !== null && length >= 0 ? (
             <Text
               style={{
@@ -788,7 +702,7 @@ function Control({
               {daysLabel(length)}
             </Text>
           ) : null}
-        </View>
+        </DateRangeField>
       );
     }
     case 'text':
