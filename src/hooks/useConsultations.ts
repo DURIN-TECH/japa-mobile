@@ -500,6 +500,11 @@ export function useVerifyConsultation() {
         throw err;
       }
     },
+    // Runs for BOTH outcomes, because a rescheduled 409 RESOLVES above:
+    //  - paid: the fee row is now paid;
+    //  - rescheduled (japa#392): the backend has just written the full
+    //    refund row, and the screen says "You'll see it in Payments", so the
+    //    cached payments list (5-minute staleTime) must be refetched too.
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['consultations'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });

@@ -148,6 +148,21 @@ describe('useVerifyConsultation (japa#392)', () => {
     }
   });
 
+  // Review: the refund row the backend just wrote must show in Payments.
+  it('rescheduled invalidates the payments list as well as the bookings', async () => {
+    api.post.mockRejectedValue(moved409);
+    const spy = jest.spyOn(qc, 'invalidateQueries');
+    const h = mount(() => useVerifyConsultation(), qc);
+    await act(async () => {
+      await h.current.mutateAsync('old-ref');
+    });
+    const keys = spy.mock.calls.map(
+      (c) => (c[0] as { queryKey: unknown[] }).queryKey,
+    );
+    expect(keys).toContainEqual(['transactions']);
+    expect(keys).toContainEqual(['consultations']);
+  });
+
   it('any other failure still rejects (network → "couldn’t check")', async () => {
     const netErr = { code: 'NETWORK_ERROR', message: 'x', status: 0 };
     api.post.mockRejectedValue(netErr);
