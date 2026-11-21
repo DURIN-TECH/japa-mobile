@@ -173,7 +173,9 @@ export function refundRowStatus(
  * (backend #413 H). Only a positive amount is shown.
  */
 export function hasRefundAmount(t: Pick<ApiTransaction, 'amount'>): boolean {
-  return typeof t.amount === 'number' && Number.isFinite(t.amount) && t.amount > 0;
+  return (
+    typeof t.amount === 'number' && Number.isFinite(t.amount) && t.amount > 0
+  );
 }
 
 // Map one live transaction onto the Explorer `Payment` row contract.
@@ -232,4 +234,33 @@ export function totalsPaid(
     amountMinor,
     currency,
   }));
+}
+
+// ── The refund amount of one booking (japa#356, the consultation refund card) ─
+/**
+ * The figure the consultation's refund card shows: the amount of the
+ * booking's refund row in `GET /transactions`, exactly as the backend sent
+ * it. Null (the card then drops the figure) when:
+ *  - there is no refund row for the booking yet (the list may be loading);
+ *  - the row carries no real amount (a HELD row is 0, backend #413 H);
+ *  - the booking has MORE than one refund row (e.g. a resolved mismatch plus
+ *    its top-up, #413): adding them up would be the app working money out,
+ *    so no figure is shown at all.
+ *
+ * ASSUMPTION: the client view of a booking has no `refundId` (the backend
+ * keeps it off the allow-list), so the row is matched on its
+ * `consultationId`, which every consultation refund row carries.
+ */
+export function bookingRefundAmount(
+  rows: readonly ApiTransaction[] | null | undefined,
+  consultationId: string,
+): Money | null {
+  const refunds = (rows ?? []).filter(
+    (t) => t.type === 'refund' && t.consultationId === consultationId,
+  );
+  if (refunds.length !== 1) return null;
+  const [r] = refunds;
+  return hasRefundAmount(r)
+    ? { amountMinor: r.amount, currency: r.currency || 'NGN' }
+    : null;
 }

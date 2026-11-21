@@ -9,6 +9,25 @@
 //   4. an agent card (Pressable → agent page) with a Message shortcut,
 //   5. contextual actions (Join call / Reschedule / Cancel · Message / Rebook),
 //   6. optional "Your note" and "Session summary" cards.
+//
+// ── Refunds (japa#356) ──────────────────────────────────────────────────────
+//   • Cancel confirm: worded from the server's `cancellationRefund` preview
+//     only (refundCopy.ts `cancelConfirmCopy`): the amount back, the fee the
+//     payment provider keeps, "we'll confirm the exact amount" while the fee
+//     is unknown, or "no refund" inside 24 hours with the cut-off time in the
+//     booking's zone. The app never decides refundability or amounts.
+//   • While cancelling, the cancel link becomes a coral spinner. On success
+//     the screen STAYS (it refetches: "Cancelled" plus the refund card), and
+//     an alert says what actually happened, from the PUT answer's `refund`.
+//   • Refund card (under the status pill): the booking's `refundStatus`, with
+//     the figure from its refund row in GET /transactions when there is one.
+//
+// ── "The meeting didn't happen" (japa#442) ──────────────────────────────────
+//   • The action shows only when the server says so (`canReportNoShow`) and
+//     there is no report yet. Its confirm step sends POST
+//     /consultations/:id/no-show-report; offline, nothing is sent.
+//   • A booking with a report shows a "Your report" card (under review /
+//     resolved), and a resolved-with-refund report also gets the refund card.
 // Loading → coral spinner; a failed load → CenteredState with retry; a 404 /
 // unknown id → CenteredState "We couldn’t find this consultation".
 //
@@ -36,7 +55,29 @@ import { isNotFoundError } from '@/hooks/queryErrors';
 import { useAgent } from '@/hooks/useAgents';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { useConversations } from '@/hooks/useMessaging';
-import { useCancelConsultation } from '@/hooks/useConsultations';
+import {
+  useCancelConsultation,
+  useReportNoShow,
+} from '@/hooks/useConsultations';
+import { useTransactions } from '@/hooks/useTransactions';
+import { bookingRefundAmount } from '@/components/explorer/liveTransactions';
+import {
+  CANCEL_ERROR,
+  CANCEL_RESULT_TITLE,
+  NO_SHOW_ERROR,
+  NO_SHOW_OFFLINE,
+  cancelConfirmCopy,
+  cancelResultMessage,
+  noShowReportCopy,
+  refundCardCopy,
+  wasPaidBooking,
+} from '@/components/explorer/refundCopy';
+import {
+  NoShowReportAction,
+  StatusCard,
+} from '@/components/explorer/ConsultationRefund';
+import { InlineError } from '@/components/explorer/AccountForm';
+import { isNetworkError, useIsOffline } from '@/utils/networkStatus';
 import { hashString } from '@/assets/countries';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Pill, Verified } from '@/components/explorer/primitives';
@@ -196,6 +237,30 @@ export default function ConsultationDetailView() {
   const { data: conversations } = useConversations();
   const cancelQ = useCancelConsultation();
 
+  // ── Refund (japa#356) ──────────────────────────────────────────────────────
+  // The raw booking keeps the refund fields the `Consult` view model drops.
+  const booking = liveQ.data;
+  const refundStatus = booking?.refundStatus;
+  // The refund's own figure comes from its row in GET /transactions (the
+  // shared cache Payments also uses). Only fetched when there is a refund,
+  // and never waited for: the card renders without the figure meanwhile.
+  const txQ = useTransactions({ enabled: !!refundStatus });
+  const refundAmount = booking
+    ? bookingRefundAmount(txQ.data, booking.id)
+    : null;
+  const refundCard = refundCardCopy(refundStatus, refundAmount);
+
+  // ── "The meeting didn't happen" (japa#442) ─────────────────────────────────
+  const reportQ = useReportNoShow();
+  const offline = useIsOffline();
+  // The last report error, kept here (not in the action) so it stays on
+  // screen after a 409 refreshed the booking and the action went away.
+  const [reportError, setReportError] = React.useState<string | null>(null);
+  const noShowReport = booking?.noShowReport ?? null;
+  const reportCard = noShowReportCopy(noShowReport);
+  // Only when the SERVER says a report is allowed, and none exists yet.
+  const canReport = booking?.canReportNoShow === true && !noShowReport;
+
   // ── Loading state — first fetch in flight, nothing cached. ─────────────────
   if (liveQ.isLoading) {
     return (
@@ -261,25 +326,79 @@ export default function ConsultationDetailView() {
   };
 
   // Cancel → confirm, then PUT /consultations/:id/status { cancelled }.
+  // japa#356: the confirm is worded from the server's preview only; the
+  // result alert from the PUT answer's `refund` (what actually happened).
   const confirmCancel = () => {
-    Alert.alert(
-      'Cancel consultation?',
-      'This will release your booked slot. You can rebook anytime.',
-      [
-        { text: 'Keep it', style: 'cancel' },
-        {
-          text: 'Cancel consultation',
-          style: 'destructive',
-          onPress: () =>
-            cancelQ.mutate(c.id, {
-              onSuccess: () => router.back(),
-              onError: () =>
-                Alert.alert(
-                  'We couldn’t cancel your consultation. Try again in a moment.',
-                ),
-            }),
+    // A second tap while a cancel runs does nothing (the link is a spinner).
+    if (cancelQ.isPending) return;
+    const copy = cancelConfirmCopy(
+      booking?.cancellationRefund,
+      booking?.timezone,
+    );
+    // Was it paid BEFORE the cancel? Decides how `refund: null` reads.
+    const paid = booking ? wasPaidBooking(booking) : false;
+    Alert.alert(copy.title, copy.message, [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: copy.destructive,
+        style: 'destructive',
+        onPress: () =>
+          cancelQ.mutate(c.id, {
+            // Stay on this screen: it refetches and shows "Cancelled" plus
+            // the refund card. The alert says what the server did.
+            onSuccess: (res) =>
+              Alert.alert(
+                CANCEL_RESULT_TITLE,
+                cancelResultMessage(res?.refund, paid),
+                [{ text: 'OK' }],
+              ),
+            onError: (err) =>
+              Alert.alert(
+                // japa#442: a cancel is refused while a report is open; the
+                // server's own sentence says why. Otherwise the usual copy.
+                (err as { code?: unknown })?.code === 'NO_SHOW_REPORT_OPEN' &&
+                  typeof (err as { message?: unknown }).message === 'string'
+                  ? (err as { message: string }).message
+                  : CANCEL_ERROR,
+              ),
+          }),
+      },
+    ]);
+  };
+
+  // japa#442: send the report. Offline → say so and send NOTHING. A refusal
+  // (409) shows the server's message; the hook refetches the booking, so the
+  // screen then shows the matching state (e.g. the existing report).
+  const sendReport = (note: string) => {
+    if (reportQ.isPending) return;
+    if (offline) {
+      setReportError(NO_SHOW_OFFLINE);
+      return;
+    }
+    setReportError(null);
+    reportQ.mutate(
+      { consultationId: c.id, note },
+      {
+        onSuccess: () => setReportError(null),
+        onError: (err) => {
+          if (isNetworkError(err)) {
+            setReportError(NO_SHOW_OFFLINE);
+            return;
+          }
+          const e = err as { code?: unknown; message?: unknown };
+          // Already reported: the refetched booking shows the report card,
+          // which says it all; no error on top of it.
+          if (e.code === 'NO_SHOW_REPORT_EXISTS') {
+            setReportError(null);
+            return;
+          }
+          setReportError(
+            typeof e.message === 'string' && e.message
+              ? e.message
+              : NO_SHOW_ERROR,
+          );
         },
-      ],
+      },
     );
   };
 
@@ -327,6 +446,21 @@ export default function ConsultationDetailView() {
       >
         {/* 1 · Status pill (11/700 via `small`). */}
         <Pill label={pill.label} fg={pill.fg} bg={pill.bg} small />
+
+        {/* 1b · Refund card (japa#356): whenever the booking has a
+            `refundStatus` (a cancel, or a report resolved with a refund). */}
+        {refundCard ? (
+          <StatusCard testID="refund-card" label="Refund" copy={refundCard} />
+        ) : null}
+
+        {/* 1c · "Your report" card (japa#442): under review / resolved. */}
+        {reportCard ? (
+          <StatusCard
+            testID="no-show-report-card"
+            label="Your report"
+            copy={reportCard}
+          />
+        ) : null}
 
         {/* 2 · "When" card — date, time·dur, mode. */}
         <View
@@ -440,22 +574,40 @@ export default function ConsultationDetailView() {
                 onPress={() => router.push(`/book/${c.agentId}`)}
               />
             </View>
-            {/* Danger text — Cancel consultation (with confirm). */}
-            <Pressable
-              onPress={confirmCancel}
-              hitSlop={6}
-              style={{ alignItems: 'center', paddingVertical: 8 }}
-            >
-              <Text
+            {/* Danger text — Cancel consultation (with confirm). While
+                the cancel runs it is a coral spinner (japa#356) and can't
+                be pressed again. Hidden while a "meeting didn't happen"
+                report is open: the server refuses a cancel then (#442). */}
+            {noShowReport?.status === 'open' ? null : (
+              <Pressable
+                testID="cancel-consultation"
+                onPress={confirmCancel}
+                disabled={cancelQ.isPending}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityState={{ busy: cancelQ.isPending }}
                 style={{
-                  fontSize: 14,
-                  fontWeight: '700',
-                  color: EX.color.danger,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 8,
+                  minHeight: 36,
                 }}
               >
-                Cancel consultation
-              </Text>
-            </Pressable>
+                {cancelQ.isPending ? (
+                  <ActivityIndicator color={EX.color.primary} />
+                ) : (
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '700',
+                      color: EX.color.danger,
+                    }}
+                  >
+                    Cancel consultation
+                  </Text>
+                )}
+              </Pressable>
+            )}
           </View>
         ) : c.status === 'completed' ? (
           <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -471,6 +623,20 @@ export default function ConsultationDetailView() {
               onPress={() => router.push(`/book/${c.agentId}`)}
             />
           </View>
+        ) : null}
+
+        {/* 5b · "The meeting didn't happen" (japa#442): only when the server
+            allows it. Once the action is gone (sent, or refused and the
+            booking refreshed), its last error still shows on its own. */}
+        {canReport ? (
+          <NoShowReportAction
+            sending={reportQ.isPending}
+            error={reportError}
+            onSend={sendReport}
+            onOpen={() => setReportError(null)}
+          />
+        ) : reportError ? (
+          <InlineError message={reportError} />
         ) : null}
 
         {/* 6 · Optional note / summary cards. */}
