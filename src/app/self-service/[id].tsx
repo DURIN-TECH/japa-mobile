@@ -33,7 +33,6 @@ import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as DocumentPicker from 'expo-document-picker';
 import Animated, {
   useAnimatedRef,
   useAnimatedScrollHandler,
@@ -152,10 +151,17 @@ import {
 
 // japa#310: the size and type the backend accepts, checked before uploading.
 import {
-  pickedContentType,
   pickedFileProblem,
   uploadFailureCopy,
 } from '@/components/explorer/uploadLimits';
+// japa#420: where an upload comes from (photo library, camera or Files).
+import {
+  pickResultCopy,
+  pickUploadFile,
+  uploadErrorAction,
+  type UploadSource,
+} from '@/components/explorer/pickUploadFile';
+import { UploadSourceSheet } from '@/components/explorer/UploadSourceSheet';
 
 // japa#174: requirement key for an upload tied to no requirement or checklist
 // item (the "upload what you already have" buttons). The backend only needs a
@@ -298,6 +304,9 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
             alignItems: 'center',
             gap: 7,
             marginTop: 8,
+            // Bottom gap = the row's own vertical padding (13), so the band
+            // clears the next row's top divider instead of sitting on it.
+            marginBottom: 13,
             marginLeft: 46,
             paddingVertical: 8,
             paddingHorizontal: 11,
@@ -506,7 +515,10 @@ function LiveRequirementCard({
       {/* Failed upload from this card: InlineError + outline Try again (#174) */}
       {uploadError ? (
         <View style={{ marginTop: 12, gap: 8 }}>
-          <InlineError message={uploadError} />
+          <InlineError
+            message={uploadError}
+            action={uploadErrorAction(uploadError)}
+          />
           {onRetryUpload ? (
             <OutlineButton label="Try again" onPress={onRetryUpload} />
           ) : null}
@@ -816,12 +828,35 @@ export default function SelfServiceView() {
     scrollY.value = e.contentOffset.y;
   });
 
-  // ── Upload flow (pick → signed URL → PUT to storage → register doc) ──────────
-  // `uploadToStorage(uploadUrl, { uri, type, name })` fetches the file as a blob
-  // internally and PUTs it — so we hand it the picked file descriptor, not a
-  // pre-fetched blob (matching the helper's actual signature in useDocuments.ts).
+  // ── Upload flow (source sheet → pick → signed URL → PUT → register doc) ────
+  // japa#420: every upload control first opens the source sheet (Photo
+  // library, Take a photo, Files). `uploadTarget` is the card the sheet was
+  // opened from (null = closed). Opening the sheet leaves the card's current
+  // failure line alone: closing it changes nothing. The line is cleared only
+  // when a source is chosen (below).
+  const [uploadTarget, setUploadTarget] = useState<{
+    requirementId: string | null;
+    documentRequestId?: string;
+  } | null>(null);
+
+  /** Open the source sheet for a card (requirement / checklist / general). */
   const handleUpload = useCallback(
-    async (requirementId: string | null, documentRequestId?: string) => {
+    (requirementId: string | null, documentRequestId?: string) => {
+      if (!app) return;
+      setUploadTarget({ requirementId, documentRequestId });
+    },
+    [app],
+  );
+
+  // `uploadToStorage(uploadUrl, { uri, type, name })` reads the file from its
+  // URI and PUTs it — so we hand it the picked file descriptor, not a
+  // pre-fetched blob (matching the helper's actual signature in useDocuments.ts).
+  const uploadFrom = useCallback(
+    async (
+      source: UploadSource,
+      requirementId: string | null,
+      documentRequestId?: string,
+    ) => {
       if (!app) return;
       // Where the upload comes from (for the in-card error) and the file's name
       // once it is known.
@@ -837,21 +872,29 @@ export default function SelfServiceView() {
           fileName,
           message,
         });
+      // A source was chosen: the card's old failure line goes now.
       setUploadFailure(null);
       try {
-        const res = await DocumentPicker.getDocumentAsync({
-          type: ['application/pdf', 'image/*'],
-          copyToCacheDirectory: true,
-        });
-        if (res.canceled) return;
-        const f = res.assets[0];
+        // japa#420: one file from the chosen source. Library / camera photos
+        // come back as a converted JPEG (`photo-….jpg`, image/jpeg); Files
+        // picks unchanged. Cancel anywhere = nothing at all.
+        const picked = await pickUploadFile(source);
+        const pickLine = pickResultCopy(picked);
+        if (pickLine) {
+          // Camera denied / unavailable: the line in this card, no upload.
+          fail(pickLine);
+          return;
+        }
+        if (picked.kind !== 'picked') return;
+        const f = picked.file;
         fileName = f.name;
-        contentType = pickedContentType(f);
+        contentType = f.contentType;
 
         // japa#310: refuse a file the backend would refuse (wrong type, or
         // over 7 MB for an image / 10 MB otherwise) before asking for an
         // upload URL, so nothing is uploaded. Shown in the card it came from.
-        // HEIC/HEIF photos are refused too: the review cannot read them.
+        // HEIC/HEIF from Files is refused too: the review cannot read it.
+        // Runs on converted photos as well (japa#420).
         const problem = pickedFileProblem({
           size: f.size,
           contentType,
@@ -875,7 +918,7 @@ export default function SelfServiceView() {
         });
         if (!up) throw new Error('Failed to get upload URL');
 
-        // 2) PUT the file bytes to Firebase Storage (helper fetches the blob).
+        // 2) PUT the file bytes to Firebase Storage.
         await uploadToStorage(up.uploadUrl, {
           uri: f.uri,
           type: contentType,
@@ -899,8 +942,9 @@ export default function SelfServiceView() {
         // so the card can show it as out of date.
         queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
       } catch (err) {
-        // Signed URL, storage PUT or register failed: show it in the card the
-        // upload came from (never an Alert), with a retry for the same target.
+        // Picker / conversion, signed URL, storage PUT or register failed:
+        // show it in the card the upload came from (never an Alert), with a
+        // retry that opens the sheet again.
         // japa#310: a 413 FILE_TOO_LARGE (the backend has already deleted the
         // file) and a wrong-type 400 get their own line, not the generic one.
         fail(uploadFailureCopy(err, fileName, contentType));
@@ -911,6 +955,17 @@ export default function SelfServiceView() {
       }
     },
     [app, getUploadUrl, createDoc, queryClient],
+  );
+
+  /** The sheet's row tap (after it has fully closed): pick for its card. */
+  const onChooseSource = useCallback(
+    (source: UploadSource) => {
+      const target = uploadTarget;
+      setUploadTarget(null);
+      if (target)
+        uploadFrom(source, target.requirementId, target.documentRequestId);
+    },
+    [uploadTarget, uploadFrom],
   );
 
   // ── Live loading — initial application fetch in flight ───────────────────────
@@ -1498,7 +1553,10 @@ export default function SelfServiceView() {
                   style={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}
                 >
                   {uploadFailure?.key === 'general' ? (
-                    <InlineError message={uploadFailure.message} />
+                    <InlineError
+                      message={uploadFailure.message}
+                      action={uploadErrorAction(uploadFailure.message)}
+                    />
                   ) : null}
                   {uploadingGeneral ? (
                     <ActivityIndicator color={EX.color.primary} />
@@ -1581,7 +1639,10 @@ export default function SelfServiceView() {
                   <View style={{ marginTop: 10, gap: 8 }}>
                     {/* Error above the button; label becomes Try again (#174). */}
                     {uploadFailure?.key === 'general' ? (
-                      <InlineError message={uploadFailure.message} />
+                      <InlineError
+                        message={uploadFailure.message}
+                        action={uploadErrorAction(uploadFailure.message)}
+                      />
                     ) : null}
                     {uploadingGeneral ? (
                       <ActivityIndicator color={EX.color.primary} />
@@ -1795,6 +1856,15 @@ export default function SelfServiceView() {
             </PressableStatic>
           </BlurView>
         ) : null}
+
+        {/* japa#420: "Add a document" — Photo library, Take a photo, Files.
+            Open while a card's upload control was tapped; closing it changes
+            nothing, a row picks for that card once the sheet has gone. */}
+        <UploadSourceSheet
+          visible={!!uploadTarget}
+          onChoose={onChooseSource}
+          onClose={() => setUploadTarget(null)}
+        />
       </View>
     );
   }
