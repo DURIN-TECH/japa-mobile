@@ -343,16 +343,30 @@ describe('"The meeting didn’t happen" (japa#442)', () => {
     expect(mockReport).not.toHaveBeenCalled();
   });
 
-  it('offline: an inline message, nothing sent', () => {
+  // Review fix: a NETWORK_ERROR never blocks the next tap. The first send
+  // fails offline (the offline message shows), the second one is SENT.
+  it('a network error shows the offline message, and the next tap sends again', () => {
     mockBooking = booking({ canReportNoShow: true });
+    // The app-wide offline flag may be stuck on from an earlier failure:
+    // it must not stop the send.
     mockOffline = true;
+    mockReport.mockImplementationOnce((_v, opts) =>
+      (opts as { onError: (e: unknown) => void }).onError({
+        code: 'NETWORK_ERROR',
+        message: 'Network error. Please check your connection.',
+        status: 0,
+      }),
+    );
     const tree = render();
     act(() => byTestId(tree, 'no-show-open').props.onPress());
     act(() => byTestId(tree, 'no-show-send').props.onPress());
-    expect(mockReport).not.toHaveBeenCalled();
+    expect(mockReport).toHaveBeenCalledTimes(1);
     expect(text(tree)).toContain(
       'You’re offline, so we couldn’t send your report. Reconnect and try again.',
     );
+    // Reconnected: the second tap calls the API again.
+    act(() => byTestId(tree, 'no-show-send').props.onPress());
+    expect(mockReport).toHaveBeenCalledTimes(2);
   });
 
   it('a 409 shows the server’s message', () => {

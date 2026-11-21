@@ -25,7 +25,8 @@
 // ── "The meeting didn't happen" (japa#442) ──────────────────────────────────
 //   • The action shows only when the server says so (`canReportNoShow`) and
 //     there is no report yet. Its confirm step sends POST
-//     /consultations/:id/no-show-report; offline, nothing is sent.
+//     /consultations/:id/no-show-report. Every tap tries the request; a
+//     network failure shows the offline message (never a sticky block).
 //   • A booking with a report shows a "Your report" card (under review /
 //     resolved), and a resolved-with-refund report also gets the refund card.
 // Loading → coral spinner; a failed load → CenteredState with retry; a 404 /
@@ -77,7 +78,7 @@ import {
   StatusCard,
 } from '@/components/explorer/ConsultationRefund';
 import { InlineError } from '@/components/explorer/AccountForm';
-import { isNetworkError, useIsOffline } from '@/utils/networkStatus';
+import { isNetworkError } from '@/utils/networkStatus';
 import { hashString } from '@/assets/countries';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Pill, Verified } from '@/components/explorer/primitives';
@@ -252,7 +253,6 @@ export default function ConsultationDetailView() {
 
   // ── "The meeting didn't happen" (japa#442) ─────────────────────────────────
   const reportQ = useReportNoShow();
-  const offline = useIsOffline();
   // The last report error, kept here (not in the action) so it stays on
   // screen after a 409 refreshed the booking and the action went away.
   const [reportError, setReportError] = React.useState<string | null>(null);
@@ -366,15 +366,15 @@ export default function ConsultationDetailView() {
     ]);
   };
 
-  // japa#442: send the report. Offline → say so and send NOTHING. A refusal
-  // (409) shows the server's message; the hook refetches the booking, so the
+  // japa#442: send the report. EVERY tap attempts the POST (review fix): the
+  // app-wide "offline" flag is sticky (only a later successful tracked call
+  // clears it), so gating on it could leave a client who reconnected unable
+  // to report while the fee is still held. A network failure is caught in
+  // `onError` and shown as the offline message instead. A refusal (409)
+  // shows the server's message; the hook refetches the booking, so the
   // screen then shows the matching state (e.g. the existing report).
   const sendReport = (note: string) => {
     if (reportQ.isPending) return;
-    if (offline) {
-      setReportError(NO_SHOW_OFFLINE);
-      return;
-    }
     setReportError(null);
     reportQ.mutate(
       { consultationId: c.id, note },
