@@ -10,6 +10,12 @@ const mockBack = jest.fn();
 const mockCancel = jest.fn();
 const mockReport = jest.fn();
 let mockBooking: Record<string, unknown> | undefined;
+// What a refetch of the booking answers (review fix: the confirm re-reads
+// it first). Undefined = the same booking as on screen.
+let mockFresh: Record<string, unknown> | undefined;
+const mockRefetch = jest.fn(() =>
+  Promise.resolve({ data: mockFresh ?? mockBooking }),
+);
 let mockTx: unknown[] | undefined;
 let mockCancelPending = false;
 let mockReportPending = false;
@@ -33,6 +39,7 @@ jest.mock('@/hooks/useConsultations', () => ({
     data: mockBooking,
     isLoading: false,
     isError: false,
+    refetch: () => mockRefetch(),
   }),
   useCancelConsultation: () => ({
     mutate: mockCancel,
@@ -131,6 +138,8 @@ beforeEach(() => {
   mockCancel.mockReset();
   mockReport.mockReset();
   mockBooking = booking();
+  mockFresh = undefined;
+  mockRefetch.mockClear();
   mockTx = [];
   mockCancelPending = false;
   mockReportPending = false;
@@ -142,9 +151,16 @@ afterEach(() => {
   alertSpy.mockRestore();
 });
 
+/** Press the cancel link and let its booking re-read settle. */
+async function pressCancel(tree: TestRenderer.ReactTestRenderer) {
+  await act(async () => {
+    await byTestId(tree, 'cancel-consultation').props.onPress();
+  });
+}
+
 /** Press "Cancel consultation", then the confirm's destructive button. */
-function cancelThroughConfirm(tree: TestRenderer.ReactTestRenderer) {
-  act(() => byTestId(tree, 'cancel-consultation').props.onPress());
+async function cancelThroughConfirm(tree: TestRenderer.ReactTestRenderer) {
+  await pressCancel(tree);
   const [, , buttons] = alertSpy.mock.calls[0] as [
     string,
     string,
@@ -154,7 +170,7 @@ function cancelThroughConfirm(tree: TestRenderer.ReactTestRenderer) {
 }
 
 describe('cancel confirm and result (japa#356)', () => {
-  it('worded from the preview: amount + fee, exact kobo', () => {
+  it('worded from the preview: amount + fee, exact kobo', async () => {
     mockBooking = booking({
       cancellationRefund: {
         refundable: true,
@@ -164,7 +180,7 @@ describe('cancel confirm and result (japa#356)', () => {
       },
     });
     const tree = render();
-    act(() => byTestId(tree, 'cancel-consultation').props.onPress());
+    await pressCancel(tree);
     const [title, message, buttons] = alertSpy.mock.calls[0] as [
       string,
       string,
@@ -180,7 +196,7 @@ describe('cancel confirm and result (japa#356)', () => {
     ]);
   });
 
-  it('not refundable: "Cancel without refund"', () => {
+  it('not refundable: "Cancel without refund"', async () => {
     mockBooking = booking({
       cancellationRefund: {
         refundable: false,
@@ -190,7 +206,7 @@ describe('cancel confirm and result (japa#356)', () => {
       },
     });
     const tree = render();
-    act(() => byTestId(tree, 'cancel-consultation').props.onPress());
+    await pressCancel(tree);
     const [, message, buttons] = alertSpy.mock.calls[0] as [
       string,
       string,
@@ -200,7 +216,7 @@ describe('cancel confirm and result (japa#356)', () => {
     expect(buttons[1].text).toBe('Cancel without refund');
   });
 
-  it('success: stays on the screen, the result comes from the answer', () => {
+  it('success: stays on the screen, the result comes from the answer', async () => {
     // The preview said refundable, but the answer says no refund (the line
     // passed while the screen was open): the client is told the truth.
     mockBooking = booking({
@@ -218,7 +234,7 @@ describe('cancel confirm and result (japa#356)', () => {
       }),
     );
     const tree = render();
-    cancelThroughConfirm(tree);
+    await cancelThroughConfirm(tree);
     expect(mockBack).not.toHaveBeenCalled();
     expect(alertSpy.mock.calls[1]).toEqual([
       'Consultation cancelled',
@@ -227,7 +243,7 @@ describe('cancel confirm and result (japa#356)', () => {
     ]);
   });
 
-  it('success with a refund: "Your refund of … is on its way."', () => {
+  it('success with a refund: "Your refund of … is on its way."', async () => {
     mockBooking = booking({
       cancellationRefund: {
         refundable: true,
@@ -246,16 +262,16 @@ describe('cancel confirm and result (japa#356)', () => {
       }),
     );
     const tree = render();
-    cancelThroughConfirm(tree);
+    await cancelThroughConfirm(tree);
     expect(alertSpy.mock.calls[1][1]).toBe(
       'Your refund of ₦8,124.37 is on its way. The payment provider kept a processing fee of ₦125.63.',
     );
   });
 
   // Review fix: the confirm's button pressed twice in one frame cancels once.
-  it('the confirm button pressed twice in one frame cancels once', () => {
+  it('the confirm button pressed twice in one frame cancels once', async () => {
     const tree = render();
-    act(() => byTestId(tree, 'cancel-consultation').props.onPress());
+    await pressCancel(tree);
     const [, , buttons] = alertSpy.mock.calls[0] as [
       string,
       string,
@@ -268,12 +284,51 @@ describe('cancel confirm and result (japa#356)', () => {
     expect(mockCancel).toHaveBeenCalledTimes(1);
   });
 
-  it('error: today’s alert', () => {
+  // Review fix: the confirm re-reads the booking first, so a 24-hour line
+  // that passed while the screen was open is already in the wording.
+  it('the confirm uses the re-read booking, not the cached one', async () => {
+    mockBooking = booking({
+      cancellationRefund: {
+        refundable: true,
+        amount: { amountMinor: 812_437, currency: 'NGN' },
+        processingFee: null,
+        refundableUntil: '2026-11-25T14:00:00.000Z',
+      },
+    });
+    // The server now says: no longer refundable.
+    mockFresh = booking({
+      cancellationRefund: {
+        refundable: false,
+        amount: null,
+        processingFee: null,
+        refundableUntil: '2026-11-25T14:00:00.000Z',
+      },
+    });
+    const tree = render();
+    await pressCancel(tree);
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+    const [, message, buttons] = alertSpy.mock.calls[0] as [
+      string,
+      string,
+      AlertButton[],
+    ];
+    expect(message).toMatch(/won’t give you a refund/);
+    expect(buttons[1].text).toBe('Cancel without refund');
+  });
+
+  it('a failed re-read still opens the confirm from the cached booking', async () => {
+    mockRefetch.mockImplementationOnce(() => Promise.reject(new Error('x')));
+    const tree = render();
+    await pressCancel(tree);
+    expect(alertSpy.mock.calls[0][0]).toBe('Cancel consultation?');
+  });
+
+  it('error: today’s alert', async () => {
     mockCancel.mockImplementation((_id, opts) =>
       settle(opts, 'onError', { code: 'X' }),
     );
     const tree = render();
-    cancelThroughConfirm(tree);
+    await cancelThroughConfirm(tree);
     expect(alertSpy.mock.calls[1][0]).toBe(
       'We couldn’t cancel your consultation. Try again in a moment.',
     );

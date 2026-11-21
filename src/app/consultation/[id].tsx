@@ -257,6 +257,10 @@ export default function ConsultationDetailView() {
   // taps in the same frame both read a stale `isPending`, a ref is set
   // before the next render. Released when the call settles.
   const cancelBusyRef = React.useRef(false);
+  // japa#356 review fix: true while the booking is re-read before the cancel
+  // confirm opens (the link shows the spinner meanwhile).
+  const [checkingCancel, setCheckingCancel] = React.useState(false);
+  const cancelCheckRef = React.useRef(false);
   const reportBusyRef = React.useRef(false);
   // The last report error, kept here (not in the action) so it stays on
   // screen after a 409 refreshed the booking and the action went away.
@@ -333,15 +337,35 @@ export default function ConsultationDetailView() {
   // Cancel → confirm, then PUT /consultations/:id/status { cancelled }.
   // japa#356: the confirm is worded from the server's preview only; the
   // result alert from the PUT answer's `refund` (what actually happened).
-  const confirmCancel = () => {
-    // A second tap while a cancel runs does nothing (the link is a spinner).
-    if (cancelBusyRef.current || cancelQ.isPending) return;
+  const confirmCancel = async () => {
+    // A second tap while a cancel runs, or while the booking is being
+    // re-read, does nothing (the link is a spinner).
+    if (cancelBusyRef.current || cancelCheckRef.current || cancelQ.isPending) {
+      return;
+    }
+    // Review fix: re-read the booking FIRST, so the preview (and the 24-hour
+    // line in it) is the server's current one, not a cached copy up to
+    // minutes old. The app still decides nothing itself. If the re-read
+    // fails (offline), the cached booking is used: the result alert reads
+    // the PUT answer and so still tells the truth.
+    cancelCheckRef.current = true;
+    setCheckingCancel(true);
+    let current = booking;
+    try {
+      const fresh = await liveQ.refetch();
+      current = fresh?.data ?? booking;
+    } catch {
+      current = booking;
+    } finally {
+      cancelCheckRef.current = false;
+      setCheckingCancel(false);
+    }
     const copy = cancelConfirmCopy(
-      booking?.cancellationRefund,
-      booking?.timezone,
+      current?.cancellationRefund,
+      current?.timezone,
     );
     // Was it paid BEFORE the cancel? Decides how `refund: null` reads.
-    const paid = booking ? wasPaidBooking(booking) : false;
+    const paid = current ? wasPaidBooking(current) : false;
     Alert.alert(copy.title, copy.message, [
       { text: 'Keep it', style: 'cancel' },
       {
@@ -597,11 +621,13 @@ export default function ConsultationDetailView() {
             {noShowReport?.status === 'open' ? null : (
               <Pressable
                 testID="cancel-consultation"
-                onPress={confirmCancel}
-                disabled={cancelQ.isPending}
+                onPress={() => void confirmCancel()}
+                disabled={cancelQ.isPending || checkingCancel}
                 hitSlop={6}
                 accessibilityRole="button"
-                accessibilityState={{ busy: cancelQ.isPending }}
+                accessibilityState={{
+                  busy: cancelQ.isPending || checkingCancel,
+                }}
                 style={{
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -609,7 +635,7 @@ export default function ConsultationDetailView() {
                   minHeight: 36,
                 }}
               >
-                {cancelQ.isPending ? (
+                {cancelQ.isPending || checkingCancel ? (
                   <ActivityIndicator color={EX.color.primary} />
                 ) : (
                   <Text
