@@ -253,6 +253,11 @@ export default function ConsultationDetailView() {
 
   // ── "The meeting didn't happen" (japa#442) ─────────────────────────────────
   const reportQ = useReportNoShow();
+  // Double-tap guards as REFS (review fix, like "Pay again" on /pay): two
+  // taps in the same frame both read a stale `isPending`, a ref is set
+  // before the next render. Released when the call settles.
+  const cancelBusyRef = React.useRef(false);
+  const reportBusyRef = React.useRef(false);
   // The last report error, kept here (not in the action) so it stays on
   // screen after a 409 refreshed the booking and the action went away.
   const [reportError, setReportError] = React.useState<string | null>(null);
@@ -330,7 +335,7 @@ export default function ConsultationDetailView() {
   // result alert from the PUT answer's `refund` (what actually happened).
   const confirmCancel = () => {
     // A second tap while a cancel runs does nothing (the link is a spinner).
-    if (cancelQ.isPending) return;
+    if (cancelBusyRef.current || cancelQ.isPending) return;
     const copy = cancelConfirmCopy(
       booking?.cancellationRefund,
       booking?.timezone,
@@ -342,8 +347,14 @@ export default function ConsultationDetailView() {
       {
         text: copy.destructive,
         style: 'destructive',
-        onPress: () =>
+        onPress: () => {
+          // The confirm's button itself: one cancel call, ever, at a time.
+          if (cancelBusyRef.current) return;
+          cancelBusyRef.current = true;
           cancelQ.mutate(c.id, {
+            onSettled: () => {
+              cancelBusyRef.current = false;
+            },
             // Stay on this screen: it refetches and shows "Cancelled" plus
             // the refund card. The alert says what the server did.
             onSuccess: (res) =>
@@ -361,7 +372,8 @@ export default function ConsultationDetailView() {
                   ? (err as { message: string }).message
                   : CANCEL_ERROR,
               ),
-          }),
+          });
+        },
       },
     ]);
   };
@@ -374,11 +386,15 @@ export default function ConsultationDetailView() {
   // shows the server's message; the hook refetches the booking, so the
   // screen then shows the matching state (e.g. the existing report).
   const sendReport = (note: string) => {
-    if (reportQ.isPending) return;
+    if (reportBusyRef.current || reportQ.isPending) return;
+    reportBusyRef.current = true;
     setReportError(null);
     reportQ.mutate(
       { consultationId: c.id, note },
       {
+        onSettled: () => {
+          reportBusyRef.current = false;
+        },
         onSuccess: () => setReportError(null),
         onError: (err) => {
           if (isNetworkError(err)) {

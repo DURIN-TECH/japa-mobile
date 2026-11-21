@@ -114,6 +114,16 @@ const byTestId = (tree: TestRenderer.ReactTestRenderer, id: string) =>
   )[0];
 
 type AlertButton = { text: string; onPress?: () => void };
+
+/**
+ * Finish a mocked mutation the way react-query does: the outcome callback,
+ * then `onSettled` (which releases the screen's double-tap guards).
+ */
+function settle(opts: unknown, kind: 'onSuccess' | 'onError', value: unknown) {
+  const o = opts as Record<string, ((v?: unknown) => void) | undefined>;
+  o[kind]?.(value);
+  o.onSettled?.();
+}
 let alertSpy: jest.SpiedFunction<typeof Alert.alert>;
 
 beforeEach(() => {
@@ -202,7 +212,7 @@ describe('cancel confirm and result (japa#356)', () => {
       },
     });
     mockCancel.mockImplementation((_id, opts) =>
-      (opts as { onSuccess: (r: unknown) => void }).onSuccess({
+      settle(opts, 'onSuccess', {
         status: 'cancelled',
         refund: null,
       }),
@@ -227,7 +237,7 @@ describe('cancel confirm and result (japa#356)', () => {
       },
     });
     mockCancel.mockImplementation((_id, opts) =>
-      (opts as { onSuccess: (r: unknown) => void }).onSuccess({
+      settle(opts, 'onSuccess', {
         refund: {
           status: 'pending',
           amount: { amountMinor: 812_437, currency: 'NGN' },
@@ -242,9 +252,25 @@ describe('cancel confirm and result (japa#356)', () => {
     );
   });
 
+  // Review fix: the confirm's button pressed twice in one frame cancels once.
+  it('the confirm button pressed twice in one frame cancels once', () => {
+    const tree = render();
+    act(() => byTestId(tree, 'cancel-consultation').props.onPress());
+    const [, , buttons] = alertSpy.mock.calls[0] as [
+      string,
+      string,
+      AlertButton[],
+    ];
+    act(() => {
+      buttons[1].onPress!();
+      buttons[1].onPress!();
+    });
+    expect(mockCancel).toHaveBeenCalledTimes(1);
+  });
+
   it('error: today’s alert', () => {
     mockCancel.mockImplementation((_id, opts) =>
-      (opts as { onError: (e: unknown) => void }).onError({ code: 'X' }),
+      settle(opts, 'onError', { code: 'X' }),
     );
     const tree = render();
     cancelThroughConfirm(tree);
@@ -352,7 +378,7 @@ describe('"The meeting didn’t happen" (japa#442)', () => {
     // it must not stop the send.
     mockOffline = true;
     mockReport.mockImplementationOnce((_v, opts) =>
-      (opts as { onError: (e: unknown) => void }).onError({
+      settle(opts, 'onError', {
         code: 'NETWORK_ERROR',
         message: 'Network error. Please check your connection.',
         status: 0,
@@ -370,10 +396,24 @@ describe('"The meeting didn’t happen" (japa#442)', () => {
     expect(mockReport).toHaveBeenCalledTimes(2);
   });
 
+  // Review fix: ref guard. Two taps in the same frame (isPending still
+  // false in both) send ONE report.
+  it('two taps in one frame send one report', () => {
+    mockBooking = booking({ canReportNoShow: true });
+    const tree = render();
+    act(() => byTestId(tree, 'no-show-open').props.onPress());
+    const send = byTestId(tree, 'no-show-send').props.onPress;
+    act(() => {
+      send();
+      send();
+    });
+    expect(mockReport).toHaveBeenCalledTimes(1);
+  });
+
   it('a 409 shows the server’s message', () => {
     mockBooking = booking({ canReportNoShow: true });
     mockReport.mockImplementation((_v, opts) =>
-      (opts as { onError: (e: unknown) => void }).onError({
+      settle(opts, 'onError', {
         code: 'FEE_NOT_HELD',
         message: 'Your agent has already been paid. Contact support.',
         status: 409,
@@ -397,7 +437,7 @@ describe('"The meeting didn’t happen" (japa#442)', () => {
         canReportNoShow: false,
         noShowReport: { status: 'open', createdAt: 'x' },
       });
-      (opts as { onSuccess: () => void }).onSuccess();
+      settle(opts, 'onSuccess', undefined);
     });
     const tree = render();
     act(() => byTestId(tree, 'no-show-open').props.onPress());
