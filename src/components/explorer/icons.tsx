@@ -51,6 +51,7 @@ import {
   CircleAlert,
   PenLine,
   Lock,
+  RotateCcw,
 } from 'lucide-react-native';
 
 // Design-name → lucide component. Stroke width 1.8 matches the prototype default.
@@ -101,6 +102,8 @@ export const Ic = {
   alert: CircleAlert,
   // japa#384: the review's locked "See how each rule was applied" panel.
   lock: Lock,
+  // japa#356: money coming back (refund rows in Payments, the refund card).
+  refund: RotateCcw,
 } as const;
 
 export type IcName = keyof typeof Ic;
