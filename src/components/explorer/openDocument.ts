@@ -28,7 +28,7 @@ import { DOC_OPEN_COPY } from './openDocumentCopy';
 import { SETTINGS_LINKS, openSettingsLink } from './settingsLogic';
 import type { Doc } from '@/types/explorer.type';
 import type { DocumentStatus } from '@/types/documents.type';
-import { useGetDownloadUrl } from '@/hooks/useDocuments';
+import { apiService } from '@/services/api.service';
 
 // ── Which rows can be opened ─────────────────────────────────────────────────
 
@@ -192,7 +192,6 @@ const VIEWER_OPTIONS: WebBrowser.WebBrowserOpenOptions = {
  * the real download hook and `expo-web-browser`.
  */
 export function useOpenDocument(deps?: Partial<OpenDeps>): DocumentOpener {
-  const download = useGetDownloadUrl();
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [error, setError] = useState<ErrorState | null>(null);
   // The synchronous lock: state updates land on the next render, a ref does
@@ -202,7 +201,17 @@ export function useOpenDocument(deps?: Partial<OpenDeps>): DocumentOpener {
   // Kept in refs so `open` is stable and always uses the latest deps.
   const depsRef = useRef<OpenDeps | null>(null);
   depsRef.current = {
-    getUrl: deps?.getUrl ?? ((id) => download.mutateAsync(id)),
+    // Fetched straight through apiService, not the react-query mutation, so
+    // the signed link lives only in this call's local scope and never sits in
+    // the query cache as mutation data.
+    getUrl:
+      deps?.getUrl ??
+      (async (id) =>
+        (
+          await apiService.get<{ downloadUrl: string }>(
+            `/documents/${id}/download`,
+          )
+        ).data?.downloadUrl),
     openBrowser:
       deps?.openBrowser ??
       ((url) => WebBrowser.openBrowserAsync(url, VIEWER_OPTIONS)),

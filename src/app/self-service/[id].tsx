@@ -408,8 +408,10 @@ export function LiveDocRow({
           onPress={() =>
             opener.open(doc.id, { onBehalf: !!doc.uploadedOnBehalf })
           }
-          // Screen-wide lock: every row ignores taps while any row opens.
-          disabled={opener.locked}
+          // Only the OTHER rows are disabled while one opens; the opening row
+          // stays enabled so screen readers say "busy", not "dimmed" (open()
+          // already ignores taps while locked).
+          disabled={opener.locked && !opening}
           android_ripple={undefined}
           accessibilityRole="button"
           accessibilityLabel={a11yLabel}

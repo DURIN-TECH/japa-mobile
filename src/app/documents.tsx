@@ -106,7 +106,7 @@ function DocRow({
     <PressableStatic
       testID={`doc-row-${doc.id}`}
       onPress={onOpen}
-      disabled={!onOpen || locked}
+      disabled={!onOpen || (!!locked && !opening)}
       android_ripple={undefined}
       // Openable rows are buttons with a built label; missing rows keep their
       // default read-out (which includes their Upload button, japa#421).

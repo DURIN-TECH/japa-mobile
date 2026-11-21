@@ -61,7 +61,18 @@ jest.mock('expo-web-browser', () => ({
 }));
 // The self-service screen module imports every data hook; none of them run in
 // LiveDocRow, so the network and Firebase layers are stubbed out.
-jest.mock('@/services/api.service', () => ({ apiService: {} }));
+// The opener fetches the link via apiService.get('/documents/:id/download').
+jest.mock('@/services/api.service', () => ({
+  apiService: {
+    get: async (path: string) => ({
+      data: {
+        downloadUrl: await mockGetUrl(
+          path.replace(/^\/documents\//, '').replace(/\/download$/, ''),
+        ),
+      },
+    }),
+  },
+}));
 jest.mock('@react-native-firebase/app', () => ({ getApp: () => ({}) }));
 jest.mock('@react-native-firebase/analytics', () => ({
   getAnalytics: () => ({}),
@@ -80,7 +91,6 @@ jest.mock('@react-native-firebase/messaging', () => ({
 jest.mock('@/stores/auth.store', () => ({ useAuthStore: () => ({}) }));
 jest.mock('@/config/env', () => ({ isSelfServiceOnly: () => true }));
 jest.mock('@/hooks/useDocuments', () => ({
-  useGetDownloadUrl: () => ({ mutateAsync: mockGetUrl }),
   useMyDocuments: () => ({
     data: mockMyDocs,
     isLoading: false,

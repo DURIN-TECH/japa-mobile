@@ -11,8 +11,18 @@ const mockOpenBrowser =
   jest.fn<(url: string, opts?: unknown) => Promise<unknown>>();
 const mockOpenURL = jest.fn<(url: string) => Promise<unknown>>();
 
-jest.mock('@/hooks/useDocuments', () => ({
-  useGetDownloadUrl: () => ({ mutateAsync: mockGetUrl }),
+// The opener calls GET /documents/:id/download through apiService directly
+// (no react-query cache); the mock returns { data: { downloadUrl } }.
+jest.mock('@/services/api.service', () => ({
+  apiService: {
+    get: async (path: string) => ({
+      data: {
+        downloadUrl: await mockGetUrl(
+          path.replace(/^\/documents\//, '').replace(/\/download$/, ''),
+        ),
+      },
+    }),
+  },
 }));
 jest.mock('expo-web-browser', () => ({
   openBrowserAsync: (url: string, opts?: unknown) => mockOpenBrowser(url, opts),
