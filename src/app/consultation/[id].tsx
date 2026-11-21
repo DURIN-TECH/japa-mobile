@@ -261,6 +261,16 @@ export default function ConsultationDetailView() {
   // confirm opens (the link shows the spinner meanwhile).
   const [checkingCancel, setCheckingCancel] = React.useState(false);
   const cancelCheckRef = React.useRef(false);
+  // Review fix: whether the screen is still mounted. The cancel confirm
+  // waits for a re-read of the booking; if the client left meanwhile, no
+  // alert may pop up over whatever screen they are on now.
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const reportBusyRef = React.useRef(false);
   // The last report error, kept here (not in the action) so it stays on
   // screen after a 409 refreshed the booking and the action went away.
@@ -358,8 +368,11 @@ export default function ConsultationDetailView() {
       current = booking;
     } finally {
       cancelCheckRef.current = false;
-      setCheckingCancel(false);
+      // No state update on an unmounted screen.
+      if (mountedRef.current) setCheckingCancel(false);
     }
+    // The screen is gone (back pressed during the re-read): no confirm.
+    if (!mountedRef.current) return;
     const copy = cancelConfirmCopy(
       current?.cancellationRefund,
       current?.timezone,

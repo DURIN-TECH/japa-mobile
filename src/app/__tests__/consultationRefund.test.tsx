@@ -316,6 +316,27 @@ describe('cancel confirm and result (japa#356)', () => {
     expect(buttons[1].text).toBe('Cancel without refund');
   });
 
+  // Review fix: leaving the screen during the re-read shows no alert.
+  it('no confirm when the screen unmounted during the re-read', async () => {
+    let resolve!: (v: unknown) => void;
+    mockRefetch.mockImplementationOnce(
+      () => new Promise((r) => (resolve = r)) as never,
+    );
+    const tree = render();
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = byTestId(tree, 'cancel-consultation').props.onPress();
+    });
+    // The client goes back before the re-read answers.
+    act(() => tree.unmount());
+    mounted.splice(mounted.indexOf(tree), 1);
+    await act(async () => {
+      resolve({ data: mockBooking });
+      await pending;
+    });
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
   it('a failed re-read still opens the confirm from the cached booking', async () => {
     mockRefetch.mockImplementationOnce(() => Promise.reject(new Error('x')));
     const tree = render();
