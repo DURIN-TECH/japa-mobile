@@ -74,6 +74,25 @@
 // pending, the local charge once approve priced it. `autoOpen=1` opens the
 // checkout once on arrival.
 //
+// ── Consultation moved before it was paid (japa#392) ────────────────────────
+// Verify can answer 409 CONSULTATION_RESCHEDULED: the agent moved the booking
+// after its price lock, so the checkout just paid was retired and that
+// payment is being refunded IN FULL (`useVerifyConsultation` resolves it as
+// `{ kind: 'rescheduled', consultation }`, never as paid or failed). The
+// screen then shows the rescheduled state (RescheduledPayment.tsx): the new
+// time in the booking's zone and "Pay again". Re-verifying the same old
+// reference ("Check again") lands in the same state.
+//   • "Pay again" → POST /consultations/:id/checkout (spinner, no double tap):
+//       - requiresPayment: back to the normal locked quote with the NEW price,
+//         its rate line and countdown, plus "This is the price for the new
+//         time." Pay opens Paystack as before (two taps: #183 shows a new
+//         price before any checkout opens). The summary card and the
+//         confirmation then show the NEW slot;
+//       - requiresPayment false: "This consultation is already paid for";
+//       - 409 BOOKING_NOT_PAYABLE: the backend's message; no Paystack;
+//       - anything else: InlineError (backend message, else the fallback),
+//         and "Pay again" can be tapped again.
+//
 // Missing or invalid params → CenteredState "We couldn’t find this payment"
 // (never a ₦0 checkout).
 //
@@ -101,6 +120,15 @@ import {
 } from '@/components/explorer/content';
 import { CenteredState } from '@/components/explorer/CenteredState';
 import { InfoNote, InlineError } from '@/components/explorer/AccountForm';
+import {
+  PayAgainEnd,
+  RESCHEDULED_COPY,
+  RescheduledPayment,
+} from '@/components/explorer/RescheduledPayment';
+import {
+  bookingRouteParams,
+  bookingWhen,
+} from '@/components/explorer/zoneTime';
 import { Ic } from '@/components/explorer/icons';
 import {
   getConsultationTypeLabel,
@@ -407,9 +435,30 @@ export default function PayScreen() {
   const verifyNoteRef = useRef<string | null>(null);
   // How the last verify failed (null = it did not fail, or was not paid on
   // a 2xx): decides whether "Open checkout" is offered afterwards.
-  const verifyKindRef = useRef<PayErrorVerdict['kind'] | null>(null);
+  // 'rescheduled' (japa#392): the booking moved; see `enterRescheduled`.
+  const verifyKindRef = useRef<PayErrorVerdict['kind'] | 'rescheduled' | null>(
+    null,
+  );
+  // japa#392: the moved booking's summary, from the verify 409.
+  const movedRef = useRef<BookingSummary | null>(null);
   const paidSummaryRef = useRef<BookingSummary | null>(null);
   const paidRequestRef = useRef<VerifyPaymentRequestResult | null>(null);
+
+  // ── Consultation moved (japa#392) ──────────────────────────────────────────
+  // `moved`: the rescheduled state is on screen (the summary from the 409).
+  // `movedEnd`: "Pay again" found nothing to pay (an end state).
+  // `newSlot`: after "Pay again" priced the new time, the booking's NEW slot,
+  // shown on the summary card and passed on to the confirmation.
+  const [moved, setMoved] = useState<BookingSummary | null>(null);
+  const [movedEnd, setMovedEnd] = useState<{
+    title: string;
+    body?: string;
+  } | null>(null);
+  const [newSlot, setNewSlot] = useState<BookingSummary | null>(null);
+  const newSlotRef = useRef<BookingSummary | null>(null);
+  const [payAgainBusy, setPayAgainBusy] = useState(false);
+  const payAgainBusyRef = useRef(false);
+  const [payAgainError, setPayAgainError] = useState<string | null>(null);
 
   // ── What is ACTUALLY booked (japa#288) ─────────────────────────────────────
   // The server may hand back an earlier booking of this slot whose type or
@@ -540,13 +589,17 @@ export default function PayScreen() {
     // own topic / length), read from the ref so a response handled in this
     // same tick is already counted.
     const shown = displayFor(actualRef.current);
+    // japa#392: a booking paid after it moved confirms its NEW slot.
+    const slot = newSlotRef.current
+      ? bookingRouteParams(newSlotRef.current)
+      : null;
     const target = {
       pathname: '/confirmation' as const,
       params: {
         type: type ?? 'consultation',
         agentId,
-        dateIso,
-        time,
+        dateIso: slot?.dateIso || dateIso,
+        time: slot?.time || time,
         topic: isApp ? topic : shown.topic,
         mode,
         dur: isApp ? dur : shown.dur,
@@ -700,6 +753,86 @@ export default function PayScreen() {
     setPayError(v.message);
   };
 
+  // ── Consultation moved (japa#392) ──────────────────────────────────────────
+  /**
+   * Show the rescheduled state: the checkout that was just paid is retired
+   * (its payment is being refunded), so nothing of it may be paid, reopened
+   * or re-checked. The booking id stays: "Pay again" checks it out anew.
+   */
+  const enterRescheduled = (summary: BookingSummary) => {
+    quoteRef.current = null;
+    resumeRef.current = false;
+    bookingIdRef.current = summary.id;
+    setQuote(null);
+    setAttempted(false);
+    setRecheck(false);
+    setPayError(null);
+    setPayAgainError(null);
+    setMoved(summary);
+  };
+
+  /**
+   * "Pay again": POST /consultations/:id/checkout for the moved booking. The
+   * new price is ALWAYS shown before Paystack opens (#183), so success goes
+   * back to the locked-quote state; the next tap on "Pay …" opens it.
+   */
+  const onPayAgain = async () => {
+    const summary = moved;
+    // A ref, so a double tap never opens two checkouts.
+    if (!summary || payAgainBusyRef.current) return;
+    payAgainBusyRef.current = true;
+    setPayAgainBusy(true);
+    setPayAgainError(null);
+    try {
+      const res = await checkoutConsultation.mutateAsync(summary.id);
+      if (!res.requiresPayment) {
+        // Paid meanwhile: nothing to pay again.
+        setMovedEnd({
+          title: RESCHEDULED_COPY.paidTitle,
+          body: RESCHEDULED_COPY.paidBody,
+        });
+        return;
+      }
+      const q = lockedQuoteFrom(res.consultation, res, Date.now());
+      if (!q) {
+        // No usable price (never a ₦0 checkout): stay, and say so.
+        setPayAgainError(RESCHEDULED_COPY.payAgainError);
+        return;
+      }
+      // The new slot: the checkout's summary, else the 409's.
+      const slot = res.consultation ?? summary;
+      newSlotRef.current = slot;
+      setNewSlot(slot);
+      setMoved(null);
+      applyQuote(q);
+      resumeRef.current = false;
+      setAttempted(false);
+    } catch (err) {
+      const e = (typeof err === 'object' && err !== null ? err : {}) as {
+        code?: unknown;
+        message?: unknown;
+      };
+      const serverMessage =
+        typeof e.message === 'string' &&
+        e.message &&
+        // The API client's own wording for "no message" / "no answer".
+        e.code !== 'NETWORK_ERROR' &&
+        e.code !== 'UNKNOWN_ERROR' &&
+        e.code !== 'REQUEST_ERROR'
+          ? e.message
+          : null;
+      if (e.code === 'BOOKING_NOT_PAYABLE') {
+        // Cancelled or closed: an end state, no Paystack window.
+        setMovedEnd({ title: serverMessage ?? PAY_COPY.notPayable });
+        return;
+      }
+      setPayAgainError(serverMessage ?? RESCHEDULED_COPY.payAgainError);
+    } finally {
+      payAgainBusyRef.current = false;
+      setPayAgainBusy(false);
+    }
+  };
+
   // ── Get (or refresh) the locked quote ──────────────────────────────────────
   // First call books: POST /consultations (no fee). Later calls (refresh
   // after expiry, or "Try again" once a 409 named the booking, japa#288)
@@ -828,6 +961,13 @@ export default function PayScreen() {
     if (!q.reference) throw new Error('No payment reference');
     try {
       const r = await verifyConsultation.mutateAsync(q.reference);
+      // japa#392: the booking moved; this payment is being refunded. Not
+      // paid and not a failure: `finishVerify` shows the rescheduled state.
+      if (r && (r as { kind?: unknown }).kind === 'rescheduled') {
+        verifyKindRef.current = 'rescheduled';
+        movedRef.current = (r as { consultation: BookingSummary }).consultation;
+        return 'not_paid';
+      }
       if (!isBookingPaidResult(r)) {
         // A 2xx that does not say "paid" must never reach the confirmation.
         verifyKindRef.current = 'not_completed';
@@ -886,6 +1026,12 @@ export default function PayScreen() {
       return;
     }
     const verifyKind = verifyKindRef.current;
+    // japa#392: the booking moved: the rescheduled state, never "Payment
+    // failed" / "Check again" / "Open checkout".
+    if (verifyKind === 'rescheduled' && movedRef.current) {
+      enterRescheduled(movedRef.current);
+      return;
+    }
     if (verifyKind === 'in_progress' || verifyKind === 'unconfirmed') {
       // A payment may still land (in progress), or may already have been
       // made (unconfirmed): the only safe control is "Check again", which
@@ -896,7 +1042,13 @@ export default function PayScreen() {
     }
     // Verify answered: we now know it is not paid (or what else is up).
     setRecheck(false);
-    setAttempted(!(verifyKind && VERIFY_ENDS_CHECKOUT.has(verifyKind)));
+    setAttempted(
+      !(
+        verifyKind &&
+        verifyKind !== 'rescheduled' &&
+        VERIFY_ENDS_CHECKOUT.has(verifyKind)
+      ),
+    );
     setPayError(verifyNoteRef.current ?? PAY_COPY.notCompleted);
   };
 
@@ -911,6 +1063,7 @@ export default function PayScreen() {
     setProcessing(true);
     verifyNoteRef.current = null;
     verifyKindRef.current = null;
+    movedRef.current = null;
     paidSummaryRef.current = null;
     try {
       const verdict = await verifyBooking(q);
@@ -981,6 +1134,7 @@ export default function PayScreen() {
 
     verifyNoteRef.current = null;
     verifyKindRef.current = null;
+    movedRef.current = null;
     paidSummaryRef.current = null;
     resumeRef.current = true; // whatever happens next, reopen via /checkout
     const outcome = await runPaystackCheckout({
@@ -1135,6 +1289,34 @@ export default function PayScreen() {
     );
   }
 
+  // japa#392: "Pay again" found nothing to pay → an end state.
+  if (!isApp && movedEnd && bookingIdRef.current) {
+    const id = bookingIdRef.current;
+    return (
+      <PayAgainEnd
+        title={movedEnd.title}
+        body={movedEnd.body}
+        onView={() => router.replace(`/consultation/${id}`)}
+        onBack={() => router.back()}
+      />
+    );
+  }
+  // japa#392: the booking moved → the rescheduled state.
+  if (!isApp && moved) {
+    return (
+      <RescheduledPayment
+        when={bookingWhen(moved)}
+        busy={payAgainBusy}
+        error={payAgainError}
+        onPayAgain={() => void onPayAgain()}
+        onBack={() => router.back()}
+      />
+    );
+  }
+
+  // japa#392: once "Pay again" priced the new time, the card shows it.
+  const newWhen = newSlot ? bookingWhen(newSlot) : null;
+
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
       {/* ── Back header ─────────────────────────────────────────────────────── */}
@@ -1198,10 +1380,14 @@ export default function PayScreen() {
             </>
           ) : (
             <>
-              <SummaryRow icon={Ic.cal} label={dateLabel} />
+              <SummaryRow icon={Ic.cal} label={newWhen?.date || dateLabel} />
               {/* Duration and topic are the BOOKED ones (japa#288): the
-                  user's pick, or a resumed booking's own values. */}
-              <SummaryRow icon={Ic.clock} label={`${time} · ${display.dur}`} />
+                  user's pick, or a resumed booking's own values. After a
+                  move (japa#392), the NEW time. */}
+              <SummaryRow
+                icon={Ic.clock}
+                label={`${newWhen?.time || time} · ${display.dur}`}
+              />
               <SummaryRow icon={isVideo ? Ic.video : Ic.phone} label={mode} />
               <SummaryRow icon={Ic.msg} label={display.topic} />
             </>
@@ -1525,6 +1711,13 @@ export default function PayScreen() {
                 {formatCountdown(secondsLeft)}
               </Text>
             ) : null}
+          </View>
+        ) : null}
+
+        {/* japa#392: after "Pay again", the price shown is for the new time. */}
+        {!isApp && newSlot && phase === 'locked' && quote ? (
+          <View style={{ marginTop: 12 }}>
+            <InfoNote icon={Ic.cal}>{RESCHEDULED_COPY.newPriceNote}</InfoNote>
           </View>
         ) : null}
       </ScrollView>
