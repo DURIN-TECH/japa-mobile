@@ -304,6 +304,9 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
             alignItems: 'center',
             gap: 7,
             marginTop: 8,
+            // Bottom gap = the row's own vertical padding (13), so the band
+            // clears the next row's top divider instead of sitting on it.
+            marginBottom: 13,
             marginLeft: 46,
             paddingVertical: 8,
             paddingHorizontal: 11,
