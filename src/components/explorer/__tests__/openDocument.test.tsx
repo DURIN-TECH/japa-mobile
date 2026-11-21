@@ -68,7 +68,7 @@ beforeEach(() => {
   mockOpenURL.mockReset();
   jest
     .spyOn(Linking, 'openURL')
-    .mockImplementation((u: string) => mockOpenURL(u) as Promise<true>);
+    .mockImplementation((u: string) => mockOpenURL(u) as Promise<void>);
   jest
     .spyOn(AccessibilityInfo, 'announceForAccessibility')
     .mockImplementation(() => {});
@@ -156,7 +156,9 @@ describe('fetchAndOpenDocument', () => {
   });
 
   it('opens the viewer with the returned URL', async () => {
-    const openBrowser = jest.fn(async () => ({ type: 'opened' }));
+    const openBrowser = jest.fn<OpenDeps['openBrowser']>(async () => ({
+      type: 'opened',
+    }));
     const res = await fetchAndOpenDocument('d1', deps({ openBrowser }));
     expect(res).toEqual({ ok: true });
     expect(openBrowser).toHaveBeenCalledWith(SIGNED);
