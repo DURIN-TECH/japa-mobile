@@ -142,17 +142,17 @@ function PaymentRow({
       <View style={{ alignItems: 'flex-end', gap: 5 }}>
         {/* A held / closed refund carries no amount (primary is ''). */}
         {price.primary ? (
-        <Text
-          style={{
-            fontSize: 15,
-            fontWeight: '700',
-            // Refunded reads muted, with a struck-through feel.
-            color: refunded ? EX.color.muted : EX.color.ink,
-            textDecorationLine: refunded ? 'line-through' : 'none',
-          }}
-        >
-          {price.primary}
-        </Text>
+          <Text
+            style={{
+              fontSize: 15,
+              fontWeight: '700',
+              // Refunded reads muted, with a struck-through feel.
+              color: refunded ? EX.color.muted : EX.color.ink,
+              textDecorationLine: refunded ? 'line-through' : 'none',
+            }}
+          >
+            {price.primary}
+          </Text>
         ) : null}
         {/* The dollar price under the charged amount (label, ink-muted). */}
         {price.secondary ? (
@@ -184,6 +184,7 @@ function refundParts(amount: Money): PriceParts {
     primary: amount.amountMinor > 0 ? `+${formatMoney(amount)}` : '',
     secondary: null,
     free: false,
+    localUnavailable: false,
   };
 }
 

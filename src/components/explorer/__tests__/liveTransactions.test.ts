@@ -385,9 +385,7 @@ describe('PAY_STATUS type', () => {
 // ── japa#356: refund rows in Payments ───────────────────────────────────────
 describe('refund rows read the server refundState first (japa#356)', () => {
   /** A refund row as the client endpoint sends it after backend #413 H. */
-  const refund = (
-    over: Partial<ApiTransaction> = {},
-  ): ApiTransaction => ({
+  const refund = (over: Partial<ApiTransaction> = {}): ApiTransaction => ({
     ...txn('rf-1', 'refund', 'pending', 812_437),
     description: '',
     priceUsd: undefined,
@@ -417,16 +415,17 @@ describe('refund rows read the server refundState first (japa#356)', () => {
 
   it('a HELD refund (status failed, refundState delayed) is Refund delayed', () => {
     expect(
-      mapTransaction(refund({ status: 'failed', refundState: 'delayed', amount: 0 }))
-        .status,
+      mapTransaction(
+        refund({ status: 'failed', refundState: 'delayed', amount: 0 }),
+      ).status,
     ).toBe('refund_delayed');
   });
 
   it('the server state wins over the raw status', () => {
     // A held row may look pending internally; the server says delayed.
-    expect(
-      refundRowStatus({ status: 'pending', refundState: 'delayed' }),
-    ).toBe('refund_delayed');
+    expect(refundRowStatus({ status: 'pending', refundState: 'delayed' })).toBe(
+      'refund_delayed',
+    );
   });
 
   it('with no refundState, the status decides (older backend)', () => {
@@ -469,8 +468,18 @@ describe('refund rows read the server refundState first (japa#356)', () => {
       clientRow, // ₦8,123.84 paid
       refund({ refundState: 'refunded', status: 'completed' }),
       refund({ id: 'rf-2', refundState: 'on_its_way' }),
-      refund({ id: 'rf-3', refundState: 'delayed', status: 'failed', amount: 0 }),
-      refund({ id: 'rf-4', refundState: 'none_due', status: 'closed', amount: 0 }),
+      refund({
+        id: 'rf-3',
+        refundState: 'delayed',
+        status: 'failed',
+        amount: 0,
+      }),
+      refund({
+        id: 'rf-4',
+        refundState: 'none_due',
+        status: 'closed',
+        amount: 0,
+      }),
     ].map(mapTransaction);
     expect(rows[0].status).toBe('paid');
     expect(rows[0].amount).toEqual({ amountMinor: 812_384, currency: 'NGN' });

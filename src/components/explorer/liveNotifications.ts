@@ -32,20 +32,19 @@ export function toKind(type: ApiNotification['type']): Notif['kind'] {
     case 'document_check_passed':
     case 'identity_verified':
       return 'verified';
-    // Money.
+    // Money. japa#356: `consultation_refunded` is money coming back, so it
+    // gets the money chip, not the generic consultation one (matched here,
+    // BEFORE the `consultation*` fallback below would claim it).
     case 'payment_request':
     case 'payment_request_rejected':
     case 'payment_received':
-    // japa#356: a consultation refund is money coming back, so it gets the
-    // money chip, not the generic consultation one. Checked BEFORE the
-    // `consultation*` fallback below, which would otherwise claim it.
     case 'consultation_refunded':
       return 'payment';
     // Changed or failed, needs attention but not a document.
+    // japa#356: `consultation_refund_delayed` (a refund failed, or is held
+    // while the payment provider's fee is confirmed) is an alert too.
     case 'rule_change_alert':
     case 'identity_verification_failed':
-    // japa#356: a refund that is taking longer (failed, or held while the
-    // payment provider's fee is confirmed) needs the client's attention.
     case 'consultation_refund_delayed':
       return 'alert';
     case 'visa_news':

@@ -200,10 +200,17 @@ describe('routeForNotification (#269 type table)', () => {
   // japa#356: both refund notices open the booking (the `consultation*`
   // rule), or the consultations list when the id is missing.
   it('consultation_refunded / _refund_delayed -> the consultation', () => {
-    for (const type of ['consultation_refunded', 'consultation_refund_delayed']) {
+    for (const type of [
+      'consultation_refunded',
+      'consultation_refund_delayed',
+    ]) {
       expect(route({ type, relatedEntityId: 'k1' })).toBe('/consultation/k1');
       expect(
-        route({ type, relatedEntityType: 'consultation', relatedEntityId: 'k2' }),
+        route({
+          type,
+          relatedEntityType: 'consultation',
+          relatedEntityId: 'k2',
+        }),
       ).toBe('/consultation/k2');
       expect(route({ type })).toBe('/consultations');
       expect(route({ type }, 'inbox')).toBe('/consultations');
