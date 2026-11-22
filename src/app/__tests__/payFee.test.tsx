@@ -93,6 +93,8 @@ import {
   jest,
 } from '@jest/globals';
 import TestRenderer, { act } from 'react-test-renderer';
+// japa#472: the spinner the SLOT_IN_PAST state must not leave running.
+import { ActivityIndicator } from 'react-native';
 import PayScreen from '../pay';
 import { PAY_COPY } from '@/hooks/consultationPayFlow';
 
@@ -881,9 +883,7 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
     );
     expect(tryAgain(tree)).toBeUndefined();
     // No spinner left running.
-    expect(
-      tree.root.findAll((n) => n.type === 'ActivityIndicator'),
-    ).toHaveLength(0);
+    expect(tree.root.findAllByType(ActivityIndicator)).toHaveLength(0);
     await act(async () => {
       cta(tree).props.onPress();
     });
