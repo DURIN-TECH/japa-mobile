@@ -133,7 +133,7 @@ import {
   type ReviewGap,
   type ReviewGaps,
 } from '@/components/explorer/review/reviewCopy';
-import { PLANS_ROUTE } from '@/components/explorer/UpgradePrompt';
+import { PLANS_FROM_UPGRADE_ROUTE } from '@/components/explorer/UpgradePrompt';
 import {
   SUBMITTED_STATUSES,
   isStatementLocked,
@@ -934,10 +934,14 @@ export default function SelfServiceView() {
   const queryClient = useQueryClient();
   // Returning to this screen (from the statement, the review or the plans screen)
   // refetches the review: the inputs or the plan may have changed meanwhile.
+  // japa#473: the document checks too, so back from the plans screen with a
+  // plan that includes the check, the "See plans" link on DocumentCheckNotice
+  // goes (its `tier` comes from the server) without a pull or a restart.
   useFocusEffect(
     useCallback(() => {
-      if (reviewId)
-        queryClient.invalidateQueries({ queryKey: assessmentKey(reviewId) });
+      if (!reviewId) return;
+      queryClient.invalidateQueries({ queryKey: assessmentKey(reviewId) });
+      queryClient.invalidateQueries({ queryKey: ['documentChecks', reviewId] });
     }, [queryClient, reviewId]),
   );
 
@@ -1325,7 +1329,9 @@ export default function SelfServiceView() {
       setCtaError(null);
       setRefusedAtKey(null);
       if (reviewCta.action === 'open') return openReview();
-      if (reviewCta.action === 'upgrade') return router.push(PLANS_ROUTE);
+      // japa#473: marked, so the plans screen brings the client back here.
+      if (reviewCta.action === 'upgrade')
+        return router.push(PLANS_FROM_UPGRADE_ROUTE);
       if (reviewCta.action === 'contact') {
         Linking.openURL(SUPPORT_MAILTO).catch(() => undefined);
         return;
@@ -1752,7 +1758,7 @@ export default function SelfServiceView() {
                     ) => saveAnswerM.mutateAsync({ itemId, value }),
                     locked: answersLocked,
                     onLocked: () => setAnswersLockedByServer(true),
-                    onSeePlans: () => router.push(PLANS_ROUTE),
+                    onSeePlans: () => router.push(PLANS_FROM_UPGRADE_ROUTE),
                     onRefreshList: () => {
                       checklistQ.refetch();
                       answersQ.refetch();

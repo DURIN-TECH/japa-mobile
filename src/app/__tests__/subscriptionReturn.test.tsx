@@ -30,9 +30,36 @@ jest.mock('expo-web-browser', () => ({
     mockOpenAuth(url, redirect),
   maybeCompleteAuthSession: jest.fn(),
 }));
-jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: jest.fn(), back: jest.fn() }),
-}));
+// japa#473: the router spies, the `?from=` param, focus and history are all
+// settable per test.
+const mockBack = jest.fn();
+const mockReplace = jest.fn();
+const mockRouterState = {
+  params: {} as Record<string, string>,
+  canGoBack: true,
+  focused: true,
+  /** The latest focus callback, so a test can simulate "focused again". */
+  onFocus: null as null | (() => void),
+};
+jest.mock('expo-router', () => {
+  const ReactActual = jest.requireActual<typeof import('react')>('react');
+  return {
+    useRouter: () => ({
+      push: jest.fn(),
+      back: mockBack,
+      replace: mockReplace,
+      canGoBack: () => mockRouterState.canGoBack,
+    }),
+    useLocalSearchParams: () => mockRouterState.params,
+    useNavigation: () => ({ isFocused: () => mockRouterState.focused }),
+    // Run the focus callback like an effect (the screen is focused on mount).
+    useFocusEffect: (cb: () => void) =>
+      ReactActual.useEffect(() => {
+        mockRouterState.onFocus = cb;
+        cb();
+      }, [cb]),
+  };
+});
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
@@ -92,10 +119,7 @@ function text(tree: TestRenderer.ReactTestRenderer) {
 
 /** Render, tap the paid plan's "Upgrade" and let checkout + verify settle. */
 async function upgrade() {
-  let tree!: TestRenderer.ReactTestRenderer;
-  await act(async () => {
-    tree = TestRenderer.create(<SubscriptionView />);
-  });
+  const tree = await render();
   // The Upgrade CTA is the pressable whose subtree reads "Upgrade".
   const cta = tree.root.find(
     (n) =>
@@ -109,7 +133,35 @@ async function upgrade() {
   return tree;
 }
 
+/** Render the screen and let its first effects run. */
+async function render() {
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    tree = TestRenderer.create(<SubscriptionView />);
+  });
+  return tree;
+}
+
+/** Tap "Try again" on the failed-verify error. */
+async function tapTryAgain(tree: TestRenderer.ReactTestRenderer) {
+  const retry = tree.root.find(
+    (n) =>
+      typeof n.props.onPress === 'function' &&
+      typeof n.type !== 'string' &&
+      n.findAll((c) => c.props.children === 'Try again').length > 0,
+  );
+  await act(async () => {
+    await retry.props.onPress();
+  });
+}
+
 beforeEach(() => {
+  mockBack.mockReset();
+  mockReplace.mockReset();
+  mockRouterState.params = {};
+  mockRouterState.canGoBack = true;
+  mockRouterState.focused = true;
+  mockRouterState.onFocus = null;
   mockStart.mockReset();
   mockVerify.mockReset();
   mockOpenAuth.mockReset();
@@ -170,5 +222,107 @@ describe('subscription.tsx return to app', () => {
     expect(mockVerify).toHaveBeenLastCalledWith('ref_sub');
     expect(mockOpenAuth).toHaveBeenCalledTimes(1);
     expect(text(tree)).not.toContain(SUBSCRIPTION_VERIFY_ERROR_MESSAGE);
+  });
+});
+
+// ── japa#473: opened from a locked action, the screen returns there ─────────
+describe('subscription.tsx return to the locked action (japa#473)', () => {
+  const FROM_UPGRADE = { from: 'upgrade' };
+
+  it('from-upgrade + paid → router.back() once, no Home', async () => {
+    mockRouterState.params = FROM_UPGRADE;
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockResolvedValue({ verified: true });
+    await upgrade();
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('from-upgrade + Paystack closed and nothing paid → back (still locked there)', async () => {
+    mockRouterState.params = FROM_UPGRADE;
+    mockOpenAuth.mockResolvedValue({ type: 'cancel' });
+    mockVerify.mockRejectedValue({ status: 400 });
+    await upgrade();
+    expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('from-upgrade + returned but not paid → stays, shows the message', async () => {
+    mockRouterState.params = FROM_UPGRADE;
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockRejectedValue({ status: 400 });
+    const tree = await upgrade();
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    expect(text(tree)).toContain(SUBSCRIPTION_NOT_PAID_MESSAGE);
+  });
+
+  it('from-upgrade + checkout could not open → stays', async () => {
+    mockRouterState.params = FROM_UPGRADE;
+    mockOpenAuth.mockRejectedValue(new Error('no browser'));
+    await upgrade();
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('from-upgrade + verify call failed → stays; a paid "Try again" then closes once', async () => {
+    mockRouterState.params = FROM_UPGRADE;
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockRejectedValueOnce({ status: 0, code: 'NETWORK_ERROR' });
+    const tree = await upgrade();
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(text(tree)).toContain(SUBSCRIPTION_VERIFY_ERROR_MESSAGE);
+
+    mockVerify.mockResolvedValueOnce({ verified: true });
+    await tapTryAgain(tree);
+    expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('no marker (profile / settings) + paid → stays open', async () => {
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockResolvedValue({ verified: true });
+    await upgrade();
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('no marker + cancelled → stays open', async () => {
+    mockOpenAuth.mockResolvedValue({ type: 'dismiss' });
+    mockVerify.mockRejectedValue({ status: 400 });
+    await upgrade();
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it('from-upgrade + no history (deep link / cold start) → Home', async () => {
+    mockRouterState.params = FROM_UPGRADE;
+    mockRouterState.canGoBack = false;
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockResolvedValue({ verified: true });
+    await upgrade();
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith('/(tabs)/home');
+  });
+
+  it('Android: /payment-return still on top → waits, then closes once on refocus', async () => {
+    mockRouterState.params = FROM_UPGRADE;
+    // The verify answers while /payment-return covers the plans screen.
+    mockRouterState.focused = false;
+    mockOpenAuth.mockResolvedValue({ type: 'success' });
+    mockVerify.mockResolvedValue({ verified: true });
+    const tree = await upgrade();
+    expect(mockBack).not.toHaveBeenCalled();
+
+    // /payment-return removed itself: we are focused again → leave once.
+    mockRouterState.focused = true;
+    await act(async () => {
+      mockRouterState.onFocus?.();
+    });
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    // A later focus (nothing pending any more) never pops a second screen.
+    await act(async () => {
+      mockRouterState.onFocus?.();
+    });
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(tree).toBeTruthy();
   });
 });

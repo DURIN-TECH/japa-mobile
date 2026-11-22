@@ -27,10 +27,30 @@ import { SolidButton } from '@/components/explorer/review/ReviewParts';
 /** The one plans screen every upgrade prompt opens. */
 export const PLANS_ROUTE = '/subscription' as const;
 
-/** Open the plans screen. Components use this when they have no tracking to add. */
+// ── "Opened from a locked action" marker (japa#473) ──────────────────────────
+// Every upgrade prompt opens the plans screen WITH this marker; the profile
+// and settings plan rows open the bare `PLANS_ROUTE`. With the marker, the
+// plans screen closes itself after a paid subscription (or a cancelled
+// checkout) so the client is back on the screen they started from.
+// The marker carries no route or URL: the way back is the navigation stack
+// (`router.back()`), so a crafted link can't send the client anywhere.
+
+/** Query param name and value the plans screen reads (`?from=upgrade`). */
+export const PLANS_FROM_PARAM = 'from' as const;
+export const PLANS_FROM_UPGRADE = 'upgrade' as const;
+
+/** The plans screen, marked as opened from a locked action. */
+export const PLANS_FROM_UPGRADE_ROUTE =
+  `${PLANS_ROUTE}?${PLANS_FROM_PARAM}=${PLANS_FROM_UPGRADE}` as const;
+
+/**
+ * Open the plans screen from a locked action (marked, see above). Components
+ * use this when they have no tracking to add; screens that push directly use
+ * `PLANS_FROM_UPGRADE_ROUTE` so the marker is set in this one place.
+ */
 export function useOpenPlans() {
   const router = useRouter();
-  return () => router.push(PLANS_ROUTE);
+  return () => router.push(PLANS_FROM_UPGRADE_ROUTE);
 }
 
 /** japa#384: the upgrade panel's first promise (exported for a test). */

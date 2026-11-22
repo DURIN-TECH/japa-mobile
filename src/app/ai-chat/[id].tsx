@@ -43,6 +43,7 @@ import {
   useSendAiChat,
 } from '@/hooks/useAiChat';
 import { UpgradeLink } from '@/components/explorer/UpgradePrompt';
+import { usePlanChanged } from '@/hooks/usePlanChanged';
 import { OutlineButton } from '@/components/explorer/review/ReviewParts';
 import { useStartReview } from '@/hooks/useCaseOfficer';
 import { NEEDS_CONTENT_ELSEWHERE } from '@/components/explorer/review/reviewCopy';
@@ -131,6 +132,17 @@ export default function AiChatScreen() {
     null,
   );
   const scrollRef = useRef<ScrollViewInstance>(null);
+
+  // japa#473: the plan changed (server-reported, e.g. back from the plans
+  // screen after subscribing): clear the 402 error block ("A new review is
+  // part of a paid plan." + See plans) so the screen is usable again, and
+  // re-read a history that had failed with 402. The typed draft is untouched;
+  // the next send goes to the backend under the new plan, which decides.
+  usePlanChanged(() => {
+    setError((e) => (e?.upgrade ? null : e));
+    if (historyQ.isError && describeChatError(historyQ.error).upgrade)
+      void historyQ.refetch();
+  });
 
   const bubbles: Bubble[] = useMemo(
     () =>

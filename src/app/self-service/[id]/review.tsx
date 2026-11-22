@@ -84,7 +84,10 @@ import {
   missingLayerNote,
 } from '@/components/explorer/sharedRouteLogic';
 import type { StackLayer } from '@/types/sharedRoute.type';
-import { PLANS_ROUTE, UpgradePanel } from '@/components/explorer/UpgradePrompt';
+import {
+  PLANS_FROM_UPGRADE_ROUTE,
+  UpgradePanel,
+} from '@/components/explorer/UpgradePrompt';
 import {
   BAND_SUMMARY,
   DISCLAIMER,
@@ -279,7 +282,7 @@ export default function ReviewScreen() {
     analyticsService.trackReviewEvent('review_upgrade_prompt_tapped', {
       source,
     });
-    router.push(PLANS_ROUTE);
+    router.push(PLANS_FROM_UPGRADE_ROUTE);
   };
 
   /** Start a review and map the outcome to this screen's behaviour. */

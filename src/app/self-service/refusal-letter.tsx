@@ -61,6 +61,8 @@ import {
   useStartRefusalAnalysis,
   useStoredAnalysisId,
 } from '@/hooks/useRefusalLetter';
+// japa#473: clear the upgrade card when the plan really changes.
+import { usePlanChanged } from '@/hooks/usePlanChanged';
 // japa#310: the size and type the backend (and the model) can take.
 import { pickedFileProblem } from '@/components/explorer/uploadLimits';
 // japa#420: where the letter comes from (photo library, camera or Files).
@@ -731,6 +733,18 @@ export default function RefusalLetterScreen() {
     (analysisQ.isError && idStep.kind !== 'fallback' ? analysisQ.error : null);
   const upgrade = isUpgradeRequired(shownError);
 
+  // japa#473: back from the plans screen with a NEW plan (server-reported):
+  // the upgrade card goes. A 402 on starting the read clears the error, so the
+  // client is back on the step they were on, with their uploaded letter kept
+  // (`documentId`); "Read my letter" below re-runs the read on their tap
+  // only. A 402 on reading a saved analysis re-reads it under the new plan.
+  // Returning without paying changes nothing: the card stays.
+  usePlanChanged(() => {
+    if (isUpgradeRequired(error)) setError(null);
+    if (analysisQ.isError && isUpgradeRequired(analysisQ.error))
+      void analysisQ.refetch();
+  });
+
   /** Message for a plain error. */
   const errorMessage = (e: unknown): string => {
     if (isNetworkFailure(e))
@@ -844,6 +858,49 @@ export default function RefusalLetterScreen() {
                 </Text>
               </Pressable>
             </View>
+          </View>
+        ) : documentId && !analysisId ? (
+          // japa#473: the letter is uploaded but its read was stopped by the
+          // plan (402), and the plan has changed since. Keep the letter they
+          // picked; reading it runs only on this tap.
+          <View style={{ gap: 12 }}>
+            <Card>
+              <Text
+                style={{ color: EX.color.ink, fontSize: 16, fontWeight: '700' }}
+              >
+                Your letter is uploaded
+              </Text>
+              <Text
+                style={{
+                  color: EX.color.inkMuted,
+                  fontSize: 14,
+                  lineHeight: 20,
+                  marginTop: 6,
+                }}
+              >
+                We can read it now and show each reason next to the published
+                rule it points to.
+              </Text>
+            </Card>
+            <CoralSubmit
+              label="Read my letter"
+              onPress={() => startAnalysis(documentId)}
+            />
+            <Pressable
+              onPress={reset}
+              hitSlop={8}
+              style={{ alignSelf: 'center' }}
+            >
+              <Text
+                style={{
+                  color: EX.color.primary,
+                  fontSize: 14,
+                  fontWeight: '700',
+                }}
+              >
+                Upload a different letter
+              </Text>
+            </Pressable>
           </View>
         ) : (
           // Idle: nothing uploaded yet.

@@ -71,6 +71,7 @@ import {
   useChangeThroughCountry,
 } from '@/hooks/useSharedRoutes';
 import { useStartSharedApplication } from '@/hooks/useStartSharedApplication';
+import { usePlanChanged } from '@/hooks/usePlanChanged';
 import { useVisaType } from '@/hooks/useVisaTypes';
 import { useIsOffline } from '@/utils/networkStatus';
 import { analyticsService } from '@/services/analytics.service';
@@ -315,6 +316,12 @@ export default function ApplyThroughSheet() {
 
   // ── Starting / changing ────────────────────────────────────────────────────
   const start = useStartSharedApplication(routeId);
+  // japa#473: back from the plans screen with a NEW plan (server-reported):
+  // the upgrade card goes and the start CTA is tappable again. Nothing is
+  // started for the client; their next tap asks the server again.
+  usePlanChanged(() => {
+    if (start.failure === 'upgrade') start.clearFailure();
+  });
   const change = useChangeThroughCountry(applicationId);
   const [changeError, setChangeError] = useState<string | null>(null);
 

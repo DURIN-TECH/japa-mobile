@@ -3,7 +3,11 @@
 // Mocked API + router, no network.
 
 jest.mock('@/services/api.service', () => ({
-  apiService: { post: jest.fn() },
+  // `get` answers GET /subscriptions/me for usePlanChanged (japa#473).
+  apiService: {
+    post: jest.fn(),
+    get: jest.fn(async () => ({ data: null })),
+  },
 }));
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
@@ -42,8 +46,13 @@ function mount() {
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
+  // gcTime Infinity: no garbage-collection timers left running after unmount
+  // (usePlanChanged adds a query to this hook since japa#473).
   const qc = new QueryClient({
-    defaultOptions: { mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { retry: false, gcTime: Infinity },
+    },
   });
   act(() => {
     renderers.push(
