@@ -1,13 +1,13 @@
-# OTA preview on every PR opened/synced against dev.
+# PAUSED (2026-11-22): was an automatic EAS Update on every PR opened/synced
+# against dev, which is costly. Now manual-only: run it from the Actions tab on
+# the branch you want to preview. To resume, restore the `pull_request: dev` trigger.
 # Publishes the current branch's JS bundle to an EAS Update branch named
 # after the git branch, and posts a QR code in the PR comment. Reviewers
 # scan with a pre-installed `preview` channel build to load the PR's JS.
 # JS-only — for native-touching branches use preview-native.yml instead.
 name: preview
 on:
-  pull_request:
-    branches:
-      - dev
+  workflow_dispatch:
 
 jobs:
   update:
