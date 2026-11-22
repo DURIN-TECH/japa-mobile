@@ -15,16 +15,27 @@ import {
   wasPaidBooking,
 } from '../refundCopy';
 import {
-  formatCutoff,
-  zoneSuffix,
-  bookingWhen,
+  bookingInstant,
   bookingRouteParams,
+  bookingWhen,
+  formatCutoff,
 } from '../zoneTime';
 import { bookingRefundAmount } from '../liveTransactions';
 import type { ApiTransaction } from '@/hooks/useTransactions';
 import type { CancellationRefundPreview } from '@/hooks/useConsultations';
 
 const ngn = (amountMinor: number) => ({ amountMinor, currency: 'NGN' });
+
+/** Zone text that must never appear (user decision 2026-11-22). */
+/**
+ * Run `fn` with the phone's zone set to `zone`: the helpers take it as their
+ * last argument (Jest cannot change the process zone inside a test).
+ */
+function withDeviceZone(zone: string, fn: (device: string) => void) {
+  fn(zone);
+}
+
+const NO_ZONE_TEXT = /GMT|UTC|WAT|BST|EST|[+-]\d/;
 // Slot at 15:00 Lagos on Thu 26 Nov 2026 → refunds close 15:00 Wed 25 Nov
 // (14:00 UTC; Lagos is UTC+1 with no DST).
 const UNTIL = '2026-11-25T14:00:00.000Z';
@@ -41,7 +52,7 @@ const preview = (
 // ── 1. Cancel confirm ────────────────────────────────────────────────────────
 describe('cancelConfirmCopy (japa#356 §1)', () => {
   it('A. no preview: today’s copy, nothing about refunds', () => {
-    const c = cancelConfirmCopy(undefined, 'Africa/Lagos', 'Africa/Lagos');
+    const c = cancelConfirmCopy(undefined);
     expect(c).toEqual({
       title: 'Cancel consultation?',
       message: 'This will release your booked slot. You can rebook anytime.',
@@ -51,7 +62,7 @@ describe('cancelConfirmCopy (japa#356 §1)', () => {
   });
 
   it('B. refundable with a fee: amount back + the fee kept, exact kobo', () => {
-    const c = cancelConfirmCopy(preview(), 'Africa/Lagos', 'Africa/Lagos');
+    const c = cancelConfirmCopy(preview());
     expect(c.message).toBe(
       'This will release your booked slot. You’ll get ₦8,124.37 back. The payment provider keeps a processing fee of ₦125.63.',
     );
@@ -62,8 +73,6 @@ describe('cancelConfirmCopy (japa#356 §1)', () => {
     for (const processingFee of [ngn(0), null]) {
       const c = cancelConfirmCopy(
         preview({ amount: ngn(825_000), processingFee }),
-        'Africa/Lagos',
-        'Africa/Lagos',
       );
       expect(c.message).toBe(
         'This will release your booked slot. You’ll get ₦8,250.00 back.',
@@ -72,11 +81,7 @@ describe('cancelConfirmCopy (japa#356 §1)', () => {
   });
 
   it('D. refundable, amount null: no figure, never the full price', () => {
-    const c = cancelConfirmCopy(
-      preview({ amount: null, processingFee: null }),
-      'Africa/Lagos',
-      'Africa/Lagos',
-    );
+    const c = cancelConfirmCopy(preview({ amount: null, processingFee: null }));
     expect(c.message).toBe(
       'This will release your booked slot. You’ll get your payment back, minus the payment provider’s processing fee. We’ll confirm the exact amount.',
     );
@@ -88,8 +93,6 @@ describe('cancelConfirmCopy (japa#356 §1)', () => {
   it('D2. amount null, fee known: nothing to refund, said plainly', () => {
     const c = cancelConfirmCopy(
       preview({ amount: null, processingFee: ngn(825_000) }),
-      'Africa/Lagos',
-      'Africa/Lagos',
     );
     expect(c.message).toBe(
       'This will release your booked slot. The payment provider’s processing fee covers the whole payment, so there’s nothing to refund.',
@@ -100,45 +103,54 @@ describe('cancelConfirmCopy (japa#356 §1)', () => {
 
   it('D1. amount null, no fee (or a fee of 0): the "we’ll confirm" copy', () => {
     for (const processingFee of [null, ngn(0)]) {
-      const c = cancelConfirmCopy(
-        preview({ amount: null, processingFee }),
-        'Africa/Lagos',
-        'Africa/Lagos',
-      );
+      const c = cancelConfirmCopy(preview({ amount: null, processingFee }));
       expect(c.message).toMatch(/We’ll confirm the exact amount\.$/);
       expect(c.destructive).toBe('Cancel consultation');
     }
   });
 
-  it('E. not refundable: no refund, cut-off in the booking’s zone', () => {
-    const c = cancelConfirmCopy(
-      preview({ refundable: false, amount: null, processingFee: null }),
-      'Africa/Lagos',
-      'Africa/Lagos',
-    );
-    expect(c.message).toBe(
-      'It’s less than 24 hours before your consultation, so cancelling now won’t give you a refund. Refunds closed at 3:00 PM on Wed, 25 Nov.',
-    );
-    expect(c.destructive).toBe('Cancel without refund');
+  // User decision 2026-11-22: the cut-off is on the PHONE'S OWN clock with
+  // NO zone label. UNTIL is 14:00 UTC (15:00 in Lagos).
+  it('E. Lagos phone: the Lagos clock, no zone label', () => {
+    withDeviceZone('Africa/Lagos', (d) => {
+      const c = cancelConfirmCopy(
+        preview({ refundable: false, amount: null, processingFee: null }),
+        d,
+      );
+      expect(c.message).toBe(
+        'It’s less than 24 hours before your consultation, so cancelling now won’t give you a refund. Refunds closed at 3:00 PM on Wed, 25 Nov.',
+      );
+      expect(c.destructive).toBe('Cancel without refund');
+    });
   });
 
-  it('E. a device in another zone also sees the booking’s zone name', () => {
-    const c = cancelConfirmCopy(
-      preview({ refundable: false }),
-      'Africa/Lagos',
-      'Europe/London',
-    );
-    // Still 3:00 PM (the booking's clock), with Lagos's short name after it.
-    expect(c.message).toMatch(
-      /Refunds closed at 3:00 PM \S+ on Wed, 25 Nov\.$/,
-    );
+  it('E. London phone, Lagos booking: the London clock, no zone label', () => {
+    withDeviceZone('Europe/London', (d) => {
+      const c = cancelConfirmCopy(preview({ refundable: false }), d);
+      expect(c.message).toBe(
+        'It’s less than 24 hours before your consultation, so cancelling now won’t give you a refund. Refunds closed at 2:00 PM on Wed, 25 Nov.',
+      );
+      expect(c.message).not.toMatch(NO_ZONE_TEXT);
+    });
+  });
+
+  it('E. the QA case: 05:00 UTC on a London phone reads 5:00 AM', () => {
+    withDeviceZone('Europe/London', (d) => {
+      const c = cancelConfirmCopy(
+        preview({
+          refundable: false,
+          refundableUntil: '2026-11-21T05:00:00.000Z',
+        }),
+        d,
+      );
+      expect(c.message).toMatch(/Refunds closed at 5:00 AM on Sat, 21 Nov\.$/);
+      expect(c.message).not.toMatch(NO_ZONE_TEXT);
+    });
   });
 
   it('E. an unreadable cut-off drops the sentence, keeps the warning', () => {
     const c = cancelConfirmCopy(
       preview({ refundable: false, refundableUntil: 'not a date' }),
-      'Africa/Lagos',
-      'Africa/Lagos',
     );
     expect(c.message).toBe(
       'It’s less than 24 hours before your consultation, so cancelling now won’t give you a refund.',
@@ -315,60 +327,86 @@ describe('bookingRefundAmount', () => {
   });
 });
 
-// ── Times in the booking's zone ──────────────────────────────────────────────
+// ── Booking times on the phone's own clock (user decision 2026-11-22) ─────
 describe('zoneTime', () => {
-  it('formatCutoff: the booking’s clock, no zone name when the device agrees', () => {
-    expect(formatCutoff(UNTIL, 'Africa/Lagos', 'Africa/Lagos')).toBe(
-      '3:00 PM on Wed, 25 Nov',
+  /** A 15:00 Lagos slot on Wed 25 Nov 2026 (14:00 UTC). */
+  const lagos = {
+    // The UTC calendar day is the day picked (backend slot-time.ts).
+    scheduledDate: { _seconds: Date.UTC(2026, 10, 25) / 1000 },
+    scheduledTime: '15:00',
+    timezone: 'Africa/Lagos',
+  };
+
+  it('formatCutoff: the phone’s clock in each zone, never a zone label', () => {
+    withDeviceZone('Africa/Lagos', (d) =>
+      expect(formatCutoff(UNTIL, d)).toBe('3:00 PM on Wed, 25 Nov'),
     );
-    // Same offset, other zone name: still no suffix (same clock).
-    expect(formatCutoff(UNTIL, 'Africa/Lagos', 'Africa/Kinshasa')).toBe(
-      '3:00 PM on Wed, 25 Nov',
+    withDeviceZone('Europe/London', (d) =>
+      expect(formatCutoff(UNTIL, d)).toBe('2:00 PM on Wed, 25 Nov'),
     );
-  });
-  it('formatCutoff: another device zone adds the booking zone’s name', () => {
-    const out = formatCutoff(UNTIL, 'Africa/Lagos', 'America/New_York');
-    expect(out.startsWith('3:00 PM ')).toBe(true);
-    expect(out.endsWith(' on Wed, 25 Nov')).toBe(true);
-    expect(out).not.toBe('3:00 PM on Wed, 25 Nov');
-  });
-  it('zoneSuffix: empty for an unknown zone or no device zone', () => {
-    const at = new Date(UNTIL);
-    expect(zoneSuffix(at, 'Not/AZone', 'Africa/Lagos')).toBe('');
-    expect(zoneSuffix(at, 'Africa/Lagos', null)).toBe('');
-    expect(zoneSuffix(at, null, 'Africa/Lagos')).toBe('');
-  });
-  it('bookingWhen: the stored day + wall clock, in the spec formats', () => {
-    const b = {
-      // The UTC calendar day is the day picked (backend slot-time.ts).
-      scheduledDate: { _seconds: Date.UTC(2026, 10, 25) / 1000 },
-      scheduledTime: '15:00',
-      timezone: 'Africa/Lagos',
-    };
-    expect(bookingWhen(b, 'Africa/Lagos')).toEqual({
-      date: 'Wednesday, November 25, 2026',
-      time: '3:00 PM',
+    withDeviceZone('America/New_York', (d) => {
+      expect(formatCutoff(UNTIL, d)).toBe('9:00 AM on Wed, 25 Nov');
+      expect(formatCutoff(UNTIL, d)).not.toMatch(NO_ZONE_TEXT);
     });
-    const abroad = bookingWhen(b, 'America/New_York')!;
-    expect(abroad.date).toBe('Wednesday, November 25, 2026');
-    expect(abroad.time.startsWith('3:00 PM ')).toBe(true);
+    expect(formatCutoff('not a date')).toBe('');
   });
-  it('bookingWhen: no date → null; no time → the date alone', () => {
+
+  it('bookingInstant: the stored wall clock in the booking’s zone', () => {
+    expect(bookingInstant(lagos)?.toISOString()).toBe(
+      '2026-11-25T14:00:00.000Z',
+    );
+    // An unknown zone reads the wall clock as UTC (never throws).
+    expect(
+      bookingInstant({ ...lagos, timezone: 'Not/AZone' })?.toISOString(),
+    ).toBe('2026-11-25T15:00:00.000Z');
+    expect(bookingInstant({ ...lagos, scheduledTime: 'x' })).toBeNull();
+  });
+
+  it('bookingWhen: Lagos phone shows 3:00 PM; London phone 2:00 PM; no label', () => {
+    withDeviceZone('Africa/Lagos', (d) =>
+      expect(bookingWhen(lagos, d)).toEqual({
+        date: 'Wednesday, November 25, 2026',
+        time: '3:00 PM',
+      }),
+    );
+    withDeviceZone('Europe/London', (d) => {
+      const w = bookingWhen(lagos, d)!;
+      expect(w).toEqual({
+        date: 'Wednesday, November 25, 2026',
+        time: '2:00 PM',
+      });
+      expect(w.time).not.toMatch(NO_ZONE_TEXT);
+    });
+  });
+
+  it('bookingWhen: the DATE follows the phone too (late-night slot)', () => {
+    // 23:30 Lagos on 25 Nov is 17:30 in New York, and 06:30 on 26 Nov in Tokyo.
+    const late = { ...lagos, scheduledTime: '23:30' };
+    withDeviceZone('Asia/Tokyo', (d) =>
+      expect(bookingWhen(late, d)).toEqual({
+        date: 'Thursday, November 26, 2026',
+        time: '7:30 AM',
+      }),
+    );
+  });
+
+  it('bookingWhen: no date → null; no time → the stored date alone', () => {
     expect(bookingWhen({ scheduledDate: null })).toBeNull();
     expect(
-      bookingWhen(
-        { scheduledDate: '2026-11-25T00:00:00.000Z', scheduledTime: 'x' },
-        'Africa/Lagos',
-      ),
+      bookingWhen({
+        scheduledDate: '2026-11-25T00:00:00.000Z',
+        scheduledTime: 'x',
+      }),
     ).toEqual({ date: 'Wednesday, November 25, 2026', time: '' });
   });
-  it('bookingRouteParams: the route-param forms', () => {
-    expect(
-      bookingRouteParams({
-        scheduledDate: '2026-11-25T00:00:00.000Z',
-        scheduledTime: '09:30',
+
+  it('bookingRouteParams: the phone’s clock, in the route-param forms', () => {
+    withDeviceZone('Europe/London', (d) =>
+      expect(bookingRouteParams(lagos, d)).toEqual({
+        dateIso: '2026-11-25',
+        time: '2:00 PM',
       }),
-    ).toEqual({ dateIso: '2026-11-25', time: '9:30 AM' });
+    );
   });
 });
 

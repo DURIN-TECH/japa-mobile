@@ -62,15 +62,14 @@ const RELEASE = 'This will release your booked slot.';
  *     D2. fee KNOWN and at least the charge (`processingFee` set): nothing
  *         comes back, so say so plainly (review fix) and label the button
  *         "Cancel without refund", as E does;
- *  E. not refundable: no refund, with the cut-off in the booking's zone.
+ *  E. not refundable: no refund, with the cut-off on the PHONE'S OWN clock
+ *     and no zone label (user decision 2026-11-22, zoneTime.ts).
  *
- * @param preview  `cancellationRefund` from GET /consultations/:id
- * @param timezone the booking's zone (for case E's cut-off time)
- * @param device   the device's zone (tests only)
+ * @param preview `cancellationRefund` from GET /consultations/:id
  */
 export function cancelConfirmCopy(
   preview: CancellationRefundPreview | null | undefined,
-  timezone?: string | null,
+  /** The phone's zone; tests only (defaults to the real one). */
   device?: string | null,
 ): CancelConfirmCopy {
   const title = 'Cancel consultation?';
@@ -84,8 +83,8 @@ export function cancelConfirmCopy(
   }
   // E. Inside 24 hours: say clearly there is no refund, BEFORE they confirm.
   if (!preview.refundable) {
-    // `device` undefined = the real device zone (formatCutoff's default).
-    const cutoff = formatCutoff(preview.refundableUntil, timezone, device);
+    // The phone's own clock, no zone label.
+    const cutoff = formatCutoff(preview.refundableUntil, device);
     const closed = cutoff ? ` Refunds closed at ${cutoff}.` : '';
     return {
       title,

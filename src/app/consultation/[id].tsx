@@ -14,8 +14,8 @@
 //   • Cancel confirm: worded from the server's `cancellationRefund` preview
 //     only (refundCopy.ts `cancelConfirmCopy`): the amount back, the fee the
 //     payment provider keeps, "we'll confirm the exact amount" while the fee
-//     is unknown, or "no refund" inside 24 hours with the cut-off time in the
-//     booking's zone. The app never decides refundability or amounts.
+//     is unknown, or "no refund" inside 24 hours with the cut-off time on the
+//     phone's own clock, no zone label (user decision 2026-11-22). The app never decides refundability or amounts.
 //   • While cancelling, the cancel link becomes a coral spinner. On success
 //     the screen STAYS (it refetches: "Cancelled" plus the refund card), and
 //     an alert says what actually happened, from the PUT answer's `refund`.
@@ -373,10 +373,8 @@ export default function ConsultationDetailView() {
     }
     // The screen is gone (back pressed during the re-read): no confirm.
     if (!mountedRef.current) return;
-    const copy = cancelConfirmCopy(
-      current?.cancellationRefund,
-      current?.timezone,
-    );
+    // Case E's cut-off is shown on the phone's own clock (zoneTime.ts).
+    const copy = cancelConfirmCopy(current?.cancellationRefund);
     // Was it paid BEFORE the cancel? Decides how `refund: null` reads.
     const paid = current ? wasPaidBooking(current) : false;
     Alert.alert(copy.title, copy.message, [
