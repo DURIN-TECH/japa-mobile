@@ -5,7 +5,7 @@
  *
  * A flow is one YAML file under `.maestro/flows/`. Its config section (the
  * part before the first `---` line) carries `tags:`. Every flow must have:
- *   - at least one AREA tag   (auth, self-service, flag), and
+ *   - at least one AREA tag   (auth, self-service, flag, booking), and
  *   - exactly one FLAG tag    (flag-on, flag-off or flag-any): the state of
  *     the self-service-only flag the flow needs. flag-on / flag-off flows set
  *     that state themselves at their start (development link from japa#375),
@@ -16,7 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const AREA_TAGS = ['auth', 'self-service', 'flag'];
+export const AREA_TAGS = ['auth', 'self-service', 'flag', 'booking'];
 export const FLAG_TAGS = ['flag-on', 'flag-off', 'flag-any'];
 
 /** Run order of the flag groups in the summary (any, then off, then on). */

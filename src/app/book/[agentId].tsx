@@ -8,10 +8,16 @@
 // date + time + topic are chosen, then pushes → /pay with the booking
 // param contract.
 //
+// japa#472: times that have already started today are shown disabled and
+// cannot be picked (the backend refuses them anyway with SLOT_IN_PAST). The
+// rules live in `src/hooks/bookingSlots.ts` (pure, unit-tested); this screen
+// keeps a `now` that ticks every 30 seconds and refreshes on focus, and
+// drops a pick that has gone into the past.
+//
 // Design system: coral/cream Explorer tokens (EX), Space Grotesk display font.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -23,9 +29,16 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { addDays, addMinutes, format, setHours, setMinutes } from 'date-fns';
+import { format } from 'date-fns';
+// japa#472: which days and times can still be booked, on the device clock.
+import {
+  bookingDays,
+  noSlotsLeft,
+  slotOptions,
+  validSelection,
+} from '@/hooks/bookingSlots';
 import { EX, displayText } from '@/components/explorer/theme';
 import {
   CONSULT_TOPICS,
@@ -48,6 +61,10 @@ type IconType = React.ComponentType<{
   color?: string;
   strokeWidth?: number;
 }>;
+
+// japa#472: how often the picker re-reads the clock (a slot's pill turns
+// disabled within 30 seconds of its start).
+const NOW_TICK_MS = 30_000;
 
 // Booking modes + durations — string literals match the nav param contract.
 type Mode = 'Video call' | 'Phone call';
@@ -158,19 +175,47 @@ export default function BookConsultation() {
   const [dur, setDur] = useState<Duration>('30 min'); // default 30 min
   const [notes, setNotes] = useState('');
 
-  // Next 14 days as selectable date chips.
-  const days = useMemo(
-    () => Array.from({ length: 14 }, (_, i) => addDays(new Date(), i)),
-    [],
+  // ── The clock the picker is judged against (japa#472) ──────────────────
+  // The device's "now", refreshed every 30 seconds while the screen is
+  // mounted (a pill turns disabled once its time arrives) and whenever the
+  // screen regains focus (coming back from /pay, or from the background
+  // after midnight).
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), NOW_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      setNow(new Date());
+    }, []),
   );
 
-  // 17 half-hour time slots from 9:00 AM → 5:00 PM as 12-hour display strings.
-  const slots = useMemo(() => {
-    const base = setMinutes(setHours(new Date(), 9), 0); // 9:00 AM today
-    return Array.from({ length: 17 }, (_, i) =>
-      format(addMinutes(base, i * 30), 'h:mm a'),
-    );
-  }, []);
+  // Today and the next 13 days as selectable date chips. Keyed on the
+  // calendar day so the strip only rebuilds when the date changes (past
+  // midnight it drops yesterday and adds a new last day).
+  const todayKey = format(now, 'yyyy-MM-dd');
+  // Built from the day string (not `now`, which changes every tick), read
+  // back as local midnight.
+  const days = useMemo(() => {
+    const [y, m, d] = todayKey.split('-').map(Number);
+    return bookingDays(new Date(y, m - 1, d));
+  }, [todayKey]);
+
+  // The 17 half-hour slots (9:00 AM → 5:00 PM), each marked `past` when the
+  // picked day is today and the slot has already started.
+  const slots = useMemo(() => slotOptions(date, now), [date, now]);
+  // Today after 5:00 PM: one line instead of 17 disabled pills.
+  const noneLeft = useMemo(() => noSlotsLeft(date, now), [date, now]);
+
+  // A pick that is no longer valid is dropped (japa#472): a time the clock
+  // has passed (or that is past on the day just switched to), and a day
+  // that fell off the strip at midnight. Continue is then disabled again.
+  useEffect(() => {
+    const next = validSelection(date, time, now);
+    if (next.day !== date) setDate(next.day);
+    if (next.time !== time) setTime(next.time);
+  }, [date, time, now]);
 
   if (liveQ.isLoading) {
     return (
@@ -241,6 +286,8 @@ export default function BookConsultation() {
 
   return (
     <KeyboardAvoidingView
+      // japa#472: the screen's root, for the Maestro booking flow.
+      testID="screen.book"
       style={{ flex: 1, backgroundColor: EX.color.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -377,13 +424,18 @@ export default function BookConsultation() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 9, paddingRight: 4 }}
           >
-            {days.map((d) => {
+            {days.map((d, i) => {
               const on =
                 date != null &&
                 format(d, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
               return (
                 <Pressable
                   key={d.toISOString()}
+                  // japa#472: `book.day.0` is today, `book.day.1` tomorrow,
+                  // and so on (for the Maestro booking flow).
+                  testID={`book.day.${i}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
                   onPress={() => setDate(d)}
                   style={{
                     width: 56,
@@ -429,40 +481,71 @@ export default function BookConsultation() {
           <View style={{ marginTop: 24 }}>
             <SectionLabel>Select time</SectionLabel>
           </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 9 }}>
-            {slots.map((s) => {
-              const on = time === s;
-              return (
-                <Pressable
-                  key={s}
-                  onPress={() => setTime(s)}
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    borderRadius: 999,
-                    backgroundColor: on ? EX.color.primary : '#fff',
-                    borderWidth: 1,
-                    borderColor: on ? EX.color.primary : EX.color.line10,
-                    shadowColor: EX.color.primary,
-                    shadowOpacity: on ? 0.35 : 0,
-                    shadowRadius: 12,
-                    shadowOffset: { width: 0, height: 6 },
-                    elevation: on ? 4 : 0,
-                  }}
-                >
-                  <Text
+          {noneLeft ? (
+            // japa#472: every slot of today has started (after 5:00 PM). The
+            // today chip stays in the strip; the time area says so plainly.
+            <Text
+              testID="book-no-times-left"
+              style={{ fontSize: 13.5, lineHeight: 20, color: EX.color.muted }}
+            >
+              No times left today. Pick another day.
+            </Text>
+          ) : (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 9 }}>
+              {slots.map(({ label: s, past }, i) => {
+                const on = time === s;
+                return (
+                  <Pressable
+                    key={s}
+                    // japa#472: `book.time.0` is 9:00 AM … `book.time.16`
+                    // is 5:00 PM (for the Maestro booking flow).
+                    testID={`book.time.${i}`}
+                    // japa#472: a slot that has started cannot be picked.
+                    onPress={() => {
+                      if (!past) setTime(s);
+                    }}
+                    disabled={past}
+                    accessibilityRole="button"
+                    accessibilityLabel={s}
+                    accessibilityState={{ disabled: past, selected: on }}
                     style={{
-                      fontSize: 13,
-                      fontWeight: '700',
-                      color: on ? '#fff' : EX.color.inkMuted,
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      borderRadius: 999,
+                      // Past = muted: cream fill, no glow, faded label.
+                      backgroundColor: on
+                        ? EX.color.primary
+                        : past
+                          ? EX.color.cream
+                          : '#fff',
+                      opacity: past ? 0.5 : 1,
+                      borderWidth: 1,
+                      borderColor: on ? EX.color.primary : EX.color.line10,
+                      shadowColor: EX.color.primary,
+                      shadowOpacity: on ? 0.35 : 0,
+                      shadowRadius: 12,
+                      shadowOffset: { width: 0, height: 6 },
+                      elevation: on ? 4 : 0,
                     }}
                   >
-                    {s}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '700',
+                        color: on
+                          ? '#fff'
+                          : past
+                            ? EX.color.muted
+                            : EX.color.inkMuted,
+                      }}
+                    >
+                      {s}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
 
           {/* ── Topic — single-select chip list ────────────────────────────── */}
           <View style={{ marginTop: 24 }}>
@@ -474,6 +557,10 @@ export default function BookConsultation() {
               return (
                 <Pressable
                   key={t}
+                  // japa#472: the picked topic reads as selected (also what
+                  // the Maestro booking flow checks after its tap).
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
                   onPress={() => setTopic(t)}
                   style={{
                     paddingHorizontal: 15,
@@ -607,6 +694,8 @@ export default function BookConsultation() {
 
           {/* Continue (coral, flex 1, disabled until date+time+topic) */}
           <Pressable
+            // japa#472: for the Maestro booking flow (asserted, never tapped).
+            testID="book.continue"
             onPress={onContinue}
             disabled={!canContinue}
             style={{
