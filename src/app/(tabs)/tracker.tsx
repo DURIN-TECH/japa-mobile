@@ -26,6 +26,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import type { App } from '@/types/explorer.type';
 import { STATUS } from '@/components/explorer/content';
@@ -228,6 +230,9 @@ export default function AppsView() {
 
   // ── Live data (GET /applications) — no fallback rows ───────────────────────
   const appsQuery = useApplications();
+
+  // japa#474: pull-to-refresh re-reads the applications and the plan.
+  const pull = usePullToRefresh([appsQuery]);
   const apps = useMemo(
     () => (appsQuery.data ?? []).map((a) => mapApplication(a)),
     [appsQuery.data],
@@ -278,6 +283,8 @@ export default function AppsView() {
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         contentContainerStyle={{ paddingBottom: EX.space.tabClear }}
       >
         {/* ── Header: count eyebrow · title · new-application button ─────────── */}

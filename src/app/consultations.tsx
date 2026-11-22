@@ -15,6 +15,8 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import type { Consult } from '@/types/explorer.type';
 import { useConversations } from '@/hooks/useMessaging';
@@ -162,7 +164,11 @@ export default function ConsultationsView() {
 
   // Message action routes to the live conversation with this agent (else the
   // agent page, where one can be started).
-  const { data: conversations } = useConversations();
+  const conversationsQ = useConversations();
+  const conversations = conversationsQ.data;
+
+  // japa#474: pull-to-refresh re-reads the consultations and the plan.
+  const pull = usePullToRefresh([consultsQ, conversationsQ]);
   const toAgents = () => {
     Haptics.selectionAsync().catch(() => {});
     router.push('/(tabs)/agents');
@@ -287,6 +293,8 @@ export default function ConsultationsView() {
           {/* ── List / empty state ────────────────────────────────────────────── */}
           <ScrollView
             showsVerticalScrollIndicator={false}
+            // japa#474: pull to refresh (old data stays while it runs).
+            refreshControl={pull.control}
             contentContainerStyle={{
               // Source list: padding '10px 22px 40px', gap 12.
               paddingHorizontal: 22,

@@ -16,6 +16,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import {
   GOV_FEE_COPY,
@@ -223,7 +225,8 @@ export default function DestinationDetail() {
   // fetched via (countryCode, visaId). japa#145: there is no static fallback,
   // so a missing code or id simply finds nothing (not-found state below).
   const liveQ = useVisaType(code ?? '', id ?? '');
-  const { data: countries } = useCountriesWithVisas();
+  const countriesQ = useCountriesWithVisas();
+  const countries = countriesQ.data;
 
   // japa#237: the "Do I need a visa?" card hides the Start bar when the answer
   // says no visa application is the route (visa-free, on arrival, ...).
@@ -231,7 +234,11 @@ export default function DestinationDetail() {
 
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
-    scrollY.value = e.contentOffset.y;
+    // japa#474: clamp at 0. A pull-to-refresh overscrolls to a NEGATIVE
+    // offset on iOS; unclamped, the parallax hero would slide down with it
+    // and leave a gap (the header "jumps"). Clamped, it stays put while the
+    // coral spinner shows, and scrolling down behaves exactly as before.
+    scrollY.value = Math.max(0, e.contentOffset.y);
   });
 
   // Hero parallaxes up at -0.32× and its image zooms slightly as the sheet rises.
@@ -273,6 +280,12 @@ export default function DestinationDetail() {
   // Self-service-only build (japa#334): no agent rail and no "Work with an
   // agent" card, so the call is skipped (topAgents stays empty).
   const topAgentsQ = useTopAgents(3, !selfServiceOnly);
+
+  // japa#474: pull-to-refresh re-reads the visa, top agents, countries and the plan. The Android
+  // spinner sits below the floating back / share buttons.
+  const pull = usePullToRefresh([liveQ, topAgentsQ, countriesQ], {
+    progressViewOffset: insets.top + 56,
+  });
   const topAgents = useMemo(
     () => (topAgentsQ.data ?? []).map(mapAgent),
     [topAgentsQ.data],
@@ -447,6 +460,8 @@ export default function DestinationDetail() {
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 0 }}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
       >
         {/* spacer revealing the hero */}
         <View style={{ height: HERO - 28 }} pointerEvents="none" />

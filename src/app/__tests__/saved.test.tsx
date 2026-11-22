@@ -33,7 +33,8 @@ jest.mock('@/hooks/useSavedDestinations', () => ({
 }));
 
 import React from 'react';
-import { ActivityIndicator } from 'react-native';
+import { ActivityIndicator, RefreshControl } from 'react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import TestRenderer, { act } from 'react-test-renderer';
 import SavedView from '../saved';
@@ -80,7 +81,12 @@ function render(q: Record<string, unknown>) {
   ).IS_REACT_ACT_ENVIRONMENT = true;
   let tree!: TestRenderer.ReactTestRenderer;
   act(() => {
-    tree = TestRenderer.create(<SavedView />);
+    // japa#474: the screen's pull-to-refresh needs a query client.
+    tree = TestRenderer.create(
+      <QueryClientProvider client={new QueryClient()}>
+        <SavedView />
+      </QueryClientProvider>,
+    );
   });
   return tree;
 }
@@ -159,5 +165,22 @@ describe('Saved screen (japa#146)', () => {
     });
     expect(tree.root.findAllByType(Tile).length).toBe(1);
     expect(text(tree)).not.toContain('We couldn’t load');
+  });
+});
+
+// ── japa#474: pull-to-refresh on the saved grid ─────────────────────────────
+describe('Saved screen pull-to-refresh (japa#474)', () => {
+  it('the FlatList has a coral RefreshControl; a pull refetches the list', async () => {
+    mockRefetch.mockImplementation(async () => undefined);
+    const tree = render({ data: [item('GB', 'skilled', 'Skilled Worker')] });
+    const rc = tree.root.findByType(RefreshControl);
+    expect(rc.props.tintColor).toBe('#F4516C');
+    expect(rc.props.refreshing).toBe(false);
+    await act(async () => {
+      await rc.props.onRefresh();
+    });
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+    // The tiles stayed on screen through the pull.
+    expect(tree.root.findAllByType(Tile).length).toBe(1);
   });
 });

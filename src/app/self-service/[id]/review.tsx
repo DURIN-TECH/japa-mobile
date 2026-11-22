@@ -49,6 +49,8 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { SectionTitle, Card } from '@/components/explorer/primitives';
@@ -161,6 +163,11 @@ export default function ReviewScreen() {
     appQ.data?.countryCode ?? '',
     appQ.data?.visaTypeId ?? '',
   );
+
+  // japa#474: pull-to-refresh re-reads the review (its tier comes from the
+  // server, so a new plan shows the full review), the application, the visa
+  // and the plan. The review on screen stays while it runs.
+  const pull = usePullToRefresh([q, appQ, vtQ]);
   const hasOfficialLink: boolean | undefined = vtQ.data
     ? !!vtQ.data.visaType?.applicationUrl?.trim()
     : undefined;
@@ -433,6 +440,8 @@ export default function ReviewScreen() {
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
         <ScrollView
+          // japa#474: pull to refresh while waiting, too.
+          refreshControl={pull.control}
           contentContainerStyle={[
             pad,
             { paddingTop: 20, paddingBottom: 40, gap: 16 },
@@ -597,6 +606,8 @@ export default function ReviewScreen() {
         contentContainerStyle={{
           paddingBottom: showBar ? EX.space.ctaClear : 48,
         }}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         // japa#384: viewport + offset for the "locked panel seen" event.
         onLayout={onScrollLayout}
         onScroll={onScroll}

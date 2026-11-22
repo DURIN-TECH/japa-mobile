@@ -27,6 +27,8 @@ import { useRouter } from 'expo-router';
 // Version footer reads the app config's `expo.version` (japa#346).
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 // japa#145: the Subscription row shows the LIVE plan name (GET /subscriptions/me
@@ -256,6 +258,13 @@ export default function SettingsScreen() {
   // Subscription tier label from live data (shared with Profile). A loaded
   // `subscription: null` means no paid plan → the zero-price plan's name.
   const currentPlan = useCurrentPlan();
+
+  // japa#474: pull-to-refresh re-reads AI access, holdings, plan names and the plan.
+  const pull = usePullToRefresh([
+    aiAccessState,
+    holdingsQ,
+    currentPlan.refetch,
+  ]);
   const planLoading = currentPlan.loading;
   const planFailed = currentPlan.failed;
   const currentPlanName = currentPlan.plan?.name;
@@ -354,6 +363,8 @@ export default function SettingsScreen() {
       <ScrollView
         // e2e (Maestro, japa#361): `screen.settings`. No visual effect.
         testID="screen.settings"
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{

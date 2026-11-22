@@ -35,6 +35,8 @@ import {
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import {
@@ -160,7 +162,12 @@ export default function VerifyIdentityScreen() {
   // ── Live verification status ────────────────────────────────────────────────
   // Drives which of the three states we render. Defaults to `unverified` while the
   // query is pending so we never flash a blank screen (the form is a safe default).
-  const { data: verification, isLoading } = useIdentityVerification();
+  const verificationQ = useIdentityVerification();
+  const { data: verification, isLoading } = verificationQ;
+  // japa#474: pull-to-refresh on the STATUS views only (verified / in
+  // progress): a check finishing on the server shows after a pull. The form
+  // (unverified / failed) has none: a refetch must not disturb typed input.
+  const pull = usePullToRefresh([verificationQ]);
   const status = verification?.status ?? 'unverified';
 
   // ── Submit mutation ─────────────────────────────────────────────────────────
@@ -236,9 +243,14 @@ export default function VerifyIdentityScreen() {
           insets={insets}
           onBack={() => router.back()}
         />
-        <View
-          style={{
-            flex: 1,
+        {/* japa#474: a ScrollView so the status can be pulled to refresh;
+            flexGrow keeps the content centred as before. */}
+        <ScrollView
+          style={{ flex: 1 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={pull.control}
+          contentContainerStyle={{
+            flexGrow: 1,
             alignItems: 'center',
             justifyContent: 'center',
             paddingHorizontal: 32,
@@ -265,7 +277,7 @@ export default function VerifyIdentityScreen() {
             You&apos;re all set. Agents can trust that your identity has been
             confirmed with the relevant Nigerian authority.
           </Text>
-        </View>
+        </ScrollView>
         <View
           style={{
             paddingHorizontal: EX.space.screenX,
@@ -288,9 +300,14 @@ export default function VerifyIdentityScreen() {
           insets={insets}
           onBack={() => router.back()}
         />
-        <View
-          style={{
-            flex: 1,
+        {/* japa#474: a ScrollView so the status can be pulled to refresh;
+            flexGrow keeps the content centred as before. */}
+        <ScrollView
+          style={{ flex: 1 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={pull.control}
+          contentContainerStyle={{
+            flexGrow: 1,
             alignItems: 'center',
             justifyContent: 'center',
             paddingHorizontal: 32,
@@ -313,7 +330,7 @@ export default function VerifyIdentityScreen() {
             We&apos;re reviewing your identity — this usually takes a moment.
             We&apos;ll update your status as soon as it&apos;s confirmed.
           </Text>
-        </View>
+        </ScrollView>
         <View
           style={{
             paddingHorizontal: EX.space.screenX,

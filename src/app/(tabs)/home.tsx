@@ -23,6 +23,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import {
   GOV_FEE_COPY,
@@ -368,7 +370,8 @@ export default function HomeScreen() {
   // Drop any destination the user already has an application for and keep a few.
   // Its own loading / error / empty state, independent of the applications'.
   const visaQ = useVisaTypes({ limit: 30 });
-  const { data: countries } = useCountriesWithVisas();
+  const countriesQ = useCountriesWithVisas();
+  const countries = countriesQ.data;
   const recState = queryState(visaQ);
   const rec = useMemo<Dest[]>(() => {
     const src = mapVisasToDests(visaQ.data?.visaTypes ?? [], countries ?? []);
@@ -376,11 +379,15 @@ export default function HomeScreen() {
   }, [visaQ.data, countries, apps]);
 
   // ── Signed-in user (GET /users/me) for the greeting + portrait ─────────────
-  const { data: me } = useMe();
+  const meQ = useMe();
+  const me = meQ.data;
   const myName = profileName(me);
 
   // ── Unread notification count — gates the coral dot on the bell ────────────
   const unread = useUnreadNotificationCount();
+
+  // japa#474: pull-to-refresh re-reads applications, profile, recommendations, bell and the plan.
+  const pull = usePullToRefresh([appsQ, meQ, countriesQ, visaQ, unread]);
   // Badge only when the poll succeeded and the count is above 0 (a failed poll
   // hides it rather than showing an old number).
   const unreadCount = unread.isSuccess ? (unread.data ?? 0) : 0;
@@ -404,6 +411,8 @@ export default function HomeScreen() {
     <ScrollView
       // e2e (japa#361): the Home screen's identity for flows ("ends on Home").
       testID="screen.home"
+      // japa#474: pull to refresh (old data stays while it runs).
+      refreshControl={pull.control}
       style={{ flex: 1, backgroundColor: EX.color.bg }}
       showsVerticalScrollIndicator={false}
       // tab-clear keeps the last section clear of the tab bar now that the

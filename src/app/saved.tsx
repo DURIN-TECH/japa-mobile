@@ -22,6 +22,8 @@ import { FlatList, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import {
@@ -50,6 +52,9 @@ export default function SavedView() {
   const insets = useSafeAreaInsets();
   const savedQ = useSavedDestinations();
   const state = queryState(savedQ);
+
+  // japa#474: pull-to-refresh re-reads the saved list and the plan.
+  const pull = usePullToRefresh([savedQ]);
 
   // Each saved item → a Tile view model, in API order (newest first).
   const cells: SavedCell[] = useMemo(
@@ -123,6 +128,8 @@ export default function SavedView() {
         // tile on the left.
         <FlatList
           data={cells}
+          // japa#474: pull to refresh (old data stays while it runs).
+          refreshControl={pull.control}
           keyExtractor={(c) => c.key}
           numColumns={2}
           showsVerticalScrollIndicator={false}

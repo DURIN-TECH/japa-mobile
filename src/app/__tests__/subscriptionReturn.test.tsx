@@ -8,6 +8,9 @@
 // ── Stubs (names start with `mock` so jest.mock factories may use them) ──────
 const mockStart = jest.fn<(planId: string) => Promise<unknown>>();
 const mockVerify = jest.fn<(reference: string) => Promise<unknown>>();
+// japa#474: the plans / current-plan refetches, for the pull-to-refresh test.
+const mockPlansRefetch = jest.fn(async () => undefined);
+const mockMineRefetch = jest.fn(async () => undefined);
 const mockOpenAuth =
   jest.fn<
     (url: string, redirect: string) => Promise<{ type: string; url?: string }>
@@ -87,12 +90,12 @@ jest.mock('@/hooks/useSubscription', () => ({
     isLoading: false,
     isError: false,
     isSuccess: true,
-    refetch: jest.fn(),
+    refetch: mockPlansRefetch,
   }),
   useMySubscription: () => ({
     data: { subscription: null, entitlements: null },
     isError: false,
-    refetch: jest.fn(),
+    refetch: mockMineRefetch,
   }),
   useStartCheckout: () => ({ mutateAsync: mockStart }),
   useVerifySubscription: () => ({ mutateAsync: mockVerify }),
@@ -101,6 +104,8 @@ jest.mock('@/hooks/useSubscription', () => ({
 import React from 'react';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import TestRenderer, { act } from 'react-test-renderer';
+import { RefreshControl } from 'react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SubscriptionView from '../subscription';
 import {
   SUBSCRIPTION_NOT_PAID_MESSAGE,
@@ -137,7 +142,12 @@ async function upgrade() {
 async function render() {
   let tree!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    tree = TestRenderer.create(<SubscriptionView />);
+    // japa#474: the screen's pull-to-refresh needs a query client.
+    tree = TestRenderer.create(
+      <QueryClientProvider client={new QueryClient()}>
+        <SubscriptionView />
+      </QueryClientProvider>,
+    );
   });
   return tree;
 }
@@ -324,5 +334,44 @@ describe('subscription.tsx return to the locked action (japa#473)', () => {
     });
     expect(mockBack).toHaveBeenCalledTimes(1);
     expect(tree).toBeTruthy();
+  });
+});
+
+// ── japa#474: pull-to-refresh on the plans screen ───────────────────────────
+describe('subscription.tsx pull-to-refresh (japa#474)', () => {
+  it('a coral RefreshControl; a pull refetches the plans and the current plan', async () => {
+    mockPlansRefetch.mockClear();
+    mockMineRefetch.mockClear();
+    const tree = await render();
+    const rc = tree.root.findByType(RefreshControl);
+    expect(rc.props.tintColor).toBe('#F4516C');
+    expect(rc.props.enabled).toBe(true);
+    await act(async () => {
+      await rc.props.onRefresh();
+    });
+    expect(mockPlansRefetch).toHaveBeenCalledTimes(1);
+    expect(mockMineRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('switched off while a checkout is in flight (no refetch races the verify)', async () => {
+    mockPlansRefetch.mockClear();
+    // Checkout never closes during this test: the screen stays busy.
+    mockOpenAuth.mockImplementation(() => new Promise(() => {}));
+    const tree = await render();
+    const cta = tree.root.find(
+      (n) =>
+        typeof n.props.onPress === 'function' &&
+        n.findAll((c) => c.props.children === 'Upgrade').length > 0 &&
+        typeof n.type !== 'string',
+    );
+    await act(async () => {
+      void cta.props.onPress();
+    });
+    const rc = tree.root.findByType(RefreshControl);
+    expect(rc.props.enabled).toBe(false);
+    await act(async () => {
+      await rc.props.onRefresh();
+    });
+    expect(mockPlansRefetch).not.toHaveBeenCalled();
   });
 });

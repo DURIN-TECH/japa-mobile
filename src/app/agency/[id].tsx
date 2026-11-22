@@ -30,6 +30,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, EXShadow } from '@/components/explorer/theme';
 import {
   AGENCY_ONLY_CHIP,
@@ -442,11 +444,25 @@ export default function AgencyDetail() {
   const agQ = usePublicAgency(id);
   const agentsQ = usePublicAgencyAgents(id);
   const a = agQ.data ? mapAgency(agQ.data) : undefined;
+  // Same cache entry as the visas section's country names (no extra call);
+  // held here so a pull can refresh it. The visa prices share agQ's key
+  // (['agencies','browse',id]), so agQ's refetch refreshes them too.
+  const countriesQ = useCountriesWithVisas();
+
+  // japa#474: pull-to-refresh re-reads the agency, its agents + visa prices and the plan. The Android
+  // spinner sits below the floating back / share buttons.
+  const pull = usePullToRefresh([agQ, agentsQ, countriesQ], {
+    progressViewOffset: insets.top + 56,
+  });
 
   // Hero parallax driven by the sheet's scroll offset (source py * -0.3).
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
-    scrollY.value = e.contentOffset.y;
+    // japa#474: clamp at 0. A pull-to-refresh overscrolls to a NEGATIVE
+    // offset on iOS; unclamped, the parallax hero would slide down with it
+    // and leave a gap (the header "jumps"). Clamped, it stays put while the
+    // coral spinner shows, and scrolling down behaves exactly as before.
+    scrollY.value = Math.max(0, e.contentOffset.y);
   });
   const heroStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: scrollY.value * -0.3 }],
@@ -662,6 +678,8 @@ export default function AgencyDetail() {
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
       >
         {/* spacer revealing the hero (source HERO - 26) */}
         <View style={{ height: HERO - 26 }} pointerEvents="none" />

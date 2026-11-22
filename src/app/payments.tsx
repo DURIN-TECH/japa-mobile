@@ -31,6 +31,8 @@ import { ScrollView, Text, View, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import {
   PAY_STATUS,
@@ -196,6 +198,9 @@ export default function PaymentsView() {
   // `paymentRequestParts`, no conversion). Each row opens its application,
   // where it can be approved or declined.
   const prQ = usePaymentRequests();
+
+  // japa#474: pull-to-refresh re-reads transactions + payment requests and the plan.
+  const pull = usePullToRefresh([txQ, prQ]);
   const requests = React.useMemo(
     () =>
       (prQ.data ?? [])
@@ -287,6 +292,8 @@ export default function PaymentsView() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
+          // japa#474: pull to refresh (old data stays while it runs).
+          refreshControl={pull.control}
         >
           {/* ── Payment requests awaiting you (hidden when none) ──────────────── */}
           {prError ? (

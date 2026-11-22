@@ -23,6 +23,8 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import {
   localUnavailableNote,
@@ -222,6 +224,9 @@ export default function AgentDetail() {
   // The agency card: only fetched when the agent belongs to an agency.
   const agencyQ = usePublicAgency(a?.agencyId || undefined);
 
+  // japa#474: pull-to-refresh re-reads the agent, reviews, agency and the plan.
+  const pull = usePullToRefresh([liveQ, reviewsQ, agencyQ]);
+
   // First load: coral spinner (the back button stays reachable).
   if (liveQ.isLoading) {
     return (
@@ -282,6 +287,8 @@ export default function AgentDetail() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: EX.space.ctaClear }}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
       >
         {/* ── Tonal gradient header ───────────────────────────────────────── */}
         {/* CSS: linear-gradient(155deg, tone 0%, tone 42%, rgba(23,19,38,.92) 130%).

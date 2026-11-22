@@ -34,6 +34,8 @@ import {
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import type { Dest, Req } from '@/types/explorer.type';
 import {
@@ -112,7 +114,8 @@ export default function VisaBreakdown() {
   // country `code`; the visa is fetched by (countryCode, visaId), mirroring
   // destination/[id].tsx. No code → the query stays off → not-found.
   const liveQ = useVisaType(code ?? '', id ?? '');
-  const { data: countries } = useCountriesWithVisas();
+  const countriesQ = useCountriesWithVisas();
+  const countries = countriesQ.data;
 
   // Effective destination, live-mapped from the visa type.
   const d: Dest | undefined = useMemo(() => {
@@ -135,6 +138,9 @@ export default function VisaBreakdown() {
   // Self-service-only build (japa#334): the nudge is hidden, so the call is
   // skipped and `specialist` stays null.
   const topAgentsQ = useTopAgents(1, !selfServiceOnly);
+
+  // japa#474: pull-to-refresh re-reads the visa, nudge agent, countries and the plan.
+  const pull = usePullToRefresh([liveQ, topAgentsQ, countriesQ]);
   const specialist = useMemo(
     () => (topAgentsQ.data ?? []).map(mapAgent)[0] ?? null,
     [topAgentsQ.data],
@@ -278,6 +284,8 @@ export default function VisaBreakdown() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 0 }}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
       >
         {/* spacer revealing the fixed header (HERO - 28, sheet overlaps by 28) */}
         <View style={{ height: HERO - 28 }} pointerEvents="none" />

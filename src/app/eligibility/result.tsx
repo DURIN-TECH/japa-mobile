@@ -37,6 +37,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import { mapCheckResult } from '@/components/explorer/liveEligibility';
 import { mapAgent } from '@/components/explorer/liveAgents';
@@ -228,6 +230,9 @@ export default function EligibilityResult() {
   // Self-service-only build (japa#334): the nudge is hidden, so the call is
   // skipped and `agent` stays undefined.
   const topAgentsQ = useTopAgents(1, !selfServiceOnly);
+
+  // japa#474: pull-to-refresh re-reads the check + agent nudge and the plan.
+  const pull = usePullToRefresh([checkQ, topAgentsQ]);
   const agent = useMemo(
     () => (topAgentsQ.data ?? []).map(mapAgent)[0],
     [topAgentsQ.data],
@@ -285,6 +290,8 @@ export default function EligibilityResult() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 130 }}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
       >
         {/* ── Green gradient top (160deg #1E8E55 → #14663D, padding 92/22/40) ── */}
         <LinearGradient

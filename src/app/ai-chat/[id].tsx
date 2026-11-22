@@ -33,6 +33,8 @@ import {
 import type { ScrollViewInstance } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { BackHeader, InlineError } from '@/components/explorer/AccountForm';
@@ -115,6 +117,10 @@ export default function AiChatScreen() {
   const historyQ = useAiChatHistory(appId, !!appId);
   const send = useSendAiChat(appId);
   const clear = useClearAiChat(appId);
+  // japa#474: pull-to-refresh re-reads the chat history and the plan. The
+  // composer's `draft` is local state the refetch never touches, so whatever
+  // the client typed stays (and an in-flight send is not affected).
+  const pull = usePullToRefresh([historyQ]);
   // "Run your review" (the server's `offerAssessment`): the same start the
   // application's sticky button uses, from the review hook (#43).
   const { start: startReview, isStarting } = useStartReview(appId);
@@ -232,6 +238,8 @@ export default function AiChatScreen() {
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         contentContainerStyle={{ padding: 18, gap: 10 }}
         keyboardShouldPersistTaps="handled"
       >

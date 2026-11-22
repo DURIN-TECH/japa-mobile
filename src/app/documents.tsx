@@ -30,6 +30,8 @@ import {
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { DOC_STATUS } from '@/components/explorer/content';
 import type { Doc } from '@/types/explorer.type';
@@ -353,6 +355,9 @@ export default function DocumentsView() {
   const shared = sharedQuery.data ?? [];
   const sharedState = queryState(sharedQuery);
 
+  // japa#474: pull-to-refresh re-reads uploaded + shared documents and the plan.
+  const pull = usePullToRefresh([docsQuery, sharedQuery]);
+
   // ── Opening an uploaded file (japa#446) ───────────────────────────────────
   // The shared opener: a fresh signed URL per tap (they expire, so one fetched
   // at screen load would be dead by the time it's used), shown in the in-app
@@ -412,6 +417,8 @@ export default function DocumentsView() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         {/* ── Loading / error / first-run (japa#145) ───────────────────────── */}

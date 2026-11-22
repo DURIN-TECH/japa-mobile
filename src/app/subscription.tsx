@@ -37,7 +37,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useMemo, useRef } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -48,6 +54,8 @@ import {
   useRouter,
 } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import { PLAN_FEATURES, NAIRA } from '@/components/explorer/content';
 import type { Plan } from '@/types/explorer.type';
@@ -86,6 +94,9 @@ import {
 } from '@/components/explorer/UpgradePrompt';
 // Self-service-only launch flag (japa#334).
 import { isSelfServiceOnly } from '@/config/env';
+
+/** A pull while a checkout / verify runs does nothing (japa#474). */
+const noop = () => {};
 
 // ── FeatureRow — 20px check circle + label for one plan feature ──────────────
 // `dark` switches the palette so features read on the featured dark card.
@@ -446,6 +457,11 @@ export default function SubscriptionView() {
   // True from Upgrade tap until the verify settles: blocks double checkouts.
   const [busy, setBusy] = React.useState(false);
 
+  // japa#474: pull-to-refresh re-reads the plans and the current plan. While
+  // a checkout / verify is in flight (`busy`) the pull is switched off, so a
+  // refetch can never race the verify that changes the plan.
+  const pull = usePullToRefresh([plansQ, mine]);
+
   // Verify one reference with the backend → 'paid' | 'not_paid', or throws
   // when the call itself failed (network / 5xx). A 400 is "not paid".
   const verifyReference = useCallback(
@@ -537,6 +553,18 @@ export default function SubscriptionView() {
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
+        // japa#474: pull to refresh, off while busy (see `pull`). Built here,
+        // not `pull.control`, to add `enabled` (Android) and a no-op pull on
+        // iOS; the control stays mounted so the list never remounts.
+        refreshControl={
+          <RefreshControl
+            refreshing={pull.refreshing}
+            onRefresh={busy ? noop : pull.onRefresh}
+            enabled={!busy}
+            tintColor={EX.color.primary}
+            colors={[EX.color.primary]}
+          />
+        }
         contentContainerStyle={{
           paddingBottom: Math.max(insets.bottom, 16) + 24,
         }}
