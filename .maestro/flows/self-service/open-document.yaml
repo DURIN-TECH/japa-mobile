@@ -1,0 +1,76 @@
+# Tapping an uploaded document starts an open (japa#446).
+#
+# Signed in as the seeded client John Doe (FLAG_EMAIL, application
+# FLAG_APP_ID = seed-app-001). Its seeded passport document
+# (`seed-app-001-doc-passport`, status verified) has a PLACEHOLDER storage
+# path (seli-backend seed-portal-data.ts: no file is ever uploaded for seed
+# documents), so `GET /documents/:id/download` answers 409
+# INVALID_STORAGE_PATH. That makes the outcome deterministic: the tap starts
+# an open and ends on the row's error line with the "can't be opened" copy,
+# never a system Alert and never a silent no-op.
+#
+#   1. self-service hub: tap the passport row → its error line appears
+#   2. tap it again → the error line comes back (a repeat 409 is never silent)
+#   3. My documents: tap the same document → its error line appears
+#
+# Why not assert `doc-row-<id>-opening`: the spinner sits inside the row's
+# Pressable, and on iOS a Pressable hides its children's ids from Maestro
+# (README, "Adding a flow and testIDs"); against the local emulators the 409
+# also returns too fast to catch. The error line is outside the Pressable, so
+# it is what the flow asserts. That the viewer renders a real PDF / image is a
+# walk (a seeded document has no file to show).
+#
+# Nothing here taps a review, checkout or payment; "Contact support" is not
+# tapped either (it would open Mail).
+appId: ${APP_ID}
+tags:
+  - self-service
+  - flag-any
+---
+- runFlow:
+    file: ../../subflows/sign-in.yaml
+    env:
+      EMAIL: ${FLAG_EMAIL}
+
+# ── 1. Self-service hub: tap the uploaded passport document ──────────────────
+- openLink: "durintech://self-service/${FLAG_APP_ID}"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.selfService"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "doc-row-${FLAG_APP_ID}-doc-passport"
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: "doc-row-${FLAG_APP_ID}-doc-passport"
+- extendedWaitUntil:
+    visible:
+      id: "doc-row-${FLAG_APP_ID}-doc-passport-error"
+    timeout: 30000
+- assertVisible: "This file can’t be opened. Upload it again, or contact support and we’ll sort it out."
+
+# ── 2. Tap again: the attempt reruns and the error shows again ───────────────
+- tapOn:
+    id: "doc-row-${FLAG_APP_ID}-doc-passport"
+- extendedWaitUntil:
+    visible:
+      id: "doc-row-${FLAG_APP_ID}-doc-passport-error"
+    timeout: 30000
+
+# ── 3. My documents: the same document, same behaviour ───────────────────────
+- openLink: "durintech://documents"
+- scrollUntilVisible:
+    element:
+      id: "doc-row-${FLAG_APP_ID}-doc-passport"
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn:
+    id: "doc-row-${FLAG_APP_ID}-doc-passport"
+- extendedWaitUntil:
+    visible:
+      id: "doc-row-${FLAG_APP_ID}-doc-passport-error"
+    timeout: 30000

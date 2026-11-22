@@ -33,7 +33,6 @@ import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as DocumentPicker from 'expo-document-picker';
 import Animated, {
   useAnimatedRef,
   useAnimatedScrollHandler,
@@ -152,10 +151,24 @@ import {
 
 // japa#310: the size and type the backend accepts, checked before uploading.
 import {
-  pickedContentType,
   pickedFileProblem,
   uploadFailureCopy,
 } from '@/components/explorer/uploadLimits';
+// japa#420: where an upload comes from (photo library, camera or Files).
+import {
+  pickResultCopy,
+  pickUploadFile,
+  uploadErrorAction,
+  type UploadSource,
+} from '@/components/explorer/pickUploadFile';
+import { UploadSourceSheet } from '@/components/explorer/UploadSourceSheet';
+// japa#446: tapping an uploaded document opens it in the in-app viewer.
+import {
+  isDocumentOpenable,
+  useOpenDocument,
+  type DocumentOpener,
+} from '@/components/explorer/openDocument';
+import { DOC_OPEN_COPY } from '@/components/explorer/openDocumentCopy';
 
 // japa#174: requirement key for an upload tied to no requirement or checklist
 // item (the "upload what you already have" buttons). The backend only needs a
@@ -215,14 +228,52 @@ function liveDocChip(status: DocumentStatus): {
 }
 
 // ── LiveDocRow — one real backend Document row ────────────────────────────────
-// Read-only row (upload happens at the requirement level): status chip + name +
-// status Pill, plus a red rejection-reason band when the doc was rejected.
-function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
+// Status chip + name + status Pill, plus a red rejection-reason band when the
+// doc was rejected. Upload happens at the requirement level.
+//
+// japa#446: a row with a file behind it (`isDocumentOpenable`) is one
+// Pressable — the top row AND the rejection band — that opens the file in the
+// in-app viewer through the screen's shared `opener`. A trailing 20px slot
+// after the Pill shows a chevron, or the coral spinner while the link is being
+// fetched (same width, so the Pill never moves). `pending_upload` / `uploading`
+// rows stay a plain View: no role, no chevron, no pressed state.
+// Exported for its unit test (src/app/__tests__/docRows.test.tsx).
+//
+// The top divider stays on the outer View (outside the Pressable) so the
+// pressed opacity never fades it, and the row's error line sits below the
+// Pressable so its action button isn't nested inside the row button.
+export function LiveDocRow({
+  doc,
+  first,
+  opener,
+}: {
+  doc: Document;
+  first: boolean;
+  /** The screen's one document opener (single lock, single error). */
+  opener: DocumentOpener;
+}) {
   const s = liveDocChip(doc.status);
-  return (
-    <View
-      style={{ borderTopWidth: first ? 0 : 1, borderTopColor: EX.color.line06 }}
-    >
+  const openable = isDocumentOpenable(doc.status);
+  const opening = opener.openingId === doc.id;
+  const error = openable ? opener.errorFor(doc.id) : null;
+  const showBand = s.kind === 'rejected' && !!doc.rejectionReason;
+  const name = documentDisplayName(doc);
+
+  // Read-out in the row's reading order, without the duplicate status Pill.
+  const a11yLabel =
+    [
+      name,
+      s.label,
+      doc.uploadedOnBehalf
+        ? `Added by ${doc.uploadedByName || 'your agency'}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(', ') + (showBand ? `. ${doc.rejectionReason}` : '');
+
+  // The row's visible content, shared by the Pressable and the plain View.
+  const content = (
+    <>
       <View
         style={{
           flexDirection: 'row',
@@ -257,7 +308,7 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
             style={{ fontSize: 14, fontWeight: '600', color: EX.color.ink }}
             numberOfLines={1}
           >
-            {documentDisplayName(doc)}
+            {name}
           </Text>
           <Text
             style={{
@@ -287,17 +338,42 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
           ) : null}
         </View>
 
-        <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+        {openable ? (
+          // Pill + fixed 20px slot: chevron at rest, coral spinner while the
+          // link is fetched (japa#446). Same pattern as My documents' DocRow.
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+            <View style={{ width: 20, alignItems: 'center' }}>
+              {opening ? (
+                <ActivityIndicator
+                  testID={`doc-row-${doc.id}-opening`}
+                  size="small"
+                  color={EX.color.primary}
+                  accessibilityLabel={DOC_OPEN_COPY.openingLabel}
+                />
+              ) : (
+                <Ic.chevR size={17} color={EX.color.faint} strokeWidth={1.8} />
+              )}
+            </View>
+          </View>
+        ) : (
+          <Pill label={s.label} fg={s.fg} bg={s.bg} small />
+        )}
       </View>
 
       {/* Rejected → indented red reason band (rejectionReason from backend) */}
-      {s.kind === 'rejected' && doc.rejectionReason ? (
+      {showBand ? (
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
             gap: 7,
             marginTop: 8,
+            // Bottom gap = the row's own vertical padding (13), so the band
+            // clears the next row's top divider instead of sitting on it.
+            // japa#446: the 13 belongs to the LAST element of the block, so
+            // it moves to the error line when one sits under the band.
+            marginBottom: error ? 0 : 13,
             marginLeft: 46,
             paddingVertical: 8,
             paddingHorizontal: 11,
@@ -319,6 +395,60 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
           </Text>
         </View>
       ) : null}
+    </>
+  );
+
+  return (
+    <View
+      style={{ borderTopWidth: first ? 0 : 1, borderTopColor: EX.color.line06 }}
+    >
+      {openable ? (
+        <PressableStatic
+          testID={`doc-row-${doc.id}`}
+          onPress={() =>
+            opener.open(doc.id, { onBehalf: !!doc.uploadedOnBehalf })
+          }
+          // Only the OTHER rows are disabled while one opens; the opening row
+          // stays enabled so screen readers say "busy", not "dimmed" (open()
+          // already ignores taps while locked).
+          disabled={opener.locked && !opening}
+          android_ripple={undefined}
+          accessibilityRole="button"
+          accessibilityLabel={a11yLabel}
+          accessibilityHint={DOC_OPEN_COPY.rowHint}
+          accessibilityState={{
+            busy: opening,
+            disabled: opener.locked && !opening,
+          }}
+          // Subtle press feedback (design system: opacity on new pressables).
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        >
+          {content}
+        </PressableStatic>
+      ) : (
+        <View
+          testID={`doc-row-${doc.id}`}
+          accessible
+          accessibilityLabel={a11yLabel}
+        >
+          {content}
+        </View>
+      )}
+
+      {/* japa#446: the screen's one open error, under this row (and under
+          the band when rejected). Lined up with the name (34 chip + 12). */}
+      {error ? (
+        <View
+          testID={`doc-row-${doc.id}-error`}
+          style={{ marginLeft: 46, marginTop: 8, marginBottom: 13 }}
+        >
+          <InlineError
+            message={error.message}
+            action={error.action}
+            selectable={error.selectable}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -327,7 +457,14 @@ function LiveDocRow({ doc, first }: { doc: Document; first: boolean }) {
 // Same card chrome as LiveRequirementCard, minus the upload button (there's no
 // requirement to upload against). Read-only by design: these documents were
 // either filed by the agency or already answered a specific ask.
-function LiveOtherDocsCard({ docs }: { docs: Document[] }) {
+function LiveOtherDocsCard({
+  docs,
+  opener,
+}: {
+  docs: Document[];
+  /** japa#446: the screen's shared document opener. */
+  opener: DocumentOpener;
+}) {
   return (
     <View
       style={{
@@ -385,7 +522,7 @@ function LiveOtherDocsCard({ docs }: { docs: Document[] }) {
 
       <View style={{ marginTop: 6 }}>
         {docs.map((doc, i) => (
-          <LiveDocRow key={doc.id} doc={doc} first={i === 0} />
+          <LiveDocRow key={doc.id} doc={doc} first={i === 0} opener={opener} />
         ))}
       </View>
     </View>
@@ -403,9 +540,12 @@ function LiveRequirementCard({
   onUpload,
   uploadError,
   onRetryUpload,
+  opener,
 }: {
   req: VisaRequirement;
   docs: Document[];
+  /** japa#446: the screen's shared document opener. */
+  opener: DocumentOpener;
   uploading: boolean;
   onUpload: (requirementId: string) => void;
   /** japa#174: message of the last failed upload made from THIS card. */
@@ -498,7 +638,12 @@ function LiveRequirementCard({
       {docs.length > 0 ? (
         <View style={{ marginTop: 6 }}>
           {docs.map((doc, i) => (
-            <LiveDocRow key={doc.id} doc={doc} first={i === 0} />
+            <LiveDocRow
+              key={doc.id}
+              doc={doc}
+              first={i === 0}
+              opener={opener}
+            />
           ))}
         </View>
       ) : null}
@@ -506,7 +651,10 @@ function LiveRequirementCard({
       {/* Failed upload from this card: InlineError + outline Try again (#174) */}
       {uploadError ? (
         <View style={{ marginTop: 12, gap: 8 }}>
-          <InlineError message={uploadError} />
+          <InlineError
+            message={uploadError}
+            action={uploadErrorAction(uploadError)}
+          />
           {onRetryUpload ? (
             <OutlineButton label="Try again" onPress={onRetryUpload} />
           ) : null}
@@ -700,6 +848,9 @@ export default function SelfServiceView() {
   const visaType = vtQ.data?.visaType;
   const docsQ = useApplicationDocuments(app ? app.id : '');
   const docs = docsQ.data ?? [];
+  // japa#446: one document opener for the whole screen, so the requirement
+  // cards and "Other documents" share one lock and one error line.
+  const docOpener = useOpenDocument();
 
   // Intake questions (#113). Enabled as soon as the application resolves and
   // (there is no demo path since #145).
@@ -816,12 +967,35 @@ export default function SelfServiceView() {
     scrollY.value = e.contentOffset.y;
   });
 
-  // ── Upload flow (pick → signed URL → PUT to storage → register doc) ──────────
-  // `uploadToStorage(uploadUrl, { uri, type, name })` fetches the file as a blob
-  // internally and PUTs it — so we hand it the picked file descriptor, not a
-  // pre-fetched blob (matching the helper's actual signature in useDocuments.ts).
+  // ── Upload flow (source sheet → pick → signed URL → PUT → register doc) ────
+  // japa#420: every upload control first opens the source sheet (Photo
+  // library, Take a photo, Files). `uploadTarget` is the card the sheet was
+  // opened from (null = closed). Opening the sheet leaves the card's current
+  // failure line alone: closing it changes nothing. The line is cleared only
+  // when a source is chosen (below).
+  const [uploadTarget, setUploadTarget] = useState<{
+    requirementId: string | null;
+    documentRequestId?: string;
+  } | null>(null);
+
+  /** Open the source sheet for a card (requirement / checklist / general). */
   const handleUpload = useCallback(
-    async (requirementId: string | null, documentRequestId?: string) => {
+    (requirementId: string | null, documentRequestId?: string) => {
+      if (!app) return;
+      setUploadTarget({ requirementId, documentRequestId });
+    },
+    [app],
+  );
+
+  // `uploadToStorage(uploadUrl, { uri, type, name })` reads the file from its
+  // URI and PUTs it — so we hand it the picked file descriptor, not a
+  // pre-fetched blob (matching the helper's actual signature in useDocuments.ts).
+  const uploadFrom = useCallback(
+    async (
+      source: UploadSource,
+      requirementId: string | null,
+      documentRequestId?: string,
+    ) => {
       if (!app) return;
       // Where the upload comes from (for the in-card error) and the file's name
       // once it is known.
@@ -837,21 +1011,29 @@ export default function SelfServiceView() {
           fileName,
           message,
         });
+      // A source was chosen: the card's old failure line goes now.
       setUploadFailure(null);
       try {
-        const res = await DocumentPicker.getDocumentAsync({
-          type: ['application/pdf', 'image/*'],
-          copyToCacheDirectory: true,
-        });
-        if (res.canceled) return;
-        const f = res.assets[0];
+        // japa#420: one file from the chosen source. Library / camera photos
+        // come back as a converted JPEG (`photo-….jpg`, image/jpeg); Files
+        // picks unchanged. Cancel anywhere = nothing at all.
+        const picked = await pickUploadFile(source);
+        const pickLine = pickResultCopy(picked);
+        if (pickLine) {
+          // Camera denied / unavailable: the line in this card, no upload.
+          fail(pickLine);
+          return;
+        }
+        if (picked.kind !== 'picked') return;
+        const f = picked.file;
         fileName = f.name;
-        contentType = pickedContentType(f);
+        contentType = f.contentType;
 
         // japa#310: refuse a file the backend would refuse (wrong type, or
         // over 7 MB for an image / 10 MB otherwise) before asking for an
         // upload URL, so nothing is uploaded. Shown in the card it came from.
-        // HEIC/HEIF photos are refused too: the review cannot read them.
+        // HEIC/HEIF from Files is refused too: the review cannot read it.
+        // Runs on converted photos as well (japa#420).
         const problem = pickedFileProblem({
           size: f.size,
           contentType,
@@ -875,7 +1057,7 @@ export default function SelfServiceView() {
         });
         if (!up) throw new Error('Failed to get upload URL');
 
-        // 2) PUT the file bytes to Firebase Storage (helper fetches the blob).
+        // 2) PUT the file bytes to Firebase Storage.
         await uploadToStorage(up.uploadUrl, {
           uri: f.uri,
           type: contentType,
@@ -899,8 +1081,9 @@ export default function SelfServiceView() {
         // so the card can show it as out of date.
         queryClient.invalidateQueries({ queryKey: assessmentKey(app.id) });
       } catch (err) {
-        // Signed URL, storage PUT or register failed: show it in the card the
-        // upload came from (never an Alert), with a retry for the same target.
+        // Picker / conversion, signed URL, storage PUT or register failed:
+        // show it in the card the upload came from (never an Alert), with a
+        // retry that opens the sheet again.
         // japa#310: a 413 FILE_TOO_LARGE (the backend has already deleted the
         // file) and a wrong-type 400 get their own line, not the generic one.
         fail(uploadFailureCopy(err, fileName, contentType));
@@ -911,6 +1094,17 @@ export default function SelfServiceView() {
       }
     },
     [app, getUploadUrl, createDoc, queryClient],
+  );
+
+  /** The sheet's row tap (after it has fully closed): pick for its card. */
+  const onChooseSource = useCallback(
+    (source: UploadSource) => {
+      const target = uploadTarget;
+      setUploadTarget(null);
+      if (target)
+        uploadFrom(source, target.requirementId, target.documentRequestId);
+    },
+    [uploadTarget, uploadFrom],
   );
 
   // ── Live loading — initial application fetch in flight ───────────────────────
@@ -1498,7 +1692,10 @@ export default function SelfServiceView() {
                   style={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}
                 >
                   {uploadFailure?.key === 'general' ? (
-                    <InlineError message={uploadFailure.message} />
+                    <InlineError
+                      message={uploadFailure.message}
+                      action={uploadErrorAction(uploadFailure.message)}
+                    />
                   ) : null}
                   {uploadingGeneral ? (
                     <ActivityIndicator color={EX.color.primary} />
@@ -1518,6 +1715,9 @@ export default function SelfServiceView() {
               <>
                 <DocumentChecklist
                   checklist={checklist}
+                  // japa#446: the same opener as the requirement and Other
+                  // documents cards (one lock, one error line per screen).
+                  opener={docOpener}
                   loading={checklistQ.isLoading}
                   error={checklistQ.isError}
                   onRetry={() => checklistQ.refetch()}
@@ -1581,7 +1781,10 @@ export default function SelfServiceView() {
                   <View style={{ marginTop: 10, gap: 8 }}>
                     {/* Error above the button; label becomes Try again (#174). */}
                     {uploadFailure?.key === 'general' ? (
-                      <InlineError message={uploadFailure.message} />
+                      <InlineError
+                        message={uploadFailure.message}
+                        action={uploadErrorAction(uploadFailure.message)}
+                      />
                     ) : null}
                     {uploadingGeneral ? (
                       <ActivityIndicator color={EX.color.primary} />
@@ -1610,6 +1813,7 @@ export default function SelfServiceView() {
                   uploadFailure?.key === req.id ? uploadFailure.message : null
                 }
                 onRetryUpload={() => handleUpload(req.id)}
+                opener={docOpener}
               />
             ))}
 
@@ -1617,7 +1821,7 @@ export default function SelfServiceView() {
                 typically ones the agency filed for the client, or uploads
                 answering an ad-hoc request. Without this they'd be invisible. */}
             {otherDocs.length > 0 ? (
-              <LiveOtherDocsCard docs={otherDocs} />
+              <LiveOtherDocsCard docs={otherDocs} opener={docOpener} />
             ) : null}
 
             {/* ── Your statement (issue #43) ──────────────────────────────────── */}
@@ -1795,6 +1999,15 @@ export default function SelfServiceView() {
             </PressableStatic>
           </BlurView>
         ) : null}
+
+        {/* japa#420: "Add a document" — Photo library, Take a photo, Files.
+            Open while a card's upload control was tapped; closing it changes
+            nothing, a row picks for that card once the sheet has gone. */}
+        <UploadSourceSheet
+          visible={!!uploadTarget}
+          onChoose={onChooseSource}
+          onClose={() => setUploadTarget(null)}
+        />
       </View>
     );
   }
