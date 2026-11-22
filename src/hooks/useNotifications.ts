@@ -51,6 +51,13 @@ export interface ApiNotification {
     | 'consultation_rescheduled'
     | 'consultation_cancelled'
     | 'consultation_completed'
+    // japa#356: refund notices (backend consultation-refund.service.ts).
+    // Title and body are the backend's, shown as sent.
+    | 'consultation_refunded'
+    | 'consultation_refund_delayed'
+    // japa#442: "the meeting didn't happen" report sent / decided.
+    | 'consultation_no_show_reported'
+    | 'consultation_no_show_resolved'
     | 'payment_received'
     | 'payment_request'
     | 'payment_request_rejected'

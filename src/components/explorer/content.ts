@@ -405,6 +405,19 @@ export const PAY_STATUS: Record<
   // japa#353: status-error-fg / status-error-bg, the same pair as the
   // document "Rejected" pill.
   failed: { label: 'Failed', fg: '#C0453C', bg: '#FBE3E1' },
+  // ── japa#356: refund rows (money coming back), never "Paid" / "Failed" ──
+  // On its way: status-warning-fg on status-warning-bg (the Pending pair).
+  refund_pending: { label: 'Refund pending', fg: '#B26A14', bg: '#FCEAC8' },
+  // Failed or held for an admin: status-error-fg on status-error-bg.
+  refund_delayed: { label: 'Refund delayed', fg: '#C0453C', bg: '#FBE3E1' },
+  // Closed by an admin with nothing to give back (#413 B, `none_due`). Not
+  // in the design spec: the neutral pair, like "Refunded" (assumption,
+  // reported on the issue).
+  refund_none_due: {
+    label: 'No refund due',
+    fg: '#8B8499',
+    bg: 'rgba(23,19,38,0.06)',
+  },
 };
 
 // ── Consultation topics offered when booking ─────────────────────────────────

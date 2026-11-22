@@ -21,6 +21,8 @@ const STATUS_SET: Record<ApiTransaction['status'], true> = {
   refunded: true,
   held_in_escrow: true,
   released: true,
+  // japa#356 / backend #413 B: a closed refund (never counted as paid).
+  closed: true,
 };
 const ALL_STATUSES = Object.keys(STATUS_SET) as ApiTransaction['status'][];
 

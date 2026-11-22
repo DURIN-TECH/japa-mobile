@@ -27,6 +27,12 @@ describe('toKind', () => {
     consultation_rescheduled: 'consult',
     consultation_cancelled: 'consult',
     consultation_completed: 'consult',
+    // japa#356: refunds get the money / alert chips, not the consult one.
+    consultation_refunded: 'payment',
+    consultation_refund_delayed: 'alert',
+    // japa#442: report notices stay consultation notices.
+    consultation_no_show_reported: 'consult',
+    consultation_no_show_resolved: 'consult',
     payment_request: 'payment',
     payment_request_rejected: 'payment',
     payment_received: 'payment',

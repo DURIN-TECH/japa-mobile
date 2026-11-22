@@ -6,12 +6,15 @@ secret and exit early if it's missing.
 
 | Workflow | Trigger | What it does |
 | --- | --- | --- |
-| `development.yml` | push to `dev` | EAS dev build (iOS + Android) |
-| `preview.yml` | PR to `dev` | OTA via `eas update --auto` |
+| `development.yml` | manual dispatch (auto-run paused, cost) | EAS dev build (iOS + Android) |
+| `preview.yml` | manual dispatch (auto-run paused, cost) | OTA via `eas update --auto` |
 | `preview-native.yml` | manual dispatch | Native preview build |
-| `production.yml` | merge to `main` | Build, submit, release |
+| `production.yml` | manual dispatch (auto-release paused, cost) | Build, submit, release |
 
 ## development.yml
+
+> **Paused:** no longer runs on push to `dev` (EAS cost). Run it manually from
+> the Actions tab; restore the `push` trigger to resume.
 
 Every push to `dev` runs lint, `tsc`, and `eas build --profile development
 --platform all`. The dev profile produces a debug-capable build subscribed
@@ -19,6 +22,9 @@ to the `development` EAS Update channel — install it once on your test
 device and subsequent dev pushes update it OTA where possible.
 
 ## preview.yml
+
+> **Paused:** no longer runs on PRs (EAS cost). Run it manually from the
+> Actions tab on the branch to preview; restore the `pull_request` trigger to resume.
 
 Fires on PR open/sync against `dev`. Runs `eas update --auto`, which
 publishes the current branch's JS bundle to an EAS Update branch named
@@ -38,6 +44,9 @@ Manually triggered from the Actions tab. Pick a branch, choose
 native module additions or config-plugin edits that OTA can't deliver.
 
 ## production.yml
+
+> **Paused:** no longer runs on merge to `main` (EAS cost). Run it manually from
+> the Actions tab on `main`; the text below describes the original auto trigger.
 
 Only fires when a PR is **merged** into `main` (not on every PR-to-main
 open). Trigger uses `pull_request: types: [closed]` with a

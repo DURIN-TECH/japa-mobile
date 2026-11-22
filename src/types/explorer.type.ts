@@ -287,6 +287,24 @@ export type Payment = {
   usd: Money | null;
   date: string;
   // japa#353: `failed` = a charge that did not go through (red pill).
-  status: 'paid' | 'pending' | 'refunded' | 'failed';
+  // japa#356: a `refund` row has its own states, never `paid` / `failed`:
+  //   refund_pending  money on its way back ("Refund pending", warning pill);
+  //   refunded        money is back ("Refunded", the neutral pill);
+  //   refund_delayed  failed, or held for an admin ("Refund delayed", error);
+  //   refund_none_due an admin closed it with nothing to refund (#413 B).
+  status:
+    | 'paid'
+    | 'pending'
+    | 'refunded'
+    | 'failed'
+    | 'refund_pending'
+    | 'refund_delayed'
+    | 'refund_none_due';
   method: string;
+  /**
+   * japa#356: true for a `refund` transaction (money coming back to the
+   * client). The row then shows the refund icon, a "+" amount in ink, and
+   * no dollar line. Absent / false on every other row.
+   */
+  isRefund?: boolean;
 };

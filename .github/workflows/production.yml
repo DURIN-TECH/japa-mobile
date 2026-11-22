@@ -1,22 +1,20 @@
-# Production build, store submit, and GitHub release on PR merge into main.
+# PAUSED (2026-11-22): was an automatic production build, store submit and
+# release on every PR merge into main, which is costly. Now manual-only: run it
+# from the Actions tab on `main` when you actually want to release. To resume
+# auto-release, restore the `pull_request: closed` trigger on main and the
+# `merged == true` job guard, and the PR number/title in the release body.
 # Fires on `pull_request: closed` + a `merged == true` guard so the build
 # only runs on actual merges (not closed-without-merge), and so the PR
 # context (number, title) stays available for the release body — switching
 # to push: main would lose those fields.
 name: Production Build
 on:
-  pull_request:
-    branches:
-      - main
-    types:
-      - closed
+  workflow_dispatch:
 
 jobs:
   build:
     name: Install and build
     runs-on: ubuntu-latest
-    # Skip closed-but-not-merged PRs entirely.
-    if: github.event.pull_request.merged == true
     steps:
       - name: Check EXPO_TOKEN
         run: |
@@ -81,8 +79,7 @@ jobs:
           tag_name: v${{ github.run_number }}
           release_name: Release v${{ github.run_number }}
           body: |
-            Production release from merged PR #${{ github.event.pull_request.number }}
-            ${{ github.event.pull_request.title }}
+            Manual production release from ${{ github.ref_name }} (${{ github.sha }})
           prerelease: false
 
       - name: Upload Production Build Artifacts
