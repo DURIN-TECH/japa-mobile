@@ -67,6 +67,9 @@ function AppCard({ app, onPress }: { app: App; onPress: () => void }) {
 
   return (
     <Pressable
+      // e2e (Maestro, japa#474 pull-to-refresh flow): one row per
+      // application, `tracker.row.<applicationId>`. No visual effect.
+      testID={`tracker.row.${app.id}`}
       onPress={onPress}
       style={{
         backgroundColor: EX.color.cardWhite,
