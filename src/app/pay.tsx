@@ -80,7 +80,7 @@
 // payment is being refunded IN FULL (`useVerifyConsultation` resolves it as
 // `{ kind: 'rescheduled', consultation }`, never as paid or failed). The
 // screen then shows the rescheduled state (RescheduledPayment.tsx): the new
-// time in the booking's zone and "Pay again". Re-verifying the same old
+// time on the phone's own clock (no zone label) and "Pay again". Re-verifying the same old
 // reference ("Check again") lands in the same state.
 //   • "Pay again" → POST /consultations/:id/checkout (spinner, no double tap):
 //       - requiresPayment: back to the normal locked quote with the NEW price,

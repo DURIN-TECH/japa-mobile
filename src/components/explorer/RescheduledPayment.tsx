@@ -9,7 +9,7 @@
 //   1. heading "Your consultation moved" (18/700 ink);
 //   2. body (15/400 ink-2): we're refunding, it's on its way, pay again;
 //   3. "New time" card (WhenRow pattern: 34px cream chip, coral icon,
-//      14.5/600 ink) with the date and time in the booking's own zone;
+//      14.5/600 ink) with the date and time on the phone's own clock, no zone label;
 //   4. InfoNote: where the refund goes;
 //   5. sticky CTA bar: coral "Pay again", no price. While the new checkout
 //      is being opened: a white spinner, the button disabled (60%).

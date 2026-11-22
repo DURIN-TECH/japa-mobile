@@ -188,6 +188,14 @@ beforeEach(() => {
   mockTrackBooked.mockReset();
   mockDetail.mockReset();
   mockDetail.mockReturnValue(NO_DETAIL);
+  // The phone is in London (user decision 2026-11-22: times show on the
+  // phone's own clock, no zone label), whatever zone the test runner is in.
+  const realOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+  jest
+    .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+    .mockImplementation(function (this: Intl.DateTimeFormat) {
+      return { ...realOptions.call(this), timeZone: 'Europe/London' };
+    });
   // Device clock = 2 minutes after the server locked the quote.
   jest
     .spyOn(Date, 'now')
@@ -260,7 +268,9 @@ describe('pay.tsx rescheduled state (japa#392)', () => {
     );
     expect(t).toContain('New time');
     expect(t).toContain('Wednesday, November 25, 2026');
-    expect(t).toContain('3:00 PM');
+    // 15:00 in Lagos is 2:00 PM on the London phone, with no zone label.
+    expect(t).toContain('2:00 PM');
+    expect(t).not.toMatch(/GMT|WAT|UTC/);
     expect(t).toContain(
       'Your refund goes back to the card or account you paid with. You’ll see it in Payments.',
     );
@@ -311,7 +321,7 @@ describe('pay.tsx rescheduled state (japa#392)', () => {
     };
     expect(arg.params.paidAmountMinor).toBe('1245000');
     expect(arg.params.dateIso).toBe('2026-11-25');
-    expect(arg.params.time).toBe('3:00 PM');
+    expect(arg.params.time).toBe('2:00 PM');
   });
 
   it('"Pay again" ignores a second tap while it runs', async () => {
