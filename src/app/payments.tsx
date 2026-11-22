@@ -47,6 +47,7 @@ import { usePaymentRequests } from '@/hooks/usePaymentRequests';
 import { CATEGORY_LABELS } from '@/types/payment-requests.type';
 import { fmtDate } from '@/components/explorer/liveDate';
 import {
+  PullableState,
   StateEmpty,
   StateError,
   StateLoading,
@@ -280,12 +281,16 @@ export default function PaymentsView() {
       {/* ── First load: coral spinner; nothing at all: empty state ──────── */}
       {loading ? <StateLoading /> : null}
       {firstRun ? (
-        <StateEmpty
-          // Spec proposed a wallet icon; Ic has none, so Ic.cards (allowed).
-          icon={Ic.cards}
-          title="No payments yet"
-          body="Consultation and agent fees you pay will show here."
-        />
+        // japa#474 fix round 1: pullable, so a first payment request from an
+        // agent shows after a pull.
+        <PullableState testID="payments.empty" refreshControl={pull.control}>
+          <StateEmpty
+            // Spec proposed a wallet icon; Ic has none, so Ic.cards (allowed).
+            icon={Ic.cards}
+            title="No payments yet"
+            body="Consultation and agent fees you pay will show here."
+          />
+        </PullableState>
       ) : null}
 
       {!loading && !firstRun ? (

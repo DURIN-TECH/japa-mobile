@@ -14,7 +14,8 @@
 // `onChange` when the signature moves from one KNOWN value to a DIFFERENT one.
 //
 //   - first load (unknown → known): no call. The screen's state was set under
-//     that same plan, so nothing has changed.
+//     that same plan, so nothing has changed. Exception: if that first read
+//     FAILED, the first good read later counts as a change (no baseline).
 //   - unchanged after a refetch (the client closed checkout without paying):
 //     no call, so the locked state stays and they can try again.
 //   - changed (paid; or the webhook landed and a foreground refetch saw it):
@@ -56,7 +57,7 @@ export function planSignature(
  * callers can pass an inline arrow without re-subscribing.
  */
 export function usePlanChanged(onChange: () => void): void {
-  const { data } = useMySubscription();
+  const { data, isError } = useMySubscription();
   const signature = planSignature(data);
 
   // Latest callback, so the effect below only depends on the signature.
@@ -67,12 +68,31 @@ export function usePlanChanged(onChange: () => void): void {
   // fails keeps the old data, and a failed read is not a plan change).
   const last = useRef<string | undefined>(undefined);
 
+  // japa#474 fix round 1 (review): the FIRST read failed, so the screen's
+  // locked state was set while the plan was unknown. Then the first good
+  // read (e.g. the one verify triggers after paying) can't be treated as
+  // "nothing changed": we have no baseline to compare it with. It counts as
+  // a change from "locked" and clears the lock once. That is safe: clearing
+  // only makes the action tappable, and the tap still goes to the server
+  // (a plan that still lacks the action answers 402 again).
+  const failedBeforeKnown = useRef(false);
+  if (isError && signature === undefined && last.current === undefined) {
+    failedBeforeKnown.current = true;
+  }
+
   useEffect(() => {
     if (signature === undefined) return;
     const previous = last.current;
     last.current = signature;
-    // First known value: remember it, nothing changed.
-    if (previous === undefined || previous === signature) return;
+    if (previous === undefined) {
+      // First known value. Normally: remember it, nothing changed. After a
+      // failed first read: no baseline, so it counts as a change (above).
+      if (!failedBeforeKnown.current) return;
+      failedBeforeKnown.current = false;
+      cb.current();
+      return;
+    }
+    if (previous === signature) return;
     cb.current();
   }, [signature]);
 }

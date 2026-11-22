@@ -37,14 +37,23 @@ export interface PlanDTO {
   billingGroup?: string;
 }
 
+/**
+ * Key + fetcher for `GET /subscriptions/me`, shared by the hook below and by
+ * pull-to-refresh (japa#474 fix round 1), which must be able to read the plan
+ * even when no screen has cached it yet (a cold start).
+ */
+export const mySubscriptionQuery = {
+  queryKey: ['subscription', 'me'] as const,
+  queryFn: async (): Promise<MySubscription | null> => {
+    const res = await apiService.get<MySubscription>('/subscriptions/me');
+    return res.data ?? null;
+  },
+};
+
 /** The current user's subscription + resolved entitlements. */
 export function useMySubscription() {
   return useQuery({
-    queryKey: ['subscription', 'me'],
-    queryFn: async () => {
-      const res = await apiService.get<MySubscription>('/subscriptions/me');
-      return res.data ?? null;
-    },
+    ...mySubscriptionQuery,
     staleTime: 1000 * 60 * 2,
   });
 }

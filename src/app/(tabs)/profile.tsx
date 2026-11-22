@@ -256,7 +256,8 @@ export default function ProfileScreen() {
     savedQ,
     documentsQ,
     transactionsQ,
-    currentPlan.refetch,
+    // The plan list only: the pull re-reads `/subscriptions/me` itself.
+    currentPlan.refetchPlanList,
   ]);
   const subscriptionValue = planNameLabel(currentPlan.plan?.name);
   const banner = upgradeBanner(currentPlan.plan, currentPlan.plans, {

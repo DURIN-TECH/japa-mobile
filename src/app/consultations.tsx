@@ -22,6 +22,7 @@ import type { Consult } from '@/types/explorer.type';
 import { useConversations } from '@/hooks/useMessaging';
 import { hashString } from '@/assets/countries';
 import {
+  PullableState,
   StateEmpty,
   StateError,
   StateLoading,
@@ -234,16 +235,23 @@ export default function ConsultationsView() {
         />
       ) : null}
       {firstRun ? (
-        <StateEmpty
-          icon={Ic.cal}
-          title="No consultations yet"
-          body="Book a consultation with a vetted agent for advice on your move."
-          action={{
-            label: 'Find an agent',
-            onPress: toAgents,
-            variant: 'coral',
-          }}
-        />
+        // japa#474 fix round 1: pullable, so a first booking made elsewhere
+        // (the portal, another device) shows after a pull.
+        <PullableState
+          testID="consultations.empty"
+          refreshControl={pull.control}
+        >
+          <StateEmpty
+            icon={Ic.cal}
+            title="No consultations yet"
+            body="Book a consultation with a vetted agent for advice on your move."
+            action={{
+              label: 'Find an agent',
+              onPress: toAgents,
+              variant: 'coral',
+            }}
+          />
+        </PullableState>
       ) : null}
 
       {/* ── Filter chips (source row: padding '14px 22px 6px', gap 8) ──────── */}

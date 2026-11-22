@@ -7,8 +7,9 @@
 //   • the spinner follows the client's OWN pull only. Background refetches
 //     (focus, polling, invalidation) never show it, so it doesn't flash;
 //   • every refetch runs in parallel, and every pull ALSO re-reads the plan
-//     (`['subscription','me']` + `['authorization']`), so a plan change made
-//     elsewhere (the Paystack webhook, another device) shows after one pull;
+//     (`['subscription','me']` + `['authorization']`), cached or not, so a
+//     plan change made elsewhere (the Paystack webhook, another device) shows
+//     after one pull;
 //   • the data already on screen stays while it runs: TanStack's `refetch()`
 //     keeps `data` and never puts the query back into its first-load state, so
 //     no screen blanks or shows its full-screen spinner;
@@ -32,7 +33,11 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshControl } from 'react-native';
-import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  useQueryClient,
+  type QueryClient,
+  type QueryKey,
+} from '@tanstack/react-query';
 import { EX } from '@/components/explorer/theme';
 
 /**
@@ -49,17 +54,46 @@ export type RefetchSource =
   | false;
 
 /** The plan queries every pull (and the app foreground) re-reads. */
-export const PLAN_QUERY_KEYS = [['subscription', 'me'], ['authorization']];
+export const PLAN_QUERY_KEYS: QueryKey[] = [
+  ['subscription', 'me'],
+  ['authorization'],
+];
 
 /**
- * Re-read the client's plan. `refetchQueries` only touches queries already in
- * the cache (a screen that never asked for the plan makes no extra call) and,
- * like `refetch()`, keeps old data on failure. Exported for the foreground
- * listener and tests.
+ * The fetcher React Query knows for `queryKey`: the client-wide default
+ * (`QueryProvider` registers one for each plan key, japa#474 fix round 1), or
+ * else the one a cached query was created with. `undefined` when neither.
+ */
+function knownQueryFn(queryClient: QueryClient, queryKey: QueryKey) {
+  const fromDefaults = queryClient.getQueryDefaults(queryKey).queryFn;
+  if (typeof fromDefaults === 'function') return fromDefaults;
+  const cached = queryClient.getQueryCache().find({ queryKey, exact: true })
+    ?.options.queryFn;
+  return typeof cached === 'function' ? cached : undefined;
+}
+
+/**
+ * Re-read the client's plan. Exported for explore's own pull and tests.
+ *
+ * japa#474 fix round 1: this uses `fetchQuery` (not `refetchQueries`, which
+ * only touches queries already in the cache), so a pull re-reads the plan on
+ * a cold start too, before any screen has asked for it. The fetcher comes
+ * from the client's defaults (see `QueryProvider`), so this module never
+ * imports the API client itself. `staleTime: 0` forces a real request. A
+ * failure keeps the old data on the query, and `allSettled` swallows it.
+ *
+ * `fetchQuery` joins a request for the same key that is already in flight
+ * rather than cancelling it, so a screen that also lists a plan query as its
+ * own source never sends a second, aborted request.
  */
 export function refetchPlanQueries(queryClient: QueryClient) {
   return Promise.allSettled(
-    PLAN_QUERY_KEYS.map((queryKey) => queryClient.refetchQueries({ queryKey })),
+    PLAN_QUERY_KEYS.map((queryKey) => {
+      const queryFn = knownQueryFn(queryClient, queryKey);
+      // No fetcher known (a bare test client): nothing to re-read.
+      if (!queryFn) return Promise.resolve();
+      return queryClient.fetchQuery({ queryKey, queryFn, staleTime: 0 });
+    }),
   );
 }
 
@@ -110,10 +144,13 @@ export function usePullToRefresh(
     inFlight.current = true;
     setRefreshing(true);
     try {
-      // Everything in parallel: the screen's own queries + the plan.
+      // Everything in parallel: the screen's own queries + the plan. The plan
+      // read is queued AFTER the sources (microtasks run in order), so if a
+      // source is itself a plan query its `refetch()` starts first and the
+      // plan read joins it instead of cancelling it (japa#474 fix round 1).
       await Promise.allSettled([
         ...latest.current.map(runSource),
-        refetchPlanQueries(queryClient),
+        Promise.resolve().then(() => refetchPlanQueries(queryClient)),
       ]);
     } finally {
       inFlight.current = false;

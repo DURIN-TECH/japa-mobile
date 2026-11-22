@@ -77,6 +77,8 @@ import {
   WorkingToggle,
 } from '@/components/explorer/review/ReviewParts';
 import { CouldntTell } from '@/components/explorer/review/CouldntTell';
+// japa#474 fix round 1: makes the no-review states pullable.
+import { PullableState } from '@/components/explorer/states';
 import { StickyBar } from '@/components/explorer/StickyBar';
 import { LayerPill } from '@/components/explorer/SharedRouteParts';
 import {
@@ -377,7 +379,12 @@ export default function ReviewScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
-        <View style={pad}>
+        {/* japa#474 fix round 1: pullable, so a rulebook published since
+            shows after a pull. */}
+        <PullableState
+          refreshControl={pull.control}
+          contentContainerStyle={pad}
+        >
           <ReviewEmpty
             icon={Ic.help}
             title={NO_REVIEW_TITLE}
@@ -388,7 +395,7 @@ export default function ReviewScreen() {
             onPress={goBackToApplication}
             height={54}
           />
-        </View>
+        </PullableState>
       </View>
     );
   }
@@ -404,13 +411,18 @@ export default function ReviewScreen() {
         style={{ flex: 1, backgroundColor: EX.color.bg }}
       >
         {header}
-        <View style={pad}>
+        {/* japa#474 fix round 1: pullable, so a review started elsewhere (the
+            hub, another device) shows after a pull. */}
+        <PullableState
+          refreshControl={pull.control}
+          contentContainerStyle={pad}
+        >
           <ReviewEmpty
             icon={Ic.gauge}
             title="See how ready you are"
             body="Seli checks your answers, statement and documents against the published rules for this visa and shows you what to fix first. It takes a few minutes."
           />
-        </View>
+        </PullableState>
         <StickyBar insetBottom={insets.bottom}>
           {startError ? (
             <View style={{ marginBottom: 10 }}>

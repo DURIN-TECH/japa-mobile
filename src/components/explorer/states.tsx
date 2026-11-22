@@ -35,8 +35,10 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  ScrollView,
   Text,
   View,
+  type RefreshControlProps,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -337,4 +339,42 @@ export function queryState(q: {
   if (q.isLoading) return 'loading';
   if (q.isError) return 'error';
   return 'ready';
+}
+
+// ── Pullable wrapper (japa#474 fix round 1) ──────────────────────────────────
+
+/**
+ * Makes a full-screen state (usually `StateEmpty`) pullable: a ScrollView that
+ * fills the space under the header and carries the screen's pull-to-refresh
+ * control, so a client waiting for their first booking, message or payment
+ * can pull to check again. The content stays where it was (top-aligned under
+ * the header); `flexGrow: 1` lets the pull work even though it doesn't scroll.
+ *
+ * Props:
+ *   - `refreshControl`: the screen's `usePullToRefresh(...).control`.
+ *   - `testID`: optional e2e hook on the ScrollView.
+ *   - `contentContainerStyle`: extra padding for the content, if any.
+ */
+export function PullableState({
+  refreshControl,
+  testID,
+  contentContainerStyle,
+  children,
+}: {
+  refreshControl: React.ReactElement<RefreshControlProps>;
+  testID?: string;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  return (
+    <ScrollView
+      testID={testID}
+      style={{ flex: 1 }}
+      contentContainerStyle={[{ flexGrow: 1 }, contentContainerStyle]}
+      showsVerticalScrollIndicator={false}
+      refreshControl={refreshControl}
+    >
+      {children}
+    </ScrollView>
+  );
 }

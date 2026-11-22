@@ -142,9 +142,18 @@ async function upgrade() {
 async function render() {
   let tree!: TestRenderer.ReactTestRenderer;
   await act(async () => {
-    // japa#474: the screen's pull-to-refresh needs a query client.
+    // japa#474: the screen's pull-to-refresh needs a query client. Like the
+    // app's (`QueryProvider`), it knows the plan fetcher, so a pull re-reads
+    // `/subscriptions/me` through it (fix round 1: not via `mine.refetch`).
+    const client = new QueryClient();
+    client.setQueryDefaults(['subscription', 'me'], {
+      queryFn: async () => {
+        await mockMineRefetch();
+        return null;
+      },
+    });
     tree = TestRenderer.create(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <SubscriptionView />
       </QueryClientProvider>,
     );
@@ -339,7 +348,7 @@ describe('subscription.tsx return to the locked action (japa#473)', () => {
 
 // ── japa#474: pull-to-refresh on the plans screen ───────────────────────────
 describe('subscription.tsx pull-to-refresh (japa#474)', () => {
-  it('a coral RefreshControl; a pull refetches the plans and the current plan', async () => {
+  it('a coral RefreshControl; a pull refetches the plans and the current plan (once)', async () => {
     mockPlansRefetch.mockClear();
     mockMineRefetch.mockClear();
     const tree = await render();

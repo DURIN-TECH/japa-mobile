@@ -24,7 +24,13 @@
 // not lose it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -622,15 +628,24 @@ export default function RefusalLetterScreen() {
   // The uploaded document, kept so "Try again" can re-ask without re-uploading.
   const [documentId, setDocumentId] = useState<string | null>(null);
 
+  // japa#473 fix round 1 (review): one read at a time. `POST
+  // /ai/refusal-letters` spends on the AI model, and two taps in the same
+  // frame would both get past a `loading` prop that hasn't re-rendered yet.
+  const starting = useRef(false);
+
   /** Ask the backend to read an already-uploaded letter. */
   const startAnalysis = useCallback(
     async (docId: string) => {
+      if (starting.current) return;
+      starting.current = true;
       setError(null);
       try {
         const res = await start.mutateAsync(docId);
         setAnalysisId(res.analysisId);
       } catch (e) {
         setError(e);
+      } finally {
+        starting.current = false;
       }
     },
     [start, setAnalysisId],
@@ -863,7 +878,8 @@ export default function RefusalLetterScreen() {
           // japa#473: the letter is uploaded but its read was stopped by the
           // plan (402), and the plan has changed since. Keep the letter they
           // picked; reading it runs only on this tap.
-          <View style={{ gap: 12 }}>
+          // Card → button gap 16, the same as the idle step below.
+          <View style={{ gap: 16 }}>
             <Card>
               <Text
                 style={{ color: EX.color.ink, fontSize: 16, fontWeight: '700' }}
@@ -884,12 +900,20 @@ export default function RefusalLetterScreen() {
             </Card>
             <CoralSubmit
               label="Read my letter"
+              // Reading spends on the AI model: spinner + disabled while the
+              // start is in flight (startAnalysis also drops a same-frame
+              // second tap, before this re-renders).
+              loading={start.isPending}
               onPress={() => startAnalysis(documentId)}
             />
             <Pressable
               onPress={reset}
               hitSlop={8}
-              style={{ alignSelf: 'center' }}
+              // README: a subtle opacity change on new pressables.
+              style={({ pressed }) => ({
+                alignSelf: 'center',
+                opacity: pressed ? 0.7 : 1,
+              })}
             >
               <Text
                 style={{

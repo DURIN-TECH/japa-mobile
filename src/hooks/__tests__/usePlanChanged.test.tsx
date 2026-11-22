@@ -175,6 +175,52 @@ describe('usePlanChanged + useStartApplication (japa#473)', () => {
   });
 });
 
+// japa#474 fix round 1 (review): the screen's first plan read failed, so it
+// has no baseline. The first good read after paying must still unlock.
+describe('usePlanChanged when the first plan read failed', () => {
+  it('first good read after a failed one clears the lock (no baseline)', async () => {
+    const get = (
+      apiService as unknown as {
+        get: jest.Mock<(...a: unknown[]) => Promise<unknown>>;
+      }
+    ).get;
+    // First GET /subscriptions/me fails (offline): the plan is unknown.
+    get.mockRejectedValueOnce(new Error('offline'));
+    await mountLocked();
+    expect(qc.getQueryState(['subscription', 'me'])?.status).toBe('error');
+
+    // Paid; verify's invalidation re-reads the plan, which now answers.
+    mockSubscription = PAID;
+    await refetchPlan();
+
+    expect(hook.current!.failure).toBeNull();
+    expect(hasStartButton()).toBe(true);
+    // Unlocking runs nothing by itself.
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('only once: a later unchanged read keeps the lock that came back', async () => {
+    const get = (
+      apiService as unknown as {
+        get: jest.Mock<(...a: unknown[]) => Promise<unknown>>;
+      }
+    ).get;
+    get.mockRejectedValueOnce(new Error('offline'));
+    await mountLocked();
+    mockSubscription = PAID;
+    await refetchPlan();
+    // The server still says no on the next tap: the card comes back.
+    post.mockRejectedValueOnce({ status: 402, code: 'PAYMENT_REQUIRED' });
+    await act(async () => {
+      await hook.current!.start();
+    });
+    expect(hook.current!.failure).toBe('upgrade');
+    // Same plan re-read: nothing changed, the lock stays.
+    await refetchPlan();
+    expect(hook.current!.failure).toBe('upgrade');
+  });
+});
+
 describe('planSignature', () => {
   it('is undefined only while unknown; null is a real "no paid plan" answer', () => {
     expect(planSignature(undefined)).toBeUndefined();

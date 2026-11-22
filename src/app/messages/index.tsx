@@ -22,6 +22,7 @@ import { Portrait } from '@/components/explorer/primitives';
 import { useConversations } from '@/hooks/useMessaging';
 import { mapConvo } from '@/components/explorer/liveMessaging';
 import {
+  PullableState,
   StateEmpty,
   StateError,
   StateLoading,
@@ -133,16 +134,20 @@ export default function ConversationsView() {
         />
       ) : convos.length === 0 ? (
         // First-run empty: the one coral action sends them to the Agents tab.
-        <StateEmpty
-          icon={Ic.msg}
-          title="No messages yet"
-          body="When you message an agent, your conversation shows up here."
-          action={{
-            label: 'Find an agent',
-            variant: 'coral',
-            onPress: () => router.push('/(tabs)/agents'),
-          }}
-        />
+        // japa#474 fix round 1: pullable, so a first message from an agent
+        // shows after a pull.
+        <PullableState testID="messages.empty" refreshControl={pull.control}>
+          <StateEmpty
+            icon={Ic.msg}
+            title="No messages yet"
+            body="When you message an agent, your conversation shows up here."
+            action={{
+              label: 'Find an agent',
+              variant: 'coral',
+              onPress: () => router.push('/(tabs)/agents'),
+            }}
+          />
+        </PullableState>
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}

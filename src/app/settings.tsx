@@ -263,7 +263,8 @@ export default function SettingsScreen() {
   const pull = usePullToRefresh([
     aiAccessState,
     holdingsQ,
-    currentPlan.refetch,
+    // The plan list only: the pull re-reads `/subscriptions/me` itself.
+    currentPlan.refetchPlanList,
   ]);
   const planLoading = currentPlan.loading;
   const planFailed = currentPlan.failed;

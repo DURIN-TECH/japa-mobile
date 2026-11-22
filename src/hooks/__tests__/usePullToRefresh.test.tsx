@@ -181,6 +181,44 @@ describe('usePullToRefresh', () => {
     expect(h.current.refreshing).toBe(false);
   });
 
+  // japa#474 fix round 1: QA saw no plan call after a cold start, because
+  // `refetchQueries` only touched cached queries.
+  it('re-reads the plan on a cold start too (nothing cached yet)', async () => {
+    const plan = jest.fn(async () => ({ subscription: null }));
+    const authz = jest.fn(async () => ({ role: 'client' }));
+    // The fetchers are known (as QueryProvider registers them); no data.
+    qc.setQueryDefaults(['subscription', 'me'], { queryFn: plan });
+    qc.setQueryDefaults(['authorization'], { queryFn: authz });
+    const h = mount(() => usePullToRefresh([]));
+    await act(async () => {
+      await h.current.onRefresh();
+    });
+    expect(plan).toHaveBeenCalledTimes(1);
+    expect(authz).toHaveBeenCalledTimes(1);
+    expect(qc.getQueryData(['subscription', 'me'])).toEqual({
+      subscription: null,
+    });
+  });
+
+  it('a screen that lists the plan query itself sends ONE request, none aborted', async () => {
+    const { plan } = seedPlan();
+    const signals: AbortSignal[] = [];
+    plan.mockImplementation((async (ctx: { signal: AbortSignal }) => {
+      signals.push(ctx.signal);
+      return { subscription: null };
+    }) as never);
+    const h = mount(() =>
+      usePullToRefresh([
+        () => qc.refetchQueries({ queryKey: ['subscription', 'me'] }),
+      ]),
+    );
+    await act(async () => {
+      await h.current.onRefresh();
+    });
+    expect(plan).toHaveBeenCalledTimes(1);
+    expect(signals.every((sg) => !sg.aborted)).toBe(true);
+  });
+
   it('skips disabled queries (isEnabled false) and ignores a second pull mid-pull', async () => {
     const disabled = jest.fn(async () => undefined);
     const slow = deferred();

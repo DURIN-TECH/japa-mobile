@@ -460,7 +460,9 @@ export default function SubscriptionView() {
   // japa#474: pull-to-refresh re-reads the plans and the current plan. While
   // a checkout / verify is in flight (`busy`) the pull is switched off, so a
   // refetch can never race the verify that changes the plan.
-  const pull = usePullToRefresh([plansQ, mine]);
+  // The current plan (`mine`) is not listed: every pull re-reads
+  // `/subscriptions/me` itself (japa#474 fix round 1, no duplicate request).
+  const pull = usePullToRefresh([plansQ]);
 
   // Verify one reference with the backend → 'paid' | 'not_paid', or throws
   // when the call itself failed (network / 5xx). A 400 is "not paid".
