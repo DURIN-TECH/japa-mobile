@@ -126,11 +126,13 @@ seed, simulator, first bundle); the flows themselves are the "suite" time.
     self-service/ journey-flag-on.yaml, journey-flag-off.yaml, date-picker.yaml,
                   open-document.yaml
     flag/         flag-on.yaml, flag-off.yaml
+    booking/      future-day-times.yaml
   subflows/       shared steps (launch, sign-in, sign-out, flag switches, ...)
   support/        runner-only: preflight.yaml, restore-flag.yaml, scripts/
 ```
 
-Every flow has at least one **area tag** (`auth`, `self-service`, `flag`)
+Every flow has at least one **area tag** (`auth`, `self-service`, `flag`,
+`booking`)
 and exactly one **flag tag**:
 
 | Flag tag | Meaning |
@@ -158,6 +160,7 @@ order-independent.
 | `self-service/date-picker` | the shared date picker (japa#407) on Holdings › Add document › Valid until (by link): a day tap sets the date and closes the calendar; a field tap closes it unchanged; Done keeps the highlighted day and closes. No From/To pair: the e2e fixture has no date question |
 | `self-service/open-document` | as John Doe (flag any): tap the seeded passport document on `seed-app-001`'s hub → its error line (`doc-row-<id>-error`, the seed's placeholder file answers 409) with the "can't be opened" copy; tap again → error again; same row on My documents → error line (japa#446). The viewer itself is a walk |
 | `flag/flag-on` | as John Doe: 4 tabs; the 14 hidden deep links from Tracker end on Home and a swipe-back stays there; `/subscription`, `/notifications`, `/self-service/seed-app-001` open; Home without Messages / "Find an agent"; Destination without "Work with an agent" / Top agents; `seed-app-001` without message button / Payment requests; Profile without the four agent rows and the Agents stat; Settings without Privacy |
+| `booking/future-day-times` | as the fixture client, flag off: `durintech://book/seed-agent-001` → the today chip (`book.day.0`) is in the strip; on tomorrow (`book.day.1`) all 17 time pills (`book.time.0`-`16`) are enabled and "No times left today" is absent; 9:00 AM + a topic enables Continue (`book.continue`, not tapped). Clock-independent; the started-pill rule for today is unit-tested (japa#472) |
 | `flag/flag-off` | as John Doe: 5 tabs; Home Messages + "Find an agent"; `durintech://messages` opens Messages; `seed-app-001` message button + Payment requests; Destination "Work with an agent"; Profile's four rows and Agents stat; Settings Privacy |
 
 Accounts are emulator-only seed / fixture users, passed in by the runner

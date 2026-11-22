@@ -286,6 +286,8 @@ export default function BookConsultation() {
 
   return (
     <KeyboardAvoidingView
+      // japa#472: the screen's root, for the Maestro booking flow.
+      testID="screen.book"
       style={{ flex: 1, backgroundColor: EX.color.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -422,13 +424,18 @@ export default function BookConsultation() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 9, paddingRight: 4 }}
           >
-            {days.map((d) => {
+            {days.map((d, i) => {
               const on =
                 date != null &&
                 format(d, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd');
               return (
                 <Pressable
                   key={d.toISOString()}
+                  // japa#472: `book.day.0` is today, `book.day.1` tomorrow,
+                  // and so on (for the Maestro booking flow).
+                  testID={`book.day.${i}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
                   onPress={() => setDate(d)}
                   style={{
                     width: 56,
@@ -485,11 +492,14 @@ export default function BookConsultation() {
             </Text>
           ) : (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 9 }}>
-              {slots.map(({ label: s, past }) => {
+              {slots.map(({ label: s, past }, i) => {
                 const on = time === s;
                 return (
                   <Pressable
                     key={s}
+                    // japa#472: `book.time.0` is 9:00 AM … `book.time.16`
+                    // is 5:00 PM (for the Maestro booking flow).
+                    testID={`book.time.${i}`}
                     // japa#472: a slot that has started cannot be picked.
                     onPress={() => {
                       if (!past) setTime(s);
@@ -547,6 +557,10 @@ export default function BookConsultation() {
               return (
                 <Pressable
                   key={t}
+                  // japa#472: the picked topic reads as selected (also what
+                  // the Maestro booking flow checks after its tap).
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
                   onPress={() => setTopic(t)}
                   style={{
                     paddingHorizontal: 15,
@@ -680,6 +694,8 @@ export default function BookConsultation() {
 
           {/* Continue (coral, flex 1, disabled until date+time+topic) */}
           <Pressable
+            // japa#472: for the Maestro booking flow (asserted, never tapped).
+            testID="book.continue"
             onPress={onContinue}
             disabled={!canContinue}
             style={{

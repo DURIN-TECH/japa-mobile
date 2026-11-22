@@ -1,0 +1,99 @@
+# Booking a consultation: times on a later day are all offered (japa#472).
+#
+# Since japa#472 the booking screen disables the time pills that have already
+# started TODAY (and shows "No times left today" after 5:00 PM). Which pills
+# that is depends on the clock, so this flow only checks what holds at any
+# hour of any day:
+#
+#   1. the today chip (`book.day.0`) is in the date strip, whatever the time
+#      (it is never dropped, even when no times are left today);
+#   2. on tomorrow (`book.day.1`) every one of the 17 time pills
+#      (`book.time.0` = 9:00 AM … `book.time.16` = 5:00 PM) is enabled;
+#   3. a pick on tomorrow works: 9:00 AM plus a topic enables Continue.
+#
+# The past-pill behaviour on today itself is unit-tested
+# (`src/hooks/__tests__/bookingSlots.test.ts`) and was walked by QA.
+#
+# As the fixture client, flag OFF (the booking route is hidden while the
+# self-service-only flag is on), on the seeded agent `seed-agent-001`.
+#
+# Continue is asserted, never tapped: it leads to /pay. Nothing here starts a
+# payment or an AI review.
+appId: ${APP_ID}
+tags:
+  - booking
+  - flag-off
+---
+- runFlow:
+    file: ../../subflows/sign-in.yaml
+    env:
+      EMAIL: ${E2E_EMAIL}
+- runFlow: ../../subflows/flag-off.yaml
+
+# The booking screen by its link (the app is up: a warm link is routed).
+- openLink: "durintech://book/seed-agent-001"
+- extendedWaitUntil:
+    visible:
+      id: "book\\.day\\.0"
+    timeout: 30000
+
+# ── 1. The today chip is in the strip ────────────────────────────────────────
+- assertVisible:
+    id: "book\\.day\\.0"
+
+# ── 2. Tomorrow: all 17 time pills are enabled ───────────────────────────────
+- tapOn:
+    id: "book\\.day\\.1"
+- assertVisible:
+    id: "book\\.day\\.1"
+    selected: true
+# The last pill may sit below the fold on a small screen.
+- scrollUntilVisible:
+    element:
+      id: "book\\.time\\.16"
+    direction: DOWN
+    timeout: 10000
+- evalScript: "${output.slot = 0}"
+- repeat:
+    while:
+      true: "${output.slot < 17}"
+    commands:
+      - assertVisible:
+          id: "${'book\\\\.time\\\\.' + output.slot}"
+          enabled: true
+      - evalScript: "${output.slot = output.slot + 1}"
+# None left disabled, and no "No times left today" line on a later day.
+- assertNotVisible:
+    id: "book-no-times-left"
+
+# ── 3. A pick on tomorrow enables Continue (not tapped) ──────────────────────
+- tapOn:
+    id: "book\\.time\\.0"
+- assertVisible:
+    id: "book\\.time\\.0"
+    selected: true
+# Centre the topic chip: at the fold it sits under the sticky Continue bar,
+# and a tap there lands on the bar instead of the chip.
+- scrollUntilVisible:
+    element:
+      text: "Visa eligibility"
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
+- tapOn:
+    text: "Visa eligibility"
+- assertVisible:
+    text: "Visa eligibility"
+    selected: true
+- assertVisible:
+    id: "book\\.continue"
+    enabled: true
+
+# ── 4. Back on the strip, the today chip is still there ──────────────────────
+- scrollUntilVisible:
+    element:
+      id: "book\\.day\\.0"
+    direction: UP
+    timeout: 10000
+- assertVisible:
+    id: "book\\.day\\.0"
