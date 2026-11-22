@@ -16,6 +16,14 @@
  * backend answers 409 DUPLICATE_ACTIVE_APPLICATION. That is NOT a failure: the
  * hook exposes it as `duplicate` so the screen can ask "continue it or start
  * another?". "Start another" re-sends the same request with `confirmNew: true`.
+ *
+ * japa#473: an 'upgrade' failure clears by itself when the client's plan
+ * actually changes (`usePlanChanged`, driven by the server's
+ * `GET /subscriptions/me`), e.g. after subscribing on the plans screen and
+ * coming back. The start bar then shows the normal start button again. It
+ * does NOT start the application: a paid action only runs from the client's
+ * own tap, and that tap asks the server again (a plan that still doesn't cover
+ * it answers 402 and the upgrade card comes back).
  */
 import { useCallback, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -25,6 +33,7 @@ import {
   getDuplicateApplication,
   type StartFailure,
 } from '@/hooks/queryErrors';
+import { usePlanChanged } from '@/hooks/usePlanChanged';
 
 export type { StartFailure };
 
@@ -43,6 +52,12 @@ export function useStartApplication(visaTypeId: string, countryCode: string) {
   // A ref (not state) so two quick taps in the same frame can't both pass the
   // guard: state updates are async, a ref is read synchronously.
   const inFlight = useRef(false);
+
+  // japa#473: the plan changed (server-reported) → drop a stale 'upgrade'
+  // failure so the start button is tappable again. Other failures stay.
+  usePlanChanged(() => {
+    setFailure((f) => (f === 'upgrade' ? null : f));
+  });
 
   // `confirmNew` is true only from the prompt's "Start another".
   const run = useCallback(

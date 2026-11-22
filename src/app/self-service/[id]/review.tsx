@@ -49,6 +49,8 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { SectionTitle, Card } from '@/components/explorer/primitives';
@@ -75,6 +77,8 @@ import {
   WorkingToggle,
 } from '@/components/explorer/review/ReviewParts';
 import { CouldntTell } from '@/components/explorer/review/CouldntTell';
+// japa#474 fix round 1: makes the no-review states pullable.
+import { PullableState } from '@/components/explorer/states';
 import { StickyBar } from '@/components/explorer/StickyBar';
 import { LayerPill } from '@/components/explorer/SharedRouteParts';
 import {
@@ -84,7 +88,10 @@ import {
   missingLayerNote,
 } from '@/components/explorer/sharedRouteLogic';
 import type { StackLayer } from '@/types/sharedRoute.type';
-import { PLANS_ROUTE, UpgradePanel } from '@/components/explorer/UpgradePrompt';
+import {
+  PLANS_FROM_UPGRADE_ROUTE,
+  UpgradePanel,
+} from '@/components/explorer/UpgradePrompt';
 import {
   BAND_SUMMARY,
   DISCLAIMER,
@@ -158,6 +165,11 @@ export default function ReviewScreen() {
     appQ.data?.countryCode ?? '',
     appQ.data?.visaTypeId ?? '',
   );
+
+  // japa#474: pull-to-refresh re-reads the review (its tier comes from the
+  // server, so a new plan shows the full review), the application, the visa
+  // and the plan. The review on screen stays while it runs.
+  const pull = usePullToRefresh([q, appQ, vtQ]);
   const hasOfficialLink: boolean | undefined = vtQ.data
     ? !!vtQ.data.visaType?.applicationUrl?.trim()
     : undefined;
@@ -279,7 +291,7 @@ export default function ReviewScreen() {
     analyticsService.trackReviewEvent('review_upgrade_prompt_tapped', {
       source,
     });
-    router.push(PLANS_ROUTE);
+    router.push(PLANS_FROM_UPGRADE_ROUTE);
   };
 
   /** Start a review and map the outcome to this screen's behaviour. */
@@ -367,7 +379,12 @@ export default function ReviewScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
-        <View style={pad}>
+        {/* japa#474 fix round 1: pullable, so a rulebook published since
+            shows after a pull. */}
+        <PullableState
+          refreshControl={pull.control}
+          contentContainerStyle={pad}
+        >
           <ReviewEmpty
             icon={Ic.help}
             title={NO_REVIEW_TITLE}
@@ -378,7 +395,7 @@ export default function ReviewScreen() {
             onPress={goBackToApplication}
             height={54}
           />
-        </View>
+        </PullableState>
       </View>
     );
   }
@@ -394,13 +411,18 @@ export default function ReviewScreen() {
         style={{ flex: 1, backgroundColor: EX.color.bg }}
       >
         {header}
-        <View style={pad}>
+        {/* japa#474 fix round 1: pullable, so a review started elsewhere (the
+            hub, another device) shows after a pull. */}
+        <PullableState
+          refreshControl={pull.control}
+          contentContainerStyle={pad}
+        >
           <ReviewEmpty
             icon={Ic.gauge}
             title="See how ready you are"
             body="Seli checks your answers, statement and documents against the published rules for this visa and shows you what to fix first. It takes a few minutes."
           />
-        </View>
+        </PullableState>
         <StickyBar insetBottom={insets.bottom}>
           {startError ? (
             <View style={{ marginBottom: 10 }}>
@@ -430,6 +452,8 @@ export default function ReviewScreen() {
       <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
         {header}
         <ScrollView
+          // japa#474: pull to refresh while waiting, too.
+          refreshControl={pull.control}
           contentContainerStyle={[
             pad,
             { paddingTop: 20, paddingBottom: 40, gap: 16 },
@@ -594,6 +618,8 @@ export default function ReviewScreen() {
         contentContainerStyle={{
           paddingBottom: showBar ? EX.space.ctaClear : 48,
         }}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         // japa#384: viewport + offset for the "locked panel seen" event.
         onLayout={onScrollLayout}
         onScroll={onScroll}

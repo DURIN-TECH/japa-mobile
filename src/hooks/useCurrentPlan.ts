@@ -36,6 +36,17 @@ export function useCurrentPlan() {
     failed,
     /** A retry is in flight (Settings swaps its button for a spinner). */
     refetching: mine.isRefetching || plansQ.isRefetching,
+    /**
+     * japa#474: re-read both (pull-to-refresh). Resolves when both settled;
+     * a failure stays on its query (old data kept), never thrown.
+     */
+    refetch: () => Promise.allSettled([mine.refetch(), plansQ.refetch()]),
+    /**
+     * japa#474 fix round 1: re-read only the plan LIST (names, prices). For
+     * pull-to-refresh, which already re-reads `/subscriptions/me` itself, so
+     * listing `refetch` there would send that request twice.
+     */
+    refetchPlanList: () => plansQ.refetch(),
     /** Re-run whichever query failed. */
     retry: () => {
       if (mine.isError) mine.refetch();

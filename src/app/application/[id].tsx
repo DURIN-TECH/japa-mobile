@@ -48,6 +48,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import { priceInline, type PriceParts } from '@/components/explorer/content';
 import type { Money } from '@/types/money.type';
@@ -326,9 +328,10 @@ export default function AppDetail() {
   );
   const agent = agentQ.data ? mapAgent(agentQ.data) : undefined;
   // The user's conversation with that agent, for the message actions.
-  const { data: conversations } = useConversations({
+  const conversationsQ = useConversations({
     enabled: !selfServiceOnly,
   });
+  const conversations = conversationsQ.data;
   const convo = app?.agentId
     ? conversations?.find((c) => c.agentId === app.agentId)
     : undefined;
@@ -336,7 +339,11 @@ export default function AppDetail() {
   // Parallax: hero translates up at py * -0.3 (source transform translateY).
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
-    scrollY.value = e.contentOffset.y;
+    // japa#474: clamp at 0. A pull-to-refresh overscrolls to a NEGATIVE
+    // offset on iOS; unclamped, the parallax hero would slide down with it
+    // and leave a gap (the header "jumps"). Clamped, it stays put while the
+    // coral spinner shows, and scrolling down behaves exactly as before.
+    scrollY.value = Math.max(0, e.contentOffset.y);
   });
   const heroStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: scrollY.value * -0.3 }],
@@ -373,6 +380,15 @@ export default function AppDetail() {
   // approve/reject fire the real backend calls. None → the block is hidden.
   // (Skipped in a self-service-only build: the section is hidden.)
   const payReqQ = usePaymentRequests(id, { enabled: !selfServiceOnly });
+
+  // japa#474: pull-to-refresh re-reads the case, timeline, payment requests, visa, agent and the plan. The Android
+  // spinner sits below the floating back / share buttons.
+  const pull = usePullToRefresh(
+    [liveQ, tl, payReqQ, visaNameQ, agentQ, conversationsQ],
+    {
+      progressViewOffset: insets.top + 56,
+    },
+  );
   const approveReq = useApprovePaymentRequest();
   const rejectReq = useRejectPaymentRequest();
 
@@ -794,6 +810,8 @@ export default function AppDetail() {
       {/* Scrolling content sheet */}
       <Animated.ScrollView
         testID="application.scroll"
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         onScroll={onScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}

@@ -43,6 +43,8 @@ import Animated, {
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
 import { EX } from '@/components/explorer/theme';
 import { countryArt } from '@/components/explorer/liveExplore';
@@ -133,7 +135,7 @@ import {
   type ReviewGap,
   type ReviewGaps,
 } from '@/components/explorer/review/reviewCopy';
-import { PLANS_ROUTE } from '@/components/explorer/UpgradePrompt';
+import { PLANS_FROM_UPGRADE_ROUTE } from '@/components/explorer/UpgradePrompt';
 import {
   SUBMITTED_STATUSES,
   isStatementLocked,
@@ -932,12 +934,24 @@ export default function SelfServiceView() {
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const [docsStepY, setDocsStepY] = useState(0);
   const queryClient = useQueryClient();
+  // japa#474: pull-to-refresh re-reads everything this screen shows (the
+  // application, visa, checklist, answers, documents, document checks, intake,
+  // review, statement) and the plan. Data stays on screen while it runs. The
+  // Android spinner sits below the floating header buttons.
+  const pull = usePullToRefresh(
+    [appQ, vtQ, docsQ, intakeQ, checklistQ, answersQ, checksQ, reviewQ, stmtQ],
+    { progressViewOffset: insets.top + 56 },
+  );
   // Returning to this screen (from the statement, the review or the plans screen)
   // refetches the review: the inputs or the plan may have changed meanwhile.
+  // japa#473: the document checks too, so back from the plans screen with a
+  // plan that includes the check, the "See plans" link on DocumentCheckNotice
+  // goes (its `tier` comes from the server) without a pull or a restart.
   useFocusEffect(
     useCallback(() => {
-      if (reviewId)
-        queryClient.invalidateQueries({ queryKey: assessmentKey(reviewId) });
+      if (!reviewId) return;
+      queryClient.invalidateQueries({ queryKey: assessmentKey(reviewId) });
+      queryClient.invalidateQueries({ queryKey: ['documentChecks', reviewId] });
     }, [queryClient, reviewId]),
   );
 
@@ -964,7 +978,11 @@ export default function SelfServiceView() {
   // hero at `py * -0.3` (no image zoom) — matched exactly here.
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
-    scrollY.value = e.contentOffset.y;
+    // japa#474: clamp at 0. A pull-to-refresh overscrolls to a NEGATIVE
+    // offset on iOS; unclamped, the parallax hero would slide down with it
+    // and leave a gap (the header "jumps"). Clamped, it stays put while the
+    // coral spinner shows, and scrolling down behaves exactly as before.
+    scrollY.value = Math.max(0, e.contentOffset.y);
   });
 
   // ── Upload flow (source sheet → pick → signed URL → PUT → register doc) ────
@@ -1325,7 +1343,9 @@ export default function SelfServiceView() {
       setCtaError(null);
       setRefusedAtKey(null);
       if (reviewCta.action === 'open') return openReview();
-      if (reviewCta.action === 'upgrade') return router.push(PLANS_ROUTE);
+      // japa#473: marked, so the plans screen brings the client back here.
+      if (reviewCta.action === 'upgrade')
+        return router.push(PLANS_FROM_UPGRADE_ROUTE);
       if (reviewCta.action === 'contact') {
         Linking.openURL(SUPPORT_MAILTO).catch(() => undefined);
         return;
@@ -1393,6 +1413,8 @@ export default function SelfServiceView() {
         {/* Scrolling content sheet */}
         <Animated.ScrollView
           testID="selfService.scroll"
+          // japa#474: pull to refresh (old data stays while it runs).
+          refreshControl={pull.control}
           ref={scrollRef}
           onScroll={onScroll}
           scrollEventThrottle={16}
@@ -1752,7 +1774,7 @@ export default function SelfServiceView() {
                     ) => saveAnswerM.mutateAsync({ itemId, value }),
                     locked: answersLocked,
                     onLocked: () => setAnswersLockedByServer(true),
-                    onSeePlans: () => router.push(PLANS_ROUTE),
+                    onSeePlans: () => router.push(PLANS_FROM_UPGRADE_ROUTE),
                     onRefreshList: () => {
                       checklistQ.refetch();
                       answersQ.refetch();

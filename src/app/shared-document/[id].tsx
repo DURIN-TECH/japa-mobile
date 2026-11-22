@@ -20,6 +20,8 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { ProseMirrorText } from '@/components/explorer/ProseMirrorText';
@@ -31,7 +33,11 @@ export default function SharedDocumentView() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const { data: document, isLoading, isError } = useSharedDocument(id ?? '');
+  const docQ = useSharedDocument(id ?? '');
+  const { data: document, isLoading, isError } = docQ;
+
+  // japa#474: pull-to-refresh re-reads the document and the plan.
+  const pull = usePullToRefresh([docQ]);
 
   return (
     <View style={{ flex: 1, backgroundColor: EX.color.bg }}>
@@ -112,6 +118,8 @@ export default function SharedDocumentView() {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          // japa#474: pull to refresh (old data stays while it runs).
+          refreshControl={pull.control}
           contentContainerStyle={{
             paddingHorizontal: 22,
             paddingTop: 12,

@@ -32,6 +32,8 @@ import { BlurView } from 'expo-blur';
 import { format } from 'date-fns';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import type { Msg } from '@/types/explorer.type';
 import { Ic } from '@/components/explorer/icons';
@@ -256,6 +258,10 @@ export default function ChatView() {
   const aiConv = useConversation(convId);
   // Pick up changes made elsewhere (e.g. the settings screen) on coming back.
   useRefetchOnFocus(aiConv.refetch, !!convId);
+  // japa#474: pull-to-refresh re-reads the messages, the conversation (+ its
+  // AI-access state) and the plan. The composer's `draft` is local state the
+  // refetch never touches, so whatever the client typed stays.
+  const pull = usePullToRefresh([msgsQ, convosQ, aiConv]);
   const aiIcon = chatAiIconView(aiConv.data?.aiAccess);
   const openAiSettings = () => router.push('/ai-message-access');
 
@@ -560,6 +566,8 @@ export default function ChatView() {
           ref={scrollRef}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={scrollToEnd}
+          // japa#474: pull to refresh (old data stays while it runs).
+          refreshControl={pull.control}
           contentContainerStyle={{
             // Source messages area: padding '18px 16px'.
             paddingHorizontal: 16,

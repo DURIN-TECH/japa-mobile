@@ -37,14 +37,23 @@ export interface PlanDTO {
   billingGroup?: string;
 }
 
+/**
+ * Key + fetcher for `GET /subscriptions/me`, shared by the hook below and by
+ * pull-to-refresh (japa#474 fix round 1), which must be able to read the plan
+ * even when no screen has cached it yet (a cold start).
+ */
+export const mySubscriptionQuery = {
+  queryKey: ['subscription', 'me'] as const,
+  queryFn: async (): Promise<MySubscription | null> => {
+    const res = await apiService.get<MySubscription>('/subscriptions/me');
+    return res.data ?? null;
+  },
+};
+
 /** The current user's subscription + resolved entitlements. */
 export function useMySubscription() {
   return useQuery({
-    queryKey: ['subscription', 'me'],
-    queryFn: async () => {
-      const res = await apiService.get<MySubscription>('/subscriptions/me');
-      return res.data ?? null;
-    },
+    ...mySubscriptionQuery,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -105,9 +114,21 @@ export function useStartCheckout() {
  * verified the charge with Paystack and applied the plan (idempotent: also
  * succeeds when the webhook got there first). Rejects with the `ApiError`
  * otherwise — a 400 means "not paid / not yours" (see
- * `subscriptionVerifyErrorVerdict`). On success the subscription and
- * authorization (entitlements) caches are invalidated so the new plan and
- * features show without restarting the app.
+ * `subscriptionVerifyErrorVerdict`).
+ *
+ * On success (japa#474) the WHOLE query cache is invalidated, not just the
+ * plan: most locks are decided by the server inside other responses (the
+ * review tier `meta.tier` in the assessment, 402s on starts / chat / document
+ * checks / refusal-letter reads), and those caches would otherwise keep the
+ * free-plan answer for the 5-minute staleTime. Active queries refetch at once;
+ * inactive ones when their screen next mounts.
+ *   - The plan (`['subscription','me']`, `['authorization']`) is AWAITED, so
+ *     when `mutateAsync` resolves "Current" has already moved and the screen
+ *     the client returns to sees the new plan.
+ *   - Everything else is fired without waiting: dozens of refetches must not
+ *     hold up the plans screen closing (japa#473), and their failures are
+ *     kept on each query (old data stays) rather than failing the verify.
+ * A failed verify invalidates nothing (TanStack doesn't call onSuccess).
  */
 export function useVerifySubscription() {
   const queryClient = useQueryClient();
@@ -120,10 +141,26 @@ export function useVerifySubscription() {
       return res.data ?? null;
     },
     onSuccess: async () => {
+      // Everything except the plan: not awaited (see above).
+      void queryClient.invalidateQueries({
+        predicate: (query) => !isPlanQueryKey(query.queryKey),
+      });
+      // The plan: awaited.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['subscription', 'me'] }),
         queryClient.invalidateQueries({ queryKey: ['authorization'] }),
       ]);
     },
   });
+}
+
+/**
+ * True for the two plan queries the verify awaits (japa#474); the rest of the
+ * cache is refreshed without waiting. Exported for tests.
+ */
+export function isPlanQueryKey(queryKey: readonly unknown[]): boolean {
+  return (
+    (queryKey[0] === 'subscription' && queryKey[1] === 'me') ||
+    queryKey[0] === 'authorization'
+  );
 }

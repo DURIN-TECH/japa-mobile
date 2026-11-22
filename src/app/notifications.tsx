@@ -28,6 +28,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import type { Notif } from '@/types/explorer.type';
 import { InlineError } from '@/components/explorer/AccountForm';
@@ -104,12 +106,9 @@ export default function NotificationsView() {
   // the list never lags behind the badge.
   const notifsQ = useInboxNotifications();
   // Pull-to-refresh spinner only for the user's own pull (focus / count reads
-  // run quietly in the background).
-  const [pulling, setPulling] = useState(false);
-  const pullToRefresh = () => {
-    setPulling(true);
-    notifsQ.refetch().finally(() => setPulling(false));
-  };
+  // run quietly in the background). japa#474: the shared hook, same
+  // behaviour as before, plus every pull re-reads the plan.
+  const pull = usePullToRefresh([notifsQ]);
   const state = queryState(notifsQ);
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
@@ -269,8 +268,8 @@ export default function NotificationsView() {
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={pulling}
-            onRefresh={pullToRefresh}
+            refreshing={pull.refreshing}
+            onRefresh={pull.onRefresh}
             tintColor={EX.color.primary}
             colors={[EX.color.primary]}
           />

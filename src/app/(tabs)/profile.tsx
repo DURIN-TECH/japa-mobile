@@ -12,6 +12,8 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait, Verified } from '@/components/explorer/primitives';
@@ -139,7 +141,8 @@ export default function ProfileScreen() {
   // Signed-in user profile and the three list queries that back the live
   // counts. A count whose query hasn't answered shows "–" (spec: never a
   // fabricated number for a failed/unknown count).
-  const { data: me } = useMe();
+  const meQ = useMe();
+  const me = meQ.data;
   const applicationsQ = useApplications();
   const applications = applicationsQ.data;
   const consultationsQ = useConsultations(undefined, {
@@ -150,9 +153,10 @@ export default function ProfileScreen() {
   const conversations = conversationsQ.data;
   // Live identity-verification (KYC) status — powers the short hint shown on the
   // "Verify identity" row. Falls back to the profile's embedded field if present.
-  const idVerification = useIdentityVerification({
+  const idVerificationQ = useIdentityVerification({
     enabled: !selfServiceOnly,
-  }).data;
+  });
+  const idVerification = idVerificationQ.data;
 
   // Header — real full name and city from GET /users/me. With no city, the
   // name shows alone (the pin row hides entirely — no dangling separator).
@@ -241,6 +245,20 @@ export default function ProfileScreen() {
   // shows only once both queries answered and a higher monthly plan exists;
   // `upgradeBanner` returns null otherwise (loading, error, top plan).
   const currentPlan = useCurrentPlan();
+
+  // japa#474: pull-to-refresh re-reads every count, row and plan name and the plan.
+  const pull = usePullToRefresh([
+    meQ,
+    applicationsQ,
+    consultationsQ,
+    conversationsQ,
+    idVerificationQ,
+    savedQ,
+    documentsQ,
+    transactionsQ,
+    // The plan list only: the pull re-reads `/subscriptions/me` itself.
+    currentPlan.refetchPlanList,
+  ]);
   const subscriptionValue = planNameLabel(currentPlan.plan?.name);
   const banner = upgradeBanner(currentPlan.plan, currentPlan.plans, {
     selfServiceOnly,
@@ -261,6 +279,8 @@ export default function ProfileScreen() {
     // No visual effect.
     <ScrollView
       testID="screen.profile"
+      // japa#474: pull to refresh (old data stays while it runs).
+      refreshControl={pull.control}
       style={{ flex: 1, backgroundColor: EX.color.bg }}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingBottom: EX.space.tabClear }}

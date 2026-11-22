@@ -24,7 +24,13 @@
 // not lose it.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -61,6 +67,8 @@ import {
   useStartRefusalAnalysis,
   useStoredAnalysisId,
 } from '@/hooks/useRefusalLetter';
+// japa#473: clear the upgrade card when the plan really changes.
+import { usePlanChanged } from '@/hooks/usePlanChanged';
 // japa#310: the size and type the backend (and the model) can take.
 import { pickedFileProblem } from '@/components/explorer/uploadLimits';
 // japa#420: where the letter comes from (photo library, camera or Files).
@@ -620,15 +628,24 @@ export default function RefusalLetterScreen() {
   // The uploaded document, kept so "Try again" can re-ask without re-uploading.
   const [documentId, setDocumentId] = useState<string | null>(null);
 
+  // japa#473 fix round 1 (review): one read at a time. `POST
+  // /ai/refusal-letters` spends on the AI model, and two taps in the same
+  // frame would both get past a `loading` prop that hasn't re-rendered yet.
+  const starting = useRef(false);
+
   /** Ask the backend to read an already-uploaded letter. */
   const startAnalysis = useCallback(
     async (docId: string) => {
+      if (starting.current) return;
+      starting.current = true;
       setError(null);
       try {
         const res = await start.mutateAsync(docId);
         setAnalysisId(res.analysisId);
       } catch (e) {
         setError(e);
+      } finally {
+        starting.current = false;
       }
     },
     [start, setAnalysisId],
@@ -730,6 +747,18 @@ export default function RefusalLetterScreen() {
     error ??
     (analysisQ.isError && idStep.kind !== 'fallback' ? analysisQ.error : null);
   const upgrade = isUpgradeRequired(shownError);
+
+  // japa#473: back from the plans screen with a NEW plan (server-reported):
+  // the upgrade card goes. A 402 on starting the read clears the error, so the
+  // client is back on the step they were on, with their uploaded letter kept
+  // (`documentId`); "Read my letter" below re-runs the read on their tap
+  // only. A 402 on reading a saved analysis re-reads it under the new plan.
+  // Returning without paying changes nothing: the card stays.
+  usePlanChanged(() => {
+    if (isUpgradeRequired(error)) setError(null);
+    if (analysisQ.isError && isUpgradeRequired(analysisQ.error))
+      void analysisQ.refetch();
+  });
 
   /** Message for a plain error. */
   const errorMessage = (e: unknown): string => {
@@ -844,6 +873,58 @@ export default function RefusalLetterScreen() {
                 </Text>
               </Pressable>
             </View>
+          </View>
+        ) : documentId && !analysisId ? (
+          // japa#473: the letter is uploaded but its read was stopped by the
+          // plan (402), and the plan has changed since. Keep the letter they
+          // picked; reading it runs only on this tap.
+          // Card → button gap 16, the same as the idle step below.
+          <View style={{ gap: 16 }}>
+            <Card>
+              <Text
+                style={{ color: EX.color.ink, fontSize: 16, fontWeight: '700' }}
+              >
+                Your letter is uploaded
+              </Text>
+              <Text
+                style={{
+                  color: EX.color.inkMuted,
+                  fontSize: 14,
+                  lineHeight: 20,
+                  marginTop: 6,
+                }}
+              >
+                We can read it now and show each reason next to the published
+                rule it points to.
+              </Text>
+            </Card>
+            <CoralSubmit
+              label="Read my letter"
+              // Reading spends on the AI model: spinner + disabled while the
+              // start is in flight (startAnalysis also drops a same-frame
+              // second tap, before this re-renders).
+              loading={start.isPending}
+              onPress={() => startAnalysis(documentId)}
+            />
+            <Pressable
+              onPress={reset}
+              hitSlop={8}
+              // README: a subtle opacity change on new pressables.
+              style={({ pressed }) => ({
+                alignSelf: 'center',
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text
+                style={{
+                  color: EX.color.primary,
+                  fontSize: 14,
+                  fontWeight: '700',
+                }}
+              >
+                Upload a different letter
+              </Text>
+            </Pressable>
           </View>
         ) : (
           // Idle: nothing uploaded yet.

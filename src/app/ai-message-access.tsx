@@ -24,6 +24,8 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, EXShadow } from '@/components/explorer/theme';
 import {
   BackHeader,
@@ -226,6 +228,9 @@ export default function AiMessageAccessScreen() {
   const q = useAiMessageAccessState();
   // Refresh on regaining focus; previous data stays shown meanwhile.
   useRefetchOnFocus(q.refetch);
+
+  // japa#474: pull-to-refresh re-reads the access state and the plan.
+  const pull = usePullToRefresh([q]);
   const approve = useApproveAiAccess();
   const withdraw = useWithdrawAiAccess();
   // Error above the CTA (approve / withdraw), cleared on the next tap.
@@ -312,6 +317,8 @@ export default function AiMessageAccessScreen() {
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         contentContainerStyle={{
           paddingHorizontal: EX.space.screenX,
           paddingTop: 16,

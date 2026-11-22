@@ -31,6 +31,8 @@ import { ScrollView, Text, View, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, EXShadow, displayText } from '@/components/explorer/theme';
 import {
   PAY_STATUS,
@@ -45,6 +47,7 @@ import { usePaymentRequests } from '@/hooks/usePaymentRequests';
 import { CATEGORY_LABELS } from '@/types/payment-requests.type';
 import { fmtDate } from '@/components/explorer/liveDate';
 import {
+  PullableState,
   StateEmpty,
   StateError,
   StateLoading,
@@ -221,6 +224,9 @@ export default function PaymentsView() {
   // `paymentRequestParts`, no conversion). Each row opens its application,
   // where it can be approved or declined.
   const prQ = usePaymentRequests();
+
+  // japa#474: pull-to-refresh re-reads transactions + payment requests and the plan.
+  const pull = usePullToRefresh([txQ, prQ]);
   const requests = React.useMemo(
     () =>
       (prQ.data ?? [])
@@ -300,18 +306,24 @@ export default function PaymentsView() {
       {/* ── First load: coral spinner; nothing at all: empty state ──────── */}
       {loading ? <StateLoading /> : null}
       {firstRun ? (
-        <StateEmpty
-          // Spec proposed a wallet icon; Ic has none, so Ic.cards (allowed).
-          icon={Ic.cards}
-          title="No payments yet"
-          body="Consultation and agent fees you pay will show here."
-        />
+        // japa#474 fix round 1: pullable, so a first payment request from an
+        // agent shows after a pull.
+        <PullableState testID="payments.empty" refreshControl={pull.control}>
+          <StateEmpty
+            // Spec proposed a wallet icon; Ic has none, so Ic.cards (allowed).
+            icon={Ic.cards}
+            title="No payments yet"
+            body="Consultation and agent fees you pay will show here."
+          />
+        </PullableState>
       ) : null}
 
       {!loading && !firstRun ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
+          // japa#474: pull to refresh (old data stays while it runs).
+          refreshControl={pull.control}
         >
           {/* ── Payment requests awaiting you (hidden when none) ──────────────── */}
           {prError ? (

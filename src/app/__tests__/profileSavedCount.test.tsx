@@ -65,6 +65,7 @@ jest.mock('@/hooks/useSavedDestinations', () => ({
 }));
 
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import TestRenderer, { act } from 'react-test-renderer';
 import ProfileScreen from '../(tabs)/profile';
@@ -83,7 +84,12 @@ function savedValues(saved: Record<string, unknown>): [string, string] {
   ).IS_REACT_ACT_ENVIRONMENT = true;
   let tree!: TestRenderer.ReactTestRenderer;
   act(() => {
-    tree = TestRenderer.create(<ProfileScreen />);
+    // japa#474: the screen's pull-to-refresh needs a query client.
+    tree = TestRenderer.create(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProfileScreen />
+      </QueryClientProvider>,
+    );
   });
   const texts = tree.root
     .findAll((n) => typeof n.props.children === 'string')

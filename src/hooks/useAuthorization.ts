@@ -13,15 +13,9 @@ import {
   hasFeature as hasFeatureFn,
   subject as caslSubject,
 } from '@durin-tech/authz';
-import { apiService } from '@/services/api.service';
 import { useAuthStore } from '@/stores/auth.store';
-
-interface AuthorizationData {
-  role: Role;
-  agencyId: string | null;
-  entitlements: Entitlements | null;
-  rules: unknown;
-}
+// japa#474 fix round 1: key + fetcher shared with pull-to-refresh.
+import { authorizationQuery } from '@/hooks/authorizationQuery';
 
 export interface AuthorizationApi {
   role: Role | null;
@@ -50,13 +44,7 @@ export function useAuthorization(): AuthorizationApi {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['authorization'],
-    queryFn: async () => {
-      const res = await apiService.get<AuthorizationData>(
-        '/users/me/authorization',
-      );
-      return res.data ?? null;
-    },
+    ...authorizationQuery,
     enabled: isAuthenticated,
     staleTime: 1000 * 60 * 5,
   });

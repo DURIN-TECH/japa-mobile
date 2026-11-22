@@ -48,6 +48,8 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import type { Consult } from '@/types/explorer.type';
 import { CenteredState } from '@/components/explorer/CenteredState';
@@ -235,7 +237,8 @@ export default function ConsultationDetailView() {
   const agentName = a?.n ?? c?.agentName ?? 'Agent';
   const agentSeed = a?.seed ?? hashString(c?.agentId ?? '') % 6;
   // Live conversations (Message shortcut) + the cancel mutation.
-  const { data: conversations } = useConversations();
+  const conversationsQ = useConversations();
+  const conversations = conversationsQ.data;
   const cancelQ = useCancelConsultation();
 
   // ── Refund (japa#356) ──────────────────────────────────────────────────────
@@ -290,6 +293,11 @@ export default function ConsultationDetailView() {
   const reportCard = noShowReportCopy(noShowReport);
   // Only when the SERVER says a report is allowed, and none exists yet.
   const canReport = booking?.canReportNoShow === true && !noShowReport;
+
+  // japa#474: pull-to-refresh re-reads the consultation, its agent, the
+  // conversations, the refund's transaction row (skipped while switched off)
+  // and the plan.
+  const pull = usePullToRefresh([liveQ, agentQ, conversationsQ, txQ]);
 
   // ── Loading state — first fetch in flight, nothing cached. ─────────────────
   if (liveQ.isLoading) {
@@ -502,6 +510,8 @@ export default function ConsultationDetailView() {
       {/* ── Body ──────────────────────────────────────────────────────────── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         contentContainerStyle={{
           paddingHorizontal: 22,
           paddingTop: 12,

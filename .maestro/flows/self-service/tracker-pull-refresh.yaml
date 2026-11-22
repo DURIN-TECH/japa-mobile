@@ -1,0 +1,60 @@
+# Pull-to-refresh on "Your journey" keeps the rows (japa#474).
+#
+# Signed in as the seeded client John Doe (FLAG_EMAIL), whose application
+# FLAG_APP_ID (seed-app-001) is listed on the Tracker tab as
+# `tracker.row.<applicationId>`.
+#
+#   1. Tracker: the seed application's row is on screen
+#   2. back to the top, then a real pull-down gesture (a swipe from the
+#      header down the list, which iOS turns into a refresh)
+#   3. the screen is still the Tracker and the same row is still there: a
+#      pull keeps the data already on screen while it refetches and never
+#      blanks the list or swaps it for a spinner
+#
+# That the pull really refetched (GET /applications) is covered by jest
+# (src/app/__tests__/tracker.test.tsx); the gesture and the kept rows are
+# what this flow adds. Nothing here taps a review, checkout or payment.
+appId: ${APP_ID}
+tags:
+  - self-service
+  - flag-any
+---
+- runFlow:
+    file: ../../subflows/sign-in.yaml
+    env:
+      EMAIL: ${FLAG_EMAIL}
+
+# ── 1. Tracker lists the seed application ────────────────────────────────────
+- tapOn:
+    id: "tab\\.tracker"
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.tracker"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: "tracker\\.row\\.${FLAG_APP_ID}"
+    direction: DOWN
+    timeout: 30000
+
+# ── 2. Back to the top, then pull down ───────────────────────────────────────
+- scrollUntilVisible:
+    element: "Your journey"
+    direction: UP
+    timeout: 15000
+- swipe:
+    start: 50%, 25%
+    end: 50%, 75%
+    duration: 800
+
+# ── 3. Still the Tracker, and the row is still there ─────────────────────────
+- extendedWaitUntil:
+    visible:
+      id: "screen\\.tracker"
+    timeout: 15000
+- assertVisible: "Your journey"
+- scrollUntilVisible:
+    element:
+      id: "tracker\\.row\\.${FLAG_APP_ID}"
+    direction: DOWN
+    timeout: 30000

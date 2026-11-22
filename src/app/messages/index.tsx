@@ -14,12 +14,15 @@ import React, { useMemo } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { Portrait } from '@/components/explorer/primitives';
 import { useConversations } from '@/hooks/useMessaging';
 import { mapConvo } from '@/components/explorer/liveMessaging';
 import {
+  PullableState,
   StateEmpty,
   StateError,
   StateLoading,
@@ -74,6 +77,9 @@ export default function ConversationsView() {
   // shared rule: spinner only on a first load with nothing cached, error only
   // when nothing is cached, otherwise the (possibly empty) rows.
   const convosQ = useConversations();
+
+  // japa#474: pull-to-refresh re-reads the conversations and the plan.
+  const pull = usePullToRefresh([convosQ]);
   const convos = useMemo(
     () => (convosQ.data ?? []).map(mapConvo),
     [convosQ.data],
@@ -128,19 +134,25 @@ export default function ConversationsView() {
         />
       ) : convos.length === 0 ? (
         // First-run empty: the one coral action sends them to the Agents tab.
-        <StateEmpty
-          icon={Ic.msg}
-          title="No messages yet"
-          body="When you message an agent, your conversation shows up here."
-          action={{
-            label: 'Find an agent',
-            variant: 'coral',
-            onPress: () => router.push('/(tabs)/agents'),
-          }}
-        />
+        // japa#474 fix round 1: pullable, so a first message from an agent
+        // shows after a pull.
+        <PullableState testID="messages.empty" refreshControl={pull.control}>
+          <StateEmpty
+            icon={Ic.msg}
+            title="No messages yet"
+            body="When you message an agent, your conversation shows up here."
+            action={{
+              label: 'Find an agent',
+              variant: 'coral',
+              onPress: () => router.push('/(tabs)/agents'),
+            }}
+          />
+        </PullableState>
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          // japa#474: pull to refresh (old data stays while it runs).
+          refreshControl={pull.control}
           contentContainerStyle={{
             // Source list: padding '8px 16px 40px', column gap 4.
             paddingHorizontal: 16,

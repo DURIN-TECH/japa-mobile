@@ -26,15 +26,36 @@
 // ['subscription','me'] + ['authorization'] so it shows at once). Closing the
 // browser is silent unless the verify finds a payment; not paid after a
 // return → InlineError; a failed verify → error + "Try again" (re-verifies).
+//
+// japa#473: opened from a locked action (`?from=upgrade`, set by every upgrade
+// prompt through `useOpenPlans` / `PLANS_FROM_UPGRADE_ROUTE`), the screen
+// closes itself after a confirmed subscription or a cancelled checkout, so the
+// client lands back on the screen they came from (still mounted underneath,
+// scrolled where they left it). No history (deep link / cold start) → Home.
+// It stays open on the retry states (couldn't open, returned-not-paid, verify
+// failed). From profile / settings (no marker) nothing changes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useMemo } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useCallback, useMemo, useRef } from 'react';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import {
+  useFocusEffect,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import { PLAN_FEATURES, NAIRA } from '@/components/explorer/content';
 import type { Plan } from '@/types/explorer.type';
@@ -59,13 +80,23 @@ import {
   OPEN_CHECKOUT_ERROR_MESSAGE,
   SUBSCRIPTION_NOT_PAID_MESSAGE,
   SUBSCRIPTION_VERIFY_ERROR_MESSAGE,
+  paymentReturnLeaveAction,
+  plansScreenClosesAfter,
   runPaystackCheckout,
   subscriptionVerifyErrorVerdict,
   type VerifyVerdict,
 } from '@/hooks/paystackCheckout';
 import { mapPlan } from '@/components/explorer/liveSubscription';
+// japa#473: the "opened from a locked action" marker.
+import {
+  PLANS_FROM_PARAM,
+  PLANS_FROM_UPGRADE,
+} from '@/components/explorer/UpgradePrompt';
 // Self-service-only launch flag (japa#334).
 import { isSelfServiceOnly } from '@/config/env';
+
+/** A pull while a checkout / verify runs does nothing (japa#474). */
+const noop = () => {};
 
 // ── FeatureRow — 20px check circle + label for one plan feature ──────────────
 // `dark` switches the palette so features read on the featured dark card.
@@ -341,6 +372,44 @@ export default function SubscriptionView() {
   const selfServiceOnly = isSelfServiceOnly();
   const insets = useSafeAreaInsets();
 
+  // ── Return to the locked action (japa#473) ─────────────────────────────────
+  // `?from=upgrade` = opened from a locked action. The param only says THAT;
+  // where to go back to is the navigation stack, never the param.
+  const params = useLocalSearchParams<{ [PLANS_FROM_PARAM]?: string }>();
+  const fromUpgrade = params[PLANS_FROM_PARAM] === PLANS_FROM_UPGRADE;
+  const navigation = useNavigation();
+  // Set when the checkout ended in a way that closes the screen, cleared the
+  // moment it actually leaves, so it leaves ONCE.
+  const closePending = useRef(false);
+  // Leave now if this screen is the top (focused) one. On Android the
+  // `/payment-return` route (#252) can still be on top of us when the verify
+  // answers; a `router.back()` then would pop THAT route and leave us open, and
+  // a second back later would pop the origin screen too. So while we are not
+  // focused we wait; the focus effect below finishes the job as soon as
+  // `/payment-return` has removed itself. Same rule as `/payment-return`:
+  // focused + history → back; focused + no history → Home.
+  const leaveIfPending = useCallback(() => {
+    if (!closePending.current) return;
+    const action = paymentReturnLeaveAction(
+      navigation.isFocused(),
+      router.canGoBack(),
+    );
+    if (action === 'stay') return;
+    closePending.current = false;
+    if (action === 'back') router.back();
+    else router.replace('/(tabs)/home');
+  }, [navigation, router]);
+  const closeAfterCheckout = useCallback(() => {
+    closePending.current = true;
+    leaveIfPending();
+  }, [leaveIfPending]);
+  // Back in focus with a close still pending (the Android case above).
+  useFocusEffect(
+    useCallback(() => {
+      leaveIfPending();
+    }, [leaveIfPending]),
+  );
+
   // ── Live plans (GET /plans?audience=client) ────────────────────────────────
   // The Explorer's subscriber is an individual client → audience "client".
   const plansQ = usePlans('client');
@@ -387,6 +456,13 @@ export default function SubscriptionView() {
   );
   // True from Upgrade tap until the verify settles: blocks double checkouts.
   const [busy, setBusy] = React.useState(false);
+
+  // japa#474: pull-to-refresh re-reads the plans and the current plan. While
+  // a checkout / verify is in flight (`busy`) the pull is switched off, so a
+  // refetch can never race the verify that changes the plan.
+  // The current plan (`mine`) is not listed: every pull re-reads
+  // `/subscriptions/me` itself (japa#474 fix round 1, no duplicate request).
+  const pull = usePullToRefresh([plansQ]);
 
   // Verify one reference with the backend → 'paid' | 'not_paid', or throws
   // when the call itself failed (network / 5xx). A 400 is "not paid".
@@ -438,11 +514,15 @@ export default function SubscriptionView() {
           setCheckoutError(SUBSCRIPTION_NOT_PAID_MESSAGE);
         }
         // not_paid after the user closed the browser: stay as we were, silently.
+
+        // 4. japa#473: opened from a locked action → paid or cancelled closes
+        //    the screen (back to where they started); retry states stay.
+        if (plansScreenClosesAfter(outcome, fromUpgrade)) closeAfterCheckout();
       } finally {
         setBusy(false);
       }
     },
-    [busy, checkout, verifyReference],
+    [busy, checkout, verifyReference, fromUpgrade, closeAfterCheckout],
   );
 
   // "Try again" on a failed verify: re-check the same reference only.
@@ -456,12 +536,16 @@ export default function SubscriptionView() {
       setCheckoutError(
         verdict === 'paid' ? null : SUBSCRIPTION_NOT_PAID_MESSAGE,
       );
+      // japa#473: a confirmed retry closes the screen like a first-time paid
+      // (from a locked action only). A "not paid" here stays: it shows the
+      // message, the client is deciding what to do on this screen.
+      if (verdict === 'paid' && fromUpgrade) closeAfterCheckout();
     } catch {
       // Still failing: keep the error + retry up (spinner off).
     } finally {
       setBusy(false);
     }
-  }, [busy, verifyReference, verifyRetryRef]);
+  }, [busy, verifyReference, verifyRetryRef, fromUpgrade, closeAfterCheckout]);
 
   return (
     // e2e (Maestro, japa#361): the screen's identity. No visual effect.
@@ -471,6 +555,18 @@ export default function SubscriptionView() {
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
+        // japa#474: pull to refresh, off while busy (see `pull`). Built here,
+        // not `pull.control`, to add `enabled` (Android) and a no-op pull on
+        // iOS; the control stays mounted so the list never remounts.
+        refreshControl={
+          <RefreshControl
+            refreshing={pull.refreshing}
+            onRefresh={busy ? noop : pull.onRefresh}
+            enabled={!busy}
+            tintColor={EX.color.primary}
+            colors={[EX.color.primary]}
+          />
+        }
         contentContainerStyle={{
           paddingBottom: Math.max(insets.bottom, 16) + 24,
         }}

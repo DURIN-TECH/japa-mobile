@@ -28,12 +28,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 // RN 0.88 strict TypeScript API (Expo SDK 58, japa#399): `ScrollView` is a
 // component value, not a class, so refs are typed with its instance type.
 import type { ScrollViewInstance } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: every pull also re-reads the plan.
+import { refetchPlanQueries } from '@/hooks/usePullToRefresh';
 import { EX, displayText } from '@/components/explorer/theme';
 import type { Dest } from '@/types/explorer.type';
 import {
@@ -303,6 +306,8 @@ export default function ExploreScreen() {
       });
     }, 50);
   };
+  // japa#474: the query client, for the plan re-read on every pull.
+  const queryClient = useQueryClient();
   /** Pull-to-refresh on a filtered grid: spinner for exactly this pull. */
   const [pullingFiltered, setPullingFiltered] = useState(false);
   const pullFiltered = async () => {
@@ -377,11 +382,14 @@ export default function ExploreScreen() {
                   (visaQuery.isRefetching && !isFetchingNextPage)
             }
             // japa#341: start over from page one and drop the later pages.
-            onRefresh={() =>
-              filtersOn && !searchMode
+            // japa#474: every pull also re-reads the plan (in parallel; its
+            // failure never touches the list or the spinner above).
+            onRefresh={() => {
+              void refetchPlanQueries(queryClient);
+              return filtersOn && !searchMode
                 ? pullFiltered()
-                : visaQuery.refreshFromFirstPage()
-            }
+                : visaQuery.refreshFromFirstPage();
+            }}
             tintColor={EX.color.primary}
           />
         }

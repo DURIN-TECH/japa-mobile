@@ -21,6 +21,8 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import { mapAgent } from '@/components/explorer/liveAgents';
 import { mapAgency } from '@/components/explorer/liveAgencies';
@@ -306,6 +308,9 @@ export default function AgentsScreen() {
   // Agents: GET /agents (verified + available). Agencies: GET /agencies/browse.
   const agentsQ = useAgents();
   const agenciesQ = useBrowseAgencies();
+
+  // japa#474: pull-to-refresh re-reads agents + agencies and the plan.
+  const pull = usePullToRefresh([agentsQ, agenciesQ]);
   const agentList = (agentsQ.data ?? []).map(mapAgent);
   const agencies = (agenciesQ.data ?? []).map(mapAgency);
 
@@ -333,6 +338,8 @@ export default function AgentsScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: EX.space.tabClear }}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
       >
         {/* Header — eyebrow / title / sub quoted from source. */}
         <ScreenHeader

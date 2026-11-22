@@ -23,6 +23,8 @@ import { Alert, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import {
@@ -91,6 +93,9 @@ export default function HoldingsScreen() {
 
   const holdingsQ = useHoldings();
   const state = queryState(holdingsQ);
+
+  // japa#474: pull-to-refresh re-reads what you hold and the plan.
+  const pull = usePullToRefresh([holdingsQ]);
   const view = holdingsQ.data;
   const { nameOf } = useCountryNames();
 
@@ -205,6 +210,8 @@ export default function HoldingsScreen() {
       <ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         contentContainerStyle={{
           paddingHorizontal: EX.space.screenX,
           paddingTop: 12,

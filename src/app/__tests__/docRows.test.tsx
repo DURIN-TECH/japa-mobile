@@ -113,6 +113,7 @@ jest.mock('@/hooks/useDocuments', () => ({
 }));
 
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ActivityIndicator, Alert, Linking, Text } from 'react-native';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import TestRenderer, { act } from 'react-test-renderer';
@@ -296,7 +297,12 @@ describe('LiveDocRow', () => {
 function renderLibrary() {
   let tree!: TestRenderer.ReactTestRenderer;
   act(() => {
-    tree = TestRenderer.create(<DocumentsView />);
+    // japa#474: the screen's pull-to-refresh needs a query client.
+    tree = TestRenderer.create(
+      <QueryClientProvider client={new QueryClient()}>
+        <DocumentsView />
+      </QueryClientProvider>,
+    );
   });
   return tree;
 }

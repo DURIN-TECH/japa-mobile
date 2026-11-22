@@ -28,6 +28,8 @@ import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// japa#474: shared pull-to-refresh (coral spinner, also re-reads the plan).
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { EX } from '@/components/explorer/theme';
 import { Ic } from '@/components/explorer/icons';
 import { PressableStatic } from '@/components/explorer/PressableStatic';
@@ -71,6 +73,7 @@ import {
   useChangeThroughCountry,
 } from '@/hooks/useSharedRoutes';
 import { useStartSharedApplication } from '@/hooks/useStartSharedApplication';
+import { usePlanChanged } from '@/hooks/usePlanChanged';
 import { useVisaType } from '@/hooks/useVisaTypes';
 import { useIsOffline } from '@/utils/networkStatus';
 import { analyticsService } from '@/services/analytics.service';
@@ -292,6 +295,10 @@ export default function ApplyThroughSheet() {
   const [answers, setAnswers] = useState<IntakeAnswers>({});
   const [skipped, setSkipped] = useState(false);
   const q = useApplyThrough(routeId, answers);
+  // japa#474: pull-to-refresh re-reads the route sheet, the visa, the
+  // application (change mode only; otherwise that query is off and skipped)
+  // and the plan. The answers and the picked country are local state and stay.
+  const pull = usePullToRefresh([q, visaQ, appQ]);
   // Keep the last good view so a failed re-ask doesn't blank the sheet.
   const lastGood = useRef<ApplyThroughView | undefined>(undefined);
   if (q.data && !q.isPlaceholderData) lastGood.current = q.data;
@@ -315,6 +322,12 @@ export default function ApplyThroughSheet() {
 
   // ── Starting / changing ────────────────────────────────────────────────────
   const start = useStartSharedApplication(routeId);
+  // japa#473: back from the plans screen with a NEW plan (server-reported):
+  // the upgrade card goes and the start CTA is tappable again. Nothing is
+  // started for the client; their next tap asks the server again.
+  usePlanChanged(() => {
+    if (start.failure === 'upgrade') start.clearFailure();
+  });
   const change = useChangeThroughCountry(applicationId);
   const [changeError, setChangeError] = useState<string | null>(null);
 
@@ -643,6 +656,8 @@ export default function ApplyThroughSheet() {
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        // japa#474: pull to refresh (old data stays while it runs).
+        refreshControl={pull.control}
         contentContainerStyle={{
           paddingHorizontal: 20,
           paddingBottom: 24,

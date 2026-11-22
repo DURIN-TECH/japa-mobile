@@ -151,3 +151,29 @@ export function paymentReturnLeaveAction(
   if (!isFocused) return 'stay';
   return canGoBack ? 'back' : 'home';
 }
+
+/**
+ * japa#473: should the plans screen close itself after a checkout?
+ *
+ * Only when it was opened from a locked action (`fromUpgrade`, the
+ * `?from=upgrade` marker) and the checkout is OVER in a way the client does
+ * not need this screen for any more:
+ * - `paid`                      → close: the plan changed, the action unlocks
+ *                                 on the screen they came from;
+ * - `not_paid`, `returned:false` → close: the client closed / cancelled the
+ *                                 Paystack sheet and nothing was charged; the
+ *                                 action stays locked so they can try again.
+ * It stays open (exactly as before) when the client must act here:
+ * - `open_failed`                → "couldn't open checkout" + Upgrade is the retry;
+ * - `not_paid`, `returned:true`  → came back but nothing was charged (message);
+ * - `error`                      → the verify call failed ("Try again").
+ * Without the marker (profile / settings) it never closes.
+ */
+export function plansScreenClosesAfter(
+  outcome: CheckoutOutcome,
+  fromUpgrade: boolean,
+): boolean {
+  if (!fromUpgrade) return false;
+  if (outcome.kind === 'paid') return true;
+  return outcome.kind === 'not_paid' && !outcome.returned;
+}

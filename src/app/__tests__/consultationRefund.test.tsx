@@ -76,6 +76,7 @@ import {
   jest,
 } from '@jest/globals';
 import TestRenderer, { act } from 'react-test-renderer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ConsultationDetailView from '../consultation/[id]';
 
 /** A paid, upcoming booking as the client's GET /consultations/:id sends it. */
@@ -102,10 +103,22 @@ const booking = (over: Record<string, unknown> = {}) => ({
 });
 
 const mounted: TestRenderer.ReactTestRenderer[] = [];
+// japa#474: the screen's pull-to-refresh needs a query client. One client
+// per test file run, so a re-render (`tree.update`) keeps the same one.
+const testQueryClient = new QueryClient();
+function wrapped() {
+  return (
+    <QueryClientProvider client={testQueryClient}>
+      <ConsultationDetailView />
+    </QueryClientProvider>
+  );
+}
+
 function render() {
   let tree!: TestRenderer.ReactTestRenderer;
   act(() => {
-    tree = TestRenderer.create(<ConsultationDetailView />);
+    // japa#474: the screen's pull-to-refresh needs a query client.
+    tree = TestRenderer.create(wrapped());
   });
   mounted.push(tree);
   return tree;
@@ -430,7 +443,7 @@ describe('refund card (japa#356)', () => {
     expect(alertSpy.mock.calls[1][1]).toBe(
       'Your slot is released. The payment provider’s processing fee covers the whole payment, so there’s no refund due.',
     );
-    act(() => tree.update(<ConsultationDetailView />));
+    act(() => tree.update(wrapped()));
     const t = text(tree);
     expect(t).toContain('No refund due');
     expect(t).not.toContain('Refund delayed');
@@ -559,7 +572,7 @@ describe('"The meeting didn’t happen" (japa#442)', () => {
     act(() => byTestId(tree, 'no-show-open').props.onPress());
     act(() => byTestId(tree, 'no-show-send').props.onPress());
     // The refetched booking re-renders the screen.
-    act(() => tree.update(<ConsultationDetailView />));
+    act(() => tree.update(wrapped()));
     const t = text(tree);
     expect(t).toContain('Under review');
     expect(byTestId(tree, 'no-show-open')).toBeUndefined();
