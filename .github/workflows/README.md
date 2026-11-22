@@ -9,7 +9,7 @@ secret and exit early if it's missing.
 | `development.yml` | manual dispatch (auto-run paused, cost) | EAS dev build (iOS + Android) |
 | `preview.yml` | manual dispatch (auto-run paused, cost) | OTA via `eas update --auto` |
 | `preview-native.yml` | manual dispatch | Native preview build |
-| `production.yml` | merge to `main` | Build, submit, release |
+| `production.yml` | manual dispatch (auto-release paused, cost) | Build, submit, release |
 
 ## development.yml
 
@@ -44,6 +44,9 @@ Manually triggered from the Actions tab. Pick a branch, choose
 native module additions or config-plugin edits that OTA can't deliver.
 
 ## production.yml
+
+> **Paused:** no longer runs on merge to `main` (EAS cost). Run it manually from
+> the Actions tab on `main`; the text below describes the original auto trigger.
 
 Only fires when a PR is **merged** into `main` (not on every PR-to-main
 open). Trigger uses `pull_request: types: [closed]` with a
