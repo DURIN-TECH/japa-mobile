@@ -211,6 +211,10 @@ export const PAY_COPY = {
   // summary card, which then lists that booking's own details.
   resumedDetails:
     'You’ve already started booking this slot. These are the details of that booking.',
+  // japa#472: the backend refused a slot that has already started (400
+  // SLOT_IN_PAST). The backend's own message is shown when it sends one;
+  // this is the same words, for when it does not.
+  slotInPast: 'That time has already passed. Please pick a later time.',
 } as const;
 
 /**
@@ -263,6 +267,13 @@ export type PayErrorVerdict =
   | { kind: 'payment_review'; message: string }
   /** Create 402 UPGRADE_REQUIRED: monthly plan limit. Terminal: no retry. */
   | { kind: 'limit_reached'; message: string }
+  /**
+   * japa#472: 400 SLOT_IN_PAST, the picked slot has already started.
+   * Terminal on this screen: no Pay, no retry (the same slot can never
+   * book); the screen offers "Pick another time", back to the booking
+   * screen. `message` is the backend's own wording.
+   */
+  | { kind: 'slot_in_past'; message: string }
   /**
    * Verify 400 for any other reason (e.g. the reference is not one of this
    * booking's checkouts, which can also be money we cannot place): we do
@@ -360,6 +371,13 @@ export function classifyConsultationPayError(
   // checks the limit; a retry cannot succeed until the plan changes.
   if (code === 'UPGRADE_REQUIRED' || status === 402) {
     return { kind: 'limit_reached', message: PAY_COPY.limitReached };
+  }
+  // japa#472: a slot that has already started. Its own code (not a
+  // VALIDATION_ERROR), so it never reads as "check your details". The
+  // backend's message is plain words meant for the client, so it is shown
+  // as is; the constant covers an empty one.
+  if (code === 'SLOT_IN_PAST') {
+    return { kind: 'slot_in_past', message: message || PAY_COPY.slotInPast };
   }
   if (code === 'PAYMENT_IN_PROGRESS') {
     return {

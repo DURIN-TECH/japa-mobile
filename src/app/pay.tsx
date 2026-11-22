@@ -303,6 +303,8 @@ const VERIFY_ENDS_CHECKOUT: ReadonlySet<PayErrorVerdict['kind']> = new Set([
   'payment_review',
   'limit_reached',
   'pricing_unavailable',
+  // japa#472: the slot has started; nothing on this screen can be paid.
+  'slot_in_past',
 ]);
 
 export default function PayScreen() {
@@ -385,6 +387,10 @@ export default function PayScreen() {
 
   // ── Booking: the server's locked quote ─────────────────────────────────────
   const [phase, setPhase] = useState<QuotePhase>('loading');
+  // japa#472: the server refused the slot because it has already started
+  // (400 SLOT_IN_PAST). The screen is then `blocked` and the CTA becomes
+  // "Pick another time", which goes back to the booking screen.
+  const [slotPast, setSlotPast] = useState(false);
   const [quote, setQuote] = useState<LockedQuote | null>(null);
   // True after a checkout came back unpaid: CTA reads "Open checkout".
   const [attempted, setAttempted] = useState(false);
@@ -659,6 +665,13 @@ export default function PayScreen() {
         // Terminal: a mismatched payment is being checked (never ask to pay
         // again), or the plan limit is reached (a retry cannot succeed).
         blockBooking();
+        break;
+      case 'slot_in_past':
+        // japa#472: the slot has already started. Terminal here too (the
+        // same slot can never book), but the way out is another time: the
+        // CTA becomes "Pick another time", back to the booking screen.
+        blockBooking();
+        setSlotPast(true);
         break;
       case 'opening':
       case 'in_progress': {
@@ -1575,40 +1588,67 @@ export default function PayScreen() {
             </Text>
           </Pressable>
         ) : null}
-        <Pressable
-          onPress={isApp ? onConfirmRequest : onPayBooking}
-          disabled={!ctaEnabled}
-          accessibilityLabel={ctaLabel}
-          style={{
-            height: 54,
-            borderRadius: 16,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            backgroundColor: EX.color.primary,
-            // Disabled = 60% opacity (design spec), never a different colour.
-            opacity: ctaEnabled || ctaBusy ? 1 : 0.6,
-            shadowColor: EX.color.primary,
-            shadowOpacity: ctaEnabled ? 0.45 : 0,
-            shadowRadius: 16,
-            shadowOffset: { width: 0, height: 10 },
-            elevation: ctaEnabled ? 6 : 0,
-          }}
-        >
-          {ctaBusy ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text
-              style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.9}
-            >
-              {ctaLabel}
+        {/* japa#472: the slot has started. No Pay button: the only action
+            is back to the booking screen to pick another time. */}
+        {!isApp && slotPast ? (
+          <Pressable
+            testID="pay-pick-another-time"
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Pick another time"
+            style={{
+              height: 54,
+              borderRadius: 16,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: EX.color.primary,
+              shadowColor: EX.color.primary,
+              shadowOpacity: 0.45,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 10 },
+              elevation: 6,
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}>
+              Pick another time
             </Text>
-          )}
-        </Pressable>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={isApp ? onConfirmRequest : onPayBooking}
+            disabled={!ctaEnabled}
+            accessibilityLabel={ctaLabel}
+            style={{
+              height: 54,
+              borderRadius: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              backgroundColor: EX.color.primary,
+              // Disabled = 60% opacity (design spec), never a different colour.
+              opacity: ctaEnabled || ctaBusy ? 1 : 0.6,
+              shadowColor: EX.color.primary,
+              shadowOpacity: ctaEnabled ? 0.45 : 0,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 10 },
+              elevation: ctaEnabled ? 6 : 0,
+            }}
+          >
+            {ctaBusy ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text
+                style={{ color: '#fff', fontSize: 15.5, fontWeight: '700' }}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.9}
+              >
+                {ctaLabel}
+              </Text>
+            )}
+          </Pressable>
+        )}
         {/* No quote (pricing unavailable / failed): "Try again" re-runs it. */}
         {!isApp && bookingQuoteDown ? (
           <Pressable

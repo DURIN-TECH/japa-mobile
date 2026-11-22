@@ -17,6 +17,8 @@ const mockOpenAuth =
   >();
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
+// japa#472: "Pick another time" goes back to the booking screen.
+const mockBack = jest.fn();
 const mockTrackBooked = jest.fn();
 
 jest.mock('react-native-reanimated', () =>
@@ -45,7 +47,7 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({
     push: mockPush,
     replace: mockReplace,
-    back: jest.fn(),
+    back: () => mockBack(),
   }),
 }));
 jest.mock('react-native-safe-area-context', () => ({
@@ -185,6 +187,7 @@ beforeEach(() => {
   mockOpenAuth.mockReset();
   mockPush.mockReset();
   mockReplace.mockReset();
+  mockBack.mockReset();
   mockTrackBooked.mockReset();
   mockDetail.mockReset();
   mockDetail.mockReturnValue(NO_DETAIL);
@@ -853,6 +856,39 @@ describe('pay.tsx booking: verify and create outcomes (japa#183 review)', () => 
     expect(text(tree)).toContain(PAY_COPY.limitReached);
     expect(tryAgain(tree)).toBeUndefined();
     expect(cta(tree).props.disabled).toBe(true);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  // japa#472: the slot has already started. The backend's words in the
+  // InlineError, no Pay button, no retry, no spinner; "Pick another time"
+  // goes back to the booking screen.
+  it('create 400 SLOT_IN_PAST: the backend message, no Pay, "Pick another time" goes back', async () => {
+    mockCreate.mockRejectedValue({
+      code: 'SLOT_IN_PAST',
+      status: 400,
+      message: 'That time has already passed. Please pick a later time.',
+    });
+    const tree = await render();
+    expect(text(tree)).toContain(
+      'That time has already passed. Please pick a later time.',
+    );
+    // The only labelled CTA is "Pick another time"; nothing reads "Pay".
+    expect(cta(tree).props.accessibilityLabel).toBe('Pick another time');
+    // No Pay button: no text reads "Pay" or "Pay ₦…" (the method rows'
+    // "Pay from any Nigerian bank" is a description, not a button).
+    expect(text(tree).split(' | ')).not.toContainEqual(
+      expect.stringMatching(/^Pay($| [^f])/),
+    );
+    expect(tryAgain(tree)).toBeUndefined();
+    // No spinner left running.
+    expect(
+      tree.root.findAll((n) => n.type === 'ActivityIndicator'),
+    ).toHaveLength(0);
+    await act(async () => {
+      cta(tree).props.onPress();
+    });
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    // The slot was never re-booked.
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });

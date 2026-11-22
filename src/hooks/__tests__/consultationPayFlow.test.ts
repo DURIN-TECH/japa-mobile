@@ -686,3 +686,45 @@ describe('usdAtRateLine / isUsableRate', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// japa#472: a slot that has already started (400 SLOT_IN_PAST from
+// POST /consultations) is its own terminal verdict, with the backend's words.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('classifyConsultationPayError: SLOT_IN_PAST (japa#472)', () => {
+  const backend = 'That time has already passed. Please pick a later time.';
+
+  it('create 400 SLOT_IN_PAST → slot_in_past with the backend message', () => {
+    const v = classifyConsultationPayError(
+      { code: 'SLOT_IN_PAST', status: 400, message: backend },
+      'create',
+    );
+    expect(v).toEqual({ kind: 'slot_in_past', message: backend });
+  });
+
+  it('is never read as a "check your details" VALIDATION_ERROR', () => {
+    const v = classifyConsultationPayError(
+      { code: 'SLOT_IN_PAST', status: 400, message: backend },
+      'create',
+    );
+    expect(v.kind).not.toBe('booking_invalid');
+    expect(v.message).not.toBe(PAY_COPY.bookingInvalid);
+  });
+
+  it('falls back to the same words when the backend sends no message', () => {
+    const v = classifyConsultationPayError(
+      { code: 'SLOT_IN_PAST', status: 400 },
+      'create',
+    );
+    expect(v).toEqual({ kind: 'slot_in_past', message: PAY_COPY.slotInPast });
+    expect(PAY_COPY.slotInPast).toBe(backend);
+  });
+
+  it('a bare 400 without the code is NOT slot_in_past', () => {
+    const v = classifyConsultationPayError(
+      { status: 400, message: backend },
+      'create',
+    );
+    expect(v.kind).toBe('error');
+  });
+});
