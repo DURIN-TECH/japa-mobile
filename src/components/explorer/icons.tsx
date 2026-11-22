@@ -51,6 +51,7 @@ import {
   CircleAlert,
   PenLine,
   Lock,
+  RotateCcw,
   Image as ImageIcon,
   Camera,
   FolderOpen,
@@ -104,6 +105,8 @@ export const Ic = {
   alert: CircleAlert,
   // japa#384: the review's locked "See how each rule was applied" panel.
   lock: Lock,
+  // japa#356: money coming back (refund rows in Payments, the refund card).
+  refund: RotateCcw,
   // japa#420: the upload source sheet's rows (Photo library, Take a photo,
   // Files). `Image` is imported as ImageIcon so it never shadows RN's Image.
   image: ImageIcon,

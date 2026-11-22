@@ -8,7 +8,9 @@
 import { describe, expect, it } from '@jest/globals';
 import {
   countsAsPaid,
+  hasRefundAmount,
   mapStatus,
+  refundRowStatus,
   mapTransaction,
   totalsPaid,
 } from '../liveTransactions';
@@ -161,6 +163,8 @@ const STATUS_SET: Record<ApiTransaction['status'], true> = {
   refunded: true,
   held_in_escrow: true,
   released: true,
+  // japa#356 / backend #413 B: a refund an admin closed with nothing due.
+  closed: true,
 };
 const ALL_STATUSES = Object.keys(STATUS_SET) as ApiTransaction['status'][];
 
@@ -198,16 +202,26 @@ describe('refund rows (japa#398)', () => {
     });
   });
 
-  it('in-flight refunds map to Pending, a failed one to Failed', () => {
-    expect(mapStatus('pending', 'refund')).toBe('pending');
-    expect(mapStatus('processing', 'refund')).toBe('pending');
-    expect(mapStatus('held_in_escrow', 'refund')).toBe('pending');
-    expect(mapStatus('failed', 'refund')).toBe('failed');
+  // japa#356: refunds have their own pills: "Refund pending" in flight,
+  // "Refund delayed" when failed (never "Failed"), "No refund due" closed.
+  it('in-flight refunds map to Refund pending, a failed one to Refund delayed', () => {
+    expect(mapStatus('pending', 'refund')).toBe('refund_pending');
+    expect(mapStatus('processing', 'refund')).toBe('refund_pending');
+    expect(mapStatus('held_in_escrow', 'refund')).toBe('refund_pending');
+    expect(mapStatus('failed', 'refund')).toBe('refund_delayed');
+    expect(mapStatus('closed', 'refund')).toBe('refund_none_due');
   });
 
-  it('an unknown refund status maps to Pending', () => {
+  it('an unknown refund status maps to Refund pending', () => {
     const odd = 'something_new' as unknown as ApiTransaction['status'];
-    expect(mapStatus(odd, 'refund')).toBe('pending');
+    expect(mapStatus(odd, 'refund')).toBe('refund_pending');
+  });
+
+  it('no refund row is ever Failed or a bare Pending (japa#356)', () => {
+    for (const s of ALL_STATUSES) {
+      const st = mapTransaction(txn('r', 'refund', s, 100)).status;
+      expect(['failed', 'pending', 'paid']).not.toContain(st);
+    }
   });
 
   it('no refund maps to paid or counts as paid, whatever its status', () => {
@@ -250,6 +264,8 @@ describe('non-refund rows keep their mapping (japa#398)', () => {
     held_in_escrow: 'pending',
     refunded: 'refunded',
     failed: 'failed',
+    // Not a status non-refund rows have; unknown → pending (japa#353).
+    closed: 'pending',
   };
   const others: ApiTransaction['type'][] = [
     'consultation_fee',
@@ -346,6 +362,9 @@ describe('PAY_STATUS type', () => {
       pending: true,
       refunded: true,
       failed: true,
+      refund_pending: true,
+      refund_delayed: true,
+      refund_none_due: true,
     };
     for (const s of Object.keys(statuses) as Payment['status'][]) {
       expect(PAY_STATUS[s].label).toBeTruthy();
@@ -355,7 +374,125 @@ describe('PAY_STATUS type', () => {
       paid: PAY_STATUS.paid,
       pending: PAY_STATUS.pending,
       refunded: PAY_STATUS.refunded,
+      refund_pending: PAY_STATUS.refund_pending,
+      refund_delayed: PAY_STATUS.refund_delayed,
+      refund_none_due: PAY_STATUS.refund_none_due,
     };
     expect(incomplete).toBeDefined();
+  });
+});
+
+// ── japa#356: refund rows in Payments ───────────────────────────────────────
+describe('refund rows read the server refundState first (japa#356)', () => {
+  /** A refund row as the client endpoint sends it after backend #413 H. */
+  const refund = (over: Partial<ApiTransaction> = {}): ApiTransaction => ({
+    ...txn('rf-1', 'refund', 'pending', 812_437),
+    description: '',
+    priceUsd: undefined,
+    priceUsdCents: undefined,
+    refundOf: 'txn-1',
+    refundState: 'on_its_way',
+    ...over,
+  });
+
+  it('each refundState maps to its pill', () => {
+    const table: [ApiTransaction['refundState'], Payment['status'], string][] =
+      [
+        ['on_its_way', 'refund_pending', 'Refund pending'],
+        ['refunded', 'refunded', 'Refunded'],
+        ['delayed', 'refund_delayed', 'Refund delayed'],
+        ['none_due', 'refund_none_due', 'No refund due'],
+      ];
+    for (const [state, status, label] of table) {
+      const p = mapTransaction(refund({ refundState: state }));
+      expect(p.status).toBe(status);
+      expect(refundRowStatus({ status: 'pending', refundState: state })).toBe(
+        status,
+      );
+      expect(PAY_STATUS[p.status].label).toBe(label);
+    }
+  });
+
+  it('a HELD refund (status failed, refundState delayed) is Refund delayed', () => {
+    expect(
+      mapTransaction(
+        refund({ status: 'failed', refundState: 'delayed', amount: 0 }),
+      ).status,
+    ).toBe('refund_delayed');
+  });
+
+  it('the server state wins over the raw status', () => {
+    // A held row may look pending internally; the server says delayed.
+    expect(refundRowStatus({ status: 'pending', refundState: 'delayed' })).toBe(
+      'refund_delayed',
+    );
+  });
+
+  it('with no refundState, the status decides (older backend)', () => {
+    expect(
+      mapTransaction(refund({ refundState: undefined, status: 'completed' }))
+        .status,
+    ).toBe('refunded');
+    expect(
+      mapTransaction(refund({ refundState: undefined, status: 'failed' }))
+        .status,
+    ).toBe('refund_delayed');
+  });
+
+  it('title, sub, own amount with kobo, no dollar line', () => {
+    const p = mapTransaction(refund());
+    expect(p.isRefund).toBe(true);
+    expect(p.title).toBe('Consultation refund');
+    expect(p.sub).toBe('Refund');
+    expect(p.amount).toEqual({ amountMinor: 812_437, currency: 'NGN' });
+    expect(p.usd).toBeNull();
+    // Even when the row carries a dollar price, a refund shows none.
+    expect(mapTransaction(refund({ priceUsdCents: 600 })).usd).toBeNull();
+  });
+
+  it("keeps the backend's description (a #354 unapplied-payment refund)", () => {
+    const p = mapTransaction(
+      refund({
+        description: 'Refund: consultation payment that could not be applied',
+        refundOf: undefined,
+      }),
+    );
+    expect(p.title).toBe(
+      'Refund: consultation payment that could not be applied',
+    );
+    expect(p.isRefund).toBe(true);
+  });
+
+  it('the fee row stays Paid with the price paid; refunds never in Total paid', () => {
+    const rows = [
+      clientRow, // ₦8,123.84 paid
+      refund({ refundState: 'refunded', status: 'completed' }),
+      refund({ id: 'rf-2', refundState: 'on_its_way' }),
+      refund({
+        id: 'rf-3',
+        refundState: 'delayed',
+        status: 'failed',
+        amount: 0,
+      }),
+      refund({
+        id: 'rf-4',
+        refundState: 'none_due',
+        status: 'closed',
+        amount: 0,
+      }),
+    ].map(mapTransaction);
+    expect(rows[0].status).toBe('paid');
+    expect(rows[0].amount).toEqual({ amountMinor: 812_384, currency: 'NGN' });
+    expect(rows[0].isRefund).toBeUndefined();
+    expect(totalsPaid(rows)).toEqual([
+      { amountMinor: 812_384, currency: 'NGN' },
+    ]);
+  });
+
+  it('hasRefundAmount: only a positive amount is a refund amount', () => {
+    expect(hasRefundAmount({ amount: 812_437 })).toBe(true);
+    expect(hasRefundAmount({ amount: 0 })).toBe(false);
+    expect(hasRefundAmount({ amount: -5 })).toBe(false);
+    expect(hasRefundAmount({ amount: NaN })).toBe(false);
   });
 });

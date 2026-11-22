@@ -14,8 +14,10 @@
 //     liveDate.ts `fmtDate` (`toDate`-safe).
 //   • status: collapse the 7 backend statuses into the 4 Payment states
 //     (japa#353: `failed` is its own state; an unknown status is `pending`).
-//     A `refund` row is never `paid` (japa#398): done → Refunded, in flight →
-//     Pending, failed → Failed.
+//     A `refund` row is never `paid` (japa#398) and has its own states
+//     (japa#356): on its way → "Refund pending", done → "Refunded", failed
+//     or held → "Refund delayed", closed → "No refund due". The server's
+//     `refundState` (#413 H) is read first; the raw status is the fallback.
 //   • countsAsPaid: the one "this is a payment the user made" rule, shared
 //     with Profile's `paidCount` so both screens count the same rows.
 //   • totalsPaid: the "Total paid" hero sum, one Money per currency, of the
@@ -90,21 +92,27 @@ export function mapStatus(
   if (countsAsPaid({ status, type })) return 'paid';
 
   // ── Refund rows (japa#398) — never `paid` ──
+  // japa#356: and never "Failed" or a bare "Pending" either; a refund has
+  // its own pills (PAY_STATUS refund_*). This is the status-only fallback
+  // for a row the server sent no `refundState` on (see `refundRowStatus`).
   if (type === 'refund') {
     switch (status) {
-      // Money is back with the user: the existing grey "Refunded" pill, with
-      // the muted, struck-through amount every refunded row gets.
+      // Money is back with the user: the grey "Refunded" pill.
       case 'completed':
       case 'released':
       case 'refunded':
         return 'refunded';
-      // Still in flight, or it failed: saying "Refunded" would tell the
-      // client the money is back before it is (PM default, japa#398).
+      // It failed (a held refund is mirrored as failed too): "Refund
+      // delayed", because Seli is still on it. Never "Failed".
       case 'failed':
-        return 'failed';
-      // pending / processing / held_in_escrow, and anything unknown.
+        return 'refund_delayed';
+      // #413 B: an admin closed a held refund with nothing to give back.
+      case 'closed':
+        return 'refund_none_due';
+      // pending / processing / held_in_escrow, and anything unknown
+      // (japa#356: an unknown status is "Refund pending").
       default:
-        return 'pending';
+        return 'refund_pending';
     }
   }
 
@@ -131,8 +139,64 @@ export function mapStatus(
   }
 }
 
+// ── Refund rows: the server's own reading first (japa#356) ──────────────────
+// `refundState` (backend #413 H) is worked out from fields the client never
+// sees (a HELD refund is `failed`-looking internally but reads `delayed`), so
+// it wins over the raw status. A row without it (an older backend) falls back
+// to the status-only rule in `mapStatus`.
+const REFUND_STATE_STATUS: Record<
+  NonNullable<ApiTransaction['refundState']>,
+  Payment['status']
+> = {
+  on_its_way: 'refund_pending',
+  refunded: 'refunded',
+  delayed: 'refund_delayed',
+  none_due: 'refund_none_due',
+};
+
+/**
+ * The Payments pill of a `refund` row (japa#356). Never `paid`, never
+ * `failed`. Exported for its unit tests and the consultation refund card.
+ */
+export function refundRowStatus(
+  t: Pick<ApiTransaction, 'status' | 'refundState'>,
+): Payment['status'] {
+  const fromState = t.refundState
+    ? REFUND_STATE_STATUS[t.refundState]
+    : undefined;
+  return fromState ?? mapStatus(t.status, 'refund');
+}
+
+/**
+ * Whether a refund row's `amount` is a real refund amount (japa#356). A HELD
+ * row and a closed `none_due` row carry 0, which must never read "+₦0.00"
+ * (backend #413 H). Only a positive amount is shown.
+ */
+export function hasRefundAmount(t: Pick<ApiTransaction, 'amount'>): boolean {
+  return (
+    typeof t.amount === 'number' && Number.isFinite(t.amount) && t.amount > 0
+  );
+}
+
 // Map one live transaction onto the Explorer `Payment` row contract.
 export function mapTransaction(t: ApiTransaction): Payment {
+  // japa#356: a refund is its own row: "Consultation refund" (unless the
+  // backend sent a description, e.g. #354's "Refund: consultation payment
+  // that could not be applied"), sub "Refund", its OWN amount (what the
+  // backend sends, never worked out here), no dollar line, and a refund pill.
+  if (t.type === 'refund') {
+    return {
+      id: t.id,
+      title: t.description || 'Consultation refund',
+      sub: 'Refund',
+      amount: { amountMinor: t.amount, currency: t.currency || 'NGN' },
+      usd: null,
+      date: fmtDate(t.createdAt, 'MMM d'),
+      status: refundRowStatus(t),
+      method: METHOD_LABEL[t.paymentProvider] || '—',
+      isRefund: true,
+    };
+  }
   return {
     id: t.id,
     // Prefer the backend description; fall back to a type-derived label.
@@ -170,4 +234,41 @@ export function totalsPaid(
     amountMinor,
     currency,
   }));
+}
+
+// ── The refund amount of one booking (japa#356, the consultation refund card) ─
+/**
+ * The figure the consultation's refund card shows: the amount of the
+ * booking's refund row in `GET /transactions`, exactly as the backend sent
+ * it. Null (the card then drops the figure) when:
+ *  - there is no refund row for the booking yet (the list may be loading);
+ *  - the row carries no real amount (a HELD row is 0, backend #413 H);
+ *  - the row is not a refund OF THIS BOOKING'S FEE: only those carry
+ *    `refundOf` (backend client-transaction.ts). A #354 / #392 refund of a
+ *    payment made on a retired checkout also carries the `consultationId`
+ *    but no `refundOf`, and is never this booking's refund (review fix);
+ *  - the booking has MORE than one refund row (e.g. a resolved mismatch plus
+ *    its top-up, #413): adding them up would be the app working money out,
+ *    so no figure is shown at all.
+ *
+ * ASSUMPTION: the client view of a booking has no `refundId` (the backend
+ * keeps it off the allow-list), so the row is matched on its
+ * `consultationId`, which every consultation refund row carries.
+ */
+export function bookingRefundAmount(
+  rows: readonly ApiTransaction[] | null | undefined,
+  consultationId: string,
+): Money | null {
+  const refunds = (rows ?? []).filter(
+    (t) =>
+      t.type === 'refund' &&
+      t.consultationId === consultationId &&
+      // Only a refund of the booking's own fee row (review fix).
+      !!t.refundOf,
+  );
+  if (refunds.length !== 1) return null;
+  const [r] = refunds;
+  return hasRefundAmount(r)
+    ? { amountMinor: r.amount, currency: r.currency || 'NGN' }
+    : null;
 }

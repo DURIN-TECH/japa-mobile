@@ -76,9 +76,16 @@ function PaymentRow({
   onPress?: () => void;
 }) {
   const s = PAY_STATUS[p.status];
-  const refunded = p.status === 'refunded';
-  const price =
-    parts ?? priceParts(p.amount, p.usd, { locked: p.status !== 'pending' });
+  // japa#356: a refund ROW (money coming back) is not a "refunded" charge:
+  // its amount reads "+₦8,124.37" in ink, never muted or struck through.
+  const isRefund = p.isRefund === true;
+  const refunded = p.status === 'refunded' && !isRefund;
+  const price: PriceParts = isRefund
+    ? refundParts(p.amount)
+    : (parts ??
+      priceParts(p.amount, p.usd, { locked: p.status !== 'pending' }));
+  // Refund rows get the refund glyph; every other row the card glyph.
+  const RowIcon = isRefund ? Ic.refund : Ic.cards;
 
   return (
     <Pressable
@@ -112,7 +119,7 @@ function PaymentRow({
           backgroundColor: EX.color.cream,
         }}
       >
-        <Ic.cards size={19} color={EX.color.primary} strokeWidth={1.8} />
+        <RowIcon size={19} color={EX.color.primary} strokeWidth={1.8} />
       </View>
 
       {/* Title + sub */}
@@ -133,17 +140,20 @@ function PaymentRow({
 
       {/* Right column: amount · status pill · date */}
       <View style={{ alignItems: 'flex-end', gap: 5 }}>
-        <Text
-          style={{
-            fontSize: 15,
-            fontWeight: '700',
-            // Refunded reads muted, with a struck-through feel.
-            color: refunded ? EX.color.muted : EX.color.ink,
-            textDecorationLine: refunded ? 'line-through' : 'none',
-          }}
-        >
-          {price.primary}
-        </Text>
+        {/* A held / closed refund carries no amount (primary is ''). */}
+        {price.primary ? (
+          <Text
+            style={{
+              fontSize: 15,
+              fontWeight: '700',
+              // Refunded reads muted, with a struck-through feel.
+              color: refunded ? EX.color.muted : EX.color.ink,
+              textDecorationLine: refunded ? 'line-through' : 'none',
+            }}
+          >
+            {price.primary}
+          </Text>
+        ) : null}
         {/* The dollar price under the charged amount (label, ink-muted). */}
         {price.secondary ? (
           <Text
@@ -161,6 +171,21 @@ function PaymentRow({
       </View>
     </Pressable>
   );
+}
+
+/**
+ * japa#356: the price column of a refund row: "+₦8,124.37", the row's OWN
+ * amount exactly (kobo kept), with no dollar line. A held or closed refund
+ * carries 0, which is not a refund amount (backend #413 H), so it shows no
+ * figure at all, only its pill.
+ */
+function refundParts(amount: Money): PriceParts {
+  return {
+    primary: amount.amountMinor > 0 ? `+${formatMoney(amount)}` : '',
+    secondary: null,
+    free: false,
+    localUnavailable: false,
+  };
 }
 
 // Section heading (same type ramp as SectionTitle, compact spacing here).
