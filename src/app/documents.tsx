@@ -21,8 +21,7 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  Alert,
-  Linking,
+  ActivityIndicator,
   Pressable,
   ScrollView,
   Text,
@@ -37,11 +36,15 @@ import type { Doc } from '@/types/explorer.type';
 import { Ic } from '@/components/explorer/icons';
 import { Pill } from '@/components/explorer/primitives';
 import { fmtDate } from '@/components/explorer/liveDate';
+import { useMyDocuments, useSharedDocuments } from '@/hooks/useDocuments';
+// japa#446: the shared in-app document viewer (same as self-service).
+import { PressableStatic } from '@/components/explorer/PressableStatic';
+import { InlineError } from '@/components/explorer/AccountForm';
 import {
-  useMyDocuments,
-  useSharedDocuments,
-  useGetDownloadUrl,
-} from '@/hooks/useDocuments';
+  isLibraryDocOpenable,
+  useOpenDocument,
+} from '@/components/explorer/openDocument';
+import { DOC_OPEN_COPY } from '@/components/explorer/openDocumentCopy';
 import { mapDocument } from '@/components/explorer/liveDocuments';
 // Self-service-only launch flag (japa#334).
 import { isSelfServiceOnly } from '@/config/env';
@@ -68,18 +71,27 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 // 38px status icon chip (tinted from DOC_STATUS) + name (15/600) + meta line,
 // then a status Pill on the right — or a coral Upload button when missing.
 //
-// `onOpen` is supplied only for LIVE documents that actually have a file behind
-// them: tapping mints a signed URL and hands it to the system viewer. `missing`
-// rows have nothing to open, so they stay inert rather than offering a tap
-// that fails.
+// `onOpen` is supplied only for documents that actually have a file behind
+// them: tapping mints a fresh signed URL and opens the in-app viewer
+// (japa#446, `useOpenDocument`). `missing` rows have nothing to open, so they
+// stay inert rather than offering a tap that fails.
+//
+// japa#446: the chevron sits in a fixed 20px slot so the coral spinner can
+// swap in while the link is fetched without shifting the Pill. No dimming
+// while opening (it would push the muted meta line below 3:1); the spinner
+// carries the state. Pressed = line12 border + 0.7 opacity, like self-service.
 function DocRow({
   doc,
   onOpen,
   opening,
+  locked,
 }: {
   doc: Doc;
   onOpen?: () => void;
+  /** This row's link is being fetched (spinner). */
   opening?: boolean;
+  /** Some row on the screen is opening: ignore taps. */
+  locked?: boolean;
 }) {
   const s = DOC_STATUS[doc.status];
   const missing = doc.status === 'missing';
@@ -89,9 +101,23 @@ function DocRow({
   const meta = `${doc.category} · ${doc.size ?? '—'} · ${doc.date}`;
 
   return (
-    <Pressable
+    // PressableStatic: a function `style` on a bare Pressable renders unstyled
+    // in this build (NativeWind css-interop), see PressableStatic.tsx.
+    <PressableStatic
+      testID={`doc-row-${doc.id}`}
       onPress={onOpen}
-      disabled={!onOpen || opening}
+      disabled={!onOpen || (!!locked && !opening)}
+      android_ripple={undefined}
+      // Openable rows are buttons with a built label; missing rows keep their
+      // default read-out (which includes their Upload button, japa#421).
+      accessibilityRole={onOpen ? 'button' : undefined}
+      accessibilityLabel={
+        onOpen ? `${doc.name}, ${s.label}, ${meta}` : undefined
+      }
+      accessibilityHint={onOpen ? DOC_OPEN_COPY.rowHint : undefined}
+      accessibilityState={
+        onOpen ? { busy: !!opening, disabled: !!locked && !opening } : undefined
+      }
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -101,7 +127,7 @@ function DocRow({
         borderWidth: 1,
         // Press feedback only where there is something to open.
         borderColor: onOpen && pressed ? EX.color.line12 : EX.color.line06,
-        opacity: opening ? 0.6 : 1,
+        opacity: onOpen && pressed ? 0.7 : 1,
         paddingHorizontal: 13,
         paddingVertical: 13,
         shadowColor: '#171326',
@@ -172,11 +198,22 @@ function DocRow({
           {/* Affordance that the row opens the file — a list of names alone
               never let a client actually SEE what was filed for them. */}
           {onOpen ? (
-            <Ic.chevR size={17} color={EX.color.faint} strokeWidth={1.8} />
+            <View style={{ width: 20, alignItems: 'center' }}>
+              {opening ? (
+                <ActivityIndicator
+                  testID={`doc-row-${doc.id}-opening`}
+                  size="small"
+                  color={EX.color.primary}
+                  accessibilityLabel={DOC_OPEN_COPY.openingLabel}
+                />
+              ) : (
+                <Ic.chevR size={17} color={EX.color.faint} strokeWidth={1.8} />
+              )}
+            </View>
           ) : null}
         </View>
       )}
-    </Pressable>
+    </PressableStatic>
   );
 }
 
@@ -316,28 +353,12 @@ export default function DocumentsView() {
   const shared = sharedQuery.data ?? [];
   const sharedState = queryState(sharedQuery);
 
-  // ── Opening an uploaded file ──────────────────────────────────────────────
-  // The signed URL is minted per tap rather than up front: these expire quickly,
-  // so one fetched at screen load would usually be dead by the time it's used.
-  const getDownloadUrl = useGetDownloadUrl();
-  const [openingId, setOpeningId] = useState<string | null>(null);
-
-  async function openDocument(documentId: string) {
-    if (openingId) return;
-    setOpeningId(documentId);
-    try {
-      const url = await getDownloadUrl.mutateAsync(documentId);
-      if (!url) throw new Error('No download URL');
-      await Linking.openURL(url);
-    } catch {
-      Alert.alert(
-        "Couldn't open document",
-        'Please check your connection and try again.',
-      );
-    } finally {
-      setOpeningId(null);
-    }
-  }
+  // ── Opening an uploaded file (japa#446) ───────────────────────────────────
+  // The shared opener: a fresh signed URL per tap (they expire, so one fetched
+  // at screen load would be dead by the time it's used), shown in the in-app
+  // viewer instead of Safari. One open at a time; one error line per screen
+  // (replaces the old Alert).
+  const opener = useOpenDocument();
 
   // ── Live counts across the whole library ──────────────────────────────────
   const verified = docs.filter((d) => d.status === 'verified').length;
@@ -533,20 +554,42 @@ export default function DocumentsView() {
                   </Text>
                 </View>
               ) : (
-                list.map((doc) => (
-                  <DocRow
-                    key={doc.id}
-                    doc={doc}
-                    // Openable only when there's a real file: a document that
-                    // isn't still awaiting upload.
-                    onOpen={
-                      doc.status !== 'missing'
-                        ? () => void openDocument(doc.id)
-                        : undefined
-                    }
-                    opening={openingId === doc.id}
-                  />
-                ))
+                list.map((doc) => {
+                  const error = isLibraryDocOpenable(doc.status)
+                    ? opener.errorFor(doc.id)
+                    : null;
+                  return (
+                    // Row + its error line as one list item, so the list gap
+                    // spaces the pair rather than the error on its own.
+                    <View key={doc.id}>
+                      <DocRow
+                        doc={doc}
+                        // Openable only when there's a real file: a document
+                        // that isn't still awaiting upload.
+                        onOpen={
+                          isLibraryDocOpenable(doc.status)
+                            ? () =>
+                                opener.open(doc.id, { onBehalf: doc.onBehalf })
+                            : undefined
+                        }
+                        opening={opener.openingId === doc.id}
+                        locked={opener.locked}
+                      />
+                      {error ? (
+                        <View
+                          testID={`doc-row-${doc.id}-error`}
+                          style={{ marginTop: 8 }}
+                        >
+                          <InlineError
+                            message={error.message}
+                            action={error.action}
+                            selectable={error.selectable}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })
               )}
             </View>
           </>

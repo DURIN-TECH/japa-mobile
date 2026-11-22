@@ -204,26 +204,33 @@ export function CoralSubmit({
 // ── InlineError — small danger text shown above the CTA (null when no error) ──
 // `selectable` (japa#346) lets the user long-press → Copy the message text,
 // e.g. an address shown because a link couldn't be opened. No visual change.
+//
+// `action` (japa#420): an optional text button inside the box, under the
+// message and lined up with it (left inset 24 = 16 icon + 8 gap), 6 px below:
+// 13/700 in the error colour, underlined, hit slop 10 so it reaches 44 pt.
+// Used only by the camera-denied upload line ("Open Settings"). Without it the
+// box renders exactly as before. The message stays one accessibility element;
+// the action is a separate focusable button after it.
+export type InlineErrorAction = {
+  label: string;
+  onPress: () => void;
+  /** Accessibility hint (what pressing it does). */
+  hint?: string;
+};
+
 export function InlineError({
   message,
   selectable = false,
+  action,
 }: {
   message?: string | null;
   selectable?: boolean;
+  action?: InlineErrorAction;
 }) {
   if (!message) return null;
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        gap: 8,
-        backgroundColor: '#FBE3E1',
-        borderWidth: 1,
-        borderColor: 'rgba(217,66,91,0.24)',
-        borderRadius: 14,
-        padding: 12,
-      }}
-    >
+  // Icon + message, the same row with or without an action.
+  const line = (
+    <>
       <Ic.x size={16} color={EX.color.danger} strokeWidth={2.4} />
       <Text
         selectable={selectable}
@@ -237,6 +244,45 @@ export function InlineError({
       >
         {message}
       </Text>
+    </>
+  );
+  const box = {
+    backgroundColor: '#FBE3E1',
+    borderWidth: 1,
+    borderColor: 'rgba(217,66,91,0.24)',
+    borderRadius: 14,
+    padding: 12,
+  } as const;
+  // No action: the original single-row box, unchanged.
+  if (!action)
+    return <View style={[box, { flexDirection: 'row', gap: 8 }]}>{line}</View>;
+  return (
+    <View style={box}>
+      {/* The message row reads as one element. */}
+      <View accessible style={{ flexDirection: 'row', gap: 8 }}>
+        {line}
+      </View>
+      <Pressable
+        testID="inlineError.action"
+        onPress={action.onPress}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={action.label}
+        accessibilityHint={action.hint}
+        style={{ marginTop: 6, marginLeft: 24, alignSelf: 'flex-start' }}
+      >
+        <Text
+          style={{
+            fontSize: 13,
+            lineHeight: 18,
+            fontWeight: '700',
+            color: '#C0453C',
+            textDecorationLine: 'underline',
+          }}
+        >
+          {action.label}
+        </Text>
+      </Pressable>
     </View>
   );
 }

@@ -52,7 +52,9 @@ export interface ApiTransaction {
     | 'failed'
     | 'refunded'
     | 'held_in_escrow'
-    | 'released';
+    | 'released'
+    // japa#413 (B): a held refund an admin closed with nothing to refund.
+    | 'closed';
 
   /** Human-readable label ("Consultation fee", ...). */
   description: string;
@@ -87,6 +89,24 @@ export interface ApiTransaction {
   createdAt: unknown;
   /** When the processor took the payment (consultation fees record it). */
   paidAt?: unknown;
+
+  // ── Refund rows only (backend #413 H, read by japa#356) ──────────────────
+  /**
+   * The id of the payment row (`consultation_fee`) this refund gives back.
+   * Absent on other rows, and on the refund of a payment that never
+   * confirmed a booking (#354: it has no fee row).
+   */
+  refundOf?: string;
+  /**
+   * Where the refund stands for the client, worked out by the server:
+   *  - `on_its_way`: pending / processing;
+   *  - `refunded`:   completed;
+   *  - `delayed`:    failed, or HELD for an admin;
+   *  - `none_due`:   closed with nothing to refund.
+   * On a held `delayed` row and on a `none_due` row the `amount` is 0 and is
+   * NOT a refund amount: it must never be shown as "+₦0.00".
+   */
+  refundState?: 'on_its_way' | 'refunded' | 'delayed' | 'none_due';
 }
 
 /**

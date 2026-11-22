@@ -6,8 +6,8 @@
 //   2. Issued by     a country, chosen on the country picker pushed over this
 //                    sheet (the picker hands it back through holdings-pick.store).
 //                    Country only in this change; groups of countries come later.
-//   3. Valid until   platform date picker, 1 Jan 1990 – 31 Dec 2100. A past date
-//                    is fine: the server marks it expired.
+//   3. Valid until   the shared DateField (japa#407), 1 Jan 1990 – 31 Dec 2100.
+//                    A past date is fine: the server marks it expired.
 //   4. Note          optional, up to 200 characters, with a counter.
 //
 // The coral CTA is disabled until kind, issuer and date are set. On press:
@@ -26,7 +26,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +37,7 @@ import {
   LabeledInput,
 } from '@/components/explorer/AccountForm';
 import { Flag } from '@/components/explorer/primitives';
+import { DateField } from '@/components/explorer/DateField';
 import {
   Caption,
   SheetFrame,
@@ -138,7 +138,6 @@ export default function AddDocumentSheet() {
     validUntil: null,
     note: '',
   });
-  const [dateOpen, setDateOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy = add.isPending;
 
@@ -293,58 +292,24 @@ export default function AddDocumentSheet() {
 
           {/* 3. Valid until */}
           <View style={{ gap: 8 }}>
-            <PickField
-              label={C.addDateLabel}
-              value={draft.validUntil ? formatDay(draft.validUntil) : undefined}
+            {/* The shared date field (japa#407) in Add document's PickField look:
+                light calendar, closes on a pick, Done commits the highlighted
+                day. clampDate keeps the API's 1990–2100 bounds. */}
+            <DateField
+              look="pick"
+              innerLabel={C.addDateLabel}
+              accessibilityLabel={C.addDateLabel}
               placeholder={C.addDatePlaceholder}
+              formatValue={formatDay}
+              testID="addDocument.validUntil"
+              value={draft.validUntil}
+              minimumDate={MIN_VALID_UNTIL}
+              maximumDate={MAX_VALID_UNTIL}
               disabled={busy}
-              onPress={() => setDateOpen((o) => !o)}
+              onChange={(date) =>
+                setDraft((d) => ({ ...d, validUntil: clampDate(date) }))
+              }
             />
-            {dateOpen ? (
-              <DateTimePicker
-                value={draft.validUntil ?? clampDate(new Date())}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                accentColor={EX.color.primary}
-                minimumDate={MIN_VALID_UNTIL}
-                maximumDate={MAX_VALID_UNTIL}
-                onChange={(event, date) => {
-                  // Android shows a dialog: close it on any answer.
-                  if (Platform.OS !== 'ios') setDateOpen(false);
-                  if (event.type === 'set' && date)
-                    setDraft((d) => ({ ...d, validUntil: clampDate(date) }));
-                }}
-              />
-            ) : null}
-            {dateOpen && Platform.OS === 'ios' ? (
-              <Pressable
-                onPress={() => {
-                  // Commit today when the calendar was never touched.
-                  setDraft((d) => ({
-                    ...d,
-                    validUntil: d.validUntil ?? clampDate(new Date()),
-                  }));
-                  setDateOpen(false);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Valid until, done"
-                style={{
-                  alignSelf: 'flex-end',
-                  minHeight: 44,
-                  justifyContent: 'center',
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 15,
-                    fontWeight: '600',
-                    color: EX.color.primaryDark,
-                  }}
-                >
-                  Done
-                </Text>
-              </Pressable>
-            ) : null}
             <Caption>{C.addDateHelper}</Caption>
           </View>
 

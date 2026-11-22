@@ -38,6 +38,17 @@ const HIDDEN: [string, NotificationRouteInput, string][] = [
     { type: 'consultation_reminder', relatedEntityId: 'k1' },
     '/consultation/k1',
   ],
+  // japa#356: refund notices are consultation notices: hidden with the flag.
+  [
+    'consultation_refunded',
+    { type: 'consultation_refunded', relatedEntityId: 'k4' },
+    '/consultation/k4',
+  ],
+  [
+    'consultation_refund_delayed',
+    { type: 'consultation_refund_delayed', relatedEntityId: 'k5' },
+    '/consultation/k5',
+  ],
   [
     'consultation_booking',
     {

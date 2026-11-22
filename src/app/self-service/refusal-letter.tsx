@@ -33,7 +33,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EX } from '@/components/explorer/theme';
@@ -63,10 +62,15 @@ import {
   useStoredAnalysisId,
 } from '@/hooks/useRefusalLetter';
 // japa#310: the size and type the backend (and the model) can take.
+import { pickedFileProblem } from '@/components/explorer/uploadLimits';
+// japa#420: where the letter comes from (photo library, camera or Files).
 import {
-  pickedContentType,
-  pickedFileProblem,
-} from '@/components/explorer/uploadLimits';
+  pickResultCopy,
+  pickUploadFile,
+  uploadErrorAction,
+  type UploadSource,
+} from '@/components/explorer/pickUploadFile';
+import { UploadSourceSheet } from '@/components/explorer/UploadSourceSheet';
 import type {
   RefusalChecklistItemView,
   RefusalData,
@@ -630,60 +634,78 @@ export default function RefusalLetterScreen() {
     [start, setAnalysisId],
   );
 
-  /** Pick → signed URL → storage → register → analyse. */
-  const pickAndUpload = useCallback(async () => {
+  // japa#420: "Upload your letter" (and "Try again" when it re-picks) opens
+  // the source sheet first. Opening it leaves the error as it is; choosing a
+  // source clears it (in `uploadFrom`), closing it changes nothing.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const pickAndUpload = useCallback(() => {
     if (!appId) return;
-    setError(null);
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'image/*'],
-        copyToCacheDirectory: true,
-      });
-      if (res.canceled) return;
-      const f = res.assets[0];
-      const contentType = pickedContentType(f);
-      // japa#310: same size and type check as the self-service upload (wrong
-      // type, HEIC/HEIF, over 7 MB for an image / 10 MB otherwise): nothing is
-      // uploaded and the line shows in this screen's InlineError.
-      const problem = pickedFileProblem({
-        size: f.size,
-        contentType,
-        name: f.name,
-      });
-      if (problem) {
-        setError(new Error(problem));
-        return;
-      }
+    setSheetOpen(true);
+  }, [appId]);
 
-      setUploading(true);
-      const up = await getUploadUrl.mutateAsync({
-        applicationId: appId,
-        fileName: f.name,
-        contentType,
-      });
-      if (!up) throw new Error('Could not start the upload.');
-      await uploadToStorage(up.uploadUrl, {
-        uri: f.uri,
-        type: contentType,
-        name: f.name,
-      });
-      const doc = await createDoc.mutateAsync({
-        applicationId: appId,
-        requirementId: REFUSAL_REQUIREMENT_ID,
-        fileName: f.name,
-        fileType: contentType,
-        fileSizeMb: (f.size ?? 0) / 1e6,
-        storagePath: up.storagePath,
-      });
-      if (!doc) throw new Error('Could not save the letter.');
-      setDocumentId(doc.id);
-      setUploading(false);
-      await startAnalysis(doc.id);
-    } catch (e) {
-      setUploading(false);
-      setError(e);
-    }
-  }, [appId, getUploadUrl, createDoc, startAnalysis]);
+  /** Chosen source → pick → signed URL → storage → register → analyse. */
+  const uploadFrom = useCallback(
+    async (source: UploadSource) => {
+      if (!appId) return;
+      setError(null);
+      try {
+        // One file from the chosen source: library / camera photos come back
+        // as a converted JPEG (`photo-….jpg`), Files picks unchanged.
+        const picked = await pickUploadFile(source);
+        const pickLine = pickResultCopy(picked);
+        if (pickLine) {
+          // Camera denied / unavailable: shown in this screen's InlineError.
+          setError(new Error(pickLine));
+          return;
+        }
+        if (picked.kind !== 'picked') return;
+        const f = picked.file;
+        const contentType = f.contentType;
+        // japa#310: same size and type check as the self-service upload (wrong
+        // type, HEIC/HEIF, over 7 MB for an image / 10 MB otherwise): nothing is
+        // uploaded and the line shows in this screen's InlineError. Converted
+        // photos are checked too (japa#420).
+        const problem = pickedFileProblem({
+          size: f.size,
+          contentType,
+          name: f.name,
+        });
+        if (problem) {
+          setError(new Error(problem));
+          return;
+        }
+
+        setUploading(true);
+        const up = await getUploadUrl.mutateAsync({
+          applicationId: appId,
+          fileName: f.name,
+          contentType,
+        });
+        if (!up) throw new Error('Could not start the upload.');
+        await uploadToStorage(up.uploadUrl, {
+          uri: f.uri,
+          type: contentType,
+          name: f.name,
+        });
+        const doc = await createDoc.mutateAsync({
+          applicationId: appId,
+          requirementId: REFUSAL_REQUIREMENT_ID,
+          fileName: f.name,
+          fileType: contentType,
+          fileSizeMb: (f.size ?? 0) / 1e6,
+          storagePath: up.storagePath,
+        });
+        if (!doc) throw new Error('Could not save the letter.');
+        setDocumentId(doc.id);
+        setUploading(false);
+        await startAnalysis(doc.id);
+      } catch (e) {
+        setUploading(false);
+        setError(e);
+      }
+    },
+    [appId, getUploadUrl, createDoc, startAnalysis],
+  );
 
   /** Forget the current analysis and go back to the upload prompt. */
   const reset = useCallback(() => {
@@ -750,7 +772,11 @@ export default function RefusalLetterScreen() {
         ) : shownError ? (
           // Network or server failure, with retry.
           <View style={{ gap: 12 }}>
-            <InlineError message={errorMessage(shownError)} />
+            {/* japa#420: the camera-denied line carries "Open Settings". */}
+            <InlineError
+              message={errorMessage(shownError)}
+              action={uploadErrorAction(errorMessage(shownError))}
+            />
             <CoralSubmit label="Try again" onPress={retry} />
           </View>
         ) : !storedReady ? (
@@ -858,6 +884,16 @@ export default function RefusalLetterScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* japa#420: "Add a document" — Photo library, Take a photo, Files. */}
+      <UploadSourceSheet
+        visible={sheetOpen}
+        onChoose={(source) => {
+          setSheetOpen(false);
+          uploadFrom(source);
+        }}
+        onClose={() => setSheetOpen(false)}
+      />
     </View>
   );
 }

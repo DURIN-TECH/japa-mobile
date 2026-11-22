@@ -1,12 +1,12 @@
-# Full EAS development build on every push to dev.
+# PAUSED (2026-11-22): was a full EAS development build on every push to dev,
+# which is costly. Now manual-only: run it from the Actions tab when a new
+# dev-client build is actually needed. To resume, restore the `push: dev` trigger.
 # Produces a dev-client APK + IPA subscribed to the `development` EAS Update
 # channel (see eas.json). Install once; subsequent dev pushes can ship JS
 # OTA without a fresh native build (runtime fingerprint permitting).
 name: Development Build
 on:
-  push:
-    branches:
-      - dev
+  workflow_dispatch:
 
 jobs:
   build:
