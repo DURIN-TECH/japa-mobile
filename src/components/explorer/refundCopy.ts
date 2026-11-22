@@ -37,6 +37,24 @@ function positive(m: Money | null | undefined): m is Money {
   );
 }
 
+// ── "No refund due" straight away (user decision 2026-11-22) ─────────────────
+
+/**
+ * The backend's held reason when Paystack's processing fee is not less than
+ * the charge (#390 `planCancellationRefund`, `fee_not_less_than_amount`).
+ * Such a hold can only end with nothing refunded (an admin closes it, #413 B).
+ */
+export const NOTHING_DUE_HELD_REASON = 'fee_not_less_than_amount';
+
+/** True for a hold that can only end with nothing to refund. */
+export function isNothingDueHold(heldReason: unknown): boolean {
+  return heldReason === NOTHING_DUE_HELD_REASON;
+}
+
+/** Result alert for that case. */
+export const NO_REFUND_DUE_RESULT =
+  'Your slot is released. The payment provider’s processing fee covers the whole payment, so there’s no refund due.';
+
 // ── 1. Cancel confirm ────────────────────────────────────────────────────────
 
 /** Native confirm alert content: title, message, destructive button label. */
@@ -166,6 +184,10 @@ export function cancelResultMessage(
   wasPaid: boolean,
 ): string {
   if (refund) {
+    // User decision 2026-11-22: held because the payment provider's fee is
+    // at least the whole payment. Nothing will ever come back, so say "no
+    // refund due" straight away, not "delayed" (an admin closes it later).
+    if (isNothingDueHold(refund.heldReason)) return NO_REFUND_DUE_RESULT;
     // Held while the processing fee is confirmed (#390): no figure.
     if (!positive(refund.amount)) {
       return 'Your refund is delayed while we confirm the payment provider’s processing fee. We’re on it.';
@@ -208,11 +230,20 @@ export interface RefundCardCopy {
  *                     held (0), or it cannot be told apart from another
  *                     refund of the same booking. Null drops the figure;
  *                     the card never waits for it.
+ * @param heldReason   why the refund is held, when known (the booking's
+ *                     `refundHeldReason`, or the cancel answer's
+ *                     `refund.heldReason`). `fee_not_less_than_amount` reads
+ *                     "No refund due" at once (user decision 2026-11-22).
  */
 export function refundCardCopy(
   refundStatus: ApiConsultation['refundStatus'],
   amount: Money | null,
+  heldReason?: string | null,
 ): RefundCardCopy | null {
+  // Held because the fee covers the whole payment: same as closed.
+  if (refundStatus && isNothingDueHold(heldReason)) {
+    return refundCardCopy('closed', null);
+  }
   switch (refundStatus) {
     case 'pending':
     case 'processing':

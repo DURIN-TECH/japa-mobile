@@ -138,6 +138,14 @@ export interface ApiConsultation {
    * there is no refund.
    */
   refundStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'closed';
+  /**
+   * Why the refund is held for an admin, while it is (backend #413 mirrors
+   * it on the booking). ASSUMPTION (japa#356, user decision 2026-11-22): the
+   * client view sends it; today's client allow-list does not, so until it
+   * does the screen falls back to the cancel answer's `refund.heldReason`
+   * for the rest of the session. Only `fee_not_less_than_amount` is read.
+   */
+  refundHeldReason?: string;
 
   // ── "The meeting didn't happen" (backend #382, read by japa#442) ──────────
   /**

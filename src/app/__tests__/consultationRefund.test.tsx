@@ -398,6 +398,44 @@ describe('refund card (japa#356)', () => {
       'We’ve sent your refund back to the card or account you paid with.',
     );
   });
+  // User decision 2026-11-22: a hold because the fee covers the whole
+  // payment reads "No refund due" straight away.
+  it('failed + refundHeldReason fee_not_less_than_amount: No refund due', () => {
+    mockBooking = booking({
+      status: 'cancelled',
+      refundStatus: 'failed',
+      refundHeldReason: 'fee_not_less_than_amount',
+    });
+    const t = text(render());
+    expect(t).toContain('No refund due');
+    expect(t).not.toContain('Refund delayed');
+  });
+
+  it('the cancel answer’s hold reason sets the alert and the card at once', async () => {
+    mockCancel.mockImplementation((_id, opts) => {
+      // The refetched booking: failed, and the client view has no reason.
+      mockBooking = booking({ status: 'cancelled', refundStatus: 'failed' });
+      settle(opts, 'onSuccess', {
+        status: 'cancelled',
+        refund: {
+          status: 'failed',
+          amount: null,
+          processingFee: null,
+          heldReason: 'fee_not_less_than_amount',
+        },
+      });
+    });
+    const tree = render();
+    await cancelThroughConfirm(tree);
+    expect(alertSpy.mock.calls[1][1]).toBe(
+      'Your slot is released. The payment provider’s processing fee covers the whole payment, so there’s no refund due.',
+    );
+    act(() => tree.update(<ConsultationDetailView />));
+    const t = text(tree);
+    expect(t).toContain('No refund due');
+    expect(t).not.toContain('Refund delayed');
+  });
+
   it('failed: Refund delayed', () => {
     mockBooking = booking({ status: 'cancelled', refundStatus: 'failed' });
     expect(text(render())).toContain('Refund delayed');

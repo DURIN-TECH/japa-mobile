@@ -193,6 +193,38 @@ describe('cancelResultMessage (japa#356 §2): from the PUT answer', () => {
       'Your refund is delayed while we confirm the payment provider’s processing fee. We’re on it.',
     );
   });
+  // User decision 2026-11-22: a hold because the fee covers the whole
+  // payment reads "no refund due" straight away, never "delayed".
+  it('held as fee_not_less_than_amount: no refund due, at once', () => {
+    const msg = cancelResultMessage(
+      {
+        status: 'failed',
+        amount: null,
+        processingFee: null,
+        heldReason: 'fee_not_less_than_amount',
+      },
+      true,
+    );
+    expect(msg).toBe(
+      'Your slot is released. The payment provider’s processing fee covers the whole payment, so there’s no refund due.',
+    );
+    expect(msg).not.toMatch(/delayed/i);
+  });
+
+  it('held for another reason (fee unknown): still "delayed"', () => {
+    expect(
+      cancelResultMessage(
+        {
+          status: 'failed',
+          amount: null,
+          processingFee: null,
+          heldReason: 'fee_unknown',
+        },
+        true,
+      ),
+    ).toMatch(/^Your refund is delayed/);
+  });
+
   it('refund null on a paid booking: no refund (the 24-hour line passed)', () => {
     expect(cancelResultMessage(null, true)).toBe(
       'Your slot is released. As it was less than 24 hours before your consultation, there’s no refund.',
@@ -258,6 +290,25 @@ describe('refundCardCopy (japa#356 §3)', () => {
       'Your refund is taking longer than usual. We’re on it, and we’ll let you know when it’s sent.',
     );
   });
+  it('failed but held as fee_not_less_than_amount: No refund due at once', () => {
+    const c = refundCardCopy('failed', null, 'fee_not_less_than_amount')!;
+    expect(c.pill.label).toBe('No refund due');
+    expect(c.body).toBe(
+      'The payment provider kept the whole payment as its processing fee, so there’s nothing to refund.',
+    );
+    // Another hold reason, or none, keeps "Refund delayed".
+    expect(refundCardCopy('failed', null, 'fee_unknown')!.pill.label).toBe(
+      'Refund delayed',
+    );
+    expect(refundCardCopy('failed', null, null)!.pill.label).toBe(
+      'Refund delayed',
+    );
+    // No refund at all: still no card.
+    expect(
+      refundCardCopy(undefined, null, 'fee_not_less_than_amount'),
+    ).toBeNull();
+  });
+
   it('closed: No refund due', () => {
     expect(refundCardCopy('closed', null)!.pill.label).toBe('No refund due');
   });

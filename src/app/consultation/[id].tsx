@@ -249,7 +249,18 @@ export default function ConsultationDetailView() {
   const refundAmount = booking
     ? bookingRefundAmount(txQ.data, booking.id)
     : null;
-  const refundCard = refundCardCopy(refundStatus, refundAmount);
+  // Why the refund is held: the booking's own field when the backend sends
+  // it, else what the cancel answer said in this session (user decision
+  // 2026-11-22: a hold where the fee covers the whole payment reads "No
+  // refund due" straight away).
+  const [cancelHeldReason, setCancelHeldReason] = React.useState<string | null>(
+    null,
+  );
+  const refundCard = refundCardCopy(
+    refundStatus,
+    refundAmount,
+    booking?.refundHeldReason ?? cancelHeldReason,
+  );
 
   // ── "The meeting didn't happen" (japa#442) ─────────────────────────────────
   const reportQ = useReportNoShow();
@@ -392,12 +403,15 @@ export default function ConsultationDetailView() {
             },
             // Stay on this screen: it refetches and shows "Cancelled" plus
             // the refund card. The alert says what the server did.
-            onSuccess: (res) =>
+            onSuccess: (res) => {
+              // Keep the hold reason for the refund card (see above).
+              setCancelHeldReason(res?.refund?.heldReason ?? null);
               Alert.alert(
                 CANCEL_RESULT_TITLE,
                 cancelResultMessage(res?.refund, paid),
                 [{ text: 'OK' }],
-              ),
+              );
+            },
             onError: (err) =>
               Alert.alert(
                 // japa#442: a cancel is refused while a report is open; the
